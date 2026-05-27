@@ -37,6 +37,23 @@ Behavior:
 5. Distill reusable knowledge into the appropriate `knowledge-base/` lane.
 6. Link to related ideas, projects, principles, and sessions.
 
+### 3. Repo Backlog Mode
+
+Use when the owner asks:
+
+- "Do we have repositories not processed yet?"
+- "What repos are pending?"
+- "Start with one repository from backlog."
+
+Behavior:
+
+1. Read `inbox/github-repo-backlog.md`.
+2. List repositories with status `unprocessed`.
+3. Start with one selected repo and move status to `processing`.
+4. Run deep-dive workflow.
+5. Set final status to `processed` or `parked`.
+6. Link outputs to source notes and related idea/project files.
+
 ## Interview Questions
 
 Ask one to four focused questions before final synthesis when needed:
