@@ -49,10 +49,11 @@ Behavior:
 
 1. Read `inbox/github-repo-backlog.md`.
 2. List repositories with status `unprocessed`.
-3. Start with one selected repo and move status to `processing`.
-4. Run deep-dive workflow.
-5. Set final status to `processed` or `parked`.
-6. Link outputs to source notes and related idea/project files.
+3. If the owner provides comments before deep dive, set selected repo to `preprocessed`.
+4. Start selected repo and move status to `processing`.
+5. Run repository deep-dive protocol from `knowledge-base/methods/repo-deep-dive-protocol.md`.
+6. Set final status to `processed` or `parked`.
+7. Link outputs to source notes and related idea/project files.
 
 ## Interview Questions
 
