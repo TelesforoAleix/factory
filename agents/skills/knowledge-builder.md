@@ -8,6 +8,8 @@ Processes raw inputs and saved sources into structured, reusable markdown knowle
 - the owner asks to process, summarize, research, compare, or deep-dive a saved source.
 - A session produces durable knowledge about how the owner works, a market, a domain, a tool, or a reusable method.
 
+This trigger is default-on in background mode. If durable knowledge appears, capture it without requiring explicit instructions.
+
 ## Two Modes
 
 ### 1. Capture Mode
@@ -64,6 +66,15 @@ For external sources, produce both:
 
 1. A source note when the individual source matters.
 2. A synthesized knowledge note when the source teaches a reusable pattern.
+
+## In-Chat Receipt Style
+
+When a knowledge update is made, use a minimal one-liner only when useful:
+
+- Knowledge note added.
+- Source captured.
+
+Avoid process narration unless requested.
 
 ## Rule Of Thumb
 

@@ -5,6 +5,8 @@ Captures ideas and stores them in the structured backlog.
 ## Trigger
 When input contains a new idea, concept, or business opportunity.
 
+This trigger is default-on in background mode. If an idea emerges during other work, capture it without interrupting flow.
+
 ## Behavior
 1. Extract the core idea
 2. Classify: quick-tool vs big-idea
@@ -14,3 +16,11 @@ When input contains a new idea, concept, or business opportunity.
 
 ## Output Format
 Markdown file with: name, one-line summary, problem it solves, target audience, status, source.
+
+## In-Chat Receipt Style
+
+Use a single short confirmation when useful:
+
+- Idea saved.
+
+Do not add long explanations unless asked.

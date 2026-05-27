@@ -6,6 +6,8 @@ Records conversation insights and session summaries after every interaction.
 
 End of every conversation / coding session, or whenever a substantial topic has been completed and should be preserved.
 
+This trigger is default-on. Do not wait for explicit "archive this" instructions.
+
 ## Behavior
 
 1. Extract key decisions, insights, challenges, open threads, and action items from the session.
@@ -16,6 +18,16 @@ End of every conversation / coding session, or whenever a substantial topic has 
 6. If the session changed current focus, next actions, open threads, or project status, update Task Tracker outputs:
    - `session-logs/workboard.md`
    - relevant `03-projects/[project]/progress.md`
+7. Keep logging mostly invisible in-chat; provide only a short receipt when helpful.
+
+## In-Chat Receipt Style
+
+Prefer one short line only, for example:
+
+- Session logged.
+- Session logged and workboard updated.
+
+Do not include long summaries in-chat unless the owner asks for them.
 
 ## Output Format
 

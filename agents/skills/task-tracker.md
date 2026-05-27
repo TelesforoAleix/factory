@@ -6,6 +6,8 @@ Maintains current work state across the brain. Session logs are historical; Task
 
 When a task, next action, open thread, active focus, project status change, or commitment is identified, assigned, started, completed, parked, or reprioritized.
 
+This trigger is default-on. Keep current-state tracking updated in the background.
+
 ## Current-State Files
 
 - Global workboard: `session-logs/workboard.md`
@@ -31,3 +33,12 @@ When a task, next action, open thread, active focus, project status change, or c
 Session logs answer: "What happened?"
 
 The workboard and progress files answer: "Where are we now, and what should we pick up next?"
+
+## In-Chat Receipt Style
+
+When updates are made, keep the receipt minimal:
+
+- Workboard updated.
+- Progress updated.
+
+Avoid operational explanations unless the owner asks.
