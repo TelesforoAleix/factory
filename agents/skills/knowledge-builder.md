@@ -31,11 +31,12 @@ Use when the owner asks to process one source or one theme.
 Behavior:
 
 1. Inspect the source and gather outside context when useful.
-2. Ask the owner why the source matters when the motivation is unclear.
-3. Extract facts, patterns, examples, warnings, and reusable ideas.
-4. Create a source note in `knowledge-base/sources/`.
-5. Distill reusable knowledge into the appropriate `knowledge-base/` lane.
-6. Link to related ideas, projects, principles, and sessions.
+2. For PDFs, use Microsoft MarkItDown to create a raw markdown extract before synthesis when available.
+3. Ask the owner why the source matters when the motivation is unclear.
+4. Extract facts, patterns, examples, warnings, and reusable ideas.
+5. Create a source note in `knowledge-base/sources/`.
+6. Distill reusable knowledge into the appropriate `knowledge-base/` lane.
+7. Link to related ideas, projects, principles, and sessions.
 
 ### 3. Repo Backlog Mode
 
@@ -97,3 +98,5 @@ Avoid process narration unless requested.
 ## Rule Of Thumb
 
 Raw material belongs in the inbox. Processed understanding belongs in knowledge. Product opportunities belong in ideas. Activated execution belongs in projects.
+
+For PDFs, MarkItDown is the default extraction tool: original PDFs remain raw sources, and generated markdown remains raw extraction material until processed.
