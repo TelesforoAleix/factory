@@ -8,6 +8,10 @@ End of every conversation / coding session, or whenever a substantial topic has 
 
 This trigger is default-on. Do not wait for explicit "archive this" instructions.
 
+## Input Assumption
+
+Many conversations are dictated. When archiving, clean away filler, repetitions, unreliable punctuation, artificial pauses/spaces, and obvious transcription artifacts. Preserve the owner's intent and note uncertainty only when it changes a decision, action item, or file placement.
+
 ## Behavior
 
 1. Extract key decisions, insights, challenges, open threads, and action items from the session.

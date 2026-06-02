@@ -10,6 +10,10 @@ Processes raw inputs and saved sources into structured, reusable markdown knowle
 
 This trigger is default-on in background mode. If durable knowledge appears, capture it without requiring explicit instructions.
 
+## Input Assumption
+
+the owner often uses speech-to-text. Treat filler, repeated words, odd punctuation, artificial pauses/spaces, and probable misheard terms as transcript noise. Preserve the intended meaning and ask only when uncertainty affects source status, destination, requested depth, project/source identity, or the next action.
+
 ## Two Modes
 
 ### 1. Capture Mode

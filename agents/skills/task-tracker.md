@@ -8,6 +8,10 @@ When a task, next action, open thread, active focus, project status change, or c
 
 This trigger is default-on. Keep current-state tracking updated in the background.
 
+## Input Assumption
+
+When extracting tasks from voice-dictated text, ignore filler, repetitions, unreliable punctuation, artificial pauses/spaces, and likely transcription artifacts. Ask only if the action, project, owner, priority, or timing is genuinely unclear.
+
 ## Current-State Files
 
 - Global workboard: `session-logs/workboard.md`

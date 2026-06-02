@@ -8,6 +8,8 @@ When input contains a new idea, concept, or business opportunity.
 This trigger is default-on in background mode. If an idea emerges during other work, capture it without interrupting flow.
 
 ## Behavior
+Before applying the steps, normalize dictated input: remove filler, repetition, and artificial punctuation/pauses while preserving the rough idea. Ask a short clarification only if a likely misheard word changes the concept.
+
 1. Extract the core idea
 2. Classify: quick-tool vs big-idea using audience and setup friction
 3. Note the source (conversation, article, observation)
