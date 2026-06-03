@@ -5,6 +5,7 @@ Design layer for The Factory, the owner's reusable AI development company operat
 ## Core Design Areas
 
 - [Architecture](architecture.md)
+- [Manual Workflow](manual-workflow.md)
 - [Operating Model](operating-model.md)
 - [Project Workspace Layout](project-workspace-layout.md)
 - [Source Use Map](source-use-map.md)

@@ -4,7 +4,7 @@ Live project-state file for The Factory.
 
 ## Current Phase
 
-Factory self-hosting and first manual operating workflow.
+Manual workflow and first reusable agent/department specs.
 
 ## Current Status
 
@@ -14,7 +14,7 @@ The foundational direction is clear: build a reusable AI development company ope
 
 The Factory itself is now being developed inside `03-projects/ai-development-team/`. Its own live operating state starts in `03-projects/ai-development-team/ops/`, and the seeded internal-ops ticket has now been dogfooded through execution evidence, self-review, fresh-context review, validation/testing evidence, release readiness, and learning capture.
 
-The next step is to define the manual Factory workflow using that dogfood pass as the worked example. Dashboard and CLI automation remain deferred.
+The manual Factory workflow now exists as the canonical v0 operating procedure before CLI or dashboard automation. The next step is to use it as the shared operating contract for first reusable agent/department specs in `04-agents/`.
 
 ## Locked Decisions
 
@@ -41,6 +41,7 @@ The next step is to define the manual Factory workflow using that dogfood pass a
 - V0 operating objects are task, ticket, run/session, founder inbox item, approval, context pack, review record, release checklist, and learning candidate.
 - Initial v0 ops templates live under `03-projects/ai-development-team/templates/ops/` before being copied into any real project workspace.
 - The Factory's own live operational state lives under `03-projects/ai-development-team/ops/` while The Factory is being built.
+- Manual Factory operation is defined in `03-projects/ai-development-team/design/manual-workflow.md` and should be the shared operating contract for early agents.
 - Recommended storage direction: YAML for most state objects, JSON or JSONL for run/session state and events, Markdown with YAML frontmatter for context packs and release checklists, and YAML for v0 review records.
 - Start with architecture/spec documentation, then folder templates, then dashboard/control-plane implementation.
 - For self-improvement, use Hermes Agent as the learning-intake and curation reference, and SkillOpt as the validation/promotion reference.
@@ -48,6 +49,7 @@ The next step is to define the manual Factory workflow using that dogfood pass a
 ## Current Design Areas
 
 - [Architecture](design/architecture.md)
+- [Manual Workflow](design/manual-workflow.md)
 - [Operating Model](design/operating-model.md)
 - [Project Workspace Layout](design/project-workspace-layout.md)
 - [Source Comparison Plan](design/source-comparison-plan.md)
@@ -60,7 +62,7 @@ The next step is to define the manual Factory workflow using that dogfood pass a
 
 ## Next Recommended Moves
 
-1. Define the manual Factory workflow from ticket creation through release and reflection, using [LEARN-2026-0001](ops/learning/LEARN-2026-0001-manual-workflow-gate.yaml) as input.
+1. Use [Manual Workflow](design/manual-workflow.md) as the shared operating contract for first reusable agent/department specs.
 2. Use [Factory Ops](ops/README.md) to create the next tickets for first reusable agent/department specs.
 3. Define the advisory-agent pattern and first architecture advisory role.
 4. Draft the first reusable agent/department specs in [04-agents](../../04-agents/README.md) when they are ready to become canonical.

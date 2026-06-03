@@ -3,7 +3,7 @@
 ## V0 Scope
 
 - Are the current [Ops Templates](../templates/ops/README.md) complete enough for The Factory to dogfood its own [Factory Ops](../ops/README.md)?
-- Which Factory ticket should come next after the internal ops layer: advisory-agent spec, manual workflow, project workspace template, or context-pack helper?
+- Which Factory ticket should come next after the manual workflow: advisory-agent spec, project workspace template, or context-pack helper?
 - Should the project workspace template wait until the internal Factory workflow has been tested once?
 - Which source comparison area should happen next after the self-hosting pass?
 
@@ -15,7 +15,7 @@ Current v0 direction: YAML for tasks, tickets, inbox items, approvals, review re
 - Should run/session history use one JSON state file in v0, or add JSONL event streams immediately?
 - Should review records stay YAML, or shift back to Markdown with YAML frontmatter if review findings become narrative-heavy?
 - Should context packs and release checklists share one common frontmatter schema?
-- Which fields are mandatory for the first manual workflow versus dashboard-only later?
+- Which fields in [Manual Workflow](manual-workflow.md) are mandatory for all tickets versus optional for higher-risk work?
 - How should archived project `ops/` objects be compacted after a task ships?
 
 ## Dashboard Bridge
