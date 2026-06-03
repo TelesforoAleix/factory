@@ -208,3 +208,4 @@ Additional reusable department packs extend this registry without creating runna
 
 - [Factory V0 Core Department Pack](departments/factory-v0-core-pack.md)
 - [Factory Knowledge / Documentation Department Pack](departments/factory-knowledge-documentation-pack.md)
+- [Factory Security / Privacy / Authority Department Pack](departments/factory-security-privacy-authority-pack.md)
