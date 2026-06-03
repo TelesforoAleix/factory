@@ -6,6 +6,7 @@ Core brain OS customizations live in [../.github](../.github/README.md). Use `.g
 
 ## Main Entry Points
 
+- [Role Registry](role-registry.md): registry of Factory roles, departments, authority, boundaries, inputs, outputs, and ticket powers.
 - [Departments](departments/README.md): reusable Factory department specs.
 - [Roles](roles/README.md): reusable Factory role specs.
 - [Orchestrator](orchestrator/README.md): current orchestrator status and future agent boundary rules.

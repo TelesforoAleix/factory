@@ -17,6 +17,8 @@ Role specs define responsibilities, boundaries, inputs, outputs, and workflow du
 
 All roles use [The Factory Manual Workflow](../../03-projects/ai-development-team/design/manual-workflow.md) until specific skills, prompts, CLI helpers, or dashboard flows exist.
 
+Role authority, ticket powers, permissions, and boundaries are summarized in the [Factory Role Registry](../role-registry.md).
+
 ## Role Spec Rule
 
 A role spec should answer:

@@ -7,6 +7,7 @@ Departments define ownership boundaries and role groupings. They are not runnabl
 ## Current Department Specs
 
 - [Factory V0 Core](factory-v0-core.md): first reusable operating department set for The Factory.
+- [Factory V0 Core Department Pack](factory-v0-core-pack.md): packaged v0 role roster, routing matrix, permissions, and activation checklist.
 
 ## Operating Contract
 

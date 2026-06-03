@@ -16,7 +16,9 @@ The Factory itself is now being developed inside `03-projects/ai-development-tea
 
 The manual Factory workflow now exists as the canonical v0 operating procedure before CLI or dashboard automation. The first reusable Factory department and role specs now exist in `04-agents/` as operating contracts, not runnable custom agents.
 
-The next step is to review these specs with the owner, then decide whether to create prompt wrappers/custom agent files or the project workspace template next.
+The role registry and V0 core department pack now make those specs scannable by role, department, type, permissions, boundaries, inputs, outputs, ticket powers, review/release authority, and advisory/execution status.
+
+The next step is to review the registry and pack with the owner, then decide whether to create prompt wrappers/custom agent files or the project workspace template next.
 
 ## Locked Decisions
 
@@ -28,6 +30,7 @@ The next step is to review these specs with the owner, then decide whether to cr
 - The Factory itself can be developed inside `03-projects/ai-development-team/` while it needs direct access to `04-agents/` and `knowledge-base/`.
 - Reusable agents and skills belong in `04-agents/`.
 - First reusable Factory role specs exist in `04-agents/roles/` and use the manual workflow as their shared operating contract.
+- The Factory role registry and V0 core department pack live in `04-agents/` as coordination docs before runnable agents exist.
 - Some agents should be advisory-only: they can read/synthesize knowledge and provide recommendations, but do not execute tickets or edit code.
 - Project-specific operational output should live in each project workspace, not in the brain by default.
 - Preferred project workspace folders: `.github/`, `agents/`, `product/`, `ops/`.
@@ -65,7 +68,7 @@ The next step is to review these specs with the owner, then decide whether to cr
 
 ## Next Recommended Moves
 
-1. Review the first [Factory role specs](../../04-agents/roles/README.md) and [Factory V0 Core department](../../04-agents/departments/factory-v0-core.md) with the owner.
+1. Review the [Factory Role Registry](../../04-agents/role-registry.md), [Factory V0 Core Department Pack](../../04-agents/departments/factory-v0-core-pack.md), and first [Factory role specs](../../04-agents/roles/README.md) with the owner.
 2. Use [Factory Ops](ops/README.md) to create the next ticket for either prompt wrappers/custom agent files or the project workspace template.
 3. Review the initial [Ops Templates](templates/ops/README.md) and tighten fields based on dogfooding.
 4. Design the CLI/context-pack helper after the manual workflow is clear.
