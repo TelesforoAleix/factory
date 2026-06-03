@@ -214,5 +214,6 @@ Additional reusable department packs extend this registry without creating runna
 - [Factory Marketing Department Pack](departments/factory-marketing-pack.md)
 - [Factory Product Department Expansion Pack](departments/factory-product-expansion-pack.md)
 - [Factory Review / QA Department Expansion Pack](departments/factory-review-qa-expansion-pack.md)
+- [Factory Release / CI-CD Department Expansion Pack](departments/factory-release-cicd-expansion-pack.md)
 - [Factory Security / Privacy / Authority Department Pack](departments/factory-security-privacy-authority-pack.md)
 - [Factory Optimization Department Pack](departments/factory-optimization-pack.md)

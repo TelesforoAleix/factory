@@ -88,6 +88,7 @@ This pack should leave the manual workflow artifacts:
 - Product expansion role set
 - Engineering expansion role set
 - Review / QA expansion role set
+- Release / CI-CD expansion role set
 - Knowledge / Documentation role
 - Optimization Department role
 - Marketing role
@@ -96,7 +97,7 @@ This pack should leave the manual workflow artifacts:
 - custom agent files
 - CLI or dashboard automation
 
-Founder Interface now has a dedicated [Founder Interface / Personal Assistant Department Pack](factory-founder-interface-pack.md). Product expansion now has a dedicated [Product Department Expansion Pack](factory-product-expansion-pack.md). Engineering expansion now has a dedicated [Engineering Department Expansion Pack](factory-engineering-expansion-pack.md). Review / QA expansion now has a dedicated [Review / QA Department Expansion Pack](factory-review-qa-expansion-pack.md).
+Founder Interface now has a dedicated [Founder Interface / Personal Assistant Department Pack](factory-founder-interface-pack.md). Product expansion now has a dedicated [Product Department Expansion Pack](factory-product-expansion-pack.md). Engineering expansion now has a dedicated [Engineering Department Expansion Pack](factory-engineering-expansion-pack.md). Review / QA expansion now has a dedicated [Review / QA Department Expansion Pack](factory-review-qa-expansion-pack.md). Release / CI-CD expansion now has a dedicated [Release / CI-CD Department Expansion Pack](factory-release-cicd-expansion-pack.md).
 
 ## Promotion Rule
 
