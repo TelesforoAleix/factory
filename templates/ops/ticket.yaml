@@ -1,0 +1,40 @@
+template_version: "0.1"
+object_type: ticket
+id: TICKET-YYYY-0001
+title: "Short ticket title"
+status: inbox
+project_id: PROJECT-ID
+goal_id: GOAL-ID
+feature_id: FEATURE-ID
+task_id: TASK-YYYY-0001
+owner_role: "Product / Feature Owner"
+assigned_agent: null
+objective: "The single assignable outcome this ticket should produce."
+acceptance_criteria:
+  - "Criterion that must be satisfied before external review."
+scope:
+  - "What the assigned agent may change or produce."
+out_of_scope:
+  - "What the assigned agent should not change."
+required_context_pack_id: CP-YYYY-0001
+required_reviewers:
+  - "Review / QA"
+expected_outputs:
+  - "Implementation, artifact, decision, or report expected from the agent."
+approval_level: 1
+priority: medium
+risk_level: medium
+dependencies: []
+blocking_object_ids: []
+founder_inbox_item_ids: []
+approval_ids: []
+run_ids: []
+review_ids: []
+test_evidence: []
+changed_files: []
+release_id: null
+related_docs: []
+related_objects: []
+notes: ""
+created_at: "YYYY-MM-DDTHH:MM:SSZ"
+updated_at: "YYYY-MM-DDTHH:MM:SSZ"

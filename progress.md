@@ -4,15 +4,15 @@ Live project-state file for The Factory.
 
 ## Current Phase
 
-Architecture, operating model, and v0 scope definition.
+Ops templates and project workspace template design.
 
 ## Current Status
 
 The Factory has been activated as a project design space under `03-projects/ai-development-team/`.
 
-The foundational direction is clear: build a reusable AI development company operating system for the owner's projects, with [project] as the first serious test. The current pass defines the v0 operating objects that will later become project-workspace templates and dashboard-readable state.
+The foundational direction is clear: build a reusable AI development company operating system for the owner's projects, with [project] as the first serious test. The v0 operating objects now have initial copyable templates under `03-projects/ai-development-team/templates/ops/`.
 
-The next step is still not dashboard implementation. The next step is to review the v0 operating objects, turn them into lightweight `ops/` templates, and keep source comparison tied to concrete components.
+The next step is still not dashboard implementation. The next step is to create the project workspace template for `.github/`, `agents/`, `product/`, and `ops/`, then move into first agent/department specs, manual workflow, CLI/context-pack helpers, and only later a dashboard prototype.
 
 ## Locked Decisions
 
@@ -35,7 +35,8 @@ The next step is still not dashboard implementation. The next step is to review 
 - Marketing is a Factory department for market-facing copy, tags, positioning, launch materials, and market research when relevant.
 - Markdown should hold product/spec/design docs; YAML/JSON should hold operational state when useful.
 - V0 operating objects are task, ticket, run/session, founder inbox item, approval, context pack, review record, release checklist, and learning candidate.
-- Recommended storage direction: YAML for most state objects, JSON or JSONL for run/session state and events, and Markdown with YAML frontmatter for context packs, reviews, and release checklists.
+- Initial v0 ops templates live under `03-projects/ai-development-team/templates/ops/` before being copied into any real project workspace.
+- Recommended storage direction: YAML for most state objects, JSON or JSONL for run/session state and events, Markdown with YAML frontmatter for context packs and release checklists, and YAML for v0 review records.
 - Start with architecture/spec documentation, then folder templates, then dashboard/control-plane implementation.
 - For self-improvement, use Hermes Agent as the learning-intake and curation reference, and SkillOpt as the validation/promotion reference.
 
@@ -47,16 +48,18 @@ The next step is still not dashboard implementation. The next step is to review 
 - [Source Comparison Plan](design/source-comparison-plan.md)
 - [Source Use Map](design/source-use-map.md)
 - [V0 Operating Objects](design/v0-operating-objects.md)
+- [Templates](templates/README.md)
 - [Open Questions](design/open-questions.md)
 - [Roadmap](roadmap.md)
 
 ## Next Recommended Moves
 
-1. Review [V0 Operating Objects](design/v0-operating-objects.md) with the owner and tighten field names, statuses, and storage choices.
-2. Turn the v0 operating objects into lightweight project-workspace templates under the future `ops/` structure.
-3. Define v0 folder templates for `.github/`, `agents/`, `product/`, and `ops/` in a project workspace.
-4. Use the source-use map to run targeted comparison only when a Factory component is being designed.
-5. Decide dashboard v0 scope after the operating objects and templates are stable: read-only, write-capable ops state, or local CLI bridge.
+1. Review the initial [Ops Templates](templates/ops/README.md) with the owner and tighten fields before using them in a real project workspace.
+2. Define the v0 project workspace template for `.github/`, `agents/`, `product/`, and `ops/`.
+3. Draft the first reusable agent/department specs in [04-agents](../../04-agents/README.md).
+4. Define the manual Factory workflow from ticket creation through release and reflection.
+5. Design the CLI/context-pack helper after the manual workflow is clear.
+6. Decide dashboard v0 scope only after object templates, workspace template, and manual workflow are stable.
 
 ## Related Docs
 

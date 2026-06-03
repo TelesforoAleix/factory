@@ -1,0 +1,32 @@
+template_version: "0.1"
+object_type: task
+id: TASK-YYYY-0001
+title: "Short task title"
+status: inbox
+owner_role: "Product / Feature Owner"
+project_id: PROJECT-ID
+goal_id: GOAL-ID
+feature_id: FEATURE-ID
+summary: "One-paragraph summary of the larger unit of work."
+intent: "Why this task exists and what coherent slice of value it should deliver."
+acceptance_criteria:
+  - "Criterion that must be true when the task is complete."
+ticket_ids:
+  - TICKET-YYYY-0001
+required_reviewers:
+  - "Review / QA"
+release_strategy: task_batch
+priority: medium
+risk_level: medium
+dependencies: []
+constraints: []
+non_goals: []
+related_docs: []
+related_objects: []
+decision_refs: []
+inbox_item_ids: []
+approval_ids: []
+release_id: null
+archive_notes: ""
+created_at: "YYYY-MM-DDTHH:MM:SSZ"
+updated_at: "YYYY-MM-DDTHH:MM:SSZ"

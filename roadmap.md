@@ -19,12 +19,13 @@ Includes:
 - folder layout for project workspaces
 - source comparison plan
 - first open questions and approval thresholds
+- first v0 operating-object schemas and `ops/` templates
 
 Exit criteria:
 
 - the owner approves the operating model.
-- First v0 folder templates are clear enough to create.
-- First schemas for ticket, context pack, inbox item, run, and approval are ready to draft.
+- First v0 operating-object templates are clear enough to copy into a project workspace template.
+- First schemas for task, ticket, context pack, inbox item, run, approval, review, release, and learning candidate are ready to refine through use.
 
 ## V1 - Project Workspace Templates
 

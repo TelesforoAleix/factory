@@ -1,0 +1,44 @@
+template_version: "0.1"
+object_type: founder_inbox_item
+id: INBOX-YYYY-0001
+title: "Decision or question title"
+status: open
+project_id: PROJECT-ID
+owner_role: "Founder Interface"
+raised_by_agent: AGENT-ID
+related_ticket_id: TICKET-YYYY-0001
+related_task_id: TASK-YYYY-0001
+related_feature_id: FEATURE-ID
+priority: medium
+deadline: null
+decision_needed: "The exact decision the owner needs to make."
+context_summary: "Short context that lets the owner answer without reading the full run transcript."
+options:
+  - id: option_a
+    label: "Option A"
+    description: "What this option means."
+    pros:
+      - "Main upside."
+    cons:
+      - "Main downside."
+  - id: option_b
+    label: "Option B"
+    description: "What this option means."
+    pros: []
+    cons: []
+recommendation: option_a
+why_recommended: "Why the raising agent recommends this option."
+impact_if_unanswered: "What remains blocked or risky if the owner does not answer."
+blocks_object_ids:
+  - TICKET-YYYY-0001
+answer: null
+answered_at: null
+answered_by: null
+routed_to: []
+followup_questions: []
+related_approval_id: null
+decision_doc_ref: null
+related_docs: []
+related_objects: []
+created_at: "YYYY-MM-DDTHH:MM:SSZ"
+updated_at: "YYYY-MM-DDTHH:MM:SSZ"

@@ -12,6 +12,7 @@ It is not [project]-specific. [project] is the first serious test project, but T
 - [Progress](progress.md)
 - [Roadmap](roadmap.md)
 - [Design Docs](design/README.md)
+- [Templates](templates/README.md)
 
 ## Layer Boundary
 
@@ -30,4 +31,4 @@ It is not [project]-specific. [project] is the first serious test project, but T
 
 ## Current Status
 
-Active design/spec phase. The next work is architecture consolidation and source-comparison decisions before building folder templates or dashboard prototypes.
+Active design/spec phase. The first `ops/` templates now exist; the next work is the project workspace template before agent specs, manual workflow, CLI helpers, or dashboard prototypes.

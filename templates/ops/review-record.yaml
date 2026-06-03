@@ -1,0 +1,36 @@
+template_version: "0.1"
+object_type: review_record
+id: REVIEW-YYYY-0001
+title: "Review title"
+status: requested
+project_id: PROJECT-ID
+review_type: fresh_context
+reviewer_role: "Review / QA"
+specialist_area: null
+related_ticket_id: TICKET-YYYY-0001
+related_task_id: TASK-YYYY-0001
+context_pack_id: CP-YYYY-0001
+original_intent: "Original ticket or task intent being reviewed against."
+acceptance_criteria_checked:
+  - criterion: "Acceptance criterion text."
+    result: unchecked
+    notes: ""
+implementation_summary: "Summary of what the execution agent reported or produced."
+findings:
+  - severity: info
+    summary: "Finding summary."
+    evidence_refs: []
+    recommendation: ""
+decision: null
+risk_level: medium
+changed_files_reviewed: []
+test_evidence_refs: []
+required_revisions: []
+followup_ticket_ids: []
+approval_ids: []
+reviewer_confidence: medium
+related_docs: []
+related_objects: []
+notes: ""
+created_at: "YYYY-MM-DDTHH:MM:SSZ"
+updated_at: "YYYY-MM-DDTHH:MM:SSZ"

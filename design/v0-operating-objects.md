@@ -91,7 +91,7 @@ ops/
 | Founder Inbox Item | Founder Interface | YAML | `ops/inbox/INBOX-2026-0001.yaml` |
 | Approval | Release Agent, Reviewer, or Founder Interface depending level | YAML | `ops/approvals/APPROVAL-2026-0001.yaml` |
 | Context Pack | Architect / Context Architect | Markdown with YAML frontmatter | `ops/context-packs/CP-2026-0001.md` |
-| Review Record | Review / QA Agent or specialist reviewer | Markdown with YAML frontmatter | `ops/reviews/REVIEW-2026-0001.md` |
+| Review Record | Review / QA Agent or specialist reviewer | YAML for v0 state, optional linked Markdown for long findings | `ops/reviews/REVIEW-2026-0001.yaml` |
 | Release Checklist | Release Agent | Markdown with YAML frontmatter | `ops/releases/RELEASE-2026-0001.md` |
 | Learning Candidate | Knowledge / Documentation Agent, then Optimization Department | YAML with optional Markdown note | `ops/learning/LEARN-2026-0001.yaml` |
 
@@ -807,7 +807,7 @@ requested -> in_progress -> passed -> changes_requested -> failed -> superseded 
 
 ### Storage Format Recommendation
 
-Markdown with YAML frontmatter. Review decisions and metadata should be parseable; findings often need narrative detail.
+YAML for the first v0 state template. Review decisions and metadata should be parseable by agents and a future dashboard. If findings become narrative-heavy, link a Markdown note or revisit Markdown with YAML frontmatter later.
 
 ### Dashboard Appearance
 
@@ -836,7 +836,7 @@ Review panel or badge with:
 
 ### Example Future File
 
-`ops/reviews/REVIEW-2026-0001.md`
+`ops/reviews/REVIEW-2026-0001.yaml`
 
 ## 8. Release Checklist
 
@@ -1051,17 +1051,17 @@ Improvement queue item with:
 
 ## V0 Template Implications
 
-The next folder-template pass should create lightweight examples for:
+Initial project-design templates now live in [Ops Templates](../templates/ops/README.md):
 
-- `ops/tasks/TASK-example.yaml`
-- `ops/tickets/TICKET-example.yaml`
-- `ops/runs/RUN-example.json`
-- `ops/inbox/INBOX-example.yaml`
-- `ops/approvals/APPROVAL-example.yaml`
-- `ops/context-packs/CP-example.md`
-- `ops/reviews/REVIEW-example.md`
-- `ops/releases/RELEASE-example.md`
-- `ops/learning/LEARN-example.yaml`
+- `task.yaml`
+- `ticket.yaml`
+- `run.json`
+- `founder-inbox-item.yaml`
+- `approval.yaml`
+- `context-pack.md`
+- `review-record.yaml`
+- `release-checklist.md`
+- `learning-candidate.yaml`
 
 Do not build the dashboard from this document yet. Use it first to stabilize the architecture, templates, and manual workflow.
 

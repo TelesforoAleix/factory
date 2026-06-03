@@ -1,0 +1,30 @@
+template_version: "0.1"
+object_type: learning_candidate
+id: LEARN-YYYY-0001
+title: "Learning candidate title"
+status: captured
+project_id: PROJECT-ID
+owner_role: "Knowledge / Documentation Agent"
+department: null
+source_object_ids:
+  - RUN-YYYY-0001
+learning_type: workflow
+problem_observed: "What failed, slowed down, confused an agent, or should be remembered."
+proposed_change: "Concrete candidate change to a project rule, Factory template, agent, or skill."
+scope: project_specific
+evidence:
+  - "Observed evidence that this learning matters."
+promotion_target: null
+related_agent_or_skill: null
+validation_task_ids: []
+score_before: null
+score_after: null
+rejected_reason: null
+promotion_pr_or_commit: null
+brain_writeback_ref: null
+project_doc_writeback_ref: null
+related_docs: []
+related_objects: []
+notes: ""
+created_at: "YYYY-MM-DDTHH:MM:SSZ"
+updated_at: "YYYY-MM-DDTHH:MM:SSZ"

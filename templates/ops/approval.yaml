@@ -1,0 +1,27 @@
+template_version: "0.1"
+object_type: approval
+id: APPROVAL-YYYY-0001
+title: "Approval title"
+status: requested
+project_id: PROJECT-ID
+approval_type: founder
+approval_level: 2
+requested_by: AGENT-ID
+approver_role: "Founder Interface"
+related_object_ids:
+  - TICKET-YYYY-0001
+request_summary: "What is being approved and why approval is needed."
+decision: null
+approved_by: null
+approved_at: null
+rejected_reason: null
+conditions: []
+expires_at: null
+evidence_refs: []
+founder_inbox_item_id: INBOX-YYYY-0001
+supersedes_approval_id: null
+risk_notes: ""
+related_docs: []
+related_objects: []
+created_at: "YYYY-MM-DDTHH:MM:SSZ"
+updated_at: "YYYY-MM-DDTHH:MM:SSZ"
