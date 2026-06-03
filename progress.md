@@ -10,7 +10,9 @@ Architecture, operating model, and v0 scope definition.
 
 The Factory has been activated as a project design space under `03-projects/ai-development-team/`.
 
-The foundational direction is clear: build a reusable AI development company operating system for the owner's projects, with [project] as the first serious test. The next step is not dashboard implementation. The next step is to turn discovery into a clear architecture, roadmap, folder templates, and source comparison decisions.
+The foundational direction is clear: build a reusable AI development company operating system for the owner's projects, with [project] as the first serious test. The current pass defines the v0 operating objects that will later become project-workspace templates and dashboard-readable state.
+
+The next step is still not dashboard implementation. The next step is to review the v0 operating objects, turn them into lightweight `ops/` templates, and keep source comparison tied to concrete components.
 
 ## Locked Decisions
 
@@ -32,6 +34,8 @@ The foundational direction is clear: build a reusable AI development company ope
 - Ticket lifecycle includes execution self-review, external fresh-context review, and testing before release readiness.
 - Marketing is a Factory department for market-facing copy, tags, positioning, launch materials, and market research when relevant.
 - Markdown should hold product/spec/design docs; YAML/JSON should hold operational state when useful.
+- V0 operating objects are task, ticket, run/session, founder inbox item, approval, context pack, review record, release checklist, and learning candidate.
+- Recommended storage direction: YAML for most state objects, JSON or JSONL for run/session state and events, and Markdown with YAML frontmatter for context packs, reviews, and release checklists.
 - Start with architecture/spec documentation, then folder templates, then dashboard/control-plane implementation.
 - For self-improvement, use Hermes Agent as the learning-intake and curation reference, and SkillOpt as the validation/promotion reference.
 
@@ -42,17 +46,17 @@ The foundational direction is clear: build a reusable AI development company ope
 - [Project Workspace Layout](design/project-workspace-layout.md)
 - [Source Comparison Plan](design/source-comparison-plan.md)
 - [Source Use Map](design/source-use-map.md)
+- [V0 Operating Objects](design/v0-operating-objects.md)
 - [Open Questions](design/open-questions.md)
 - [Roadmap](roadmap.md)
 
 ## Next Recommended Moves
 
-1. Review the initial architecture and operating-model docs with the owner.
-2. Use the source-use map to run targeted comparison only when a Factory component is being designed.
-3. Define the first v0 schemas: task, ticket, run, founder inbox item, approval, context pack, review record, release checklist, and learning candidate.
-4. Define the v0 learning-candidate lifecycle for Reflect: captured, candidate, validated, promoted, rejected, archived.
-5. Define v0 folder templates for `agents/`, `product/`, and `ops/` in a project workspace.
-6. Decide dashboard v0 scope: read-only, write-capable ops state, or local CLI bridge.
+1. Review [V0 Operating Objects](design/v0-operating-objects.md) with the owner and tighten field names, statuses, and storage choices.
+2. Turn the v0 operating objects into lightweight project-workspace templates under the future `ops/` structure.
+3. Define v0 folder templates for `.github/`, `agents/`, `product/`, and `ops/` in a project workspace.
+4. Use the source-use map to run targeted comparison only when a Factory component is being designed.
+5. Decide dashboard v0 scope after the operating objects and templates are stable: read-only, write-capable ops state, or local CLI bridge.
 
 ## Related Docs
 

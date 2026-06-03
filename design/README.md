@@ -8,6 +8,7 @@ Design layer for The Factory, the owner's reusable AI development company operat
 - [Operating Model](operating-model.md)
 - [Project Workspace Layout](project-workspace-layout.md)
 - [Source Use Map](source-use-map.md)
+- [V0 Operating Objects](v0-operating-objects.md)
 - [Source Comparison Plan](source-comparison-plan.md)
 - [Open Questions](open-questions.md)
 

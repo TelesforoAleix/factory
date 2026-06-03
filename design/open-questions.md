@@ -2,16 +2,19 @@
 
 ## V0 Scope
 
-- What is the minimum architecture/spec bundle the owner wants before folder templates?
-- Which source comparison area should happen first?
-- Should v0 include only docs, or also first state templates?
+- Is the current architecture/spec bundle plus [V0 Operating Objects](v0-operating-objects.md) enough to move into folder templates?
+- Which v0 template should be drafted first: tickets, context packs, or the full `ops/` skeleton?
+- Which source comparison area should happen next after the schema pass?
 
 ## Operational State
 
-- What exact schema should tickets use?
-- Should state be YAML, JSON, or mixed?
-- Should context packs be Markdown with frontmatter?
-- Should run logs be JSON, Markdown, or both?
+Current v0 direction: YAML for tasks, tickets, inbox items, approvals, and learning candidates; JSON or JSONL for run/session state and events; Markdown with YAML frontmatter for context packs, review records, and release checklists.
+
+- What exact ID-generation rule should The Factory use for project-local objects?
+- Should run/session history use one JSON state file in v0, or add JSONL event streams immediately?
+- Should context packs, review records, and release checklists share one common frontmatter schema?
+- Which fields are mandatory for the first manual template pass versus dashboard-only later?
+- How should archived project `ops/` objects be compacted after a task ships?
 
 ## Dashboard Bridge
 
