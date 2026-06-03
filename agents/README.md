@@ -15,6 +15,12 @@ Core brain OS customizations live in [../.github](../.github/README.md). Use `.g
 
 No custom development-team agent files are active yet.
 
+## Factory Design Link
+
+[The Factory](../03-projects/ai-development-team/README.md) is the active project for designing the owner's reusable AI development company operating system.
+
+Reusable agent and skill definitions should eventually live here in `04-agents/`; The Factory project holds the product, architecture, operating-model, and project-workspace design.
+
 ## Rule
 
 Clarify existing skills before adding new agents. Add a new agent only when the workflow needs a separate role, persistent scope, or context isolation.
