@@ -30,6 +30,8 @@ Current v0 direction: YAML for tasks, tickets, inbox items, approvals, review re
 - Which specialist reviewers should exist on day one?
 - What is the exact scope of the Marketing department beyond copy, tags, market research, launch materials, and public-facing phrasing?
 - Should context architecture be a department or a specialist role inside architecture?
+- Which roles should have advisory-only variants with read-only knowledge access?
+- What permissions should advisory agents have when accessing `knowledge-base/` and project docs?
 
 ## Release And CI/CD
 

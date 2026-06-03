@@ -18,6 +18,7 @@ The stable system should include:
 
 - a reusable agent and skill layer
 - a project-specific operational layer
+- read-only advisory agents that can use brain knowledge without executing work
 - clear work objects and ownership
 - context packs for isolated agent sessions
 - explicit review and release gates
@@ -121,6 +122,10 @@ It should eventually show:
 The first dashboard does not need to be built immediately. The next step is architecture/spec and folder templates.
 
 ## Project Workspace Model
+
+The Factory itself is a special case: its design and early development can remain inside `03-projects/ai-development-team/` so it can directly leverage `04-agents/` and `knowledge-base/` while the operating system is still being designed.
+
+Normal product projects should use the project workspace model below.
 
 For each real project, The Factory should be copied or synced into a project workspace that separates:
 

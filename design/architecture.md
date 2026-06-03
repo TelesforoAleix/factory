@@ -24,6 +24,7 @@ Purpose:
 - maintain reusable agent and skill definitions
 - preserve source research and decisions
 - improve agents/skills over time
+- support The Factory's own early development while it still needs close access to `04-agents/` and `knowledge-base/`
 
 Primary locations:
 
@@ -50,6 +51,21 @@ project-x/
   product/
   ops/
 ```
+
+The Factory is an exception during its own design/build phase. Keeping its development inside `03-projects/ai-development-team/` is acceptable because the project depends directly on the brain's agent layer and knowledge base. Once The Factory is used for external products, project-specific operational state should live in each product workspace.
+
+### Advisory Knowledge Layer
+
+Some agents should be advisory only.
+
+Purpose:
+
+- read relevant knowledge from `knowledge-base/`
+- synthesize options, risks, and references
+- provide architectural, product, market, privacy, or context advice
+- avoid direct execution, commits, file edits, or operational state changes unless explicitly promoted into another role
+
+Architecture advisory agents are the first expected example, but the pattern can apply to product, marketing, context, privacy, security, or research advisors.
 
 ### 3. Control Plane Layer
 

@@ -21,7 +21,9 @@ The next step is still not dashboard implementation. The next step is to create 
 - [project] is the first serious test project.
 - The Factory should replicate a company-like operating model as closely as useful.
 - Canonical design/spec work belongs in `03-projects/ai-development-team/`.
+- The Factory itself can be developed inside `03-projects/ai-development-team/` while it needs direct access to `04-agents/` and `knowledge-base/`.
 - Reusable agents and skills belong in `04-agents/`.
+- Some agents should be advisory-only: they can read/synthesize knowledge and provide recommendations, but do not execute tickets or edit code.
 - Project-specific operational output should live in each project workspace, not in the brain by default.
 - Preferred project workspace folders: `.github/`, `agents/`, `product/`, `ops/`.
 - Work hierarchy: Project -> Goal -> Feature -> Task -> Ticket.
@@ -56,10 +58,11 @@ The next step is still not dashboard implementation. The next step is to create 
 
 1. Review the initial [Ops Templates](templates/ops/README.md) with the owner and tighten fields before using them in a real project workspace.
 2. Define the v0 project workspace template for `.github/`, `agents/`, `product/`, and `ops/`.
-3. Draft the first reusable agent/department specs in [04-agents](../../04-agents/README.md).
-4. Define the manual Factory workflow from ticket creation through release and reflection.
-5. Design the CLI/context-pack helper after the manual workflow is clear.
-6. Decide dashboard v0 scope only after object templates, workspace template, and manual workflow are stable.
+3. Define the advisory-agent pattern and first architecture advisory role.
+4. Draft the first reusable agent/department specs in [04-agents](../../04-agents/README.md).
+5. Define the manual Factory workflow from ticket creation through release and reflection.
+6. Design the CLI/context-pack helper after the manual workflow is clear.
+7. Decide dashboard v0 scope only after object templates, workspace template, and manual workflow are stable.
 
 ## Related Docs
 

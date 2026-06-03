@@ -105,6 +105,29 @@ Owns:
 - retrieval/memory/context decisions when relevant
 - technical tradeoffs
 
+Architectural advice can be provided by a read-only advisory agent when the task needs knowledge synthesis rather than execution.
+
+### Advisory Agent
+
+Primary responsibility: provide knowledge-backed advice without executing work.
+
+Owns:
+
+- reading relevant notes from `knowledge-base/`
+- surfacing useful references and prior decisions
+- comparing options
+- identifying risks and missing context
+- recommending an approach
+
+Does not own:
+
+- editing product code
+- committing or releasing
+- changing operational state
+- executing tickets
+
+Advisory agents can support architecture, product, marketing, research, context, security, privacy, or authority decisions. They should be used when a role needs broad knowledge access but should not act directly.
+
 ### Execution Agent
 
 Primary responsibility: complete scoped tickets.
