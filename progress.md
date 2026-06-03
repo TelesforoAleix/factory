@@ -26,6 +26,8 @@ The Optimization department pack now defines learning intake, validation, promot
 
 The Architecture / Context Architecture department pack now defines system architecture, context architecture, tradeoff review, advisory-only knowledge synthesis, and ADR review for Factory-managed work.
 
+The Marketing department pack now defines positioning, copy, launch materials, tags, market research, and marketing review for Factory-managed work.
+
 The next step is to review the registry and department packs with the owner, then decide whether to create the Founder Interface pack, prompt wrappers/custom agent files, or the project workspace template next.
 
 ## Locked Decisions
@@ -43,6 +45,7 @@ The next step is to review the registry and department packs with the owner, the
 - The Security / Privacy / Authority department pack lives in `04-agents/departments/` as the reusable risk review and approval-routing contract.
 - The Optimization department pack lives in `04-agents/departments/` as the reusable learning-intake, validation, promotion, and curation contract.
 - The Architecture / Context Architecture department pack lives in `04-agents/departments/` as the reusable system/context architecture, tradeoff, advisory, and ADR-review contract.
+- The Marketing department pack lives in `04-agents/departments/` as the reusable positioning/copy/launch/tags/market-research contract.
 - Some agents should be advisory-only: they can read/synthesize knowledge and provide recommendations, but do not execute tickets or edit code.
 - Project-specific operational output should live in each project workspace, not in the brain by default.
 - Preferred project workspace folders: `.github/`, `agents/`, `product/`, `ops/`.
@@ -80,7 +83,7 @@ The next step is to review the registry and department packs with the owner, the
 
 ## Next Recommended Moves
 
-1. Review the [Factory Role Registry](../../04-agents/role-registry.md), [Factory V0 Core Department Pack](../../04-agents/departments/factory-v0-core-pack.md), [Architecture / Context Architecture Department Pack](../../04-agents/departments/factory-architecture-context-pack.md), [Knowledge / Documentation Department Pack](../../04-agents/departments/factory-knowledge-documentation-pack.md), [Security / Privacy / Authority Department Pack](../../04-agents/departments/factory-security-privacy-authority-pack.md), [Optimization Department Pack](../../04-agents/departments/factory-optimization-pack.md), and first [Factory role specs](../../04-agents/roles/README.md) with the owner.
+1. Review the [Factory Role Registry](../../04-agents/role-registry.md), [Factory V0 Core Department Pack](../../04-agents/departments/factory-v0-core-pack.md), [Architecture / Context Architecture Department Pack](../../04-agents/departments/factory-architecture-context-pack.md), [Knowledge / Documentation Department Pack](../../04-agents/departments/factory-knowledge-documentation-pack.md), [Security / Privacy / Authority Department Pack](../../04-agents/departments/factory-security-privacy-authority-pack.md), [Optimization Department Pack](../../04-agents/departments/factory-optimization-pack.md), [Marketing Department Pack](../../04-agents/departments/factory-marketing-pack.md), and first [Factory role specs](../../04-agents/roles/README.md) with the owner.
 2. Use [Factory Ops](ops/README.md) to create the next ticket for Founder Interface pack, prompt wrappers/custom agent files, or the project workspace template.
 3. Review the initial [Ops Templates](templates/ops/README.md) and tighten fields based on dogfooding.
 4. Design the CLI/context-pack helper after the manual workflow is clear.
