@@ -24,8 +24,13 @@ The foundational direction is clear: build a reusable AI development company ope
 - Preferred project workspace folders: `.github/`, `agents/`, `product/`, `ops/`.
 - Work hierarchy: Project -> Goal -> Feature -> Task -> Ticket.
 - Ticket is the smallest assignable unit.
+- Tickets always belong to exactly one task; tasks can contain many tickets.
 - Execution agents should not commit directly; commits go through a release agent.
 - Important founder decisions should flow into a founder inbox with options and recommendations.
+- Founder inbox items block their related ticket until the owner answers through the personal assistant and the decision is routed back.
+- Every ticket should declare required reviewers when known.
+- Ticket lifecycle includes execution self-review, external fresh-context review, and testing before release readiness.
+- Marketing is a Factory department for market-facing copy, tags, positioning, launch materials, and market research when relevant.
 - Markdown should hold product/spec/design docs; YAML/JSON should hold operational state when useful.
 - Start with architecture/spec documentation, then folder templates, then dashboard/control-plane implementation.
 - For self-improvement, use Hermes Agent as the learning-intake and curation reference, and SkillOpt as the validation/promotion reference.
@@ -36,16 +41,17 @@ The foundational direction is clear: build a reusable AI development company ope
 - [Operating Model](design/operating-model.md)
 - [Project Workspace Layout](design/project-workspace-layout.md)
 - [Source Comparison Plan](design/source-comparison-plan.md)
+- [Source Use Map](design/source-use-map.md)
 - [Open Questions](design/open-questions.md)
 - [Roadmap](roadmap.md)
 
 ## Next Recommended Moves
 
 1. Review the initial architecture and operating-model docs with the owner.
-2. Run a targeted source-comparison pass for the first implementable areas: control plane, workflow loop, agent/skill structure, review/release gates, and optimization.
-3. Define the v0 learning-candidate lifecycle for Reflect: captured, candidate, validated, promoted, rejected, archived.
-4. Define v0 folder templates for `agents/`, `product/`, and `ops/` in a project workspace.
-5. Define the first ticket, context pack, founder inbox item, release gate, and learning-candidate schemas.
+2. Use the source-use map to run targeted comparison only when a Factory component is being designed.
+3. Define the first v0 schemas: task, ticket, run, founder inbox item, approval, context pack, review record, release checklist, and learning candidate.
+4. Define the v0 learning-candidate lifecycle for Reflect: captured, candidate, validated, promoted, rejected, archived.
+5. Define v0 folder templates for `agents/`, `product/`, and `ops/` in a project workspace.
 6. Decide dashboard v0 scope: read-only, write-capable ops state, or local CLI bridge.
 
 ## Related Docs

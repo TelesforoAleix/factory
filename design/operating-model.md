@@ -12,14 +12,20 @@ Agents are functional roles, not personalities.
 Project -> Goal -> Feature -> Task -> Ticket
 ```
 
-Tickets are the smallest assignable unit.
+- Project: product or initiative.
+- Goal: strategic or measurable outcome inside the project.
+- Feature: product capability or significant functional area.
+- Task: larger unit of work inside a feature.
+- Ticket: smallest assignable unit for an agent.
+
+Tickets always belong to exactly one task. A task can contain multiple tickets. Bugs, chores, and follow-ups should still be represented as tickets under an existing task, or under a newly created task when no existing task fits.
 
 ## Default Lifecycle
 
 Initial lifecycle:
 
 ```text
-inbox -> discovery -> ready -> assigned -> in_progress -> review -> revision -> release_ready -> shipped -> archived
+inbox -> discovery -> ready -> assigned -> in_progress -> self_review -> external_review -> testing -> revision -> release_ready -> shipped -> archived
 blocked
 ```
 
@@ -30,12 +36,16 @@ Meaning:
 - ready: ticket has enough context and acceptance criteria.
 - assigned: owner selected.
 - in_progress: execution started.
-- review: fresh-context review in progress.
-- revision: execution needs changes.
+- self_review: execution agent reflects on its own work before handoff.
+- external_review: fresh-context review is active.
+- testing: the system checks that the work behaves correctly.
+- revision: execution needs changes after self-review, external review, or testing.
 - release_ready: release agent can evaluate commit/PR readiness.
 - shipped: committed/merged/released according to project rules.
 - archived: operational state closed, durable learning preserved.
 - blocked: needs external decision, missing information, or dependency.
+
+Review and testing are separate concepts. Review checks what was built against intent and quality; testing checks that it works.
 
 ## Core Role Layers
 
@@ -51,6 +61,8 @@ Owns:
 - open questions
 - important escalations
 
+Founder inbox items can block a ticket. When the owner answers through the personal assistant, the assistant records the decision and unblocks or reroutes the ticket.
+
 ### Executive Orchestrator
 
 Primary responsibility: route work across departments.
@@ -62,6 +74,7 @@ Owns:
 - dependency management
 - parallel work coordination
 - final synthesis for the owner
+- deciding which ready tickets can run in parallel
 
 ### Product / Feature Owner
 
@@ -76,6 +89,8 @@ Owns:
 - goals/features/tasks/tickets
 - acceptance criteria
 - product drift detection
+
+Feature-owner and orchestrator responsibilities may be held by the same agent in v0 when that is simpler.
 
 ### Architect / Context Architect
 
@@ -100,6 +115,7 @@ Owns:
 - local reasoning about assigned ticket
 - clear result reports
 - creating help tickets when blocked
+- self-review before handoff
 
 Does not own:
 
@@ -119,6 +135,8 @@ Owns:
 - revision feedback
 - specialist review routing
 
+Every ticket should declare required reviewers when known. The orchestrator or feature owner can add missing reviewers when the ticket's risk profile changes.
+
 ### Specialist Reviewer
 
 Primary responsibility: review work in a narrow domain when relevant.
@@ -133,6 +151,19 @@ Possible specialties:
 - architecture
 - context/memory
 - performance
+- marketing/copy
+
+### Marketing Agent
+
+Primary responsibility: market-facing language and materials when relevant.
+
+Owns:
+
+- landing-page copy suggestions
+- tags and messaging
+- positioning alternatives
+- market research when needed
+- launch or marketing material review
 
 ### Release Agent
 
@@ -176,7 +207,7 @@ Each department can keep its own improvement notes, but central optimization run
 
 ## Communication Rule
 
-When raising a meaningful problem or decision to the owner or another agent:
+When raising a meaningful problem or decision to the owner:
 
 - state the context
 - state the decision needed
@@ -186,6 +217,8 @@ When raising a meaningful problem or decision to the owner or another agent:
 - include pros/cons when useful
 
 Important decisions should normally include three options.
+
+Agent-to-agent communication does not always need the options format. Agents should share insight, recommendations, risks, and next-action suggestions in the format most useful to the receiving agent.
 
 ## Approval Levels
 
@@ -230,6 +263,8 @@ Review context pack:
 - specialist concerns
 - review output format
 
+The v0 format can be JSON, YAML, or Markdown with frontmatter. The priority is lightweight machine usability plus enough human readability for the owner to inspect.
+
 ## Release Rule
 
 Execution agents do not commit directly.
@@ -237,9 +272,12 @@ Execution agents do not commit directly.
 Release agent can commit when:
 
 - ticket scope matches result
-- review passed or required revision completed
+- self-review is complete
+- external review passed or required revision completed
 - tests/checks are sufficient for risk level
 - docs/state updates are complete when needed
 - no founder-level approval is pending
 
 If any of those fail, the release agent rejects, requests revision, or escalates.
+
+Release agent can batch multiple tickets into a task-level commit when they form one coherent unit of work.

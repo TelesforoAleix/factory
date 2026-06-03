@@ -24,13 +24,13 @@
 
 - Which departments are mandatory for v0?
 - Which specialist reviewers should exist on day one?
-- Should market research be a default department or on-demand?
+- What is the exact scope of the Marketing department beyond copy, tags, market research, launch materials, and public-facing phrasing?
 - Should context architecture be a department or a specialist role inside architecture?
 
 ## Release And CI/CD
 
 - What branch model should project workspaces use?
-- How often should the release agent commit?
+- When should the release agent create ticket-level commits versus task-level batch commits?
 - When should PRs be created?
 - What tests/checks are required before a release agent can commit?
 - Which release actions require founder approval?
@@ -41,6 +41,7 @@
 - What validation tasks should be created first?
 - How should rejected improvements be stored?
 - How does central optimization coordinate with department-owned improvement notes?
+- Do project-specific learning candidates start in project `ops/` and promote to the central brain only when reusable?
 
 ## Project Sync
 
