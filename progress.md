@@ -12,7 +12,9 @@ The Factory has been activated as a project design space under `03-projects/ai-d
 
 The foundational direction is clear: build a reusable AI development company operating system for the owner's projects, with [project] as the first serious test. The v0 operating objects now have initial copyable templates under `03-projects/ai-development-team/templates/ops/`.
 
-The Factory itself is now being developed inside `03-projects/ai-development-team/`. Its own live operating state starts in `03-projects/ai-development-team/ops/`, so the next step is to use this internal `ops/` layer to drive first reusable agent/department specs and the manual Factory workflow. Dashboard and CLI automation remain deferred.
+The Factory itself is now being developed inside `03-projects/ai-development-team/`. Its own live operating state starts in `03-projects/ai-development-team/ops/`, and the seeded internal-ops ticket has now been dogfooded through execution evidence, self-review, fresh-context review, validation/testing evidence, release readiness, and learning capture.
+
+The next step is to define the manual Factory workflow using that dogfood pass as the worked example. Dashboard and CLI automation remain deferred.
 
 ## Locked Decisions
 
@@ -58,10 +60,10 @@ The Factory itself is now being developed inside `03-projects/ai-development-tea
 
 ## Next Recommended Moves
 
-1. Use [Factory Ops](ops/README.md) to create the next tickets for first reusable agent/department specs.
-2. Define the advisory-agent pattern and first architecture advisory role.
-3. Draft the first reusable agent/department specs in [04-agents](../../04-agents/README.md) when they are ready to become canonical.
-4. Define the manual Factory workflow from ticket creation through release and reflection.
+1. Define the manual Factory workflow from ticket creation through release and reflection, using [LEARN-2026-0001](ops/learning/LEARN-2026-0001-manual-workflow-gate.yaml) as input.
+2. Use [Factory Ops](ops/README.md) to create the next tickets for first reusable agent/department specs.
+3. Define the advisory-agent pattern and first architecture advisory role.
+4. Draft the first reusable agent/department specs in [04-agents](../../04-agents/README.md) when they are ready to become canonical.
 5. Review the initial [Ops Templates](templates/ops/README.md) and tighten fields based on dogfooding.
 6. Design the CLI/context-pack helper after the manual workflow is clear.
 7. Decide dashboard v0 scope only after object templates, self-hosting ops, and manual workflow are stable.
