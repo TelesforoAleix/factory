@@ -1,6 +1,10 @@
 # Skills
 
-Workflow definitions used by the assistant layer.
+Development-team workflow definitions used by the assistant layer.
+
+Core brain OS skills live in [../../.github/skills](../../.github/skills/README.md). Use this folder for skills that help build, review, plan, test, or ship the owner's ideas and projects.
+
+Some existing skill specs predate the split. New brain OS source-routing work should use [Knowledge Builder](../../.github/skills/knowledge-builder/SKILL.md); keep this folder for development-team workflows and migrate or split older overlaps deliberately.
 
 ## Current Skills
 
@@ -12,6 +16,7 @@ Workflow definitions used by the assistant layer.
 ## Related Schema
 
 - [Brain Workspace Instructions](../../.github/copilot-instructions.md)
+- [Brain OS Skills](../../.github/skills/README.md)
 - [LLM Wiki Health Check](../../knowledge-base/methods/llm-wiki-health-check.md)
 - [Source Deep-Dive Workflow](../../knowledge-base/methods/source-deep-dive-workflow.md)
 
