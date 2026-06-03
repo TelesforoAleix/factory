@@ -22,7 +22,9 @@ The Knowledge / Documentation department pack now defines the documentation, sta
 
 The Security / Privacy / Authority department pack now defines risk review, approval-level mapping, required reviewers, and stop conditions for security/privacy/authority-sensitive Factory work.
 
-The next step is to review the registry and department packs with the owner, then decide whether to create the Founder Interface pack, Optimization pack, prompt wrappers/custom agent files, or the project workspace template next.
+The Optimization department pack now defines learning intake, validation, promotion gates, rejected-change memory, and curation for Factory agents, skills, templates, and workflow improvements.
+
+The next step is to review the registry and department packs with the owner, then decide whether to create the Founder Interface pack, prompt wrappers/custom agent files, or the project workspace template next.
 
 ## Locked Decisions
 
@@ -37,6 +39,7 @@ The next step is to review the registry and department packs with the owner, the
 - The Factory role registry and V0 core department pack live in `04-agents/` as coordination docs before runnable agents exist.
 - The Knowledge / Documentation department pack lives in `04-agents/departments/` as the reusable documentation/state/decision/session/learning contract.
 - The Security / Privacy / Authority department pack lives in `04-agents/departments/` as the reusable risk review and approval-routing contract.
+- The Optimization department pack lives in `04-agents/departments/` as the reusable learning-intake, validation, promotion, and curation contract.
 - Some agents should be advisory-only: they can read/synthesize knowledge and provide recommendations, but do not execute tickets or edit code.
 - Project-specific operational output should live in each project workspace, not in the brain by default.
 - Preferred project workspace folders: `.github/`, `agents/`, `product/`, `ops/`.
@@ -74,8 +77,8 @@ The next step is to review the registry and department packs with the owner, the
 
 ## Next Recommended Moves
 
-1. Review the [Factory Role Registry](../../04-agents/role-registry.md), [Factory V0 Core Department Pack](../../04-agents/departments/factory-v0-core-pack.md), [Knowledge / Documentation Department Pack](../../04-agents/departments/factory-knowledge-documentation-pack.md), [Security / Privacy / Authority Department Pack](../../04-agents/departments/factory-security-privacy-authority-pack.md), and first [Factory role specs](../../04-agents/roles/README.md) with the owner.
-2. Use [Factory Ops](ops/README.md) to create the next ticket for Founder Interface pack, Optimization pack, prompt wrappers/custom agent files, or the project workspace template.
+1. Review the [Factory Role Registry](../../04-agents/role-registry.md), [Factory V0 Core Department Pack](../../04-agents/departments/factory-v0-core-pack.md), [Knowledge / Documentation Department Pack](../../04-agents/departments/factory-knowledge-documentation-pack.md), [Security / Privacy / Authority Department Pack](../../04-agents/departments/factory-security-privacy-authority-pack.md), [Optimization Department Pack](../../04-agents/departments/factory-optimization-pack.md), and first [Factory role specs](../../04-agents/roles/README.md) with the owner.
+2. Use [Factory Ops](ops/README.md) to create the next ticket for Founder Interface pack, prompt wrappers/custom agent files, or the project workspace template.
 3. Review the initial [Ops Templates](templates/ops/README.md) and tighten fields based on dogfooding.
 4. Design the CLI/context-pack helper after the manual workflow is clear.
 5. Decide dashboard v0 scope only after object templates, self-hosting ops, manual workflow, and first role specs are stable.
