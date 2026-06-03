@@ -83,9 +83,8 @@ This pack should leave the manual workflow artifacts:
 - Product / Feature Owner can shape product truth, but founder-level decisions must be escalated.
 - Executive Orchestrator can route work and create blockers, but should not replace specialist review.
 
-## What Is Not In This Pack Yet
+## What Is Now Separate From This Pack
 
-- Founder Interface as a full reusable role
 - Knowledge / Documentation role
 - Optimization Department role
 - Marketing role
@@ -93,6 +92,8 @@ This pack should leave the manual workflow artifacts:
 - runnable prompt wrappers
 - custom agent files
 - CLI or dashboard automation
+
+Founder Interface now has a dedicated [Founder Interface / Personal Assistant Department Pack](factory-founder-interface-pack.md).
 
 ## Promotion Rule
 
