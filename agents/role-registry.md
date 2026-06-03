@@ -201,3 +201,10 @@ Outputs:
 ## V0 Boundary
 
 These are operating contracts. Do not create runnable custom agents from this registry until at least one more manual workflow pass proves the required prompt/context shape.
+
+## Department Packs
+
+Additional reusable department packs extend this registry without creating runnable agents:
+
+- [Factory V0 Core Department Pack](departments/factory-v0-core-pack.md)
+- [Factory Knowledge / Documentation Department Pack](departments/factory-knowledge-documentation-pack.md)
