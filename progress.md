@@ -4,7 +4,7 @@ Live project-state file for The Factory.
 
 ## Current Phase
 
-Ops templates and project workspace template design.
+Factory self-hosting and first manual operating workflow.
 
 ## Current Status
 
@@ -12,7 +12,7 @@ The Factory has been activated as a project design space under `03-projects/ai-d
 
 The foundational direction is clear: build a reusable AI development company operating system for the owner's projects, with [project] as the first serious test. The v0 operating objects now have initial copyable templates under `03-projects/ai-development-team/templates/ops/`.
 
-The next step is still not dashboard implementation. The next step is to create the project workspace template for `.github/`, `agents/`, `product/`, and `ops/`, then move into first agent/department specs, manual workflow, CLI/context-pack helpers, and only later a dashboard prototype.
+The Factory itself is now being developed inside `03-projects/ai-development-team/`. Its own live operating state starts in `03-projects/ai-development-team/ops/`, so the next step is to use this internal `ops/` layer to drive first reusable agent/department specs and the manual Factory workflow. Dashboard and CLI automation remain deferred.
 
 ## Locked Decisions
 
@@ -38,6 +38,7 @@ The next step is still not dashboard implementation. The next step is to create 
 - Markdown should hold product/spec/design docs; YAML/JSON should hold operational state when useful.
 - V0 operating objects are task, ticket, run/session, founder inbox item, approval, context pack, review record, release checklist, and learning candidate.
 - Initial v0 ops templates live under `03-projects/ai-development-team/templates/ops/` before being copied into any real project workspace.
+- The Factory's own live operational state lives under `03-projects/ai-development-team/ops/` while The Factory is being built.
 - Recommended storage direction: YAML for most state objects, JSON or JSONL for run/session state and events, Markdown with YAML frontmatter for context packs and release checklists, and YAML for v0 review records.
 - Start with architecture/spec documentation, then folder templates, then dashboard/control-plane implementation.
 - For self-improvement, use Hermes Agent as the learning-intake and curation reference, and SkillOpt as the validation/promotion reference.
@@ -50,19 +51,20 @@ The next step is still not dashboard implementation. The next step is to create 
 - [Source Comparison Plan](design/source-comparison-plan.md)
 - [Source Use Map](design/source-use-map.md)
 - [V0 Operating Objects](design/v0-operating-objects.md)
+- [Factory Ops](ops/README.md)
 - [Templates](templates/README.md)
 - [Open Questions](design/open-questions.md)
 - [Roadmap](roadmap.md)
 
 ## Next Recommended Moves
 
-1. Review the initial [Ops Templates](templates/ops/README.md) with the owner and tighten fields before using them in a real project workspace.
-2. Define the v0 project workspace template for `.github/`, `agents/`, `product/`, and `ops/`.
-3. Define the advisory-agent pattern and first architecture advisory role.
-4. Draft the first reusable agent/department specs in [04-agents](../../04-agents/README.md).
-5. Define the manual Factory workflow from ticket creation through release and reflection.
+1. Use [Factory Ops](ops/README.md) to create the next tickets for first reusable agent/department specs.
+2. Define the advisory-agent pattern and first architecture advisory role.
+3. Draft the first reusable agent/department specs in [04-agents](../../04-agents/README.md) when they are ready to become canonical.
+4. Define the manual Factory workflow from ticket creation through release and reflection.
+5. Review the initial [Ops Templates](templates/ops/README.md) and tighten fields based on dogfooding.
 6. Design the CLI/context-pack helper after the manual workflow is clear.
-7. Decide dashboard v0 scope only after object templates, workspace template, and manual workflow are stable.
+7. Decide dashboard v0 scope only after object templates, self-hosting ops, and manual workflow are stable.
 
 ## Related Docs
 

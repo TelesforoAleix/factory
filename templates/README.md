@@ -2,7 +2,9 @@
 
 Reusable template examples for installing The Factory into future project workspaces.
 
-These files live inside the Factory design project for now. They are not live operational state for a real project yet.
+These files live inside the Factory project. They are copyable templates, not live operational state.
+
+The Factory's live self-hosting operational state lives in [Factory Ops](../ops/README.md).
 
 ## Template Sets
 
@@ -16,8 +18,7 @@ These files live inside the Factory design project for now. They are not live op
 
 ## Next Template Work
 
-1. Project workspace template for `.github/`, `agents/`, `product/`, and `ops/`.
-2. First agent and department specs in `04-agents/`.
-3. Manual Factory workflow from ticket creation through release and reflection.
-4. CLI/context-pack helper.
-5. Dashboard prototype.
+1. Tighten templates based on the internal Factory dogfood pass.
+2. Project workspace template for `.github/`, `agents/`, `product/`, and `ops/` after the internal workflow proves the shape.
+3. CLI/context-pack helper after the manual workflow is clear.
+4. Dashboard prototype.
