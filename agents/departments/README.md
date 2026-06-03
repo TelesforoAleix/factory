@@ -9,6 +9,7 @@ Departments define ownership boundaries and role groupings. They are not runnabl
 - [Factory V0 Core](factory-v0-core.md): first reusable operating department set for The Factory.
 - [Factory V0 Core Department Pack](factory-v0-core-pack.md): packaged v0 role roster, routing matrix, permissions, and activation checklist.
 - [Factory Architecture / Context Architecture Department Pack](factory-architecture-context-pack.md): reusable system architecture, context architecture, tradeoff, advisory, and ADR-review department.
+- [Factory Engineering Department Expansion Pack](factory-engineering-expansion-pack.md): reusable implementation, refactoring, integration, debugging, engineering handoff, and context-pack execution department.
 - [Factory Founder Interface / Personal Assistant Department Pack](factory-founder-interface-pack.md): reusable founder inbox, personal assistant, decision interview, status briefing, and decision-routing department.
 - [Factory Knowledge / Documentation Department Pack](factory-knowledge-documentation-pack.md): reusable documentation, state, decision, session, and learning-routing department.
 - [Factory Marketing Department Pack](factory-marketing-pack.md): reusable positioning, copy, launch materials, tags, market research, and marketing-review department.

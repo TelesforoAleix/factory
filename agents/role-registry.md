@@ -208,6 +208,7 @@ Additional reusable department packs extend this registry without creating runna
 
 - [Factory V0 Core Department Pack](departments/factory-v0-core-pack.md)
 - [Factory Architecture / Context Architecture Department Pack](departments/factory-architecture-context-pack.md)
+- [Factory Engineering Department Expansion Pack](departments/factory-engineering-expansion-pack.md)
 - [Factory Founder Interface / Personal Assistant Department Pack](departments/factory-founder-interface-pack.md)
 - [Factory Knowledge / Documentation Department Pack](departments/factory-knowledge-documentation-pack.md)
 - [Factory Marketing Department Pack](departments/factory-marketing-pack.md)
