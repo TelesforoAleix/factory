@@ -6,6 +6,8 @@ Core brain OS customizations live in [../.github](../.github/README.md). Use `.g
 
 ## Main Entry Points
 
+- [Departments](departments/README.md): reusable Factory department specs.
+- [Roles](roles/README.md): reusable Factory role specs.
 - [Orchestrator](orchestrator/README.md): current orchestrator status and future agent boundary rules.
 - [Skills](skills/README.md): reusable development-team workflow definitions for ideas, sessions, tasks, and project-building support.
 - [Copilot Instructions](../.github/copilot-instructions.md): always-on workspace schema.
@@ -13,13 +15,15 @@ Core brain OS customizations live in [../.github](../.github/README.md). Use `.g
 
 ## Current Agent Files
 
-No custom development-team agent files are active yet.
+No runnable custom development-team agent files are active yet.
+
+The first reusable Factory department and role specs now exist under [Departments](departments/README.md) and [Roles](roles/README.md). These are operating contracts, not executable agents.
 
 ## Factory Design Link
 
 [The Factory](../03-projects/ai-development-team/README.md) is the active project for designing the owner's reusable AI development company operating system.
 
-Reusable agent and skill definitions should eventually live here in `04-agents/`; The Factory project holds the product, architecture, operating-model, and project-workspace design.
+Reusable agent and skill definitions live here in `04-agents/`; The Factory project holds the product, architecture, operating-model, manual workflow, and project-workspace design.
 
 ## Rule
 

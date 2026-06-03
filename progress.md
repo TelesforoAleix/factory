@@ -4,7 +4,7 @@ Live project-state file for The Factory.
 
 ## Current Phase
 
-Manual workflow and first reusable agent/department specs.
+First reusable agent/department specs.
 
 ## Current Status
 
@@ -14,7 +14,9 @@ The foundational direction is clear: build a reusable AI development company ope
 
 The Factory itself is now being developed inside `03-projects/ai-development-team/`. Its own live operating state starts in `03-projects/ai-development-team/ops/`, and the seeded internal-ops ticket has now been dogfooded through execution evidence, self-review, fresh-context review, validation/testing evidence, release readiness, and learning capture.
 
-The manual Factory workflow now exists as the canonical v0 operating procedure before CLI or dashboard automation. The next step is to use it as the shared operating contract for first reusable agent/department specs in `04-agents/`.
+The manual Factory workflow now exists as the canonical v0 operating procedure before CLI or dashboard automation. The first reusable Factory department and role specs now exist in `04-agents/` as operating contracts, not runnable custom agents.
+
+The next step is to review these specs with the owner, then decide whether to create prompt wrappers/custom agent files or the project workspace template next.
 
 ## Locked Decisions
 
@@ -25,6 +27,7 @@ The manual Factory workflow now exists as the canonical v0 operating procedure b
 - Canonical design/spec work belongs in `03-projects/ai-development-team/`.
 - The Factory itself can be developed inside `03-projects/ai-development-team/` while it needs direct access to `04-agents/` and `knowledge-base/`.
 - Reusable agents and skills belong in `04-agents/`.
+- First reusable Factory role specs exist in `04-agents/roles/` and use the manual workflow as their shared operating contract.
 - Some agents should be advisory-only: they can read/synthesize knowledge and provide recommendations, but do not execute tickets or edit code.
 - Project-specific operational output should live in each project workspace, not in the brain by default.
 - Preferred project workspace folders: `.github/`, `agents/`, `product/`, `ops/`.
@@ -62,13 +65,11 @@ The manual Factory workflow now exists as the canonical v0 operating procedure b
 
 ## Next Recommended Moves
 
-1. Use [Manual Workflow](design/manual-workflow.md) as the shared operating contract for first reusable agent/department specs.
-2. Use [Factory Ops](ops/README.md) to create the next tickets for first reusable agent/department specs.
-3. Define the advisory-agent pattern and first architecture advisory role.
-4. Draft the first reusable agent/department specs in [04-agents](../../04-agents/README.md) when they are ready to become canonical.
-5. Review the initial [Ops Templates](templates/ops/README.md) and tighten fields based on dogfooding.
-6. Design the CLI/context-pack helper after the manual workflow is clear.
-7. Decide dashboard v0 scope only after object templates, self-hosting ops, and manual workflow are stable.
+1. Review the first [Factory role specs](../../04-agents/roles/README.md) and [Factory V0 Core department](../../04-agents/departments/factory-v0-core.md) with the owner.
+2. Use [Factory Ops](ops/README.md) to create the next ticket for either prompt wrappers/custom agent files or the project workspace template.
+3. Review the initial [Ops Templates](templates/ops/README.md) and tighten fields based on dogfooding.
+4. Design the CLI/context-pack helper after the manual workflow is clear.
+5. Decide dashboard v0 scope only after object templates, self-hosting ops, manual workflow, and first role specs are stable.
 
 ## Related Docs
 
