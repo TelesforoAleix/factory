@@ -6,15 +6,14 @@ Core brain OS customizations live in [../.github](../.github/README.md). Use `.g
 
 ## Main Entry Points
 
-- [Orchestrator](orchestrator/README.md): [removed] and the assistant architecture.
+- [Orchestrator](orchestrator/README.md): current orchestrator status and future agent boundary rules.
 - [Skills](skills/README.md): reusable development-team workflow definitions for ideas, sessions, tasks, and project-building support.
 - [Copilot Instructions](../.github/copilot-instructions.md): always-on workspace schema.
 - [Brain OS Skills](../.github/skills/README.md): runnable repository-maintenance skills.
 
 ## Current Agent Files
 
-- [[removed] Spec](orchestrator/removed.md)
-- [[removed] Prompt](orchestrator/removed.prompt.md)
+No custom development-team agent files are active yet.
 
 ## Rule
 

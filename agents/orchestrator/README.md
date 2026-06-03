@@ -1,45 +1,26 @@
 # Orchestrator Layer
 
-## Agents
+## Current State
 
-### [removed: personal assistant]
-Sparring partner, thinking mentor, brain organizer. The main interface between the owner and the brain.
-- **Spec:** [removed.md](removed.md)
-- **System prompt:** [removed.prompt.md](removed.prompt.md)
+No personal orchestrator agent is active.
 
-### Skill Agents (Functional)
-| Agent | Purpose | Output |
+The previous personal assistant prompt/spec has been removed. The active operating model is now:
+
+- Brain OS behavior lives in [../../.github](../../.github/README.md).
+- Runnable brain-maintenance skills live in [../../.github/skills](../../.github/skills/README.md).
+- Development-team skills live in [../skills](../skills/README.md).
+- Future project or development agents should be added only when a repeated workflow needs persistent role scope, separate context, or tool boundaries.
+
+## Functional Skills
+
+| Skill | Purpose | Output |
 |-------|---------|--------|
-| Idea Logger | Captures ideas → structured backlog | `ideas/` entries |
-| Knowledge Builder | Captures raw sources, then processes PDFs, videos, repos, articles, reports, and chats into durable knowledge | `inbox/` and `knowledge-base/` markdown files |
+| Idea Logger | Captures ideas into structured backlog notes | `ideas/` entries |
+| Knowledge Builder | Routes and processes source material through the brain OS | `inbox/`, `knowledge-base/`, indexes, sessions |
 | Task Tracker | Logs tasks and activities | `session-logs/` entries |
 | Session Archiver | Records conversation threads and session logs | `session-logs/` |
 
-See `skills/` directory for individual specs.
-
-### Future Agents
-- Project Lead agents (per project)
-- Dev agents (software development)
-- These will be separate from [removed] — he provides context, they execute
-
-## Architecture
-```
-                    ┌─────────────┐
-                    │    the owner     │
-                    └──────┬──────┘
-                           │
-                    ┌──────▼──────┐
-                    │   [removed]     │  ← sparring, thinking, organizing
-                    │  (personal) │
-                    └──────┬──────┘
-                           │ provides context to
-              ┌────────────┼────────────┐
-              ▼            ▼            ▼
-        ┌──────────┐ ┌──────────┐ ┌──────────┐
-        │ Project  │ │ Project  │ │   Dev    │
-        │ Lead A   │ │ Lead B   │ │  Agents  │
-        └──────────┘ └──────────┘ └──────────┘
-```
+See [../skills](../skills/README.md) for development-team specs and [../../.github/skills](../../.github/skills/README.md) for brain OS skills.
 
 ## Always-On Instructions
 
@@ -51,7 +32,7 @@ Workspace-level Copilot behavior lives in `.github/copilot-instructions.md`. Thi
 - activated work goes to `03-projects/`
 - every meaningful conversation gets a session note in `session-logs/`
 
-[removed]'s prompt is still useful for explicit reflection, brainstorming, decision-making, and personal operating-system conversations. The Copilot instructions are the baseline; the prompt is the focused mode.
+The Copilot instructions are the baseline. Focused prompts or agents should be added only after a reusable workflow has been validated as a skill or method.
 
 ## Knowledge Processing Flow
 
@@ -64,7 +45,7 @@ Workspace-level Copilot behavior lives in `.github/copilot-instructions.md`. Thi
 
 ## Agent Boundary Decision
 
-No extra custom agent is needed yet for source processing. The current `Knowledge Builder` skill should own capture and deep-dive workflows.
+No extra custom agent is needed yet for source processing. The current Brain OS `Knowledge Builder` skill should own capture and deep-dive workflows.
 
 Add a dedicated source researcher or project lead agent only when the work needs a separate context window, a repeated multi-step workflow, or different tool permissions.
 
