@@ -23,6 +23,7 @@ It is not [project]-specific. [project] is the first serious test project, but T
 
 - [AI Development Team Blueprint](../../knowledge-base/ai-development/ai-development-team-blueprint.md)
 - [Agent Control Plane Dashboard Patterns](../../knowledge-base/ai-development/agent-control-plane-dashboard-patterns.md)
+- [Self-Improving Agent Learning Loops](../../knowledge-base/ai-development/self-improving-agent-learning-loops.md)
 - [AI Development Team Source Extraction Matrix](../../knowledge-base/ai-development/ai-development-team-source-extraction-matrix.md)
 - [Development Team Sprint Workflow](../../knowledge-base/methods/development-team-sprint-workflow.md)
 - [Skill Improvement Loop](../../knowledge-base/methods/skill-improvement-loop.md)

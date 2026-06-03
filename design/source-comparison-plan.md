@@ -83,14 +83,18 @@ Questions:
 Sources:
 
 - SkillOpt
+- Hermes Agent
 - existing Brain OS validation work
 - ECC continuous learning patterns
 
 Questions:
 
 - What evidence triggers an improvement proposal?
+- What belongs in memory, session search, candidate lessons, or canonical skills?
 - Should improvement notes live per department, centrally, or both?
 - How are agent/skill updates validated and promoted?
+- Does v0 need a curator, or is a session-note learning inbox enough?
+- What can be auto-captured, and what always needs the owner approval?
 
 ### 6. Dashboard And Bridge
 

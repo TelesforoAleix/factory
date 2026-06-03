@@ -28,6 +28,7 @@ The foundational direction is clear: build a reusable AI development company ope
 - Important founder decisions should flow into a founder inbox with options and recommendations.
 - Markdown should hold product/spec/design docs; YAML/JSON should hold operational state when useful.
 - Start with architecture/spec documentation, then folder templates, then dashboard/control-plane implementation.
+- For self-improvement, use Hermes Agent as the learning-intake and curation reference, and SkillOpt as the validation/promotion reference.
 
 ## Current Design Areas
 
@@ -42,9 +43,10 @@ The foundational direction is clear: build a reusable AI development company ope
 
 1. Review the initial architecture and operating-model docs with the owner.
 2. Run a targeted source-comparison pass for the first implementable areas: control plane, workflow loop, agent/skill structure, review/release gates, and optimization.
-3. Define v0 folder templates for `agents/`, `product/`, and `ops/` in a project workspace.
-4. Define the first ticket, context pack, founder inbox item, and release gate schemas.
-5. Decide dashboard v0 scope: read-only, write-capable ops state, or local CLI bridge.
+3. Define the v0 learning-candidate lifecycle for Reflect: captured, candidate, validated, promoted, rejected, archived.
+4. Define v0 folder templates for `agents/`, `product/`, and `ops/` in a project workspace.
+5. Define the first ticket, context pack, founder inbox item, release gate, and learning-candidate schemas.
+6. Decide dashboard v0 scope: read-only, write-capable ops state, or local CLI bridge.
 
 ## Related Docs
 
@@ -54,6 +56,7 @@ The foundational direction is clear: build a reusable AI development company ope
 - [AI Development Team Discovery](../../session-logs/2026-06-03-ai-development-team-discovery.md)
 - [AI Development Team Blueprint](../../knowledge-base/ai-development/ai-development-team-blueprint.md)
 - [Agent Control Plane Dashboard Patterns](../../knowledge-base/ai-development/agent-control-plane-dashboard-patterns.md)
+- [Self-Improving Agent Learning Loops](../../knowledge-base/ai-development/self-improving-agent-learning-loops.md)
 
 ## Last Updated
 
