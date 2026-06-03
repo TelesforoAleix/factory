@@ -14,6 +14,7 @@ Departments define ownership boundaries and role groupings. They are not runnabl
 - [Factory Knowledge / Documentation Department Pack](factory-knowledge-documentation-pack.md): reusable documentation, state, decision, session, and learning-routing department.
 - [Factory Marketing Department Pack](factory-marketing-pack.md): reusable positioning, copy, launch materials, tags, market research, and marketing-review department.
 - [Factory Product Department Expansion Pack](factory-product-expansion-pack.md): reusable idea intake, requirements, PRD, feature/task/ticket shaping, acceptance criteria, and product-drift review department.
+- [Factory Review / QA Department Expansion Pack](factory-review-qa-expansion-pack.md): reusable fresh-context review, test planning, regression testing, UX/UI review routing, revision review, and review/test separation department.
 - [Factory Security / Privacy / Authority Department Pack](factory-security-privacy-authority-pack.md): reusable security, privacy/GDPR, permissions, authority, and risk-gating department.
 - [Factory Optimization Department Pack](factory-optimization-pack.md): reusable learning intake, validation, promotion, and curation department.
 
