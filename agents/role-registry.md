@@ -211,5 +211,6 @@ Additional reusable department packs extend this registry without creating runna
 - [Factory Founder Interface / Personal Assistant Department Pack](departments/factory-founder-interface-pack.md)
 - [Factory Knowledge / Documentation Department Pack](departments/factory-knowledge-documentation-pack.md)
 - [Factory Marketing Department Pack](departments/factory-marketing-pack.md)
+- [Factory Product Department Expansion Pack](departments/factory-product-expansion-pack.md)
 - [Factory Security / Privacy / Authority Department Pack](departments/factory-security-privacy-authority-pack.md)
 - [Factory Optimization Department Pack](departments/factory-optimization-pack.md)

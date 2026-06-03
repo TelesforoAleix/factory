@@ -85,6 +85,7 @@ This pack should leave the manual workflow artifacts:
 
 ## What Is Now Separate From This Pack
 
+- Product expansion role set
 - Knowledge / Documentation role
 - Optimization Department role
 - Marketing role
@@ -93,7 +94,7 @@ This pack should leave the manual workflow artifacts:
 - custom agent files
 - CLI or dashboard automation
 
-Founder Interface now has a dedicated [Founder Interface / Personal Assistant Department Pack](factory-founder-interface-pack.md).
+Founder Interface now has a dedicated [Founder Interface / Personal Assistant Department Pack](factory-founder-interface-pack.md). Product expansion now has a dedicated [Product Department Expansion Pack](factory-product-expansion-pack.md).
 
 ## Promotion Rule
 
