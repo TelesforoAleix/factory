@@ -9,6 +9,7 @@ The Factory's live self-hosting operational state lives in [Factory Ops](../ops/
 ## Template Sets
 
 - [Ops Templates](ops/README.md): copyable examples for task, ticket, run, founder inbox item, approval, context pack, review record, release checklist, and learning candidate objects.
+- [Project Workspace Template](project-workspace/README.md): copyable folder scaffold for installing The Factory into future project workspaces.
 
 ## Boundary
 
@@ -19,6 +20,6 @@ The Factory's live self-hosting operational state lives in [Factory Ops](../ops/
 ## Next Template Work
 
 1. Tighten templates based on the internal Factory dogfood pass.
-2. Project workspace template for `.github/`, `agents/`, `product/`, and `ops/` after the internal workflow proves the shape.
+2. Dogfood the project workspace template on the next real project workspace setup.
 3. CLI/context-pack helper after the manual workflow is clear.
 4. Dashboard prototype.

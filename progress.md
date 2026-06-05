@@ -4,7 +4,7 @@ Live project-state file for The Factory.
 
 ## Current Phase
 
-First runnable Factory prompt wrappers.
+Project workspace template dogfood.
 
 ## Current Status
 
@@ -42,7 +42,9 @@ The Release / CI-CD department expansion pack now defines release readiness, bra
 
 The first thin prompt wrappers now exist under `.github/prompts/factory/` for Executive Orchestrator, Product / Feature Owner, Execution Agent, Review / QA Agent, Release Agent, Advisory Architect, and Founder Interface / Personal Assistant. Founder Interface now also has a compact individual role-spec bridge in `04-agents/roles/`.
 
-The next step is to use these wrappers on the first real Factory self-build ticket: creating the v0 project workspace template.
+The first real Factory self-build ticket after prompt-wrapper creation is complete: `TICKET-2026-0014` created the v0 project workspace template under `03-projects/ai-development-team/templates/project-workspace/` with tracked `.github/`, `agents/`, `product/`, and `ops/` folders.
+
+The next step is to use the template on the first future Factory-managed project workspace and tighten it based on real project use.
 
 ## Locked Decisions
 
@@ -73,6 +75,7 @@ The next step is to use these wrappers on the first real Factory self-build tick
 - Some agents should be advisory-only: they can read/synthesize knowledge and provide recommendations, but do not execute tickets or edit code.
 - Project-specific operational output should live in each project workspace, not in the brain by default.
 - Preferred project workspace folders: `.github/`, `agents/`, `product/`, `ops/`.
+- The copyable project workspace template lives under `03-projects/ai-development-team/templates/project-workspace/`.
 - Work hierarchy: Project -> Goal -> Feature -> Task -> Ticket.
 - Ticket is the smallest assignable unit.
 - Tickets always belong to exactly one task; tasks can contain many tickets.
@@ -107,12 +110,11 @@ The next step is to use these wrappers on the first real Factory self-build tick
 
 ## Next Recommended Moves
 
-1. Use [Factory Ops](ops/README.md) to create the first self-build ticket for the project workspace template.
-2. Dogfood the first prompt wrappers through the manual loop: orchestrate -> define ticket -> execute -> review -> release -> report.
-3. Create `03-projects/ai-development-team/templates/project-workspace/` after the self-build ticket is shaped.
-4. Review the initial [Ops Templates](templates/ops/README.md) and tighten fields based on dogfooding.
-5. Design the CLI/context-pack helper after the manual workflow is clear.
-6. Decide dashboard v0 scope only after object templates, self-hosting ops, manual workflow, role specs, and prompt wrappers are stable.
+1. Use the [Project Workspace Template](templates/project-workspace/README.md) on the first future Factory-managed project workspace.
+2. Tighten project-local ops fields after first real project use.
+3. Review the initial [Ops Templates](templates/ops/README.md) and tighten field names based on dogfooding.
+4. Design the CLI/context-pack helper after the manual workflow is clear.
+5. Decide dashboard v0 scope only after object templates, self-hosting ops, manual workflow, role specs, prompt wrappers, and project workspace template use are stable.
 
 ## Related Docs
 

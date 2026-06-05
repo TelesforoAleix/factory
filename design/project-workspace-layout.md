@@ -75,7 +75,9 @@ ops/
   inbox/
   approvals/
   context-packs/
+  reviews/
   releases/
+  learning/
   archive/
   dashboard-state/
 ```
@@ -89,11 +91,19 @@ Potential files:
 - `inbox/*.yaml`
 - `approvals/*.yaml`
 - `context-packs/*.md`
+- `reviews/*.yaml`
 - `releases/*.md`
+- `learning/*.yaml`
+
+## V0 Template
+
+The copyable v0 scaffold now lives at [Project Workspace Template](../templates/project-workspace/README.md).
+
+The exact state schema is still allowed to evolve, but the v0 folder shape should include the manual workflow surfaces already used by The Factory itself: goals, features, tasks, tickets, runs, inbox, approvals, context packs, reviews, releases, learning, dashboard state, and archive.
 
 ## Open Design Choice
 
-The exact state schema is not locked.
+The exact object schema is not locked.
 
 The next design pass should define minimal v0 schemas for:
 
@@ -102,7 +112,9 @@ The next design pass should define minimal v0 schemas for:
 - founder inbox item
 - approval
 - context pack
+- review record
 - release checklist
+- learning candidate
 
 ## Guardrail
 

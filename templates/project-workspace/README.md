@@ -1,0 +1,58 @@
+# Project Workspace Template
+
+Copyable v0 workspace scaffold for installing The Factory into future project workspaces.
+
+This template keeps project-specific product work and operating state outside the brain while preserving a simple connection to the canonical Factory role and prompt system.
+
+## Structure
+
+```text
+project-workspace/
+  .github/
+  agents/
+  product/
+  ops/
+```
+
+## Folder Boundaries
+
+- `.github/`: project-local instructions, prompts, workflows, and tool configuration.
+- `agents/`: synced or copied reusable Factory roles, departments, skills, prompt wrappers, and local overrides.
+- `product/`: actual application, tool, product, or artifact code.
+- `ops/`: project-specific Factory operating state.
+
+## Operating State
+
+The `ops/` folder starts with the v0 manual workflow surfaces:
+
+```text
+ops/
+  goals/
+  features/
+  tasks/
+  tickets/
+  runs/
+  inbox/
+  approvals/
+  context-packs/
+  reviews/
+  releases/
+  learning/
+  dashboard-state/
+  archive/
+```
+
+Use the object examples in [Ops Templates](../ops/README.md) as the source shape for concrete task, ticket, run, inbox, approval, context-pack, review, release, and learning records.
+
+## Canonical Sources
+
+- [Project Workspace Layout](../../design/project-workspace-layout.md)
+- [Factory Manual Workflow](../../design/manual-workflow.md)
+- [Factory Role Registry](../../../../04-agents/role-registry.md)
+- [Factory Prompts](../../../../.github/prompts/factory/README.md)
+- [Factory Departments](../../../../04-agents/departments/README.md)
+- [Factory Roles](../../../../04-agents/roles/README.md)
+
+## Boundary
+
+Reusable Factory definitions stay in the brain's `04-agents/` and `.github/prompts/factory/` layers. This template is for project-local working copies, product code, and operating state.
