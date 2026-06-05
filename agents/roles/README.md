@@ -12,6 +12,7 @@ Role specs define responsibilities, boundaries, inputs, outputs, and workflow du
 - [Review / QA Agent](review-qa-agent.md)
 - [Release Agent](release-agent.md)
 - [Advisory Architect](advisory-architect.md)
+- [Founder Interface / Personal Assistant](founder-interface-personal-assistant.md)
 
 ## Shared Operating Contract
 
@@ -31,4 +32,4 @@ A role spec should answer:
 - when it must stop or escalate
 - what learning it should capture
 
-Do not create a runnable custom agent until the role has been used manually and the needed prompt/context shape is clear.
+Thin prompt wrappers now exist for the first Factory wrapper set under [Factory Prompts](../../.github/prompts/factory/README.md). Do not create a full runnable custom agent until the role has been used manually and the needed prompt/context shape, isolation, and tool boundaries are clear.

@@ -53,7 +53,7 @@ These six roles are the core v0 loop. Department packs below add specialist cont
 | [Factory Knowledge / Documentation Department Pack](departments/factory-knowledge-documentation-pack.md) | Knowledge / Documentation Lead; Session Archivist; Project State Maintainer; Decision / ADR Archivist; Docs Reviewer; Learning Candidate Router | Preserves session, state, docs, decision, and learning continuity around the loop | Activate when work changes durable docs/state/decisions or creates reusable learning | Expansion/support roles, not runnable by default |
 | [Factory Marketing Department Pack](departments/factory-marketing-pack.md) | Marketing Lead; Positioning Strategist; Copywriter; Market Researcher; Launch Materials Reviewer; Marketing Advisory Agent | Translates product truth into market-facing language when public copy or launch material exists | Activate for positioning, launch, tags, market research, public claims, or market-facing copy | Expansion/advisory roles, not runnable by default |
 | [Factory Optimization Department Pack](departments/factory-optimization-pack.md) | Optimization Lead; Learning Intake Curator; Skill / Agent Evaluator; Skill / Agent Editor; Promotion Gatekeeper; Learning Library Curator | Validates and promotes reusable improvements after evidence exists | Activate for repeated failures, learning candidates, prompt/skill/agent/template changes, or promotion decisions | Specialist/gate roles, not runnable by default |
-| [Factory Founder Interface / Personal Assistant Department Pack](departments/factory-founder-interface-pack.md) | Founder Interface Lead; Personal Assistant Agent; Founder Inbox Manager; Decision Interviewer; Status Briefing Agent; Decision Router | Handles founder questions, decision capture, status briefings, and answer routing back into blocked tickets | Activate when the owner must decide, clarify, approve, or receive a status briefing | First wrapper candidate, with role-spec bridge needed |
+| [Factory Founder Interface / Personal Assistant Department Pack](departments/factory-founder-interface-pack.md) | Founder Interface Lead; Personal Assistant Agent; Founder Inbox Manager; Decision Interviewer; Status Briefing Agent; Decision Router | Handles founder questions, decision capture, status briefings, and answer routing back into blocked tickets | Activate when the owner must decide, clarify, approve, or receive a status briefing | First wrapper source; role-spec bridge exists |
 
 ## First Runnable Wrapper Selection
 
@@ -67,9 +67,11 @@ The first runnable layer should be thin prompt wrappers, not full custom agents.
 | Review / QA Agent | [Review / QA Agent](roles/review-qa-agent.md) | Performs fresh-context review before release | Existing role spec is enough |
 | Release Agent | [Release Agent](roles/release-agent.md) | Owns release readiness and commit/PR scope | Existing role spec is enough |
 | Advisory Architect | [Advisory Architect](roles/advisory-architect.md) | Provides read-only architecture/context synthesis from project docs and `knowledge-base/` | Existing role spec is enough; keep read-only by default |
-| Founder Interface / Personal Assistant | [Founder Interface / Personal Assistant Department Pack](departments/factory-founder-interface-pack.md) | Manages founder inbox, decisions, status briefings, and answer routing | Create a compact individual role spec before or alongside the wrapper |
+| Founder Interface / Personal Assistant | [Founder Interface / Personal Assistant](roles/founder-interface-personal-assistant.md) | Manages founder inbox, decisions, status briefings, and answer routing | Department pack remains the supporting contract |
 
 Recommended wrapper home: `.github/prompts/factory/`. Keep canonical role truth in `04-agents/`; wrappers should link back here instead of duplicating entire packs.
+
+The first wrapper files now live in [Factory Prompts](../.github/prompts/factory/README.md).
 
 ## Cross-Department Boundary Rules
 
@@ -241,6 +243,32 @@ Outputs:
 - relevant references
 - suggested next action
 
+### Founder Interface / Personal Assistant
+
+Department: Founder Interface / Personal Assistant.
+
+Permissions and boundaries:
+
+- Can present founder inbox items, decisions, and status briefings to the owner.
+- Can capture founder answers and route them back to blocked tickets, approvals, sessions, or project-state artifacts when assigned.
+- Cannot decide on the owner's behalf, request secrets through chat, or bypass specialist review and release gates.
+
+Inputs:
+
+- founder inbox item or decision request
+- related task, ticket, approval, release, blocker, or status context
+- options, recommendation, and impact if unanswered
+- relevant specialist review findings
+- prior founder decisions or preferences when relevant
+
+Outputs:
+
+- concise founder-facing question or briefing
+- captured answer or follow-up question
+- routing summary for blocked work
+- assigned state/docs updates or recommendations
+- next-role handoff
+
 ## Authority Summary
 
 | Authority | Roles |
@@ -251,6 +279,7 @@ Outputs:
 | Can fresh-context review | Review / QA Agent; specialist reviewers when routed |
 | Can provide read-only advisory synthesis | Advisory Architect |
 | Can decide release readiness | Release Agent |
+| Can capture and route founder answers | Founder Interface / Personal Assistant when assigned |
 | Can commit directly | Release Agent only when project rules allow and all gates pass |
 | Requires founder escalation | Any role when product direction, architecture, credentials, security/privacy, paid/external service, or project truth changes are involved |
 

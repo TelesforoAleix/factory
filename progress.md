@@ -4,7 +4,7 @@ Live project-state file for The Factory.
 
 ## Current Phase
 
-Registry operationalization and first runnable prompt-wrapper selection.
+First runnable Factory prompt wrappers.
 
 ## Current Status
 
@@ -40,7 +40,9 @@ The Review / QA department expansion pack now defines fresh-context review, test
 
 The Release / CI-CD department expansion pack now defines release readiness, branch/commit/PR rules, batching rules, CI/CD monitoring, release notes coordination, and escalation paths.
 
-The next step is to create the first thin prompt wrappers before turning additional expansion roles into runnable agents. The selected first wrapper set is Executive Orchestrator, Product / Feature Owner, Execution Agent, Review / QA Agent, Release Agent, Advisory Architect, and Founder Interface / Personal Assistant. Founder Interface should get a compact individual role-spec bridge before or alongside its first prompt wrapper.
+The first thin prompt wrappers now exist under `.github/prompts/factory/` for Executive Orchestrator, Product / Feature Owner, Execution Agent, Review / QA Agent, Release Agent, Advisory Architect, and Founder Interface / Personal Assistant. Founder Interface now also has a compact individual role-spec bridge in `04-agents/roles/`.
+
+The next step is to use these wrappers on the first real Factory self-build ticket: creating the v0 project workspace template.
 
 ## Locked Decisions
 
@@ -56,7 +58,8 @@ The next step is to create the first thin prompt wrappers before turning additio
 - The Factory role registry now reflects all department packs, not only the original six core roles.
 - Department expansion roles decompose or support core v0 roles when activation triggers apply; they are not runnable by default.
 - First runnable prompt wrappers should be thin `.prompt.md` wrappers under the repo's GitHub prompt layer, with `04-agents/` remaining the source of truth.
-- Founder Interface / Personal Assistant is selected for the first wrapper set, but it needs an individual role-spec bridge because it currently exists as a department pack rather than a standalone role spec.
+- Founder Interface / Personal Assistant now has an individual role-spec bridge because it is part of the first wrapper set.
+- The first Factory prompt wrappers live under `.github/prompts/factory/` and are thin wrappers over the canonical role specs and department packs.
 - The Knowledge / Documentation department pack lives in `04-agents/departments/` as the reusable documentation/state/decision/session/learning contract.
 - The Security / Privacy / Authority department pack lives in `04-agents/departments/` as the reusable risk review and approval-routing contract.
 - The Optimization department pack lives in `04-agents/departments/` as the reusable learning-intake, validation, promotion, and curation contract.
@@ -104,9 +107,9 @@ The next step is to create the first thin prompt wrappers before turning additio
 
 ## Next Recommended Moves
 
-1. Create a compact Founder Interface / Personal Assistant role-spec bridge under `04-agents/roles/`.
-2. Create the first thin Factory prompt wrappers for Executive Orchestrator, Product / Feature Owner, Execution Agent, Review / QA Agent, Release Agent, Advisory Architect, and Founder Interface / Personal Assistant.
-3. Use [Factory Ops](ops/README.md) to create the first self-build ticket for the project workspace template after the prompt wrappers exist.
+1. Use [Factory Ops](ops/README.md) to create the first self-build ticket for the project workspace template.
+2. Dogfood the first prompt wrappers through the manual loop: orchestrate -> define ticket -> execute -> review -> release -> report.
+3. Create `03-projects/ai-development-team/templates/project-workspace/` after the self-build ticket is shaped.
 4. Review the initial [Ops Templates](templates/ops/README.md) and tighten fields based on dogfooding.
 5. Design the CLI/context-pack helper after the manual workflow is clear.
 6. Decide dashboard v0 scope only after object templates, self-hosting ops, manual workflow, role specs, and prompt wrappers are stable.

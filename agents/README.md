@@ -16,7 +16,9 @@ Core brain OS customizations live in [../.github](../.github/README.md). Use `.g
 
 ## Current Agent Files
 
-No runnable custom development-team agent files are active yet.
+No full custom development-team agent files are active yet.
+
+The first thin Factory prompt wrappers are active under [Factory Prompts](../.github/prompts/factory/README.md). They are prompt wrappers, not custom agents; canonical role and department truth remains in `04-agents/`.
 
 The first reusable Factory department and role specs now exist under [Departments](departments/README.md) and [Roles](roles/README.md). These are operating contracts, not executable agents.
 
