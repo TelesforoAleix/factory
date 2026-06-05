@@ -44,6 +44,10 @@ ops/
 
 Use the object examples in [Ops Templates](../ops/README.md) as the source shape for concrete task, ticket, run, inbox, approval, context-pack, review, release, and learning records.
 
+## First Use
+
+Use the [First-Use Checklist](FIRST-USE.md) when applying this template to a real project workspace.
+
 ## Canonical Sources
 
 - [Project Workspace Layout](../../design/project-workspace-layout.md)

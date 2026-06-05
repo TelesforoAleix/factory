@@ -44,7 +44,11 @@ The first thin prompt wrappers now exist under `.github/prompts/factory/` for Ex
 
 The first real Factory self-build ticket after prompt-wrapper creation is complete: `TICKET-2026-0014` created the v0 project workspace template under `03-projects/ai-development-team/templates/project-workspace/` with tracked `.github/`, `agents/`, `product/`, and `ops/` folders.
 
-The next step is to use the template on the first future Factory-managed project workspace and tighten it based on real project use.
+The reusable ops templates were compared against the latest live dogfood records and still match at the top-level schema. No conservative field cleanup was needed yet.
+
+The project workspace template now has a first-use checklist for applying it to a real project without mixing branch rules, canonical Factory assets, project-local ops, or product implementation files.
+
+The next step is to use the checklist and template on the first future Factory-managed project workspace, then tighten templates based on real project setup friction.
 
 ## Locked Decisions
 
@@ -76,6 +80,7 @@ The next step is to use the template on the first future Factory-managed project
 - Project-specific operational output should live in each project workspace, not in the brain by default.
 - Preferred project workspace folders: `.github/`, `agents/`, `product/`, `ops/`.
 - The copyable project workspace template lives under `03-projects/ai-development-team/templates/project-workspace/`.
+- The project workspace first-use checklist lives under `03-projects/ai-development-team/templates/project-workspace/FIRST-USE.md`.
 - Work hierarchy: Project -> Goal -> Feature -> Task -> Ticket.
 - Ticket is the smallest assignable unit.
 - Tickets always belong to exactly one task; tasks can contain many tickets.
@@ -110,9 +115,9 @@ The next step is to use the template on the first future Factory-managed project
 
 ## Next Recommended Moves
 
-1. Use the [Project Workspace Template](templates/project-workspace/README.md) on the first future Factory-managed project workspace.
+1. Use the [Project Workspace First-Use Checklist](templates/project-workspace/FIRST-USE.md) when applying the template to the first future Factory-managed project workspace.
 2. Tighten project-local ops fields after first real project use.
-3. Review the initial [Ops Templates](templates/ops/README.md) and tighten field names based on dogfooding.
+3. Capture template friction as learning candidates before changing canonical templates.
 4. Design the CLI/context-pack helper after the manual workflow is clear.
 5. Decide dashboard v0 scope only after object templates, self-hosting ops, manual workflow, role specs, prompt wrappers, and project workspace template use are stable.
 
