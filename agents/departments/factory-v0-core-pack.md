@@ -99,6 +99,27 @@ This pack should leave the manual workflow artifacts:
 
 Founder Interface now has a dedicated [Founder Interface / Personal Assistant Department Pack](factory-founder-interface-pack.md). Product expansion now has a dedicated [Product Department Expansion Pack](factory-product-expansion-pack.md). Engineering expansion now has a dedicated [Engineering Department Expansion Pack](factory-engineering-expansion-pack.md). Review / QA expansion now has a dedicated [Review / QA Department Expansion Pack](factory-review-qa-expansion-pack.md). Release / CI-CD expansion now has a dedicated [Release / CI-CD Department Expansion Pack](factory-release-cicd-expansion-pack.md).
 
+## Expansion Sequencing
+
+Run the core loop standalone first:
+
+```text
+orchestrate -> define ticket -> execute -> review -> release -> learning capture
+```
+
+Department expansion packs attach to this loop when a trigger appears. They decompose core roles rather than replacing the loop.
+
+Default sequencing:
+
+- Use the six core roles when a ticket can be completed safely with clear intent, bounded execution, fresh-context review, and release readiness.
+- Route to Product expansion when intent, hierarchy, PRD, acceptance criteria, or product drift needs specialist handling.
+- Route to Engineering expansion when implementation needs specialist execution, refactor, integration, debugging, or handoff support.
+- Route to Review / QA expansion when review/test evidence, UX/UI routing, revision verification, or specialist review coordination needs more depth.
+- Route to Release / CI-CD expansion when commit/PR scope, branch rules, batching, CI/checks, release notes, or release gatekeeping needs more depth.
+- Route to Architecture / Context, Security / Privacy / Authority, Marketing, Knowledge / Documentation, Founder Interface, or Optimization when their explicit activation triggers apply.
+
+Expansion roles are not runnable by default. Promote them toward prompt wrappers only after repeated manual use proves the required inputs, stop conditions, outputs, and authority boundaries.
+
 ## Promotion Rule
 
-This pack is reusable, but still v0. Promote it toward runnable agents only after it survives more manual Factory tickets without major boundary changes.
+This pack is reusable, but still v0. Promote it toward prompt wrappers first, and toward full custom agents only after it survives more manual Factory tickets without major boundary changes.

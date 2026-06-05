@@ -228,6 +228,17 @@ Boundaries:
 | Candidate may affect agents/skills | Learning Candidate Router | Optimization Department later |
 | Release readiness needs docs confirmation | Project State Maintainer | Docs Reviewer, Release Agent |
 
+## Coordination With Optimization
+
+Knowledge / Documentation captures the trail; Optimization changes the reusable system.
+
+- Knowledge / Documentation owns session notes, progress/current-state files, decision records, docs navigation, and initial learning-candidate routing.
+- Learning Candidate Router can mark a lesson as local, reusable, validation-needed, parked, rejected, or candidate for Optimization.
+- Optimization owns validation, bounded edits, promotion/rejection decisions, and reusable learning-library curation.
+- Canonical changes to role specs, department packs, prompts, skills, templates, or workflow rules require Optimization-style evidence and release gates.
+
+If Knowledge / Documentation notices a repeated workflow issue, it should create or route a learning candidate rather than directly promoting a broad rule.
+
 ## Required Artifacts
 
 Depending on the ticket, this department should produce or update:
@@ -301,7 +312,7 @@ Stop and escalate when:
 - Advisory Architect provides architecture/context advice; Decision / ADR Archivist records accepted decisions.
 - Review / QA can request Docs Reviewer support for documentation-heavy tickets.
 - Release Agent depends on this department for docs/state readiness.
-- Optimization Department later validates reusable learning before promotion.
+- Optimization Department validates reusable learning before promotion and owns reusable agent/skill/template improvement gates.
 
 ## Not In V0
 

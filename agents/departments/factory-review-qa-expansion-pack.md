@@ -54,6 +54,19 @@ It does not execute the original ticket, approve its own execution, commit, or r
 | UX/UI Review Router | Specialist routing role | Coordination and advisory | Detects user-facing/visual/interaction changes and routes UX/UI review when needed |
 | Revision Request Reviewer | Revision review specialist | Review role | Checks whether requested revisions were addressed before work returns to release readiness |
 
+## Relationship To Core Registry
+
+The core [Review / QA Agent](../roles/review-qa-agent.md) remains the v0 default for fresh-context review and verification adequacy.
+
+Use this expansion pack when review needs decomposition:
+
+- Review / QA Lead routes review depth and specialist needs.
+- Fresh-Context Reviewer handles intent, acceptance criteria, scope, self-review, and changed-artifact review.
+- Test Planner and Regression Tester separate validation strategy from evidence collection.
+- UX/UI Review Router and Revision Request Reviewer activate only when their surfaces appear.
+
+Review / QA can route security/privacy/authority risk, but it does not replace the Security / Privacy / Authority department when that department's triggers appear.
+
 ## Activation Triggers
 
 Activate this department when a ticket, run, or release candidate needs:
@@ -364,6 +377,8 @@ Stop and request revision, specialist review, or escalation when:
 - Review / QA can block release readiness, but Release Agent owns the final release checklist and commit/PR decision.
 - Review / QA routes security/privacy/authority, architecture/context, UX/UI, docs, marketing/copy, product, and performance concerns to specialist reviewers.
 - Review / QA can recommend follow-up tickets, but Product/Executive Orchestrator owns work shaping.
+- A Review / QA pass does not satisfy Security / Privacy / Authority review when risk triggers apply.
+- If Release changes staged files, batching, or release scope after review, the changed scope must return to Review / QA.
 
 ## Not In V0
 

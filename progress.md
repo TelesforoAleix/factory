@@ -4,7 +4,7 @@ Live project-state file for The Factory.
 
 ## Current Phase
 
-First reusable agent/department specs.
+Registry operationalization and first runnable prompt-wrapper selection.
 
 ## Current Status
 
@@ -17,6 +17,8 @@ The Factory itself is now being developed inside `03-projects/ai-development-tea
 The manual Factory workflow now exists as the canonical v0 operating procedure before CLI or dashboard automation. The first reusable Factory department and role specs now exist in `04-agents/` as operating contracts, not runnable custom agents.
 
 The role registry and V0 core department pack now make those specs scannable by role, department, type, permissions, boundaries, inputs, outputs, ticket powers, review/release authority, and advisory/execution status.
+
+The registry has now been operationalized as the role-layer source of truth across the full department-pack system. It distinguishes core v0 roles, department expansion roles, advisory-only roles, specialist/gate roles, and future runnable prompt-wrapper candidates; it also indexes every department pack and selects the first prompt-wrapper set.
 
 The Knowledge / Documentation department pack now defines the documentation, state, session, decision/ADR, docs-review, and learning-routing layer for Factory-managed work.
 
@@ -38,7 +40,7 @@ The Review / QA department expansion pack now defines fresh-context review, test
 
 The Release / CI-CD department expansion pack now defines release readiness, branch/commit/PR rules, batching rules, CI/CD monitoring, release notes coordination, and escalation paths.
 
-The next step is to review the registry and department packs with the owner, then decide whether to create prompt wrappers/custom agent files or the project workspace template next.
+The next step is to create the first thin prompt wrappers before turning additional expansion roles into runnable agents. The selected first wrapper set is Executive Orchestrator, Product / Feature Owner, Execution Agent, Review / QA Agent, Release Agent, Advisory Architect, and Founder Interface / Personal Assistant. Founder Interface should get a compact individual role-spec bridge before or alongside its first prompt wrapper.
 
 ## Locked Decisions
 
@@ -50,7 +52,11 @@ The next step is to review the registry and department packs with the owner, the
 - The Factory itself can be developed inside `03-projects/ai-development-team/` while it needs direct access to `04-agents/` and `knowledge-base/`.
 - Reusable agents and skills belong in `04-agents/`.
 - First reusable Factory role specs exist in `04-agents/roles/` and use the manual workflow as their shared operating contract.
-- The Factory role registry and V0 core department pack live in `04-agents/` as coordination docs before runnable agents exist.
+- The Factory role registry and V0 core department pack live in `04-agents/` as coordination docs and prompt-wrapper source contracts before full custom agents exist.
+- The Factory role registry now reflects all department packs, not only the original six core roles.
+- Department expansion roles decompose or support core v0 roles when activation triggers apply; they are not runnable by default.
+- First runnable prompt wrappers should be thin `.prompt.md` wrappers under the repo's GitHub prompt layer, with `04-agents/` remaining the source of truth.
+- Founder Interface / Personal Assistant is selected for the first wrapper set, but it needs an individual role-spec bridge because it currently exists as a department pack rather than a standalone role spec.
 - The Knowledge / Documentation department pack lives in `04-agents/departments/` as the reusable documentation/state/decision/session/learning contract.
 - The Security / Privacy / Authority department pack lives in `04-agents/departments/` as the reusable risk review and approval-routing contract.
 - The Optimization department pack lives in `04-agents/departments/` as the reusable learning-intake, validation, promotion, and curation contract.
@@ -98,11 +104,12 @@ The next step is to review the registry and department packs with the owner, the
 
 ## Next Recommended Moves
 
-1. Review the [Factory Role Registry](../../04-agents/role-registry.md), [Factory V0 Core Department Pack](../../04-agents/departments/factory-v0-core-pack.md), [Architecture / Context Architecture Department Pack](../../04-agents/departments/factory-architecture-context-pack.md), [Engineering Department Expansion Pack](../../04-agents/departments/factory-engineering-expansion-pack.md), [Founder Interface / Personal Assistant Department Pack](../../04-agents/departments/factory-founder-interface-pack.md), [Knowledge / Documentation Department Pack](../../04-agents/departments/factory-knowledge-documentation-pack.md), [Product Department Expansion Pack](../../04-agents/departments/factory-product-expansion-pack.md), [Review / QA Department Expansion Pack](../../04-agents/departments/factory-review-qa-expansion-pack.md), [Release / CI-CD Department Expansion Pack](../../04-agents/departments/factory-release-cicd-expansion-pack.md), [Security / Privacy / Authority Department Pack](../../04-agents/departments/factory-security-privacy-authority-pack.md), [Optimization Department Pack](../../04-agents/departments/factory-optimization-pack.md), [Marketing Department Pack](../../04-agents/departments/factory-marketing-pack.md), and first [Factory role specs](../../04-agents/roles/README.md) with the owner.
-2. Use [Factory Ops](ops/README.md) to create the next ticket for prompt wrappers/custom agent files or the project workspace template.
-3. Review the initial [Ops Templates](templates/ops/README.md) and tighten fields based on dogfooding.
-4. Design the CLI/context-pack helper after the manual workflow is clear.
-5. Decide dashboard v0 scope only after object templates, self-hosting ops, manual workflow, and first role specs are stable.
+1. Create a compact Founder Interface / Personal Assistant role-spec bridge under `04-agents/roles/`.
+2. Create the first thin Factory prompt wrappers for Executive Orchestrator, Product / Feature Owner, Execution Agent, Review / QA Agent, Release Agent, Advisory Architect, and Founder Interface / Personal Assistant.
+3. Use [Factory Ops](ops/README.md) to create the first self-build ticket for the project workspace template after the prompt wrappers exist.
+4. Review the initial [Ops Templates](templates/ops/README.md) and tighten fields based on dogfooding.
+5. Design the CLI/context-pack helper after the manual workflow is clear.
+6. Decide dashboard v0 scope only after object templates, self-hosting ops, manual workflow, role specs, and prompt wrappers are stable.
 
 ## Related Docs
 
@@ -116,4 +123,4 @@ The next step is to review the registry and department packs with the owner, the
 
 ## Last Updated
 
-2026-06-04
+2026-06-06

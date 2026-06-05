@@ -51,6 +51,19 @@ It owns review and guidance for:
 | Architecture Advisory Agent | Advisory specialist | Advisory-only by default | Reads `knowledge-base/` and project docs to synthesize options and recommendations without executing tickets |
 | Architecture Decision / ADR Reviewer | Decision reviewer | Review/documentation role | Reviews architecture decisions and ADRs for clarity, rationale, consequences, and traceability |
 
+## Relationship To Core Registry
+
+The core [Advisory Architect](../roles/advisory-architect.md) remains the v0 default architecture role and is read-only by default.
+
+This department pack decomposes that advisory surface when architecture work needs more specific handling:
+
+- Architecture Advisory Agent maps most closely to the core Advisory Architect and stays advisory-only by default.
+- Architecture Lead, System Architect, Context Architect, Technical Tradeoff Reviewer, and Architecture Decision / ADR Reviewer are specialist expansion roles.
+- Specialist roles may execute architecture docs or ADR work only when assigned a separate scoped execution ticket.
+- ADR authorship and ADR review should be separated when the decision is durable or high-impact.
+
+Do not use this pack to let an advisory role mutate project truth, ops state, code, or release state without an explicit ticket and the normal review/release gates.
+
 ## Activation Triggers
 
 Activate this department when a ticket touches or implies:
@@ -342,6 +355,7 @@ Stop and escalate when:
 - Product / Feature Owner clarifies product intent and user impact.
 - Knowledge / Documentation archives ADRs and keeps docs navigable.
 - Security / Privacy / Authority reviews risky architecture decisions.
+- Review / QA checks whether execution followed architecture constraints when those constraints are part of the ticket.
 - Optimization routes reusable architecture lessons into candidates.
 - Release Agent depends on this department when release readiness has architecture conditions.
 

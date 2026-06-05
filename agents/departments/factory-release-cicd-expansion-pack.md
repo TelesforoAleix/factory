@@ -54,6 +54,18 @@ The department is the last human/agent gate before a commit, PR, merge, or ship 
 | Release Notes Coordinator | Documentation/release specialist | Light execution | Prepares release notes, changelog snippets, migration notes, rollback notes, and post-release follow-ups |
 | Release Gatekeeper | Final gatekeeper | Gatekeeping role | Approves ready/rejected/revision/escalation decision based on all review, test, approval, and repository evidence |
 
+## Relationship To Core Registry
+
+The core [Release Agent](../roles/release-agent.md) remains the v0 default for release readiness, commit/PR scope, and final repository gatekeeping.
+
+Use this expansion pack when release work needs decomposition:
+
+- Release Lead routes release path and branch/commit/PR policy.
+- Commit Readiness Reviewer checks changed/staged file scope, branch, commit message, and repository hygiene.
+- PR Manager, CI/CD Monitor, Release Notes Coordinator, and Release Gatekeeper activate only when their surfaces are needed.
+
+Release consumes Review / QA, specialist review, test, approval, and documentation evidence. It cannot create release readiness by bypassing those gates.
+
 ## Activation Triggers
 
 Activate this department when a ticket, task, or batch is moving toward:
@@ -274,6 +286,12 @@ Boundaries:
 - Commit messages should be short, action-oriented, and match the release scope.
 - If the staged set differs from the release checklist, stop and correct the scope.
 
+### Scope Change Re-Review Rule
+
+If Release changes staged files, batching, release scope, target branch, or commit/PR contents after Review / QA signoff, release readiness is no longer final.
+
+Before commit or PR readiness, route the changed scope back to Review / QA and any triggered specialist reviewers. The release checklist should record whether the re-review passed, failed, or was explicitly not needed because the scope change was only a mechanical staging correction with no artifact/content difference.
+
 ### PR Rules
 
 - Use PRs when project workflow, risk level, branch policy, external review, or collaboration requires them.
@@ -412,6 +430,7 @@ Stop, reject, request revision, or escalate when:
 - Release depends on Knowledge / Documentation for durable docs/state continuity.
 - Release can block or escalate, but it does not make founder-level decisions.
 - Release can commit only when project rules allow, all gates pass, and staged scope is clean.
+- Release scope changes after review require re-review unless they are purely mechanical staging corrections that do not change reviewed content.
 
 ## Not In V0
 

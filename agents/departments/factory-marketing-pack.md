@@ -50,6 +50,17 @@ It does not invent product truth. It translates validated product truth into mar
 | Launch Materials Reviewer | Review specialist | Review role | Reviews public-facing materials for clarity, accuracy, consistency, and launch readiness |
 | Marketing Advisory Agent | Advisory specialist | Advisory-only by default | Synthesizes market, positioning, copy, and channel options without editing or executing by default |
 
+## Relationship To Core Registry
+
+Marketing is an expansion department around the core loop, not a replacement for Product / Feature Owner or Release Agent.
+
+- Product owns validated product truth, scope, acceptance criteria, and project direction.
+- Marketing owns market-facing expression: audience framing, positioning, copy, tags, launch language, and market research summaries.
+- Launch Materials Reviewer may block market-facing release readiness when claims are unclear, unsupported, confusing, or risky.
+- Marketing Advisory Agent is advisory-only unless assigned a separate execution ticket.
+
+If marketing language changes product meaning, Product / Feature Owner has authority over the product truth and Founder Interface handles unresolved strategic positioning decisions.
+
 ## Activation Triggers
 
 Activate this department when a ticket touches or implies:
@@ -324,6 +335,7 @@ Stop and escalate when:
 
 - Product / Feature Owner owns product truth and product direction.
 - Marketing translates approved product truth into market-facing language.
+- If market-facing language changes product meaning, the work returns to Product / Feature Owner and may require Founder Interface escalation.
 - Knowledge / Documentation preserves positioning, launch decisions, and reusable copy patterns.
 - Security / Privacy / Authority reviews risky claims and compliance-sensitive language.
 - Architecture / Context reviews technical claims and limitations.

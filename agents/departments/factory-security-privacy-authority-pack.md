@@ -61,6 +61,17 @@ Activate this department when a ticket touches or implies:
 - destructive operations, migrations, deletion, irreversible writes, or bulk data actions
 - any change whose failure could expose data, grant wrong authority, or silently mutate project truth
 
+## Required Activation From Core Flow
+
+Review / QA and Release must route work into this department when any activation trigger appears. A generic fresh-context review is not enough for Level 2 or Level 3 risk.
+
+Minimum routing rules:
+
+- Execution self-review should state whether security/privacy/authority concerns appeared.
+- Fresh-context review should route triggered risks to Security / Privacy Lead or the required specialist reviewer.
+- Release should block readiness when required risk review, approval, founder decision, mitigation, or documentation is missing.
+- Founder Interface handles founder-level approvals or unresolved risk decisions; Security / Privacy / Authority records the risk and required approval path.
+
 ## Inputs
 
 The department may need:
@@ -337,6 +348,7 @@ Stop and escalate when:
 - Review / QA coordinates fresh-context review but does not replace specialist risk review.
 - Release Agent depends on Risk Gatekeeper for unresolved risk before release readiness.
 - Knowledge / Documentation records decisions, ADRs, approvals, and reusable lessons.
+- Founder Interface captures founder-level risk decisions and routes answers back to blocked tickets.
 
 ## Not In V0
 

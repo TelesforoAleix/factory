@@ -383,6 +383,17 @@ Rules:
 - Security / Privacy / Authority review is required for candidates that alter tools, permissions, external services, credential handling, or autonomous behavior
 - founder approval is required for high-impact behavior changes, project truth changes, or external service usage
 
+## Coordination With Knowledge / Documentation
+
+Optimization depends on Knowledge / Documentation for provenance and continuity, but it owns reusable-system promotion decisions.
+
+- Knowledge / Documentation captures session notes, state updates, decisions, docs changes, and initial learning candidates.
+- Learning Candidate Router can send reusable or validation-needed candidates into Optimization.
+- Optimization validates candidates, proposes bounded edits, preserves rejected-change rationale, and decides promotion, rejection, parking, or archive.
+- Docs Reviewer should review documentation clarity after an optimization change, but docs review alone does not prove that a skill, prompt, agent, or workflow change should be promoted.
+
+If Optimization promotes a change to `04-agents/`, Factory templates, or `.github/skills/`, it should update the relevant docs/state trail through Knowledge / Documentation before release.
+
 ## Routing Rules
 
 | Situation | Primary Role | Supporting Role |

@@ -70,6 +70,20 @@ The department protects The Factory from vague tickets, hidden scope, unreviewab
 | Acceptance Criteria Reviewer | Review specialist | Review role | Reviews whether acceptance criteria are concrete, testable, scoped, and aligned to intent |
 | Product Drift Reviewer | Product review specialist | Review role | Checks whether execution output drifted from product intent, scope, or project truth |
 
+## Relationship To Core Registry
+
+The core [Product / Feature Owner](../roles/product-feature-owner.md) remains the v0 default for ordinary product shaping.
+
+Use this expansion pack when product work needs decomposition:
+
+- Product Lead routes the product work and protects product truth.
+- Feature Owner shapes features, tasks, tickets, scope, and acceptance criteria.
+- Requirements Analyst, PRD Writer, Acceptance Criteria Reviewer, and Product Drift Reviewer activate only when their specialist surface is needed.
+
+Do not run Product Lead and Feature Owner as two independent owners for one simple ticket. If both are involved, Product Lead coordinates and Feature Owner executes the product artifact work.
+
+Marketing may translate product truth into market-facing language, but it does not redefine product meaning. If positioning or copy changes product truth, Product / Feature Owner and Founder Interface must resolve it before release.
+
 ## Activation Triggers
 
 Activate this department when a ticket, session, or idea involves:
@@ -475,6 +489,7 @@ Stop and escalate when:
 - Product can raise founder questions, but Founder Interface owns presentation, answer capture, and routing.
 - Product can use source material, but Knowledge / Documentation owns durable knowledge placement and Source Use Map discipline.
 - Product can request marketing, architecture, security, privacy, authority, QA, or release review, but does not replace those gates.
+- Product has final authority over product meaning when Marketing copy, launch material, tags, or positioning drift from validated product truth.
 
 ## Not In V0
 
