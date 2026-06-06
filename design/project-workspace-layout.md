@@ -55,6 +55,8 @@ Source:
 
 Actual product/application code and artifacts.
 
+The first copied template includes a discovery brief and roadmap/version plan so the first execution loop starts from objectives, scope, non-goals, and visible postponed decisions.
+
 This is where execution agents edit product files.
 
 Release/CI/CD rules decide how work moves from local changes to commits, PRs, and merges.

@@ -11,6 +11,8 @@ project-workspace/
   .github/
   agents/
   product/
+    DISCOVERY.md
+    ROADMAP.md
   ops/
 ```
 
@@ -18,7 +20,7 @@ project-workspace/
 
 - `.github/`: project-local instructions, prompts, workflows, and tool configuration.
 - `agents/`: synced or copied reusable Factory roles, departments, skills, prompt wrappers, and local overrides.
-- `product/`: actual application, tool, product, or artifact code.
+- `product/`: discovery brief, roadmap/version plan, actual application, tool, product, or artifact code.
 - `ops/`: project-specific Factory operating state.
 
 ## Operating State
@@ -47,6 +49,8 @@ Use the object examples in [Ops Templates](../ops/README.md) as the source shape
 ## First Use
 
 Use the [First-Use Checklist](FIRST-USE.md) when applying this template to a real project workspace.
+
+Start with `product/DISCOVERY.md` and `product/ROADMAP.md` before creating the first executable ticket. The first task/ticket should come from a clear objective, first version slice, and visible postponed-decision list.
 
 ## Canonical Sources
 

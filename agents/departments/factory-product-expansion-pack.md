@@ -4,7 +4,7 @@ Status: v0 department pack
 
 This pack expands The Factory's Product department beyond the core Product / Feature Owner role.
 
-It turns rough ideas, founder intent, research, and project context into goals, features, tasks, tickets, acceptance criteria, and founder questions that execution agents can actually use.
+It turns rough ideas, founder intent, research, and project context into discovery briefs, roadmap/version plans, goals, features, tasks, tickets, acceptance criteria, and founder questions that execution agents can actually use.
 
 ## Operating Contract
 
@@ -46,13 +46,16 @@ The Product department makes work worth doing before Engineering does it.
 It owns:
 
 - idea intake and clarification
+- new-project discovery and kickoff shaping
 - product discovery
 - goal framing
 - feature shaping
+- roadmap and version planning
 - task and ticket decomposition
 - requirements and PRDs
 - acceptance criteria
 - scope and non-goals
+- postponed product decisions and trigger conditions
 - product risk and dependency surfacing
 - founder questions when product judgment is needed
 - product drift review after execution
@@ -67,6 +70,7 @@ The department protects The Factory from vague tickets, hidden scope, unreviewab
 | Feature Owner | Product owner | Product execution on product artifacts | Shapes features, tasks, tickets, scope, and acceptance criteria |
 | Requirements Analyst | Discovery specialist | Advisory and product execution | Extracts requirements, constraints, assumptions, dependencies, and open questions |
 | PRD Writer | Product documentation specialist | Execution on PRDs/specs | Writes or updates PRDs, product specs, feature briefs, and decision-ready product docs |
+| Roadmap / Version Planner | Roadmap specialist | Advisory and product execution | Slices product intent into first version, later versions, parked ideas, and postponed-decision triggers |
 | Acceptance Criteria Reviewer | Review specialist | Review role | Reviews whether acceptance criteria are concrete, testable, scoped, and aligned to intent |
 | Product Drift Reviewer | Product review specialist | Review role | Checks whether execution output drifted from product intent, scope, or project truth |
 
@@ -78,7 +82,7 @@ Use this expansion pack when product work needs decomposition:
 
 - Product Lead routes the product work and protects product truth.
 - Feature Owner shapes features, tasks, tickets, scope, and acceptance criteria.
-- Requirements Analyst, PRD Writer, Acceptance Criteria Reviewer, and Product Drift Reviewer activate only when their specialist surface is needed.
+- Requirements Analyst, PRD Writer, Roadmap / Version Planner, Acceptance Criteria Reviewer, and Product Drift Reviewer activate only when their specialist surface is needed.
 
 Do not run Product Lead and Feature Owner as two independent owners for one simple ticket. If both are involved, Product Lead coordinates and Feature Owner executes the product artifact work.
 
@@ -88,8 +92,11 @@ Marketing may translate product truth into market-facing language, but it does n
 
 Activate this department when a ticket, session, or idea involves:
 
+- new project, company, tool, demo, or client workspace kickoff
 - rough founder idea, dictated brainstorm, or unshaped product concept
 - new project, goal, feature, task, or ticket definition
+- first version, later version, roadmap, release-slice, or feature-ordering decisions
+- postponed decisions that should stay visible without blocking the first loop
 - PRD, spec, roadmap, product brief, or feature brief work
 - acceptance criteria that are vague, missing, or untestable
 - scope, non-goals, user value, or priority ambiguity
@@ -107,6 +114,7 @@ Do not activate this department for purely mechanical implementation tickets who
 The department may need:
 
 - the owner's rough idea, dictated input, or founder intent
+- discovery brief, roadmap, or version plan when one exists
 - project spec, roadmap, progress, current goals, features, tasks, and tickets
 - prior founder decisions and founder inbox items
 - market, source, user, domain, or research notes
@@ -121,6 +129,8 @@ The department may need:
 
 The department produces or updates:
 
+- project discovery brief
+- roadmap or version plan
 - clarified product intent
 - goal statement
 - feature brief
@@ -131,6 +141,7 @@ The department produces or updates:
 - requirements summary
 - PRD or product spec
 - product decision notes
+- postponed decision list with trigger conditions
 - founder inbox items with options and recommendations
 - required reviewer list
 - product drift review findings
@@ -230,6 +241,31 @@ Boundaries:
 - does not invent evidence or decisions
 - does not bury unresolved questions inside polished prose
 
+### Roadmap / Version Planner
+
+Owns:
+
+- first usable version scope
+- later-version candidates
+- parked feature ideas
+- feature ordering by release slice
+- postponed decision triggers
+- roadmap notes that connect features to goals and user/workflow value
+
+Ticket powers:
+
+- can draft or update roadmap/version plans
+- can recommend what belongs in v0, v1, v1.x, v2, or parking lot
+- can require Product Lead or Founder Interface review when version scope changes project direction
+- can request follow-up tickets for roadmap, release, or discovery updates
+
+Boundaries:
+
+- does not make founder-level prioritization decisions alone
+- does not turn every mentioned idea into first-version scope
+- does not hide decisions needed now by labeling them deferred
+- does not replace Release / CI-CD ownership of commit or release readiness
+
 ### Acceptance Criteria Reviewer
 
 Owns:
@@ -276,6 +312,8 @@ Boundaries:
 ## Idea-To-Work-Object Pipeline
 
 Use this pipeline when product agents receive a rough idea.
+
+When the rough idea is a new project, run this as a discovery phase before creating the first executable ticket. The first ticket should come from a visible objective, first version slice, and postponed-decision list.
 
 ### 1. Capture Rough Idea
 
@@ -336,7 +374,20 @@ Feature shape:
 - dependencies
 - risks
 
-### 5. Break Into Tasks And Tickets
+### 5. Plan Version Slices And Postponed Decisions
+
+Roadmap / Version Planner separates:
+
+- first usable version
+- later version candidates
+- parked ideas
+- decisions needed before first execution
+- decisions that can wait, with trigger conditions
+- feature ordering by project goal and user/workflow value
+
+Deferred decisions should stay visible in the discovery brief, roadmap, founder inbox, or decision notes. They should not block execution unless their trigger condition has arrived.
+
+### 6. Break Into Tasks And Tickets
 
 Feature Owner decomposes the feature into coherent tasks, then tickets.
 
@@ -360,7 +411,7 @@ Ticket shape:
 
 Every ticket must belong to exactly one task.
 
-### 6. Write Acceptance Criteria
+### 7. Write Acceptance Criteria
 
 Acceptance Criteria Reviewer checks that criteria are:
 
@@ -371,7 +422,7 @@ Acceptance Criteria Reviewer checks that criteria are:
 - clear about docs/state changes
 - clear about required reviewer or founder gates
 
-### 7. Raise Founder Questions
+### 8. Raise Founder Questions
 
 When a founder decision is needed, Product Lead or Requirements Analyst creates a founder inbox item through the Founder Interface pack.
 
@@ -385,7 +436,7 @@ Founder questions should include:
 - impact if unanswered
 - blocked tickets/tasks
 
-### 8. Handoff To Execution
+### 9. Handoff To Execution
 
 Executive Orchestrator routes ready tickets only after:
 
@@ -401,8 +452,11 @@ Executive Orchestrator routes ready tickets only after:
 | Situation | Primary Role | Supporting Role |
 |---|---|---|
 | Rough idea needs shaping | Requirements Analyst | Product Lead, Personal Assistant Agent |
+| New project needs first discovery | Product Lead | Requirements Analyst, Roadmap / Version Planner, Founder Interface |
 | Product hierarchy placement is unclear | Product Lead | Executive Orchestrator |
 | New feature needs definition | Feature Owner | Requirements Analyst |
+| First version or later version order is unclear | Roadmap / Version Planner | Product Lead, Feature Owner |
+| Decision can wait but must stay visible | Roadmap / Version Planner | Founder Interface, Knowledge / Documentation |
 | PRD or spec is needed | PRD Writer | Knowledge / Documentation |
 | Acceptance criteria are vague | Acceptance Criteria Reviewer | Feature Owner |
 | Product direction needs the owner | Founder Interface Department | Product Lead |
@@ -418,6 +472,8 @@ Executive Orchestrator routes ready tickets only after:
 Depending on the ticket, this department should produce or update:
 
 - requirements summary
+- discovery brief
+- roadmap or version plan
 - goal statement
 - feature brief
 - PRD or product spec
@@ -426,6 +482,7 @@ Depending on the ticket, this department should produce or update:
 - acceptance criteria review
 - founder inbox item
 - decision note when product truth changes
+- postponed decision list with trigger conditions
 - required reviewer list
 - product drift review record or finding
 - progress/roadmap update
@@ -437,6 +494,7 @@ Depending on the ticket, this department should produce or update:
 ### Prepare
 
 - clarify the product intent
+- confirm discovery brief and roadmap/version context when starting a new project
 - verify hierarchy placement
 - confirm task and ticket ownership
 - check acceptance criteria, reviewers, blockers, and approval level
@@ -462,7 +520,7 @@ Depending on the ticket, this department should produce or update:
 
 ### Release Readiness
 
-- release is blocked if product truth changed without documentation, if founder questions are unresolved, if criteria are unreviewable, or if tickets lack task ownership
+- release is blocked if product truth changed without documentation, if founder questions needed now are unresolved, if criteria are unreviewable, if tickets lack task ownership, or if a supposedly postponed decision is required for the current release
 
 ### Reflect And Learn
 
@@ -473,6 +531,7 @@ Depending on the ticket, this department should produce or update:
 Stop and escalate when:
 
 - the rough idea's project or intent is unclear
+- first version scope cannot be separated from later ambitions
 - a ticket has no task parent
 - acceptance criteria cannot be made concrete
 - the work would change product direction or project truth without founder approval

@@ -44,7 +44,7 @@ These six roles are the core v0 loop. Department packs below add specialist cont
 | Department Pack | Roles Covered | Relationship To Core Loop | Activation Stage | Runnable Status |
 |---|---|---|---|---|
 | [Factory V0 Core Department Pack](departments/factory-v0-core-pack.md) | Executive Orchestrator; Product / Feature Owner; Execution Agent; Review / QA Agent; Release Agent; Advisory Architect | Defines the minimum v0 loop | Always available for Factory tickets | First wrapper source |
-| [Factory Product Department Expansion Pack](departments/factory-product-expansion-pack.md) | Product Lead; Feature Owner; Requirements Analyst; PRD Writer; Acceptance Criteria Reviewer; Product Drift Reviewer | Decomposes Product / Feature Owner when product shaping needs specialists | Activate for rough ideas, hierarchy shaping, PRDs, criteria, or drift | Expansion roles, not runnable by default |
+| [Factory Product Department Expansion Pack](departments/factory-product-expansion-pack.md) | Product Lead; Feature Owner; Requirements Analyst; PRD Writer; Roadmap / Version Planner; Acceptance Criteria Reviewer; Product Drift Reviewer | Decomposes Product / Feature Owner when product shaping needs specialists | Activate for new-project discovery, rough ideas, hierarchy shaping, roadmap/version planning, PRDs, criteria, or drift | Expansion roles, not runnable by default |
 | [Factory Engineering Department Expansion Pack](departments/factory-engineering-expansion-pack.md) | Engineering Lead; Implementation Agent; Refactor Agent; Integration Agent; Debugging Agent; Engineering Handoff Agent | Decomposes Execution Agent when implementation work needs specialist execution or handoff | Activate for scoped implementation, refactor, integration, debugging, or engineering handoff | Expansion roles, not runnable by default |
 | [Factory Review / QA Department Expansion Pack](departments/factory-review-qa-expansion-pack.md) | Review / QA Lead; Fresh-Context Reviewer; Test Planner; Regression Tester; UX/UI Review Router; Revision Request Reviewer | Decomposes Review / QA Agent when review/test/routing depth increases | Activate after execution self-review or when test, UX, revision, or specialist routing is needed | Expansion/gate roles, not runnable by default |
 | [Factory Release / CI-CD Department Expansion Pack](departments/factory-release-cicd-expansion-pack.md) | Release Lead; Commit Readiness Reviewer; PR Manager; CI/CD Monitor; Release Notes Coordinator; Release Gatekeeper | Decomposes Release Agent when release, commit, PR, CI, or batching depth increases | Activate when work approaches commit, PR, merge, release notes, or release checklist | Expansion/gate roles, not runnable by default |
@@ -62,7 +62,7 @@ The first runnable layer should be thin prompt wrappers, not full custom agents.
 | Wrapper Candidate | Source Contract | Why First | Precondition |
 |---|---|---|---|
 | Executive Orchestrator | [Executive Orchestrator](roles/executive-orchestrator.md) | Chooses next work, routes tickets, and keeps the loop coherent | Existing role spec is enough |
-| Product / Feature Owner | [Product / Feature Owner](roles/product-feature-owner.md) | Turns rough intent into goals, features, tickets, and acceptance criteria | Existing role spec is enough |
+| Product / Feature Owner | [Product / Feature Owner](roles/product-feature-owner.md) | Turns rough intent into discovery, goals, features, version slices, tickets, and acceptance criteria | Existing role spec is enough |
 | Execution Agent | [Execution Agent](roles/execution-agent.md) | Performs scoped ticket work without committing directly | Existing role spec is enough |
 | Review / QA Agent | [Review / QA Agent](roles/review-qa-agent.md) | Performs fresh-context review before release | Existing role spec is enough |
 | Release Agent | [Release Agent](roles/release-agent.md) | Owns release readiness and commit/PR scope | Existing role spec is enough |
@@ -131,8 +131,10 @@ Inputs:
 Outputs:
 
 - clarified intent
+- discovery brief or roadmap/version plan when needed
 - acceptance criteria
 - scope and non-goals
+- postponed decision list with trigger conditions
 - product decision notes
 - founder inbox item when needed
 

@@ -20,6 +20,8 @@ Project -> Goal -> Feature -> Task -> Ticket
 
 Tickets always belong to exactly one task. A task can contain multiple tickets. Bugs, chores, and follow-ups should still be represented as tickets under an existing task, or under a newly created task when no existing task fits.
 
+Before the first goal, feature, task, or ticket in a new project, Product runs project discovery. Discovery turns raw founder intent into objectives, first version scope, postponed decisions, and the first work hierarchy.
+
 ## Default Lifecycle
 
 Initial lifecycle:
@@ -27,6 +29,12 @@ Initial lifecycle:
 ```text
 inbox -> discovery -> ready -> assigned -> in_progress -> self_review -> external_review -> testing -> revision -> release_ready -> shipped -> archived
 blocked
+```
+
+New-project kickoff lifecycle:
+
+```text
+raw intent -> product discovery -> discovery brief -> roadmap/version plan -> first goal/feature/task/ticket
 ```
 
 Meaning:
@@ -82,12 +90,15 @@ Primary responsibility: define what should be built.
 
 Owns:
 
+- project discovery and kickoff shaping
 - discovery
 - requirements
 - PRDs
+- roadmap and version slices
 - roadmap slices
 - goals/features/tasks/tickets
 - acceptance criteria
+- postponed decision register when product decisions can wait
 - product drift detection
 
 Feature-owner and orchestrator responsibilities may be held by the same agent in v0 when that is simpler.

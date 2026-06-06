@@ -12,6 +12,7 @@ Use this workflow for any Factory-managed ticket while automation is not yet ava
 
 Use it especially when:
 
+- a new Factory-managed project needs objectives, first version scope, and product truth before execution
 - a ticket changes Factory docs, templates, ops state, agents, skills, or project truth
 - a ticket needs review or release readiness
 - an execution agent hands off work to another role
@@ -24,6 +25,7 @@ Do not use this as a heavyweight ritual for tiny typo fixes unless the fix is at
 
 Before execution starts, the assigned agent should have:
 
+- project discovery brief and roadmap/version context when starting a new project or unclear product area
 - task record
 - ticket record
 - context pack
@@ -35,6 +37,33 @@ Before execution starts, the assigned agent should have:
 - expected handoff format
 
 The minimum useful set is one task, one ticket, one context pack, and one run record.
+
+## Before Step 1: Product Discovery For New Projects
+
+Before the first executable ticket in a new Factory-managed project, the Product department runs a discovery pass.
+
+Clarify:
+
+- objectives and why the project matters
+- target users, audience, or workflow
+- product shape, scope, and non-goals
+- constraints, dependencies, and relevant brain knowledge
+- first usable version scope
+- later-version candidates and parked ideas
+- decisions needed now versus decisions that can wait
+- roles, departments, skills, reviewers, approvals, and context packs needed for the first loop
+
+Produce or update:
+
+- `product/DISCOVERY.md`
+- `product/ROADMAP.md` or equivalent roadmap/version plan
+- first goal and feature candidates when clear enough
+- postponed decision list with trigger conditions
+- founder inbox items for decisions that block first execution
+
+Deferred decisions are allowed when they are not needed for the first execution loop, but they must stay visible with a trigger condition. Do not hide a blocking decision in the postponed list.
+
+Only create or activate the first task and ticket once the first version slice and acceptance direction are clear enough to review.
 
 ## Step 1: Prepare
 

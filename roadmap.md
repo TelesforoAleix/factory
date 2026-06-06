@@ -35,7 +35,7 @@ Includes:
 
 - `.github/` project instructions template
 - `agents/` synced agent/skill template
-- `product/` placeholder convention
+- `product/` discovery brief, roadmap/version plan, and placeholder convention
 - `ops/` structure for tickets, runs, inbox, approvals, dashboard state, and archives
 - markdown/YAML/JSON templates for core operational objects
 - manual workflow instructions for using The Factory through VS Code/Copilot
@@ -43,6 +43,7 @@ Includes:
 Exit criteria:
 
 - A new project can copy/sync the template and run a manual Factory workflow.
+- A new project starts with objectives, first version scope, and postponed decisions captured before the first executable ticket.
 - A ticket can be created, assigned, executed, reviewed, released, and archived manually.
 
 ## V2 - CLI Bridge And Context Packs

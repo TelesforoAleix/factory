@@ -48,7 +48,9 @@ The reusable ops templates were compared against the latest live dogfood records
 
 The project workspace template now has a first-use checklist for applying it to a real project without mixing branch rules, canonical Factory assets, project-local ops, or product implementation files.
 
-The next step is to use the checklist and template on the first future Factory-managed project workspace, then tighten templates based on real project setup friction.
+The new-project discovery phase is now explicit. Before the first executable ticket in a Factory-managed project, Product should produce or update a discovery brief, roadmap/version plan, first version slice, postponed-decision list, and role/skill routing recommendation. The project workspace template now includes `product/DISCOVERY.md` and `product/ROADMAP.md` for this first pass.
+
+The next step is to use the discovery pass, checklist, and template on the first future Factory-managed project workspace, then tighten templates based on real project setup friction.
 
 ## Locked Decisions
 
@@ -81,6 +83,10 @@ The next step is to use the checklist and template on the first future Factory-m
 - Preferred project workspace folders: `.github/`, `agents/`, `product/`, `ops/`.
 - The copyable project workspace template lives under `03-projects/ai-development-team/templates/project-workspace/`.
 - The project workspace first-use checklist lives under `03-projects/ai-development-team/templates/project-workspace/FIRST-USE.md`.
+- Every new Factory-managed project should run project discovery before the first executable ticket.
+- The new-project discovery pass should capture objectives, product shape, first version scope, later-version candidates, and visible postponed decisions.
+- The project workspace template includes `product/DISCOVERY.md` and `product/ROADMAP.md` as the default discovery and version-planning artifacts.
+- Factory Project Discovery lives in `04-agents/skills/` as reusable teammate expertise for kickoff work, not as a full custom agent.
 - Work hierarchy: Project -> Goal -> Feature -> Task -> Ticket.
 - Ticket is the smallest assignable unit.
 - Tickets always belong to exactly one task; tasks can contain many tickets.
@@ -115,7 +121,7 @@ The next step is to use the checklist and template on the first future Factory-m
 
 ## Next Recommended Moves
 
-1. Use the [Project Workspace First-Use Checklist](templates/project-workspace/FIRST-USE.md) when applying the template to the first future Factory-managed project workspace.
+1. Use [Factory Project Discovery](../../04-agents/skills/factory-project-discovery.md) and the [Project Workspace First-Use Checklist](templates/project-workspace/FIRST-USE.md) when applying the template to the first future Factory-managed project workspace.
 2. Tighten project-local ops fields after first real project use.
 3. Capture template friction as learning candidates before changing canonical templates.
 4. Design the CLI/context-pack helper after the manual workflow is clear.

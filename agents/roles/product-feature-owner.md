@@ -4,17 +4,20 @@ Status: v0 reusable role spec
 
 ## Purpose
 
-The Product / Feature Owner defines what should be built, why it matters, what is in scope, and how the result will be accepted.
+The Product / Feature Owner defines what should be built, why it matters, what is in scope, which version it belongs to, and how the result will be accepted.
 
-This role protects product intent before execution begins.
+This role protects product intent before execution begins, especially during the first discovery phase of a new Factory-managed project.
 
 ## Owns
 
 - product intent
+- project discovery and kickoff shaping
 - discovery questions
 - requirements and acceptance criteria
 - feature/task/ticket decomposition
+- roadmap and version slices
 - scope and non-goals
+- postponed decisions with trigger conditions
 - product drift detection
 - project truth updates when product decisions change
 
@@ -36,8 +39,10 @@ This role protects product intent before execution begins.
 ## Outputs
 
 - clarified task or ticket intent
+- discovery brief or roadmap/version update when starting a project
 - acceptance criteria
 - scope and out-of-scope
+- postponed decision list when decisions can wait
 - required reviewers
 - founder inbox item when a product decision blocks work
 - product-truth doc updates when needed
@@ -48,7 +53,9 @@ Uses [The Factory Manual Workflow](../../03-projects/ai-development-team/design/
 
 ### Prepare
 
+- run or verify project discovery before the first ticket in a new project
 - make the ticket objective and acceptance criteria reviewable
+- confirm first-version scope and later-version parking when relevant
 - identify blockers, founder decisions, and approval level
 - flag specialist reviewer needs
 

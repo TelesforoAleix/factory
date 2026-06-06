@@ -9,6 +9,7 @@ Some existing skill specs predate the split. New brain OS source-routing work sh
 ## Current Skills
 
 - [Idea Logger](idea-logger.md): capture product or project ideas into the right backlog.
+- [Factory Project Discovery](factory-project-discovery.md): run project kickoff discovery, version planning, postponed decisions, and first work hierarchy before Factory execution.
 - [Knowledge Builder](knowledge-builder.md): process links, documents, papers, videos, repositories, and source drops.
 - [Session Archiver](session-archiver.md): produce session notes and preserve continuity.
 - [Task Tracker](task-tracker.md): update current-state files and action tracking.
