@@ -52,7 +52,9 @@ The new-project discovery phase is now explicit. Before the first executable tic
 
 The local dashboard now exists at `03-projects/ai-development-team/dashboard/index.html` as a browser-side read-only management surface. It loads the selected Factory project or `ops/` folder directly in the browser and shows mission control, stage board, role roster, run ledger, release lane, context panel, decision queue, approvals, and learning records without requiring regenerated HTML, a server, CLI bridge, database, or writable control plane.
 
-The next step is to use the dashboard during the next Factory or [project] planning session by loading the Factory project or `ops/` folder, then use the discovery pass, checklist, and template on the first future Factory-managed project workspace. Dashboard and template changes should come from real setup and visibility friction.
+The Paperclip-style management-interface plan now exists in `design/paperclip-style-management-interface.md`. It splits the next dashboard/interface work into read-only drill-down, communication/decision cards, data-contract tightening, CLI bridge, writable control plane, and real project rollout.
+
+The next step is to start the first read-only drill-down ticket: build the relationship index and task/ticket detail views so the owner can inspect a task, see associated tickets, click a ticket, see who did what, and understand stage plus next owner/action. Dashboard and template changes should come from real setup and visibility friction.
 
 ## Locked Decisions
 
@@ -115,6 +117,7 @@ The next step is to use the dashboard during the next Factory or [project] plann
 - [Manual Workflow](design/manual-workflow.md)
 - [Operating Model](design/operating-model.md)
 - [Project Workspace Layout](design/project-workspace-layout.md)
+- [Paperclip-Style Management Interface](design/paperclip-style-management-interface.md)
 - [Source Comparison Plan](design/source-comparison-plan.md)
 - [Source Use Map](design/source-use-map.md)
 - [V0 Operating Objects](design/v0-operating-objects.md)
@@ -126,11 +129,11 @@ The next step is to use the dashboard during the next Factory or [project] plann
 
 ## Next Recommended Moves
 
-1. Open the [Management Dashboard](dashboard/index.html), load the Factory project or `ops/` folder, and use it during the next Factory or [project] planning session.
-2. Use [Factory Project Discovery](../../04-agents/skills/factory-project-discovery.md) and the [Project Workspace First-Use Checklist](templates/project-workspace/FIRST-USE.md) when applying the template to the first future Factory-managed project workspace.
-3. Tighten project-local ops fields after first real project use.
+1. Implement the first read-only management-interface slice: relationship index plus task/ticket drill-down.
+2. Open the [Management Dashboard](dashboard/index.html), load the Factory project or `ops/` folder, and use it during the next Factory or [project] planning session.
+3. Use [Factory Project Discovery](../../04-agents/skills/factory-project-discovery.md) and the [Project Workspace First-Use Checklist](templates/project-workspace/FIRST-USE.md) when applying the template to the first future Factory-managed project workspace.
 4. Capture template and dashboard visibility friction as learning candidates before changing canonical templates.
-5. Design the CLI/context-pack helper or writable dashboard control plane only after read-only dashboard friction is clear.
+5. Delay CLI/context-pack helper or writable dashboard control-plane work until the read-only interface proves what writes are actually needed.
 
 ## Related Docs
 

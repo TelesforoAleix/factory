@@ -7,6 +7,7 @@ Design layer for The Factory, the owner's reusable AI development company operat
 - [Architecture](architecture.md)
 - [Manual Workflow](manual-workflow.md)
 - [Operating Model](operating-model.md)
+- [Paperclip-Style Management Interface](paperclip-style-management-interface.md)
 - [Project Workspace Layout](project-workspace-layout.md)
 - [Source Use Map](source-use-map.md)
 - [V0 Operating Objects](v0-operating-objects.md)

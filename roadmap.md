@@ -72,6 +72,27 @@ Exit criteria:
 
 Status: management slice complete.
 
+## V1.6 - Management Interface Drill-Down
+
+Goal: turn the read-only management dashboard into a navigable interface for understanding tasks, tickets, agents, handoffs, communications, evidence, and next actions.
+
+Includes:
+
+- task detail view with associated tickets
+- ticket detail view with runs, reviews, release, context pack, decisions, files/tests, and next action
+- role/department drill-down
+- communication timeline assembled from runs, reviews, release records, inbox items, approvals, and later interaction objects
+- search and filters by status, owner, department, risk, priority, and blocker state
+- relationship index over loaded ops records
+
+Exit criteria:
+
+- the owner can click a task and see its tickets.
+- the owner can click a ticket and see who did what, who reviewed it, what changed, and who/what is next.
+- No write actions are introduced before the CLI/server/webview bridge decision.
+
+Status: planned in [Paperclip-Style Management Interface](design/paperclip-style-management-interface.md).
+
 ## V2 - CLI Bridge And Context Packs
 
 Goal: reduce friction between ops state and VS Code/Copilot or CLI execution.
