@@ -16,10 +16,7 @@ The dashboard reads JSON, YAML, and Markdown-frontmatter records from `ops/`. It
 
 ## Scope
 
-- Shows current Factory mission control, role roster, stage board, run ledger, release lane, decision queue, context panel, approvals, and learning records.
-- Provides read-only task/ticket drill-down: click a task to see child tickets, or a ticket to see context, runs, reviews, release evidence, files/tests, and next owner/action.
-- Links back to the source Markdown, YAML, and JSON records.
-- Avoids server, database, CLI bridge, and write actions in this slice.
+- Renders communication cards from runs, reviews, releases, founder inbox items, approvals, learning records, and optional interaction records.
 
 ## Browser Boundary
 

@@ -128,7 +128,7 @@ function normalizeOpsPath(path) {
 }
 
 function emptyRecords() {
-  return { tickets: [], tasks: [], runs: [], reviews: [], releases: [], inbox: [], approvals: [], learning: [], contextPacks: [] };
+  return { tickets: [], tasks: [], runs: [], reviews: [], releases: [], inbox: [], approvals: [], learning: [], contextPacks: [], interactions: [] };
 }
 
 function parseFiles(files) {
@@ -151,6 +151,7 @@ function parseFiles(files) {
     if (folder === "approvals") records.approvals.push(record);
     if (folder === "learning") records.learning.push(record);
     if (folder === "context-packs") records.contextPacks.push(record);
+    if (folder === "interactions") records.interactions.push(record);
   }
   return records;
 }
@@ -218,6 +219,8 @@ function buildIndexes(records) {
     approvalsByObject: new Map(),
     learningByObject: new Map(),
     contextPacksById: new Map(),
+    eventsByObject: new Map(),
+    communicationEvents: [],
   };
 
   for (const collection of Object.values(records)) {
@@ -249,6 +252,11 @@ function buildIndexes(records) {
     for (const objectId of relatedObjectIds(learning)) addIndexed(indexes.learningByObject, objectId, learning);
   }
 
+  indexes.communicationEvents = buildCommunicationEvents(records);
+  for (const event of indexes.communicationEvents) {
+    for (const objectId of event.relatedIds) addIndexed(indexes.eventsByObject, objectId, event);
+  }
+
   return indexes;
 }
 
@@ -268,6 +276,82 @@ function addIndexed(map, key, value) {
   if (!key) return;
   if (!map.has(key)) map.set(key, []);
   map.get(key).push(value);
+}
+
+function buildCommunicationEvents(records) {
+  const events = [];
+
+  for (const run of records.runs) {
+    events.push({
+      id: run.id,
+      kind: "Run",
+      status: run.status,
+      actor: run.owner_role || run.agent_id || "Agent",
+      target: run.related_ticket_id || run.related_task_id || "Factory",
+      summary: run.output_summary || run.objective || run.next_action || "Run recorded.",
+      next: run.next_action || "",
+      source: run._source,
+      relatedIds: [run.id, run.related_ticket_id, run.related_task_id, run.related_release_id, run.context_pack_id].filter(Boolean),
+      sortValue: eventSortValue(run),
+    });
+  }
+
+  for (const review of records.reviews) {
+    events.push({
+      id: review.id,
+      kind: review.review_type === "self_review" ? "Self Review" : "Fresh Review",
+      status: review.decision || review.status,
+      actor: review.reviewer_role || "Reviewer",
+      target: review.related_ticket_id || review.related_task_id || "Factory",
+      summary: review.implementation_summary || review.title || "Review recorded.",
+      next: ensureList(review.required_revisions).join("; "),
+      source: review._source,
+      relatedIds: [review.id, review.related_ticket_id, review.related_task_id, review.context_pack_id].filter(Boolean),
+      sortValue: eventSortValue(review),
+    });
+  }
+
+  for (const release of records.releases) {
+    const ticketIds = ensureList(release.ticket_ids);
+    events.push({
+      id: release.id,
+      kind: "Release",
+      status: release.status || release.release_decision,
+      actor: release.owner_role || "Release Agent",
+      target: ticketIds.join(", ") || release.related_task_id || "Factory",
+      summary: release.release_notes || release.title || "Release checklist recorded.",
+      next: ensureList(release.post_release_followups).join("; "),
+      source: release._source,
+      relatedIds: [release.id, release.related_task_id, ...ticketIds, ...ensureList(release.review_ids)].filter(Boolean),
+      sortValue: eventSortValue(release),
+    });
+  }
+
+  for (const item of records.inbox) events.push(recordToCommunicationEvent(item, "Founder Inbox", item.owner_role || "Founder Interface"));
+  for (const approval of records.approvals) events.push(recordToCommunicationEvent(approval, "Approval", approval.approver_role || approval.owner_role || "Approver"));
+  for (const learning of records.learning) events.push(recordToCommunicationEvent(learning, "Learning", learning.owner_role || learning.department || "Optimization"));
+  for (const interaction of records.interactions) events.push(recordToCommunicationEvent(interaction, interaction.type || "Interaction", interaction.from_role || interaction.owner_role || "Agent"));
+
+  return events.sort((a, b) => b.sortValue.localeCompare(a.sortValue, undefined, { numeric: true }));
+}
+
+function recordToCommunicationEvent(record, kind, actor) {
+  return {
+    id: record.id,
+    kind,
+    status: record.status || "unknown",
+    actor,
+    target: record.related_ticket_id || record.related_task_id || ensureList(record.blocks_object_ids)[0] || ensureList(record.source_object_ids)[0] || "Factory",
+    summary: record.summary || record.title || record.question_text || record.problem_observed || record.proposed_change || "Record created.",
+    next: record.recommendation || record.unblock_action || record.notes || "",
+    source: record._source,
+    relatedIds: [record.id, ...relatedObjectIds(record)].filter(Boolean),
+    sortValue: eventSortValue(record),
+  };
+}
+
+function eventSortValue(record) {
+  return String(record.updated_at || record.ended_at || record.created_at || record.started_at || record.id || "");
 }
 
 function render(records) {
@@ -301,6 +385,7 @@ function render(records) {
   renderContextPanel(tickets, contextPacks, reviews);
   renderReleaseLane(releases);
   renderLearningQueue(learning);
+  renderCommunicationFeed(state.indexes.communicationEvents);
   renderRunLedger(runs);
 }
 
@@ -436,6 +521,7 @@ function renderTicketDetail(ticket, indexes) {
       <article class="detail-card"><strong>Evidence</strong><div>${runs.length} runs, ${reviews.length} reviews, ${releases.length} releases</div></article>
     </div>
     <div class="detail-section"><h3>Acceptance Criteria</h3>${renderList(ticket.acceptance_criteria, "No acceptance criteria loaded.")}</div>
+    <div class="detail-section"><h3>Communication Timeline</h3>${renderCommunicationFeedList(ensureList(indexes.eventsByObject.get(ticket.id)), "No communication events linked.")}</div>
     <div class="detail-section"><h3>Runs: Who Did What</h3>${runs.length ? table(["Run", "Owner", "Status", "Output", "Next"], runs.map(renderRunRow).join("")) : emptyState("No runs linked.")}</div>
     <div class="detail-section"><h3>Reviews</h3>${reviews.length ? table(["Review", "Type", "Decision", "Summary"], reviews.map(renderReviewRow).join("")) : emptyState("No reviews linked.")}</div>
     <div class="detail-section"><h3>Release</h3>${releases.length ? table(["Release", "Status", "Decision", "Notes"], releases.map(renderReleaseRow).join("")) : emptyState("No release checklist linked.")}</div>
@@ -462,6 +548,39 @@ function renderReleaseRow(release) {
 
 function renderRelatedCards(records) {
   return records.length ? records.map(renderRecordCard).join("") : emptyState("No decisions, approvals, or learning records linked.");
+}
+
+function renderCommunicationFeed(events) {
+  const latestEvents = ensureList(events).slice(0, 14);
+  document.getElementById("communicationFeed").innerHTML = renderCommunicationFeedList(latestEvents, "No communication events loaded.");
+  document.getElementById("communicationFeedNote").textContent = `${latestEvents.length} recent events`;
+}
+
+function renderCommunicationFeedList(events, emptyMessage) {
+  const values = sortCommunicationEvents(ensureList(events));
+  if (!values.length) return emptyState(emptyMessage);
+  return values.map(renderCommunicationCard).join("");
+}
+
+function sortCommunicationEvents(events) {
+  return [...events].sort((a, b) => String(b.sortValue || b.id || "").localeCompare(String(a.sortValue || a.id || ""), undefined, { numeric: true }));
+}
+
+function renderCommunicationCard(event) {
+  return `
+    <article class="communication-card">
+      <div>
+        <div class="communication-kind">${escapeHtml(event.kind || "Event")}</div>
+        <div class="record-meta">${chip(event.status || "unknown")}</div>
+      </div>
+      <div>
+        <div>${event.source ? `<a href="${escapeHtml(event.source)}">${escapeHtml(event.id || "event")}</a>` : escapeHtml(event.id || "event")}</div>
+        <div class="communication-target">${escapeHtml(event.actor || "Agent")} -> ${escapeHtml(event.target || "Factory")}</div>
+        <div class="communication-summary">${escapeHtml(truncate(event.summary || "", 170))}</div>
+        ${event.next ? `<small class="muted">Next: ${escapeHtml(truncate(event.next, 140))}</small>` : ""}
+      </div>
+    </article>
+  `;
 }
 
 function renderList(items, emptyMessage) {

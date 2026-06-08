@@ -139,7 +139,7 @@ h3 { font-size: 15px; letter-spacing: 0; }
 }
 
 .stage-title { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 9px; font-weight: 800; }
-.ticket-list, .stack-list, .detail-stack { display: grid; gap: 8px; }
+.ticket-list, .stack-list, .detail-stack, .communication-feed { display: grid; gap: 8px; }
 .ticket-card { background: #ffffff; }
 .ticket-meta, .record-meta, .detail-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
 
@@ -163,6 +163,20 @@ h3 { font-size: 15px; letter-spacing: 0; }
 }
 
 .link-button:hover { text-decoration: underline; }
+
+.communication-card {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.2fr) minmax(0, 0.8fr);
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-alt);
+  padding: 12px;
+}
+
+.communication-kind { font-weight: 800; }
+.communication-summary { margin-top: 4px; }
+.communication-target { color: var(--muted); font-size: 13px; }
 
 .chip {
   display: inline-flex;
@@ -200,5 +214,5 @@ tr:last-child td { border-bottom: 0; }
   .page { padding: 18px; }
   .topbar, .status-strip { align-items: flex-start; flex-direction: column; }
   .actions { justify-content: flex-start; }
-  .management-grid, .drill-grid, .metrics, .mission-cards, .role-grid, .detail-grid { grid-template-columns: 1fr; }
+  .management-grid, .drill-grid, .metrics, .mission-cards, .role-grid, .detail-grid, .communication-card { grid-template-columns: 1fr; }
 }
