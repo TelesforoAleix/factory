@@ -48,6 +48,36 @@
       </article>
     </section>
 
+    <section class="panel filter-panel" aria-label="Dashboard filters">
+      <div class="section-head">
+        <h2>Filters</h2>
+        <span id="filterSummary" class="section-note">Showing all tickets</span>
+      </div>
+      <div class="filter-grid">
+        <label>
+          <span>Search</span>
+          <input id="searchInput" type="search" placeholder="Ticket, owner, objective, status">
+        </label>
+        <label>
+          <span>Status</span>
+          <select id="statusFilter"><option value="">All statuses</option></select>
+        </label>
+        <label>
+          <span>Owner</span>
+          <select id="ownerFilter"><option value="">All owners</option></select>
+        </label>
+        <label>
+          <span>Risk</span>
+          <select id="riskFilter"><option value="">All risk levels</option></select>
+        </label>
+        <label class="checkbox-label">
+          <input id="blockedOnly" type="checkbox">
+          <span>Blocked only</span>
+        </label>
+        <button id="clearFiltersButton" type="button" class="secondary-button">Clear</button>
+      </div>
+    </section>
+
     <section class="grid management-grid">
       <section class="panel mission-panel">
         <div class="section-head">

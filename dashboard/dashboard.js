@@ -26,20 +26,66 @@ const ROLE_DEPARTMENTS = new Map([
   ["Marketing", "Marketing"],
 ]);
 
-const state = { directoryHandle: null, loadedLabel: "", records: emptyRecords(), indexes: buildIndexes(emptyRecords()), selected: null };
+const state = { directoryHandle: null, loadedLabel: "", records: emptyRecords(), indexes: buildIndexes(emptyRecords()), selected: null, filters: defaultFilters() };
 const selectors = {
   loadFolderButton: document.getElementById("loadFolderButton"),
   refreshButton: document.getElementById("refreshButton"),
   folderInput: document.getElementById("folderInput"),
   dataStatus: document.getElementById("dataStatus"),
   loadedPath: document.getElementById("loadedPath"),
+  searchInput: document.getElementById("searchInput"),
+  statusFilter: document.getElementById("statusFilter"),
+  ownerFilter: document.getElementById("ownerFilter"),
+  riskFilter: document.getElementById("riskFilter"),
+  blockedOnly: document.getElementById("blockedOnly"),
+  clearFiltersButton: document.getElementById("clearFiltersButton"),
+  filterSummary: document.getElementById("filterSummary"),
 };
 
 selectors.loadFolderButton.addEventListener("click", loadProjectFolder);
 selectors.refreshButton.addEventListener("click", refreshData);
 selectors.folderInput.addEventListener("change", loadFromInputFiles);
+selectors.searchInput.addEventListener("input", updateFilters);
+selectors.statusFilter.addEventListener("change", updateFilters);
+selectors.ownerFilter.addEventListener("change", updateFilters);
+selectors.riskFilter.addEventListener("change", updateFilters);
+selectors.blockedOnly.addEventListener("change", updateFilters);
+selectors.clearFiltersButton.addEventListener("click", clearFilters);
 document.addEventListener("click", inspectClickedRecord);
 render(emptyRecords());
+
+function defaultFilters() {
+  return { query: "", status: "", owner: "", risk: "", blockedOnly: false };
+}
+
+function updateFilters() {
+  state.filters = readFilters();
+  render(state.records);
+}
+
+function clearFilters() {
+  state.filters = defaultFilters();
+  syncFilterInputs();
+  render(state.records);
+}
+
+function readFilters() {
+  return {
+    query: selectors.searchInput.value.trim().toLowerCase(),
+    status: selectors.statusFilter.value,
+    owner: selectors.ownerFilter.value,
+    risk: selectors.riskFilter.value,
+    blockedOnly: selectors.blockedOnly.checked,
+  };
+}
+
+function syncFilterInputs() {
+  selectors.searchInput.value = state.filters.query;
+  selectors.statusFilter.value = state.filters.status;
+  selectors.ownerFilter.value = state.filters.owner;
+  selectors.riskFilter.value = state.filters.risk;
+  selectors.blockedOnly.checked = state.filters.blockedOnly;
+}
 
 function inspectClickedRecord(event) {
   const trigger = event.target.closest("[data-inspect-type][data-inspect-id]");
@@ -354,6 +400,68 @@ function eventSortValue(record) {
   return String(record.updated_at || record.ended_at || record.created_at || record.started_at || record.id || "");
 }
 
+function isFilterActive() {
+  return Boolean(state.filters.query || state.filters.status || state.filters.owner || state.filters.risk || state.filters.blockedOnly);
+}
+
+function filterTickets(tickets) {
+  return tickets.filter((ticket) => {
+    if (state.filters.status && ticket.status !== state.filters.status) return false;
+    if (state.filters.owner && ticket.owner_role !== state.filters.owner) return false;
+    if (state.filters.risk && ticket.risk_level !== state.filters.risk) return false;
+    if (state.filters.blockedOnly && ticket.status !== "blocked" && !ensureList(ticket.blocking_object_ids).length) return false;
+    if (state.filters.query && !ticketSearchText(ticket).includes(state.filters.query)) return false;
+    return true;
+  });
+}
+
+function ticketSearchText(ticket) {
+  return [
+    ticket.id,
+    ticket.title,
+    ticket.objective,
+    ticket.status,
+    ticket.owner_role,
+    ticket.assigned_agent,
+    ticket.priority,
+    ticket.risk_level,
+    ticket.task_id,
+    ticket.required_context_pack_id,
+    ...ensureList(ticket.acceptance_criteria),
+    ...ensureList(ticket.changed_files),
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function updateFilterOptions(tickets) {
+  fillSelect(selectors.statusFilter, "All statuses", uniqueValues(tickets.map((ticket) => ticket.status)), state.filters.status);
+  fillSelect(selectors.ownerFilter, "All owners", uniqueValues(tickets.map((ticket) => ticket.owner_role)), state.filters.owner);
+  fillSelect(selectors.riskFilter, "All risk levels", uniqueValues(tickets.map((ticket) => ticket.risk_level)), state.filters.risk);
+  syncFilterInputs();
+}
+
+function fillSelect(select, label, values, selectedValue) {
+  select.innerHTML = `<option value="">${escapeHtml(label)}</option>${values.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value.replaceAll("_", " "))}</option>`).join("")}`;
+  select.value = values.includes(selectedValue) ? selectedValue : "";
+  if (selectedValue && !values.includes(selectedValue)) state.filters[filterKeyForSelect(select)] = "";
+}
+
+function filterKeyForSelect(select) {
+  if (select === selectors.statusFilter) return "status";
+  if (select === selectors.ownerFilter) return "owner";
+  if (select === selectors.riskFilter) return "risk";
+  return "";
+}
+
+function uniqueValues(values) {
+  return Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b));
+}
+
+function relatedToFilteredTicket(record, ticketIds) {
+  if (!isFilterActive()) return true;
+  if (!ticketIds.size) return false;
+  return relatedObjectIds(record).some((id) => ticketIds.has(id)) || ticketIds.has(record.related_ticket_id) || ticketIds.has(record.id);
+}
+
 function render(records) {
   state.indexes = buildIndexes(records);
   const tickets = sortById(records.tickets).reverse();
@@ -364,29 +472,52 @@ function render(records) {
   const approvals = sortById(records.approvals).reverse();
   const learning = sortById(records.learning).reverse();
   const contextPacks = sortById(records.contextPacks).reverse();
-  const openTickets = tickets.filter((ticket) => !FINAL_TICKET_STATUSES.has(ticket.status));
-  const activeTickets = tickets.filter((ticket) => ACTIVE_TICKET_STATUSES.has(ticket.status));
-  const blockedTickets = tickets.filter((ticket) => ticket.status === "blocked" || ensureList(ticket.blocking_object_ids).length);
-  const readyReleases = releases.filter((release) => ["ready", "released"].includes(release.status));
-  setText("metricTickets", tickets.length);
-  setText("metricTicketsDetail", `${openTickets.length} open, ${tickets.filter((ticket) => ticket.status === "release_ready").length} release ready`);
+  updateFilterOptions(tickets);
+  const visibleTickets = filterTickets(tickets);
+  const visibleTicketIds = new Set(visibleTickets.map((ticket) => ticket.id));
+  const filteredMode = isFilterActive();
+  const visibleRuns = filteredMode ? runs.filter((run) => visibleTicketIds.has(run.related_ticket_id)) : runs;
+  const visibleReviews = filteredMode ? reviews.filter((review) => visibleTicketIds.has(review.related_ticket_id)) : reviews;
+  const visibleReleases = filteredMode ? releases.filter((release) => ensureList(release.ticket_ids).some((ticketId) => visibleTicketIds.has(ticketId))) : releases;
+  const visibleEvents = filteredMode ? state.indexes.communicationEvents.filter((event) => event.relatedIds.some((id) => visibleTicketIds.has(id))) : state.indexes.communicationEvents;
+  const openTickets = visibleTickets.filter((ticket) => !FINAL_TICKET_STATUSES.has(ticket.status));
+  const activeTickets = visibleTickets.filter((ticket) => ACTIVE_TICKET_STATUSES.has(ticket.status));
+  const blockedTickets = visibleTickets.filter((ticket) => ticket.status === "blocked" || ensureList(ticket.blocking_object_ids).length);
+  const readyReleases = visibleReleases.filter((release) => ["ready", "released"].includes(release.status));
+  setText("metricTickets", visibleTickets.length);
+  setText("metricTicketsDetail", `${tickets.length} total, ${openTickets.length} open`);
   setText("metricActive", activeTickets.length);
-  setText("metricActiveDetail", `${blockedTickets.length} blocked`);
-  setText("metricRuns", runs.length);
-  setText("metricRunsDetail", runs[0]?.id ? `latest ${runs[0].id}` : "No runs loaded");
+  setText("metricActiveDetail", `${blockedTickets.length} blocked in view`);
+  setText("metricRuns", visibleRuns.length);
+  setText("metricRunsDetail", visibleRuns[0]?.id ? `latest ${visibleRuns[0].id}` : "No runs in view");
   setText("metricReleases", readyReleases.length);
-  setText("metricReleasesDetail", `${reviews.length} reviews`);
+  setText("metricReleasesDetail", `${visibleReviews.length} reviews in view`);
   renderMissionCards(tickets, runs, reviews, releases, inbox, approvals, learning, contextPacks);
   renderDecisionQueue(inbox, approvals, blockedTickets);
-  renderStageBoard(tickets, state.indexes);
-  renderTaskExplorer(records.tasks, state.indexes);
+  renderFilterSummary(visibleTickets.length, tickets.length);
+  renderStageBoard(visibleTickets, state.indexes);
+  renderTaskExplorer(records.tasks, state.indexes, filteredMode ? visibleTickets : null);
   renderSelectedDetail(records, state.indexes);
-  renderRoleRoster(tickets, runs);
+  renderRoleRoster(visibleTickets, visibleRuns);
   renderContextPanel(tickets, contextPacks, reviews);
-  renderReleaseLane(releases);
+  renderReleaseLane(visibleReleases);
   renderLearningQueue(learning);
-  renderCommunicationFeed(state.indexes.communicationEvents);
-  renderRunLedger(runs);
+  renderCommunicationFeed(visibleEvents);
+  renderRunLedger(visibleRuns);
+}
+
+function renderFilterSummary(visibleCount, totalCount) {
+  if (!isFilterActive()) {
+    selectors.filterSummary.textContent = `Showing all ${totalCount} tickets`;
+    return;
+  }
+  const parts = [];
+  if (state.filters.query) parts.push(`search "${state.filters.query}"`);
+  if (state.filters.status) parts.push(`status ${state.filters.status.replaceAll("_", " ")}`);
+  if (state.filters.owner) parts.push(`owner ${state.filters.owner}`);
+  if (state.filters.risk) parts.push(`risk ${state.filters.risk}`);
+  if (state.filters.blockedOnly) parts.push("blocked only");
+  selectors.filterSummary.textContent = `${visibleCount} of ${totalCount} tickets (${parts.join(", ")})`;
 }
 
 function renderMissionCards(tickets, runs, reviews, releases, inbox, approvals, learning, contextPacks) {
@@ -424,13 +555,18 @@ function renderTicketCard(ticket, indexes) {
   return `<article class="ticket-card"><strong>${inspectButton(ticket, ticket.id)}</strong><div>${escapeHtml(ticket.title || "Untitled ticket")}</div><div class="ticket-meta">${chip(ticket.status)}${chip(ticket.owner_role || "unowned")}${runCount ? chip(`${runCount} run${runCount === 1 ? "" : "s"}`) : ""}${reviewCount ? chip(`${reviewCount} review${reviewCount === 1 ? "" : "s"}`) : ""}</div><small class="muted">Next: ${escapeHtml(next.owner)} - ${escapeHtml(truncate(next.action, 72))}</small></article>`;
 }
 
-function renderTaskExplorer(tasks, indexes) {
+function renderTaskExplorer(tasks, indexes, visibleTickets = null) {
   const sortedTasks = sortById(tasks).reverse();
-  document.getElementById("taskExplorer").innerHTML = sortedTasks.length ? sortedTasks.map((task) => renderTaskCard(task, indexes)).join("") : emptyState("No tasks loaded.");
+  const visibleByTask = new Map();
+  if (visibleTickets) {
+    for (const ticket of visibleTickets) addIndexed(visibleByTask, ticket.task_id, ticket);
+  }
+  const taskList = visibleTickets ? sortedTasks.filter((task) => visibleByTask.has(task.id)) : sortedTasks;
+  document.getElementById("taskExplorer").innerHTML = taskList.length ? taskList.map((task) => renderTaskCard(task, indexes, visibleByTask.get(task.id))).join("") : emptyState(visibleTickets ? "No tasks match the current filters." : "No tasks loaded.");
 }
 
-function renderTaskCard(task, indexes) {
-  const tickets = ensureList(indexes.ticketsByTask.get(task.id));
+function renderTaskCard(task, indexes, overrideTickets = null) {
+  const tickets = overrideTickets || ensureList(indexes.ticketsByTask.get(task.id));
   const doneCount = tickets.filter((ticket) => FINAL_TICKET_STATUSES.has(ticket.status)).length;
   const blockedCount = tickets.filter((ticket) => ticket.status === "blocked" || ensureList(ticket.blocking_object_ids).length).length;
   const nextTicket = nextTicketForTask(tickets, indexes);
