@@ -71,6 +71,7 @@ ops/
   tasks/
   tickets/
   runs/
+  interactions/
   inbox/
   approvals/
   context-packs/
@@ -88,6 +89,7 @@ ops/
 | Task | Product / Feature Owner | YAML | `ops/tasks/TASK-2026-0001.yaml` |
 | Ticket | Product / Feature Owner until assigned; Execution Agent while active | YAML | `ops/tickets/TICKET-2026-0001.yaml` |
 | Run / Session | Executive Orchestrator or assigned agent | JSON for run state, optional JSONL events | `ops/runs/RUN-2026-0001.json` |
+| Interaction / Communication Card | Source role, then target role or Founder Interface | YAML | `ops/interactions/INTERACTION-2026-0001.yaml` |
 | Founder Inbox Item | Founder Interface | YAML | `ops/inbox/INBOX-2026-0001.yaml` |
 | Approval | Release Agent, Reviewer, or Founder Interface depending level | YAML | `ops/approvals/APPROVAL-2026-0001.yaml` |
 | Context Pack | Architect / Context Architect | Markdown with YAML frontmatter | `ops/context-packs/CP-2026-0001.md` |
@@ -430,7 +432,124 @@ Run row or activity card with:
 
 `ops/runs/RUN-2026-0001.json`
 
-## 4. Founder Inbox Item
+## 4. Interaction / Communication Card
+
+### Purpose
+
+An interaction records a structured communication between Factory roles, or between a role and the founder interface, when the message should be visible in the dashboard but does not yet require a full founder inbox item or approval gate.
+
+Interactions are the file-backed equivalent of Paperclip-style issue comments, handoff notes, agent questions, status updates, and confirmation requests.
+
+### Owner
+
+Primary owner: the role that creates the interaction.
+
+Supporting owner: Executive Orchestrator or Founder Interface when the interaction changes routing, blocks work, or needs the owner's attention.
+
+### Lifecycle / Statuses
+
+```text
+open -> presented -> answered -> routed -> closed -> archived
+superseded
+cancelled
+```
+
+Meaning:
+
+- `open`: created and visible, not yet handled.
+- `presented`: surfaced to the intended recipient or dashboard view.
+- `answered`: recipient gave an answer or response.
+- `routed`: answer or result has been written back to the related object.
+- `closed`: no further action needed.
+- `archived`: retained for history.
+- `superseded`: replaced by a newer interaction, inbox item, approval, or ticket.
+- `cancelled`: no longer relevant.
+
+### Interaction Types
+
+- `status_update`: role reports current state or handoff note.
+- `handoff`: one role passes work to another role.
+- `ask_user_questions`: structured question for the owner or Founder Interface.
+- `request_confirmation`: asks for approval to proceed with a bounded action.
+- `suggest_tasks`: proposes follow-up tasks or tickets.
+- `raise_blocker`: records a blocker that needs routing.
+- `decision_answer`: records an answer routed back from founder/interface work.
+
+### Required Fields
+
+- `id`
+- `title`
+- `type`
+- `status`
+- `project_id`
+- `related_ticket_id`
+- `from_role`
+- `to_role`
+- `summary`
+- `created_at`
+- `updated_at`
+
+### Optional Fields
+
+- `related_task_id`
+- `message`
+- `options`
+- `recommendation`
+- `blocks_object_ids`
+- `source_object_ids`
+- `outcome`
+- `priority`
+- `answered_by`
+- `answered_at`
+- `routed_to`
+- `supersedes_interaction_id`
+
+### Parent / Child Relations
+
+- Parent: usually one ticket; can also relate to a task or release.
+- Children: may create inbox items, approvals, reviews, releases, learning candidates, or follow-up tickets.
+- Related: source run, review, release, inbox, or approval that caused the interaction.
+
+### Source Inspiration
+
+- Paperclip: issue interactions, task suggestions, user questions, and confirmation requests.
+- The Factory manual workflow: handoff, blocker, review, and release evidence.
+- Founder Interface: structured questions and decision routing.
+
+### Storage Format Recommendation
+
+YAML. Interaction cards should be easy to parse, filter, and show in the dashboard.
+
+### Dashboard Appearance
+
+Communication card with:
+
+- interaction type
+- status
+- from role -> to role
+- related ticket/task
+- concise summary
+- options and recommendation when present
+- blocker or source object links
+
+### What Can Block It
+
+- unanswered question
+- missing routing target
+- missing context from the source role
+- escalation into founder inbox or approval gate
+
+### Writeback
+
+- Project ops: route answer/outcome back to related tickets, tasks, approvals, or reviews.
+- Project docs: write durable decisions into design docs or decision notes when they change project truth.
+- Central brain: only promote reusable communication patterns after repeated evidence.
+
+### Example Future File
+
+`ops/interactions/INTERACTION-2026-0001.yaml`
+
+## 5. Founder Inbox Item
 
 ### Purpose
 
@@ -541,7 +660,7 @@ Inbox card with:
 
 `ops/inbox/INBOX-2026-0001.yaml`
 
-## 5. Approval
+## 6. Approval
 
 ### Purpose
 
@@ -639,7 +758,7 @@ Approval card or gate badge with:
 
 `ops/approvals/APPROVAL-2026-0001.yaml`
 
-## 6. Context Pack
+## 7. Context Pack
 
 ### Purpose
 
@@ -742,7 +861,7 @@ Context panel with:
 
 `ops/context-packs/CP-2026-0001.md`
 
-## 7. Review Record
+## 8. Review Record
 
 ### Purpose
 
@@ -838,7 +957,7 @@ Review panel or badge with:
 
 `ops/reviews/REVIEW-2026-0001.yaml`
 
-## 8. Release Checklist
+## 9. Release Checklist
 
 ### Purpose
 
@@ -937,7 +1056,7 @@ Release gate card with:
 
 `ops/releases/RELEASE-2026-0001.md`
 
-## 9. Learning Candidate
+## 10. Learning Candidate
 
 ### Purpose
 

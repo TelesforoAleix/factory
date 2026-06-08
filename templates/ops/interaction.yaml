@@ -1,0 +1,21 @@
+template_version: "0.1"
+object_type: interaction
+id: INTERACTION-YYYY-0001
+title: "Short interaction title"
+type: status_update
+status: open
+project_id: PROJECT-ID
+related_task_id: TASK-YYYY-0001
+related_ticket_id: TICKET-YYYY-0001
+from_role: "Execution Agent"
+to_role: "Review / QA"
+summary: "Concise dashboard-facing summary of the communication."
+message: "A slightly fuller note for the receiving role or founder interface."
+options: []
+recommendation: ""
+blocks_object_ids: []
+source_object_ids: []
+outcome: ""
+priority: medium
+created_at: "YYYY-MM-DDT00:00:00Z"
+updated_at: "YYYY-MM-DDT00:00:00Z"

@@ -60,7 +60,9 @@ The communication-card slice is now implemented. The dashboard derives communica
 
 The search/filter slice is now implemented. The dashboard can filter loaded tickets by text search, status, owner, risk level, and blocked-only state, and the filtered view updates metrics, stage board, task explorer, role roster, run ledger, and communication feed.
 
-The next step is to load the full Factory `ops/` folder in the dashboard and decide whether the next interface slice should be saved views, a formal interaction/decision-card data contract, or real-project rollout. Dashboard and template changes should come from real setup and visibility friction.
+The interaction schema slice is now implemented. Interactions are now a first-class Factory ops object for lightweight agent-to-agent or agent-to-founder-interface communication cards, with reusable template, live `ops/interactions/` folder, workspace-template placeholder, and a sample `INTERACTION-2026-0001` record.
+
+The next step is to load the full Factory `ops/` folder in the dashboard and inspect how the sample interaction appears alongside derived run/review/release communication cards. After that, decide whether the next slice should be saved views, interaction write/routing behavior, or real-project rollout. Dashboard and template changes should come from real setup and visibility friction.
 
 ## Locked Decisions
 
@@ -135,8 +137,8 @@ The next step is to load the full Factory `ops/` folder in the dashboard and dec
 
 ## Next Recommended Moves
 
-1. Open the [Management Dashboard](dashboard/index.html), load the full Factory `ops/` folder, and inspect search/filtering, task/ticket drill-down, and communication cards with real data.
-2. Decide whether the next read-only interface slice is saved dashboard views, a formal interaction/decision-card data contract, or real-project rollout.
+1. Open the [Management Dashboard](dashboard/index.html), load the full Factory `ops/` folder, and inspect search/filtering, task/ticket drill-down, communication cards, and the sample interaction record with real data.
+2. Decide whether the next interface slice is saved dashboard views, interaction write/routing behavior, or real-project rollout.
 3. Use [Factory Project Discovery](../../04-agents/skills/factory-project-discovery.md) and the [Project Workspace First-Use Checklist](templates/project-workspace/FIRST-USE.md) when applying the template to the first future Factory-managed project workspace.
 4. Capture template and dashboard visibility friction as learning candidates before changing canonical templates.
 5. Delay CLI/context-pack helper or writable dashboard control-plane work until the read-only interface proves what writes are actually needed.

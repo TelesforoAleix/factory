@@ -74,6 +74,7 @@ ops/
   tasks/
   tickets/
   runs/
+  interactions/
   inbox/
   approvals/
   context-packs/
@@ -90,6 +91,7 @@ Potential files:
 
 - `tickets/*.yaml`
 - `runs/*.json`
+- `interactions/*.yaml`
 - `inbox/*.yaml`
 - `approvals/*.yaml`
 - `context-packs/*.md`
@@ -101,7 +103,7 @@ Potential files:
 
 The copyable v0 scaffold now lives at [Project Workspace Template](../templates/project-workspace/README.md).
 
-The exact state schema is still allowed to evolve, but the v0 folder shape should include the manual workflow surfaces already used by The Factory itself: goals, features, tasks, tickets, runs, inbox, approvals, context packs, reviews, releases, learning, dashboard state, and archive.
+The exact state schema is still allowed to evolve, but the v0 folder shape should include the manual workflow surfaces already used by The Factory itself: goals, features, tasks, tickets, runs, interactions, inbox, approvals, context packs, reviews, releases, learning, dashboard state, and archive.
 
 ## Open Design Choice
 

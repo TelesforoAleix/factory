@@ -34,6 +34,7 @@ ops/
   tasks/
   tickets/
   runs/
+  interactions/
   inbox/
   approvals/
   context-packs/
@@ -44,7 +45,7 @@ ops/
   archive/
 ```
 
-Use the object examples in [Ops Templates](../ops/README.md) as the source shape for concrete task, ticket, run, inbox, approval, context-pack, review, release, and learning records.
+Use the object examples in [Ops Templates](../ops/README.md) as the source shape for concrete task, ticket, run, interaction, inbox, approval, context-pack, review, release, and learning records.
 
 ## First Use
 

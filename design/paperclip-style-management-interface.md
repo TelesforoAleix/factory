@@ -114,7 +114,7 @@ The interface should render communication as a timeline assembled from:
 - approval records
 - learning candidates
 
-Later, add a dedicated interaction object for structured communication:
+The dedicated interaction object is now part of the Factory ops contract for structured communication:
 
 ```yaml
 template_version: "0.1"
@@ -135,7 +135,7 @@ created_at: "YYYY-MM-DDT00:00:00Z"
 updated_at: "YYYY-MM-DDT00:00:00Z"
 ```
 
-This gives the dashboard a communication feed without needing real-time chat.
+This gives the dashboard a communication feed without needing real-time chat. Founder inbox and approval objects remain the right place for decisions that block work or require explicit authorization; interactions are lighter cards for handoff, status, questions, confirmations, and task suggestions.
 
 ### 5. Decision And Approval Board
 
