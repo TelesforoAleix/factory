@@ -46,28 +46,31 @@ Exit criteria:
 - A new project starts with objectives, first version scope, and postponed decisions captured before the first executable ticket.
 - A ticket can be created, assigned, executed, reviewed, released, and archived manually.
 
-## V1.5 - Read-Only Local Status Dashboard
+## V1.5 - Read-Only Local Management Dashboard
 
-Goal: give the owner a local HTML view of Factory state before CLI or writable dashboard automation.
+Goal: give the owner a local Paperclip-style management view of Factory state before CLI or writable dashboard automation.
 
 Includes:
 
-- generated `dashboard/index.html`
-- stdlib-only renderer over `ops/` files
-- project overview metrics
-- ticket board
-- process flow counts
-- recent run ledger
-- founder inbox, approvals, learning, and release-readiness summaries
+- browser-side `dashboard/index.html`, `dashboard.js`, and `styles.css`
+- local project/ops folder loading through browser permission boundary
+- mission control metrics
+- stage board
+- role roster and owner load
+- run ledger
+- release lane
+- decision queue and approvals
+- context panel
+- improvement queue
 - links back to source Markdown, YAML, and JSON records
 
 Exit criteria:
 
-- the owner can open a local HTML file and see what is happening in The Factory.
-- Dashboard state is derived from ops files, not a second source of truth.
-- Any next dashboard improvements are based on real viewing friction.
+- the owner can open a local HTML file, load the Factory project or `ops/` folder, and see what is happening in The Factory.
+- Dashboard state is read directly from ops files, not copied into a second source of truth.
+- Any next dashboard improvements are based on real management friction.
 
-Status: initial slice complete.
+Status: management slice complete.
 
 ## V2 - CLI Bridge And Context Packs
 

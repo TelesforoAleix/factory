@@ -1,667 +1,131 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>The Factory Dashboard</title>
-<style>
-  :root {
-    --bg: #f4f3ef;
-    --surface: #ffffff;
-    --surface-alt: #f9f8f4;
-    --ink: #202124;
-    --muted: #626970;
-    --line: #d9d6cc;
-    --accent: #2f6f6d;
-    --accent-soft: #e2f0ee;
-    --amber: #8a5a00;
-    --amber-soft: #f7ead0;
-    --red: #a33225;
-    --red-soft: #f7ded9;
-    --green: #24734d;
-    --green-soft: #dff0e7;
-  }
-
-  * { box-sizing: border-box; }
-
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--ink);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    font-size: 14px;
-    line-height: 1.45;
-  }
-
-  a { color: var(--accent); text-decoration: none; }
-  a:hover { text-decoration: underline; }
-
-  .page {
-    max-width: 1360px;
-    margin: 0 auto;
-    padding: 28px;
-  }
-
-  .topbar {
-    display: flex;
-    justify-content: space-between;
-    gap: 20px;
-    align-items: flex-end;
-    padding-bottom: 20px;
-    border-bottom: 1px solid var(--line);
-  }
-
-  h1, h2, h3, p { margin: 0; }
-
-  h1 { font-size: 30px; font-weight: 700; letter-spacing: 0; }
-  h2 { font-size: 18px; font-weight: 700; letter-spacing: 0; }
-  h3 { font-size: 15px; font-weight: 700; letter-spacing: 0; }
-
-  .subtitle { margin-top: 6px; color: var(--muted); max-width: 760px; }
-  .timestamp { color: var(--muted); text-align: right; white-space: nowrap; }
-
-  .grid { display: grid; gap: 14px; }
-  .metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 20px 0; }
-  .two-col { grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.7fr); }
-  .side-grid { grid-template-columns: 1fr; }
-
-  .panel {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    padding: 16px;
-  }
-
-  .metric-label { color: var(--muted); font-size: 12px; text-transform: uppercase; }
-  .metric-value { font-size: 30px; font-weight: 700; margin-top: 4px; }
-  .metric-detail { color: var(--muted); margin-top: 2px; min-height: 20px; }
-
-  .section-head {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 12px;
-    margin-bottom: 12px;
-  }
-
-  .section-note { color: var(--muted); font-size: 13px; }
-
-  .process {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: grid;
-    grid-template-columns: repeat(7, minmax(0, 1fr));
-    gap: 10px;
-  }
-
-  .process-step {
-    background: var(--surface-alt);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    padding: 12px;
-    min-height: 76px;
-  }
-
-  .process-count { display: block; font-size: 22px; font-weight: 700; }
-  .process-label { display: block; color: var(--muted); margin-top: 4px; }
-
-  .table-wrap { overflow-x: auto; }
-  table { width: 100%; border-collapse: collapse; min-width: 920px; }
-  th, td { padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: top; text-align: left; }
-  th { color: var(--muted); font-size: 12px; font-weight: 700; text-transform: uppercase; }
-  tr:last-child td { border-bottom: 0; }
-
-  .row-title { font-weight: 650; }
-  .row-subtitle { color: var(--muted); margin-top: 3px; max-width: 520px; }
-
-  .chip, .mini-chip {
-    display: inline-flex;
-    align-items: center;
-    min-height: 24px;
-    padding: 3px 8px;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    background: var(--surface-alt);
-    color: var(--ink);
-    white-space: nowrap;
-    font-size: 12px;
-  }
-
-  .mini-chip { margin: 0 4px 4px 0; }
-  .is-good { background: var(--green-soft); border-color: #b7dcc7; color: var(--green); }
-  .is-active { background: var(--accent-soft); border-color: #bddbd8; color: var(--accent); }
-  .is-warn { background: var(--amber-soft); border-color: #e5c67d; color: var(--amber); }
-  .is-bad { background: var(--red-soft); border-color: #e0aaa1; color: var(--red); }
-  .is-muted { color: var(--muted); }
-
-  .evidence-stack { max-width: 260px; }
-  .muted { color: var(--muted); }
-  .empty-state { color: var(--muted); padding: 12px 0; }
-
-  .record-list { list-style: none; margin: 0; padding: 0; }
-  .record-item {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    align-items: center;
-    padding: 10px 0;
-    border-bottom: 1px solid var(--line);
-  }
-  .record-item:last-child { border-bottom: 0; }
-
-  .next-list { margin: 0; padding-left: 18px; color: var(--ink); }
-  .next-list li { margin: 6px 0; }
-
-  .footer {
-    margin-top: 18px;
-    color: var(--muted);
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-  }
-
-  @media (max-width: 980px) {
-    .page { padding: 18px; }
-    .topbar { align-items: flex-start; flex-direction: column; }
-    .timestamp { text-align: left; }
-    .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .two-col { grid-template-columns: 1fr; }
-    .process { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  }
-
-  @media (max-width: 560px) {
-    .metrics { grid-template-columns: 1fr; }
-    .process { grid-template-columns: 1fr; }
-    h1 { font-size: 24px; }
-  }
-  </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The Factory Management Dashboard</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<main class="page">
-  <header class="topbar">
-    <div>
-      <h1>The Factory Dashboard</h1>
-      <p class="subtitle">Read-only local snapshot of Factory ops: tickets, runs, reviews, release state, decisions, and learning.</p>
-    </div>
-    <div class="timestamp">Generated 2026-06-08 15:35 CEST</div>
-  </header>
-
-  <section class="grid metrics" aria-label="Factory metrics">
-    
-  <section class="metric panel">
-    <div class="metric-label">Tickets</div>
-    <div class="metric-value">17</div>
-    <div class="metric-detail">0 open, 17 release ready</div>
-  </section>
-  
-    
-  <section class="metric panel">
-    <div class="metric-label">Runs</div>
-    <div class="metric-value">17</div>
-    <div class="metric-detail">latest RUN-2026-0017</div>
-  </section>
-  
-    
-  <section class="metric panel">
-    <div class="metric-label">Reviews</div>
-    <div class="metric-value">34</div>
-    <div class="metric-detail">17 self, 17 fresh</div>
-  </section>
-  
-    
-  <section class="metric panel">
-    <div class="metric-label">Releases</div>
-    <div class="metric-value">17</div>
-    <div class="metric-detail">0 blocked tickets</div>
-  </section>
-  
-  </section>
-
-  <section class="panel">
-    <div class="section-head">
-      <h2>Current Operating Flow</h2>
-      <span class="section-note">Phase: Read-only dashboard visibility plus project workspace template dogfood.</span>
-    </div>
-    <ol class="process">
-      
-          <li class="process-step">
-            <span class="process-count">17</span>
-            <span class="process-label">Tickets</span>
-          </li>
-          
-
-          <li class="process-step">
-            <span class="process-count">17</span>
-            <span class="process-label">Context Packs</span>
-          </li>
-          
-
-          <li class="process-step">
-            <span class="process-count">17</span>
-            <span class="process-label">Runs</span>
-          </li>
-          
-
-          <li class="process-step">
-            <span class="process-count">17</span>
-            <span class="process-label">Self Reviews</span>
-          </li>
-          
-
-          <li class="process-step">
-            <span class="process-count">17</span>
-            <span class="process-label">Fresh Reviews</span>
-          </li>
-          
-
-          <li class="process-step">
-            <span class="process-count">17</span>
-            <span class="process-label">Releases Ready</span>
-          </li>
-          
-
-          <li class="process-step">
-            <span class="process-count">1</span>
-            <span class="process-label">Learning</span>
-          </li>
-          
-    </ol>
-  </section>
-
-  <section class="grid two-col" style="margin-top: 14px;">
-    <section class="panel">
-      <div class="section-head">
-        <h2>Ticket Board</h2>
-        <span class="section-note">Latest: <a class="record-link" href="../ops/tickets/TICKET-2026-0017-read-only-dashboard.yaml">TICKET-2026-0017</a></span>
+  <main class="page">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">The Factory</p>
+        <h1>Management Dashboard</h1>
       </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Ticket</th>
-              <th>Work</th>
-              <th>Status</th>
-              <th>Owner</th>
-              <th>Priority</th>
-              <th>Evidence</th>
-              <th>Next</th>
-            </tr>
-          </thead>
-          <tbody>
-          <tr>
-            <td><a class="record-link" href="../ops/tickets/TICKET-2026-0017-read-only-dashboard.yaml">TICKET-2026-0017</a></td>
-            <td>
-              <div class="row-title">Add read-only Factory dashboard</div>
-              <div class="row-subtitle">Create a local, read-only HTML dashboard that shows The Factory&#x27;s current tickets, runs, reviews, release readiness, inbox, appro...</div>
-            </td>
-            <td><span class="chip is-good">release ready</span></td>
-            <td>Engineering Lead</td>
-            <td><span class="chip is-muted priority">high</span></td>
-            <td><div class="evidence-stack"><span class="mini-chip">RUN-2026-0017</span><span class="mini-chip">reviews 2/2</span><span class="mini-chip">release ready</span></div></td>
-            <td>Open the dashboard locally and use it as the status surface while deciding later whether to add a CLI bridge or writabl...</td>
-          </tr>
-          
-
-          <tr>
-            <td><a class="record-link" href="../ops/tickets/TICKET-2026-0016-project-discovery-phase.yaml">TICKET-2026-0016</a></td>
-            <td>
-              <div class="row-title">Add Factory project discovery phase</div>
-              <div class="row-subtitle">Make first discovery a required Factory kickoff phase before a new project starts execution, with product objectives, first versi...</div>
-            </td>
-            <td><span class="chip is-good">release ready</span></td>
-            <td>Product / Feature Owner</td>
-            <td><span class="chip is-muted priority">high</span></td>
-            <td><div class="evidence-stack"><span class="mini-chip">RUN-2026-0016</span><span class="mini-chip">reviews 2/2</span><span class="mini-chip">release ready</span></div></td>
-            <td>Use the discovery pass when applying the project workspace template to the first real Factory-managed project.</td>
-          </tr>
-          
-
-          <tr>
-            <td><a class="record-link" href="../ops/tickets/TICKET-2026-0015-project-workspace-first-use-checklist.yaml">TICKET-2026-0015</a></td>
-            <td>
-              <div class="row-title">Create project workspace first-use checklist</div>
-              <div class="row-subtitle">Add a concise first-use checklist for applying the v0 project workspace template to a real Factory-managed project without mixing...</div>
-            </td>
-            <td><span class="chip is-good">release ready</span></td>
-            <td>Executive Orchestrator</td>
-            <td><span class="chip is-muted priority">medium</span></td>
-            <td><div class="evidence-stack"><span class="mini-chip">RUN-2026-0015</span><span class="mini-chip">reviews 2/2</span><span class="mini-chip">release ready</span></div></td>
-            <td>Use the checklist when applying the template to a real Factory-managed project workspace.</td>
-          </tr>
-          
-
-          <tr>
-            <td><a class="record-link" href="../ops/tickets/TICKET-2026-0014-project-workspace-template.yaml">TICKET-2026-0014</a></td>
-            <td>
-              <div class="row-title">Create v0 project workspace template</div>
-              <div class="row-subtitle">Create the v0 Factory project workspace template under 03-projects/ai-development-team/templates/project-workspace/ with README-g...</div>
-            </td>
-            <td><span class="chip is-good">release ready</span></td>
-            <td>Executive Orchestrator</td>
-            <td><span class="chip is-muted priority">high</span></td>
-            <td><div class="evidence-stack"><span class="mini-chip">RUN-2026-0014</span><span class="mini-chip">reviews 2/2</span><span class="mini-chip">release ready</span></div></td>
-            <td>Use the project workspace template as the starting point for future Factory-managed projects, and tighten ops fields af...</td>
-          </tr>
-          
-
-          <tr>
-            <td><a class="record-link" href="../ops/tickets/TICKET-2026-0013-release-cicd-expansion-pack.yaml">TICKET-2026-0013</a></td>
-            <td>
-              <div class="row-title">Create Release / CI-CD department expansion pack</div>
-              <div class="row-subtitle">Create The Factory Release / CI-CD department expansion pack in 04-agents using the Factory manual workflow, role registry, V0 co...</div>
-            </td>
-            <td><span class="chip is-good">release ready</span></td>
-            <td>Executive Orchestrator</td>
-            <td><span class="chip is-muted priority">high</span></td>
-            <td><div class="evidence-stack"><span class="mini-chip">RUN-2026-0013</span><span class="mini-chip">reviews 2/2</span><span class="mini-chip">release ready</span></div></td>
-            <td>Review Release / CI-CD expansion pack with the owner, then decide prompt wrappers/custom agent files or project workspace t...</td>
-          </tr>
-          
-
-          <tr>
-            <td><a class="record-link" href="../ops/tickets/TICKET-2026-0012-review-qa-expansion-pack.yaml">TICKET-2026-0012</a></td>
-            <td>
-              <div class="row-title">Create Review / QA department expansion pack</div>
-              <div class="row-subtitle">Create The Factory Review / QA department expansion pack in 04-agents using the Factory manual workflow, role registry, V0 core p...</div>
-            </td>
-            <td><span class="chip is-good">release ready</span></td>
-            <td>Executive Orchestrator</td>
-            <td><span class="chip is-muted priority">high</span></td>
-            <td><div class="evidence-stack"><span class="mini-chip">RUN-2026-0012</span><span class="mini-chip">reviews 2/2</span><span class="mini-chip">release ready</span></div></td>
-            <td>Review Review / QA expansion pack with the owner, then decide prompt wrappers/custom agent files or project workspace templ...</td>
-          </tr>
-          
-
-          <tr>
-            <td><a class="record-link" href="../ops/tickets/TICKET-2026-0011-engineering-expansion-pack.yaml">TICKET-2026-0011</a></td>
-            <td>
-              <div class="row-title">Create Engineering department expansion pack</div>
-              <div class="row-subtitle">Create The Factory Engineering department expansion pack in 04-agents using the Factory manual workflow, role registry, departmen...</div>
-            </td>
-            <td><span class="chip is-good">release ready</span></td>
-            <td>Executive Orchestrator</td>
-            <td><span class="chip is-muted priority">high</span></td>
-            <td><div class="evidence-stack"><span class="mini-chip">RUN-2026-0011</span><span class="mini-chip">reviews 2/2</span><span class="mini-chip">release ready</span></div></td>
-            <td>Review Engineering expansion pack with the owner, then decide prompt wrappers/custom agent files or project workspace templ...</td>
-          </tr>
-          
-
-          <tr>
-            <td><a class="record-link" href="../ops/tickets/TICKET-2026-0010-product-expansion-pack.yaml">TICKET-2026-0010</a></td>
-            <td>
-              <div class="row-title">Create Product department expansion pack</div>
-              <div class="row-subtitle">Create The Factory Product department expansion pack in 04-agents using the Factory manual workflow, role registry, department pa...</div>
-            </td>
-            <td><span class="chip is-good">release ready</span></td>
-            <td>Executive Orchestrator</td>
-            <td><span class="chip is-muted priority">high</span></td>
-            <td><div class="evidence-stack"><span class="mini-chip">RUN-2026-0010</span><span class="mini-chip">reviews 2/2</span><span class="mini-chip">release ready</span></div></td>
-            <td>Review Product expansion pack with the owner, then decide prompt wrappers/custom agent files or project workspace template...</td>
-          </tr>
-          
-
-          <tr>
-            <td><a class="record-link" href="../ops/tickets/TICKET-2026-0009-founder-interface-pack.yaml">TICKET-2026-0009</a></td>
-            <td>
-              <div class="row-title">Create Founder Interface / Personal Assistant department pack</div>
-              <div class="row-subtitle">Create The Factory Founder Interface / Personal Assistant department pack in 04-agents using the Factory manual workflow, role re...</div>
-            </td>
-            <td><span class="chip is-good">release ready</span></td>
-            <td>Executive Orchestrator</td>
-            <td><span class="chip is-muted priority">high</span></td>
-            <td><div class="evidence-stack"><span class="mini-chip">RUN-2026-0009</span><span class="mini-chip">reviews 2/2</span><span class="mini-chip">release ready</span></div></td>
-            <td>Review Founder Interface pack with the owner, then decide prompt wrappers/custom agent files or project workspace template...</td>
-          </tr>
-          
-
-          <tr>
-            <td><a class="record-link" href="../ops/tickets/TICKET-2026-0008-marketing-pack.yaml">TICKET-2026-0008</a></td>
-            <td>
-              <div class="row-title">Create Marketing department pack</div>
-              <div class="row-subtitle">Create The Factory Marketing department pack in 04-agents using the Factory manual workflow, registry, and department packs as op...</div>
-            </td>
-            <td><span class="chip is-good">release ready</span></td>
-            <td>Executive Orchestrator</td>
-            <td><span class="chip is-muted priority">medium</span></td>
-            <td><div class="evidence-stack"><span class="mini-chip">RUN-2026-0008</span><span class="mini-chip">reviews 2/2</span><span class="mini-chip">release ready</span></div></td>
-            <td>Review Marketing pack with the owner, then decide Founder Interface pack, prompt wrappers, or project workspace template ne...</td>
-          </tr>
-          
-
-          <tr>
-            <td><a class="record-link" href="../ops/tickets/TICKET-2026-0007-architecture-context-pack.yaml">TICKET-2026-0007</a></td>
-            <td>
-              <div class="row-title">Create Architecture / Context Architecture department pack</div>
-              <div class="row-subtitle">Create The Factory Architecture / Context Architecture department pack in 04-agents using Factory operating contracts.</div>
-            </td>
-            <td><span class="chip is-good">release ready</span></td>
-            <td>Executive Orchestrator</td>
-            <td><span class="chip is-muted priority">high</span></td>
-            <td><div class="evidence-stack"><span class="mini-chip">RUN-2026-0007</span><span class="mini-chip">reviews 2/2</span><span class="mini-chip">release ready</span></div></td>
-            <td>Review Architecture / Context pack with the owner, then decide Founder Interface pack, prompt wrappers, or project workspac...</td>
-          </tr>
-          
-
-          <tr>
-            <td><a class="record-link" href="../ops/tickets/TICKET-2026-0006-optimization-pack.yaml">TICKET-2026-0006</a></td>
-            <td>
-              <div class="row-title">Create Optimization department pack</div>
-              <div class="row-subtitle">Create The Factory Optimization Department pack in 04-agents using the Factory operating contracts and Hermes/SkillOpt learning-l...</div>
-            </td>
-            <td><span class="chip is-good">release ready</span></td>
-            <td>Executive Orchestrator</td>
-            <td><span class="chip is-muted priority">high</span></td>
-            <td><div class="evidence-stack"><span class="mini-chip">RUN-2026-0006</span><span class="mini-chip">reviews 2/2</span><span class="mini-chip">release ready</span></div></td>
-            <td>Review Optimization pack with the owner, then decide Founder Interface pack, prompt wrappers, or project workspace template...</td>
-          </tr>
-          
-
-          <tr>
-            <td><a class="record-link" href="../ops/tickets/TICKET-2026-0005-security-privacy-authority-pack.yaml">TICKET-2026-0005</a></td>
-            <td>
-              <div class="row-title">Create Security / Privacy / Authority department pack</div>
-              <div class="row-subtitle">Create The Factory Security / Privacy / Authority department pack in 04-agents using the manual workflow, role registry, V0 core...</div>
-            </td>
-            <td><span class="chip is-good">release ready</span></td>
-            <td>Executive Orchestrator</td>
-            <td><span class="chip is-muted priority">high</span></td>
-            <td><div class="evidence-stack"><span class="mini-chip">RUN-2026-0005</span><span class="mini-chip">reviews 2/2</span><span class="mini-chip">release ready</span></div></td>
-            <td>Review the Security / Privacy / Authority pack, then decide whether Founder Interface or Optimization department pack s...</td>
-          </tr>
-          
-
-          <tr>
-            <td><a class="record-link" href="../ops/tickets/TICKET-2026-0004-knowledge-documentation-pack.yaml">TICKET-2026-0004</a></td>
-            <td>
-              <div class="row-title">Create Knowledge / Documentation department pack</div>
-              <div class="row-subtitle">Create The Factory Knowledge / Documentation Department pack in 04-agents using the manual workflow, role registry, and V0 core d...</div>
-            </td>
-            <td><span class="chip is-good">release ready</span></td>
-            <td>Executive Orchestrator</td>
-            <td><span class="chip is-muted priority">high</span></td>
-            <td><div class="evidence-stack"><span class="mini-chip">RUN-2026-0004</span><span class="mini-chip">reviews 2/2</span><span class="mini-chip">release ready</span></div></td>
-            <td>Review the Knowledge / Documentation pack, then decide whether to add runnable prompt wrappers or another department pa...</td>
-          </tr>
-          
-
-          <tr>
-            <td><a class="record-link" href="../ops/tickets/TICKET-2026-0003-role-registry-pack.yaml">TICKET-2026-0003</a></td>
-            <td>
-              <div class="row-title">Create Factory role registry and V0 core department pack</div>
-              <div class="row-subtitle">Create the Factory role registry and V0 core department pack in 04-agents using the existing role specs and manual workflow.</div>
-            </td>
-            <td><span class="chip is-good">release ready</span></td>
-            <td>Executive Orchestrator</td>
-            <td><span class="chip is-muted priority">high</span></td>
-            <td><div class="evidence-stack"><span class="mini-chip">RUN-2026-0003</span><span class="mini-chip">reviews 2/2</span><span class="mini-chip">release ready</span></div></td>
-            <td>Review registry and pack with the owner, then decide prompt wrappers/custom agents versus project workspace template.</td>
-          </tr>
-          
-
-          <tr>
-            <td><a class="record-link" href="../ops/tickets/TICKET-2026-0002-core-agent-specs.yaml">TICKET-2026-0002</a></td>
-            <td>
-              <div class="row-title">Create first reusable Factory core role specs</div>
-              <div class="row-subtitle">Create the first reusable Factory department and role specs in 04-agents, using the manual workflow as their shared operating con...</div>
-            </td>
-            <td><span class="chip is-good">release ready</span></td>
-            <td>Executive Orchestrator</td>
-            <td><span class="chip is-muted priority">high</span></td>
-            <td><div class="evidence-stack"><span class="mini-chip">RUN-2026-0002</span><span class="mini-chip">reviews 2/2</span><span class="mini-chip">release ready</span></div></td>
-            <td>Review role specs with the owner, then create the next Factory ticket for prompt wrappers/custom agent files or the project...</td>
-          </tr>
-          
-
-          <tr>
-            <td><a class="record-link" href="../ops/tickets/TICKET-2026-0001-internal-factory-ops.yaml">TICKET-2026-0001</a></td>
-            <td>
-              <div class="row-title">Create internal Factory ops layer</div>
-              <div class="row-subtitle">Create the first live Factory ops structure inside 03-projects/ai-development-team and update current-state docs so the next Fact...</div>
-            </td>
-            <td><span class="chip is-good">release ready</span></td>
-            <td>Executive Orchestrator</td>
-            <td><span class="chip is-muted priority">high</span></td>
-            <td><div class="evidence-stack"><span class="mini-chip">RUN-2026-0001</span><span class="mini-chip">reviews 2/2</span><span class="mini-chip">release ready</span></div></td>
-            <td>Create the next Factory ticket for the manual workflow document, using LEARN-2026-0001 as input.</td>
-          </tr>
-          </tbody>
-        </table>
+      <div class="actions">
+        <button id="loadFolderButton" type="button">Load Project Folder</button>
+        <button id="refreshButton" type="button" disabled>Refresh</button>
+        <input id="folderInput" type="file" webkitdirectory directory multiple hidden>
       </div>
+    </header>
+
+    <section class="status-strip" aria-live="polite">
+      <div id="dataStatus">No local ops data loaded.</div>
+      <div id="loadedPath"></div>
     </section>
 
-    <aside class="grid side-grid">
-      <section class="panel">
-        <div class="section-head"><h2>Next Moves</h2></div>
-        <ol class="next-list"><li>Open and use the <a href="index.html">Read-Only Dashboard</a> during the next Factory or [project] planning session.</li><li>Use <a href="../../../04-agents/skills/factory-project-discovery.md">Factory Project Discovery</a> and the <a href="../templates/project-workspace/FIRST-USE.md">Project Workspace First-Use Checklist</a> when applying the template to the first future Factory-managed project workspace.</li><li>Tighten project-local ops fields after first real project use.</li><li>Capture template and dashboard visibility friction as learning candidates before changing canonical templates.</li><li>Design the CLI/context-pack helper or writable dashboard control plane only after read-only dashboard friction is clear.</li></ol>
+    <section class="grid metrics" aria-label="Mission control metrics">
+      <article class="metric panel">
+        <span>Tickets</span>
+        <strong id="metricTickets">0</strong>
+        <small id="metricTicketsDetail">0 open</small>
+      </article>
+      <article class="metric panel">
+        <span>Active Work</span>
+        <strong id="metricActive">0</strong>
+        <small id="metricActiveDetail">0 blocked</small>
+      </article>
+      <article class="metric panel">
+        <span>Runs</span>
+        <strong id="metricRuns">0</strong>
+        <small id="metricRunsDetail">No runs loaded</small>
+      </article>
+      <article class="metric panel">
+        <span>Release Ready</span>
+        <strong id="metricReleases">0</strong>
+        <small id="metricReleasesDetail">0 reviews</small>
+      </article>
+    </section>
+
+    <section class="grid management-grid">
+      <section class="panel mission-panel">
+        <div class="section-head">
+          <h2>Mission Control</h2>
+          <span id="missionPhase" class="section-note">Read-only</span>
+        </div>
+        <div id="missionCards" class="mission-cards"></div>
       </section>
+
       <section class="panel">
-        <div class="section-head"><h2>Founder Inbox</h2></div>
-        <div class="empty-state">No open founder inbox items.</div>
+        <div class="section-head">
+          <h2>Decision Queue</h2>
+          <span id="decisionCount" class="section-note">0 items</span>
+        </div>
+        <div id="decisionQueue" class="stack-list"></div>
       </section>
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
+        <h2>Stage Board</h2>
+        <span id="stageBoardNote" class="section-note">Tickets by workflow stage</span>
+      </div>
+      <div id="stageBoard" class="stage-board"></div>
+    </section>
+
+    <section class="grid management-grid">
       <section class="panel">
-        <div class="section-head"><h2>Approvals</h2></div>
-        <div class="empty-state">No pending approvals.</div>
+        <div class="section-head">
+          <h2>Role Roster</h2>
+          <span id="roleRosterNote" class="section-note">Owner load</span>
+        </div>
+        <div id="roleRoster" class="role-grid"></div>
       </section>
+
       <section class="panel">
-        <div class="section-head"><h2>Learning</h2></div>
-        <ul class="record-list">
-          <li class="record-item">
-            <div><a class="record-link" href="../ops/learning/LEARN-2026-0001-manual-workflow-gate.yaml">LEARN-2026-0001</a> <span class="muted">Manual workflow needs explicit review and release gates</span></div>
-            <div><span class="chip is-good">promoted</span></div>
-          </li>
-          </ul>
+        <div class="section-head">
+          <h2>Context Panel</h2>
+          <span id="contextPanelNote" class="section-note">Source scope</span>
+        </div>
+        <div id="contextPanel" class="stack-list"></div>
       </section>
-    </aside>
-  </section>
+    </section>
 
-  <section class="panel" style="margin-top: 14px;">
-    <div class="section-head">
-      <h2>Recent Runs</h2>
-      <span class="section-note">Execution evidence from ops/runs</span>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Run</th>
-            <th>Ticket</th>
-            <th>Status</th>
-            <th>Owner</th>
-            <th>Output</th>
-            <th>Next</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><a class="record-link" href="../ops/runs/RUN-2026-0017-read-only-dashboard.json">RUN-2026-0017</a></td>
-            <td>TICKET-2026-0017</td>
-            <td><span class="chip is-good">completed</span></td>
-            <td>Engineering Lead</td>
-            <td>Added a local dashboard renderer and generated HTML page that summarizes Factory tickets, flow counts, recent runs, founder inbox...</td>
-            <td>Open the dashboard locally and use it as the status surface while deciding later whether to add a CLI bridge or writabl...</td>
-          </tr>
-          
+    <section class="grid management-grid">
+      <section class="panel">
+        <div class="section-head">
+          <h2>Release Lane</h2>
+          <span id="releaseLaneNote" class="section-note">Release readiness</span>
+        </div>
+        <div id="releaseLane" class="table-wrap"></div>
+      </section>
 
-          <tr>
-            <td><a class="record-link" href="../ops/runs/RUN-2026-0016-project-discovery-phase.json">RUN-2026-0016</a></td>
-            <td>TICKET-2026-0016</td>
-            <td><span class="chip is-good">completed</span></td>
-            <td>Product / Feature Owner</td>
-            <td>Added Factory Project Discovery skill, discovery/roadmap project template artifacts, first-use checklist discovery gate, Product...</td>
-            <td>Use the discovery pass when applying the project workspace template to the first real Factory-managed project.</td>
-          </tr>
-          
+      <section class="panel">
+        <div class="section-head">
+          <h2>Improvement Queue</h2>
+          <span id="learningCount" class="section-note">0 items</span>
+        </div>
+        <div id="learningQueue" class="stack-list"></div>
+      </section>
+    </section>
 
-          <tr>
-            <td><a class="record-link" href="../ops/runs/RUN-2026-0015-project-workspace-first-use-checklist.json">RUN-2026-0015</a></td>
-            <td>TICKET-2026-0015</td>
-            <td><span class="chip is-good">completed</span></td>
-            <td>Product / Feature Owner</td>
-            <td>Added FIRST-USE.md for the project workspace template, linked it from the template README, and recorded that ops template schemas...</td>
-            <td>Use the checklist when applying the template to a real Factory-managed project workspace.</td>
-          </tr>
-          
+    <section class="panel">
+      <div class="section-head">
+        <h2>Run Ledger</h2>
+        <span id="runLedgerNote" class="section-note">Recent execution evidence</span>
+      </div>
+      <div id="runLedger" class="table-wrap"></div>
+    </section>
 
-          <tr>
-            <td><a class="record-link" href="../ops/runs/RUN-2026-0014-project-workspace-template.json">RUN-2026-0014</a></td>
-            <td>TICKET-2026-0014</td>
-            <td><span class="chip is-good">completed</span></td>
-            <td>Execution Agent</td>
-            <td>Created a copyable project workspace template with tracked README placeholders for .github, agents, product, ops, and v0 ops subf...</td>
-            <td>Use the project workspace template as the starting point for future Factory-managed projects, and tighten ops fields af...</td>
-          </tr>
-          
+    <footer class="footer">
+      <a href="../ops/README.md">Ops</a>
+      <a href="../progress.md">Progress</a>
+      <a href="../roadmap.md">Roadmap</a>
+      <a href="README.md">Dashboard Notes</a>
+    </footer>
+  </main>
 
-          <tr>
-            <td><a class="record-link" href="../ops/runs/RUN-2026-0013-release-cicd-expansion-pack.json">RUN-2026-0013</a></td>
-            <td>TICKET-2026-0013</td>
-            <td><span class="chip is-good">completed</span></td>
-            <td>Executive Orchestrator</td>
-            <td>Created reusable Release / CI-CD department expansion pack with roles, triggers, routing, artifacts, stop conditions, branch/comm...</td>
-            <td>Review Release / CI-CD expansion pack with the owner, then decide prompt wrappers/custom agent files or project workspace t...</td>
-          </tr>
-          
-
-          <tr>
-            <td><a class="record-link" href="../ops/runs/RUN-2026-0012-review-qa-expansion-pack.json">RUN-2026-0012</a></td>
-            <td>TICKET-2026-0012</td>
-            <td><span class="chip is-good">completed</span></td>
-            <td>Executive Orchestrator</td>
-            <td>Created reusable Review / QA department expansion pack with roles, triggers, routing, artifacts, stop conditions, and explicit re...</td>
-            <td>Review Review / QA expansion pack with the owner, then decide prompt wrappers/custom agent files or project workspace templ...</td>
-          </tr>
-          
-
-          <tr>
-            <td><a class="record-link" href="../ops/runs/RUN-2026-0011-engineering-expansion-pack.json">RUN-2026-0011</a></td>
-            <td>TICKET-2026-0011</td>
-            <td><span class="chip is-good">completed</span></td>
-            <td>Executive Orchestrator</td>
-            <td>Created reusable Engineering department expansion pack with roles, triggers, routing, artifacts, stop conditions, and a context-p...</td>
-            <td>Review Engineering expansion pack with the owner, then decide prompt wrappers/custom agent files or project workspace templ...</td>
-          </tr>
-          
-
-          <tr>
-            <td><a class="record-link" href="../ops/runs/RUN-2026-0010-product-expansion-pack.json">RUN-2026-0010</a></td>
-            <td>TICKET-2026-0010</td>
-            <td><span class="chip is-good">completed</span></td>
-            <td>Executive Orchestrator</td>
-            <td>Created reusable Product department expansion pack with roles, triggers, routing, artifacts, stop conditions, and a rough-idea-to...</td>
-            <td>Review Product expansion pack with the owner, then decide prompt wrappers/custom agent files or project workspace template...</td>
-          </tr>
-          </tbody>
-      </table>
-    </div>
-  </section>
-
-  <footer class="footer">
-    <a href="../ops/README.md">Ops</a>
-    <a href="../progress.md">Progress</a>
-    <a href="../roadmap.md">Roadmap</a>
-    <a href="generate_factory_dashboard.py">Renderer</a>
-  </footer>
-</main>
+  <script src="dashboard.js"></script>
 </body>
 </html>

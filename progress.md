@@ -4,7 +4,7 @@ Live project-state file for The Factory.
 
 ## Current Phase
 
-Read-only dashboard visibility plus project workspace template dogfood.
+Management dashboard visibility plus project workspace template dogfood.
 
 ## Current Status
 
@@ -50,9 +50,9 @@ The project workspace template now has a first-use checklist for applying it to 
 
 The new-project discovery phase is now explicit. Before the first executable ticket in a Factory-managed project, Product should produce or update a discovery brief, roadmap/version plan, first version slice, postponed-decision list, and role/skill routing recommendation. The project workspace template now includes `product/DISCOVERY.md` and `product/ROADMAP.md` for this first pass.
 
-The first read-only local dashboard now exists at `03-projects/ai-development-team/dashboard/index.html`. It is generated from The Factory's live `ops/` files and shows tickets, operating-flow counts, recent runs, reviews, release state, founder inbox, approvals, learning records, and source links without requiring a server, CLI bridge, or writable control plane.
+The local dashboard now exists at `03-projects/ai-development-team/dashboard/index.html` as a browser-side read-only management surface. It loads the selected Factory project or `ops/` folder directly in the browser and shows mission control, stage board, role roster, run ledger, release lane, context panel, decision queue, approvals, and learning records without requiring regenerated HTML, a server, CLI bridge, database, or writable control plane.
 
-The next step is to use the dashboard during the next Factory or [project] planning session, then use the discovery pass, checklist, and template on the first future Factory-managed project workspace. Dashboard and template changes should come from real setup and visibility friction.
+The next step is to use the dashboard during the next Factory or [project] planning session by loading the Factory project or `ops/` folder, then use the discovery pass, checklist, and template on the first future Factory-managed project workspace. Dashboard and template changes should come from real setup and visibility friction.
 
 ## Locked Decisions
 
@@ -104,8 +104,9 @@ The next step is to use the dashboard during the next Factory or [project] plann
 - The Factory's own live operational state lives under `03-projects/ai-development-team/ops/` while The Factory is being built.
 - Manual Factory operation is defined in `03-projects/ai-development-team/design/manual-workflow.md` and should be the shared operating contract for early agents.
 - Recommended storage direction: YAML for most state objects, JSON or JSONL for run/session state and events, Markdown with YAML frontmatter for context packs and release checklists, and YAML for v0 review records.
-- A read-only local dashboard can exist before the CLI bridge or writable control plane, as long as it derives from file-backed ops state and does not become a second source of truth.
-- Start with architecture/spec documentation and folder templates, then read-only dashboard visibility, then CLI/context-pack helper and writable dashboard/control-plane implementation.
+- A read-only browser-side management dashboard can exist before the CLI bridge or writable control plane, as long as it reads file-backed ops state and does not become a second source of truth.
+- Browser folder selection is the current local-file permission boundary for direct dashboard data loading.
+- Start with architecture/spec documentation and folder templates, then read-only management dashboard visibility, then CLI/context-pack helper and writable dashboard/control-plane implementation.
 - For self-improvement, use Hermes Agent as the learning-intake and curation reference, and SkillOpt as the validation/promotion reference.
 
 ## Current Design Areas
@@ -118,14 +119,14 @@ The next step is to use the dashboard during the next Factory or [project] plann
 - [Source Use Map](design/source-use-map.md)
 - [V0 Operating Objects](design/v0-operating-objects.md)
 - [Factory Ops](ops/README.md)
-- [Read-Only Dashboard](dashboard/index.html)
+- [Management Dashboard](dashboard/index.html)
 - [Templates](templates/README.md)
 - [Open Questions](design/open-questions.md)
 - [Roadmap](roadmap.md)
 
 ## Next Recommended Moves
 
-1. Open and use the [Read-Only Dashboard](dashboard/index.html) during the next Factory or [project] planning session.
+1. Open the [Management Dashboard](dashboard/index.html), load the Factory project or `ops/` folder, and use it during the next Factory or [project] planning session.
 2. Use [Factory Project Discovery](../../04-agents/skills/factory-project-discovery.md) and the [Project Workspace First-Use Checklist](templates/project-workspace/FIRST-USE.md) when applying the template to the first future Factory-managed project workspace.
 3. Tighten project-local ops fields after first real project use.
 4. Capture template and dashboard visibility friction as learning candidates before changing canonical templates.
@@ -134,7 +135,7 @@ The next step is to use the dashboard during the next Factory or [project] plann
 ## Related Docs
 
 - [Spec](spec.md)
-- [Read-Only Dashboard](dashboard/index.html)
+- [Management Dashboard](dashboard/index.html)
 - [Roadmap](roadmap.md)
 - [Design Docs](design/README.md)
 - [AI Development Team Discovery](../../session-logs/2026-06-03-ai-development-team-discovery.md)
