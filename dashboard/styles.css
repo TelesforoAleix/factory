@@ -87,6 +87,7 @@ h3 { font-size: 15px; letter-spacing: 0; }
 .grid { display: grid; gap: 14px; }
 .metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 14px; }
 .management-grid { grid-template-columns: minmax(0, 1.35fr) minmax(340px, 0.65fr); margin-top: 14px; }
+.drill-grid { grid-template-columns: minmax(320px, 0.75fr) minmax(0, 1.25fr); margin-top: 14px; }
 
 .panel {
   background: var(--surface);
@@ -113,14 +114,14 @@ h3 { font-size: 15px; letter-spacing: 0; }
   gap: 10px;
 }
 
-.mission-card, .role-card, .ticket-card, .record-item, .context-item {
+.mission-card, .role-card, .ticket-card, .record-item, .context-item, .task-card, .detail-card {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface-alt);
   padding: 12px;
 }
 
-.mission-card strong, .role-card strong, .ticket-card strong { display: block; margin-bottom: 5px; }
+.mission-card strong, .role-card strong, .ticket-card strong, .task-card strong, .detail-card strong { display: block; margin-bottom: 5px; }
 
 .stage-board {
   display: grid;
@@ -138,9 +139,30 @@ h3 { font-size: 15px; letter-spacing: 0; }
 }
 
 .stage-title { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 9px; font-weight: 800; }
-.ticket-list, .stack-list { display: grid; gap: 8px; }
+.ticket-list, .stack-list, .detail-stack { display: grid; gap: 8px; }
 .ticket-card { background: #ffffff; }
-.ticket-meta, .record-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.ticket-meta, .record-meta, .detail-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+
+.detail-content { display: grid; gap: 12px; }
+.detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.detail-list { margin: 0; padding-left: 18px; }
+.detail-list li { margin: 4px 0; }
+.detail-section { border-top: 1px solid var(--line); padding-top: 10px; }
+.detail-section:first-child { border-top: 0; padding-top: 0; }
+
+.link-button {
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--accent);
+  padding: 0;
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+}
+
+.link-button:hover { text-decoration: underline; }
 
 .chip {
   display: inline-flex;
@@ -171,12 +193,12 @@ tr:last-child td { border-bottom: 0; }
 .footer { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; color: var(--muted); }
 
 @media (max-width: 1100px) {
-  .management-grid, .metrics, .mission-cards, .role-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .management-grid, .drill-grid, .metrics, .mission-cards, .role-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 720px) {
   .page { padding: 18px; }
   .topbar, .status-strip { align-items: flex-start; flex-direction: column; }
   .actions { justify-content: flex-start; }
-  .management-grid, .metrics, .mission-cards, .role-grid { grid-template-columns: 1fr; }
+  .management-grid, .drill-grid, .metrics, .mission-cards, .role-grid, .detail-grid { grid-template-columns: 1fr; }
 }

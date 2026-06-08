@@ -54,7 +54,9 @@ The local dashboard now exists at `03-projects/ai-development-team/dashboard/ind
 
 The Paperclip-style management-interface plan now exists in `design/paperclip-style-management-interface.md`. It splits the next dashboard/interface work into read-only drill-down, communication/decision cards, data-contract tightening, CLI bridge, writable control plane, and real project rollout.
 
-The next step is to start the first read-only drill-down ticket: build the relationship index and task/ticket detail views so the owner can inspect a task, see associated tickets, click a ticket, see who did what, and understand stage plus next owner/action. Dashboard and template changes should come from real setup and visibility friction.
+The first read-only drill-down slice is now implemented. The dashboard builds an in-memory relationship index, adds a Task Explorer, and adds a Selected Work panel where the owner can inspect a task, see associated tickets, click a ticket, see runs/reviews/release evidence, changed files/tests, and understand stage plus next owner/action.
+
+The next step is to load the full Factory `ops/` folder in the dashboard and decide whether the next interface slice should be search/filtering or communication/decision cards. Dashboard and template changes should come from real setup and visibility friction.
 
 ## Locked Decisions
 
@@ -129,8 +131,8 @@ The next step is to start the first read-only drill-down ticket: build the relat
 
 ## Next Recommended Moves
 
-1. Implement the first read-only management-interface slice: relationship index plus task/ticket drill-down.
-2. Open the [Management Dashboard](dashboard/index.html), load the Factory project or `ops/` folder, and use it during the next Factory or [project] planning session.
+1. Open the [Management Dashboard](dashboard/index.html), load the full Factory `ops/` folder, and inspect the new task/ticket drill-down with real data.
+2. Decide whether the next read-only interface slice is search/filtering or communication/decision cards.
 3. Use [Factory Project Discovery](../../04-agents/skills/factory-project-discovery.md) and the [Project Workspace First-Use Checklist](templates/project-workspace/FIRST-USE.md) when applying the template to the first future Factory-managed project workspace.
 4. Capture template and dashboard visibility friction as learning candidates before changing canonical templates.
 5. Delay CLI/context-pack helper or writable dashboard control-plane work until the read-only interface proves what writes are actually needed.

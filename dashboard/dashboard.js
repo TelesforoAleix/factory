@@ -26,7 +26,7 @@ const ROLE_DEPARTMENTS = new Map([
   ["Marketing", "Marketing"],
 ]);
 
-const state = { directoryHandle: null, loadedLabel: "", records: emptyRecords() };
+const state = { directoryHandle: null, loadedLabel: "", records: emptyRecords(), indexes: buildIndexes(emptyRecords()), selected: null };
 const selectors = {
   loadFolderButton: document.getElementById("loadFolderButton"),
   refreshButton: document.getElementById("refreshButton"),
@@ -38,7 +38,16 @@ const selectors = {
 selectors.loadFolderButton.addEventListener("click", loadProjectFolder);
 selectors.refreshButton.addEventListener("click", refreshData);
 selectors.folderInput.addEventListener("change", loadFromInputFiles);
+document.addEventListener("click", inspectClickedRecord);
 render(emptyRecords());
+
+function inspectClickedRecord(event) {
+  const trigger = event.target.closest("[data-inspect-type][data-inspect-id]");
+  if (!trigger) return;
+  event.preventDefault();
+  state.selected = { type: trigger.dataset.inspectType, id: trigger.dataset.inspectId };
+  renderSelectedDetail(state.records, state.indexes);
+}
 
 async function loadProjectFolder() {
   if (window.showDirectoryPicker) {
@@ -198,7 +207,71 @@ function parseScalar(value) {
   return value;
 }
 
+function buildIndexes(records) {
+  const indexes = {
+    byId: new Map(),
+    ticketsByTask: new Map(),
+    runsByTicket: new Map(),
+    reviewsByTicket: new Map(),
+    releasesByTicket: new Map(),
+    inboxByObject: new Map(),
+    approvalsByObject: new Map(),
+    learningByObject: new Map(),
+    contextPacksById: new Map(),
+  };
+
+  for (const collection of Object.values(records)) {
+    for (const record of collection) {
+      if (record.id) indexes.byId.set(record.id, record);
+    }
+  }
+
+  for (const ticket of records.tickets) addIndexed(indexes.ticketsByTask, ticket.task_id, ticket);
+  for (const run of records.runs) addIndexed(indexes.runsByTicket, run.related_ticket_id, run);
+  for (const review of records.reviews) addIndexed(indexes.reviewsByTicket, review.related_ticket_id, review);
+  for (const contextPack of records.contextPacks) {
+    if (contextPack.id) indexes.contextPacksById.set(contextPack.id, contextPack);
+  }
+
+  for (const release of records.releases) {
+    for (const ticketId of ensureList(release.ticket_ids)) addIndexed(indexes.releasesByTicket, ticketId, release);
+  }
+
+  for (const item of records.inbox) {
+    for (const objectId of relatedObjectIds(item)) addIndexed(indexes.inboxByObject, objectId, item);
+  }
+
+  for (const approval of records.approvals) {
+    for (const objectId of relatedObjectIds(approval)) addIndexed(indexes.approvalsByObject, objectId, approval);
+  }
+
+  for (const learning of records.learning) {
+    for (const objectId of relatedObjectIds(learning)) addIndexed(indexes.learningByObject, objectId, learning);
+  }
+
+  return indexes;
+}
+
+function relatedObjectIds(record) {
+  return [
+    ...ensureList(record.related_objects),
+    ...ensureList(record.related_object_ids),
+    ...ensureList(record.source_object_ids),
+    ...ensureList(record.blocks_object_ids),
+    ...ensureList(record.blocking_object_ids),
+    record.related_ticket_id,
+    record.related_task_id,
+  ].filter(Boolean);
+}
+
+function addIndexed(map, key, value) {
+  if (!key) return;
+  if (!map.has(key)) map.set(key, []);
+  map.get(key).push(value);
+}
+
 function render(records) {
+  state.indexes = buildIndexes(records);
   const tickets = sortById(records.tickets).reverse();
   const runs = sortById(records.runs).reverse();
   const reviews = sortById(records.reviews).reverse();
@@ -221,7 +294,9 @@ function render(records) {
   setText("metricReleasesDetail", `${reviews.length} reviews`);
   renderMissionCards(tickets, runs, reviews, releases, inbox, approvals, learning, contextPacks);
   renderDecisionQueue(inbox, approvals, blockedTickets);
-  renderStageBoard(tickets, records);
+  renderStageBoard(tickets, state.indexes);
+  renderTaskExplorer(records.tasks, state.indexes);
+  renderSelectedDetail(records, state.indexes);
   renderRoleRoster(tickets, runs);
   renderContextPanel(tickets, contextPacks, reviews);
   renderReleaseLane(releases);
@@ -250,17 +325,191 @@ function renderDecisionQueue(inbox, approvals, blockedTickets) {
   document.getElementById("decisionQueue").innerHTML = items.length ? items.map(renderRecordCard).join("") : emptyState("No pending decisions.");
 }
 
-function renderStageBoard(tickets, records) {
+function renderStageBoard(tickets, indexes) {
   document.getElementById("stageBoard").innerHTML = STAGE_GROUPS.map((stage) => {
     const stageTickets = tickets.filter((ticket) => stage.statuses.includes(ticket.status));
-    return `<section class="stage-column"><div class="stage-title"><span>${escapeHtml(stage.label)}</span><span>${stageTickets.length}</span></div><div class="ticket-list">${stageTickets.length ? stageTickets.map((ticket) => renderTicketCard(ticket, records)).join("") : emptyState("Empty")}</div></section>`;
+    return `<section class="stage-column"><div class="stage-title"><span>${escapeHtml(stage.label)}</span><span>${stageTickets.length}</span></div><div class="ticket-list">${stageTickets.length ? stageTickets.map((ticket) => renderTicketCard(ticket, indexes)).join("") : emptyState("Empty")}</div></section>`;
   }).join("");
 }
 
-function renderTicketCard(ticket, records) {
-  const runCount = records.runs.filter((run) => run.related_ticket_id === ticket.id).length;
-  const reviewCount = records.reviews.filter((review) => review.related_ticket_id === ticket.id).length;
-  return `<article class="ticket-card"><strong>${sourceLink(ticket, ticket.id)}</strong><div>${escapeHtml(ticket.title || "Untitled ticket")}</div><div class="ticket-meta">${chip(ticket.status)}${chip(ticket.owner_role || "unowned")}${runCount ? chip(`${runCount} run${runCount === 1 ? "" : "s"}`) : ""}${reviewCount ? chip(`${reviewCount} review${reviewCount === 1 ? "" : "s"}`) : ""}</div></article>`;
+function renderTicketCard(ticket, indexes) {
+  const runCount = ensureList(indexes.runsByTicket.get(ticket.id)).length;
+  const reviewCount = ensureList(indexes.reviewsByTicket.get(ticket.id)).length;
+  const next = computeNextStep(ticket, indexes);
+  return `<article class="ticket-card"><strong>${inspectButton(ticket, ticket.id)}</strong><div>${escapeHtml(ticket.title || "Untitled ticket")}</div><div class="ticket-meta">${chip(ticket.status)}${chip(ticket.owner_role || "unowned")}${runCount ? chip(`${runCount} run${runCount === 1 ? "" : "s"}`) : ""}${reviewCount ? chip(`${reviewCount} review${reviewCount === 1 ? "" : "s"}`) : ""}</div><small class="muted">Next: ${escapeHtml(next.owner)} - ${escapeHtml(truncate(next.action, 72))}</small></article>`;
+}
+
+function renderTaskExplorer(tasks, indexes) {
+  const sortedTasks = sortById(tasks).reverse();
+  document.getElementById("taskExplorer").innerHTML = sortedTasks.length ? sortedTasks.map((task) => renderTaskCard(task, indexes)).join("") : emptyState("No tasks loaded.");
+}
+
+function renderTaskCard(task, indexes) {
+  const tickets = ensureList(indexes.ticketsByTask.get(task.id));
+  const doneCount = tickets.filter((ticket) => FINAL_TICKET_STATUSES.has(ticket.status)).length;
+  const blockedCount = tickets.filter((ticket) => ticket.status === "blocked" || ensureList(ticket.blocking_object_ids).length).length;
+  const nextTicket = nextTicketForTask(tickets, indexes);
+  return `
+    <article class="task-card">
+      <strong>${inspectButton(task, task.id)}</strong>
+      <div>${escapeHtml(task.title || "Untitled task")}</div>
+      <div class="record-meta">
+        ${chip(task.status || "unknown")}
+        ${chip(`${doneCount}/${tickets.length} done`)}
+        ${blockedCount ? chip(`${blockedCount} blocked`) : ""}
+      </div>
+      <small class="muted">Next: ${nextTicket ? escapeHtml(nextTicket.title || nextTicket.id) : "No child ticket loaded"}</small>
+    </article>
+  `;
+}
+
+function renderSelectedDetail(records, indexes) {
+  const selectedRecord = selectedRecordFor(records, indexes);
+  if (!selectedRecord) {
+    document.getElementById("detailPanel").innerHTML = emptyState("Load ops data and select a task or ticket.");
+    document.getElementById("detailPanelNote").textContent = "No selection";
+    return;
+  }
+
+  document.getElementById("detailPanelNote").textContent = selectedRecord.id || selectedRecord.title || "Selected";
+  if (selectedRecord.object_type === "task") {
+    document.getElementById("detailPanel").innerHTML = renderTaskDetail(selectedRecord, indexes);
+    return;
+  }
+  if (selectedRecord.object_type === "ticket") {
+    document.getElementById("detailPanel").innerHTML = renderTicketDetail(selectedRecord, indexes);
+    return;
+  }
+  document.getElementById("detailPanel").innerHTML = renderGenericDetail(selectedRecord);
+}
+
+function selectedRecordFor(records, indexes) {
+  if (state.selected?.id && indexes.byId.has(state.selected.id)) return indexes.byId.get(state.selected.id);
+  const defaultTask = sortById(records.tasks).at(-1);
+  const defaultTicket = sortById(records.tickets).at(-1);
+  const selectedRecord = defaultTask || defaultTicket || null;
+  state.selected = selectedRecord ? { type: selectedRecord.object_type, id: selectedRecord.id } : null;
+  return selectedRecord;
+}
+
+function renderTaskDetail(task, indexes) {
+  const tickets = sortById(ensureList(indexes.ticketsByTask.get(task.id))).reverse();
+  const statusSummary = summarizeStatuses(tickets);
+  const nextTicket = nextTicketForTask(tickets, indexes);
+  return `
+    <div class="detail-section">
+      <h3>${sourceLink(task, task.id)}</h3>
+      <p>${escapeHtml(task.summary || task.intent || "")}</p>
+      <div class="detail-meta">${chip(task.status || "unknown")}${chip(task.owner_role || "unowned")}${chip(`${tickets.length} ticket${tickets.length === 1 ? "" : "s"}`)}</div>
+    </div>
+    <div class="detail-grid">
+      <article class="detail-card"><strong>Progress</strong><div>${escapeHtml(statusSummary || "No child tickets loaded")}</div></article>
+      <article class="detail-card"><strong>Next Critical Ticket</strong><div>${nextTicket ? inspectButton(nextTicket, nextTicket.id) : "None"}</div><small class="muted">${escapeHtml(nextTicket?.title || "")}</small></article>
+    </div>
+    <div class="detail-section">
+      <h3>Associated Tickets</h3>
+      <div class="detail-stack">${tickets.length ? tickets.map((ticket) => renderTicketCard(ticket, indexes)).join("") : emptyState("No tickets linked to this task.")}</div>
+    </div>
+  `;
+}
+
+function renderTicketDetail(ticket, indexes) {
+  const runs = sortById(ensureList(indexes.runsByTicket.get(ticket.id))).reverse();
+  const reviews = sortById(ensureList(indexes.reviewsByTicket.get(ticket.id))).reverse();
+  const releases = sortById(ensureList(indexes.releasesByTicket.get(ticket.id))).reverse();
+  const contextPack = indexes.contextPacksById.get(ticket.required_context_pack_id);
+  const inboxItems = ensureList(indexes.inboxByObject.get(ticket.id));
+  const approvals = ensureList(indexes.approvalsByObject.get(ticket.id));
+  const learning = ensureList(indexes.learningByObject.get(ticket.id));
+  const next = computeNextStep(ticket, indexes);
+
+  return `
+    <div class="detail-section">
+      <h3>${sourceLink(ticket, ticket.id)}</h3>
+      <p>${escapeHtml(ticket.objective || ticket.title || "")}</p>
+      <div class="detail-meta">${chip(ticket.status || "unknown")}${chip(ticket.owner_role || "unowned")}${chip(ticket.priority || "normal")}${chip(ticket.risk_level || "risk unknown")}</div>
+    </div>
+    <div class="detail-grid">
+      <article class="detail-card"><strong>Parent Task</strong><div>${recordReference(ticket.task_id, indexes)}</div></article>
+      <article class="detail-card"><strong>Next Owner / Action</strong><div>${escapeHtml(next.owner)}</div><small class="muted">${escapeHtml(next.action)}</small></article>
+      <article class="detail-card"><strong>Context Pack</strong><div>${contextPack ? sourceLink(contextPack, contextPack.id) : escapeHtml(ticket.required_context_pack_id || "Missing")}</div></article>
+      <article class="detail-card"><strong>Evidence</strong><div>${runs.length} runs, ${reviews.length} reviews, ${releases.length} releases</div></article>
+    </div>
+    <div class="detail-section"><h3>Acceptance Criteria</h3>${renderList(ticket.acceptance_criteria, "No acceptance criteria loaded.")}</div>
+    <div class="detail-section"><h3>Runs: Who Did What</h3>${runs.length ? table(["Run", "Owner", "Status", "Output", "Next"], runs.map(renderRunRow).join("")) : emptyState("No runs linked.")}</div>
+    <div class="detail-section"><h3>Reviews</h3>${reviews.length ? table(["Review", "Type", "Decision", "Summary"], reviews.map(renderReviewRow).join("")) : emptyState("No reviews linked.")}</div>
+    <div class="detail-section"><h3>Release</h3>${releases.length ? table(["Release", "Status", "Decision", "Notes"], releases.map(renderReleaseRow).join("")) : emptyState("No release checklist linked.")}</div>
+    <div class="detail-section"><h3>Decisions, Approvals, Learning</h3><div class="detail-stack">${renderRelatedCards([...inboxItems, ...approvals, ...learning])}</div></div>
+    <div class="detail-section"><h3>Files And Tests</h3><div class="detail-grid"><article class="detail-card"><strong>Changed Files</strong>${renderList(ticket.changed_files, "No changed files listed.")}</article><article class="detail-card"><strong>Test Evidence</strong>${renderList(ticket.test_evidence, "No test evidence listed.")}</article></div></div>
+  `;
+}
+
+function renderGenericDetail(record) {
+  return `<div class="detail-section"><h3>${sourceLink(record, record.id || record.title || "Record")}</h3><pre>${escapeHtml(JSON.stringify(record, null, 2))}</pre></div>`;
+}
+
+function renderRunRow(run) {
+  return `<tr><td>${sourceLink(run, run.id)}</td><td>${escapeHtml(run.owner_role || "")}</td><td>${chip(run.status)}</td><td>${escapeHtml(truncate(run.output_summary || "", 120))}</td><td>${escapeHtml(truncate(run.next_action || "", 110))}</td></tr>`;
+}
+
+function renderReviewRow(review) {
+  return `<tr><td>${sourceLink(review, review.id)}</td><td>${escapeHtml(review.review_type || "")}</td><td>${chip(review.decision || review.status)}</td><td>${escapeHtml(truncate(review.implementation_summary || review.title || "", 120))}</td></tr>`;
+}
+
+function renderReleaseRow(release) {
+  return `<tr><td>${sourceLink(release, release.id)}</td><td>${chip(release.status)}</td><td>${escapeHtml(release.release_decision || "")}</td><td>${escapeHtml(truncate(release.release_notes || "", 120))}</td></tr>`;
+}
+
+function renderRelatedCards(records) {
+  return records.length ? records.map(renderRecordCard).join("") : emptyState("No decisions, approvals, or learning records linked.");
+}
+
+function renderList(items, emptyMessage) {
+  const values = ensureList(items);
+  if (!values.length) return emptyState(emptyMessage);
+  return `<ul class="detail-list">${values.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+}
+
+function recordReference(id, indexes) {
+  if (!id) return "None";
+  const record = indexes.byId.get(id);
+  return record ? inspectButton(record, id) : escapeHtml(id);
+}
+
+function inspectButton(record, label) {
+  if (!record?.id) return escapeHtml(label || "record");
+  return `<button class="link-button" type="button" data-inspect-type="${escapeHtml(record.object_type || "record")}" data-inspect-id="${escapeHtml(record.id)}">${escapeHtml(label || record.id)}</button>`;
+}
+
+function nextTicketForTask(tickets, indexes) {
+  return tickets.find((ticket) => !FINAL_TICKET_STATUSES.has(ticket.status) && ticket.status !== "blocked") || tickets.find((ticket) => ticket.status === "blocked") || tickets[0] || null;
+}
+
+function summarizeStatuses(tickets) {
+  const counts = new Map();
+  for (const ticket of tickets) counts.set(ticket.status || "unknown", (counts.get(ticket.status || "unknown") || 0) + 1);
+  return Array.from(counts.entries()).map(([status, count]) => `${count} ${status.replaceAll("_", " ")}`).join(", ");
+}
+
+function computeNextStep(ticket, indexes) {
+  const latestRun = sortById(ensureList(indexes.runsByTicket.get(ticket.id))).at(-1);
+  const action = latestRun?.next_action || statusDefaultAction(ticket.status);
+  if (ticket.status === "blocked" || ensureList(ticket.blocking_object_ids).length) return { owner: "Founder Interface / Orchestrator", action: action || "Resolve blocker before continuing." };
+  if (["inbox", "discovery", "ready"].includes(ticket.status)) return { owner: "Product / Feature Owner", action };
+  if (["assigned", "in_progress", "self_review"].includes(ticket.status)) return { owner: ticket.owner_role || "Execution Agent", action };
+  if (["external_review", "testing"].includes(ticket.status)) return { owner: "Review / QA", action };
+  if (ticket.status === "revision") return { owner: "Execution Agent", action };
+  if (ticket.status === "release_ready") return { owner: "Release Agent / Next planning owner", action };
+  return { owner: ticket.owner_role || "Executive Orchestrator", action };
+}
+
+function statusDefaultAction(status) {
+  if (status === "release_ready") return "Use release evidence or choose the next project slice.";
+  if (status === "revision") return "Apply required revisions, then request review again.";
+  if (status === "external_review") return "Complete fresh-context review.";
+  if (status === "testing") return "Complete validation and record test evidence.";
+  if (status === "blocked") return "Resolve the linked blocker or founder decision.";
+  return "Continue through the Factory workflow.";
 }
 
 function renderRoleRoster(tickets, runs) {
