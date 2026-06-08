@@ -4,7 +4,7 @@
 
 Keep the plan visible so implementation does not drift.
 
-The Factory should move from design to templates to local control plane gradually. Do not build the dashboard before the operating model and state objects are clear.
+The Factory should move from design to templates to local visibility to local control plane gradually. A read-only dashboard may exist once state objects are clear; writable control-plane behavior should wait until bridge and authority questions are resolved.
 
 ## V0 - Architecture And Specs
 
@@ -46,6 +46,29 @@ Exit criteria:
 - A new project starts with objectives, first version scope, and postponed decisions captured before the first executable ticket.
 - A ticket can be created, assigned, executed, reviewed, released, and archived manually.
 
+## V1.5 - Read-Only Local Status Dashboard
+
+Goal: give the owner a local HTML view of Factory state before CLI or writable dashboard automation.
+
+Includes:
+
+- generated `dashboard/index.html`
+- stdlib-only renderer over `ops/` files
+- project overview metrics
+- ticket board
+- process flow counts
+- recent run ledger
+- founder inbox, approvals, learning, and release-readiness summaries
+- links back to source Markdown, YAML, and JSON records
+
+Exit criteria:
+
+- the owner can open a local HTML file and see what is happening in The Factory.
+- Dashboard state is derived from ops files, not a second source of truth.
+- Any next dashboard improvements are based on real viewing friction.
+
+Status: initial slice complete.
+
 ## V2 - CLI Bridge And Context Packs
 
 Goal: reduce friction between ops state and VS Code/Copilot or CLI execution.
@@ -65,7 +88,7 @@ Exit criteria:
 
 ## V3 - Local Dashboard Control Plane
 
-Goal: give the owner a local HTML dashboard for The Factory.
+Goal: turn the read-only local status dashboard into a control plane when writes, bridge behavior, and approval rules are clear.
 
 Includes:
 

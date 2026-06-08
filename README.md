@@ -11,6 +11,7 @@ It is not [project]-specific. [project] is the first serious test project, but T
 - [Spec](spec.md)
 - [Progress](progress.md)
 - [Roadmap](roadmap.md)
+- [Read-Only Dashboard](dashboard/index.html)
 - [Factory Ops](ops/README.md)
 - [Design Docs](design/README.md)
 - [Templates](templates/README.md)
@@ -34,4 +35,4 @@ It is not [project]-specific. [project] is the first serious test project, but T
 
 ## Current Status
 
-Active self-hosting/spec phase. The first `ops/` templates exist, and The Factory now has its own live [ops](ops/README.md) layer for dogfooding tasks, tickets, context packs, and runs before dashboard or CLI automation.
+Active self-hosting/spec phase. The first `ops/` templates exist, The Factory has its own live [ops](ops/README.md) layer, and a generated [read-only dashboard](dashboard/index.html) now shows tickets, runs, reviews, release state, inbox, approvals, and learning records before CLI or writable dashboard automation.

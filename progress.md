@@ -4,7 +4,7 @@ Live project-state file for The Factory.
 
 ## Current Phase
 
-Project workspace template dogfood.
+Read-only dashboard visibility plus project workspace template dogfood.
 
 ## Current Status
 
@@ -50,7 +50,9 @@ The project workspace template now has a first-use checklist for applying it to 
 
 The new-project discovery phase is now explicit. Before the first executable ticket in a Factory-managed project, Product should produce or update a discovery brief, roadmap/version plan, first version slice, postponed-decision list, and role/skill routing recommendation. The project workspace template now includes `product/DISCOVERY.md` and `product/ROADMAP.md` for this first pass.
 
-The next step is to use the discovery pass, checklist, and template on the first future Factory-managed project workspace, then tighten templates based on real project setup friction.
+The first read-only local dashboard now exists at `03-projects/ai-development-team/dashboard/index.html`. It is generated from The Factory's live `ops/` files and shows tickets, operating-flow counts, recent runs, reviews, release state, founder inbox, approvals, learning records, and source links without requiring a server, CLI bridge, or writable control plane.
+
+The next step is to use the dashboard during the next Factory or [project] planning session, then use the discovery pass, checklist, and template on the first future Factory-managed project workspace. Dashboard and template changes should come from real setup and visibility friction.
 
 ## Locked Decisions
 
@@ -102,7 +104,8 @@ The next step is to use the discovery pass, checklist, and template on the first
 - The Factory's own live operational state lives under `03-projects/ai-development-team/ops/` while The Factory is being built.
 - Manual Factory operation is defined in `03-projects/ai-development-team/design/manual-workflow.md` and should be the shared operating contract for early agents.
 - Recommended storage direction: YAML for most state objects, JSON or JSONL for run/session state and events, Markdown with YAML frontmatter for context packs and release checklists, and YAML for v0 review records.
-- Start with architecture/spec documentation, then folder templates, then dashboard/control-plane implementation.
+- A read-only local dashboard can exist before the CLI bridge or writable control plane, as long as it derives from file-backed ops state and does not become a second source of truth.
+- Start with architecture/spec documentation and folder templates, then read-only dashboard visibility, then CLI/context-pack helper and writable dashboard/control-plane implementation.
 - For self-improvement, use Hermes Agent as the learning-intake and curation reference, and SkillOpt as the validation/promotion reference.
 
 ## Current Design Areas
@@ -115,21 +118,23 @@ The next step is to use the discovery pass, checklist, and template on the first
 - [Source Use Map](design/source-use-map.md)
 - [V0 Operating Objects](design/v0-operating-objects.md)
 - [Factory Ops](ops/README.md)
+- [Read-Only Dashboard](dashboard/index.html)
 - [Templates](templates/README.md)
 - [Open Questions](design/open-questions.md)
 - [Roadmap](roadmap.md)
 
 ## Next Recommended Moves
 
-1. Use [Factory Project Discovery](../../04-agents/skills/factory-project-discovery.md) and the [Project Workspace First-Use Checklist](templates/project-workspace/FIRST-USE.md) when applying the template to the first future Factory-managed project workspace.
-2. Tighten project-local ops fields after first real project use.
-3. Capture template friction as learning candidates before changing canonical templates.
-4. Design the CLI/context-pack helper after the manual workflow is clear.
-5. Decide dashboard v0 scope only after object templates, self-hosting ops, manual workflow, role specs, prompt wrappers, and project workspace template use are stable.
+1. Open and use the [Read-Only Dashboard](dashboard/index.html) during the next Factory or [project] planning session.
+2. Use [Factory Project Discovery](../../04-agents/skills/factory-project-discovery.md) and the [Project Workspace First-Use Checklist](templates/project-workspace/FIRST-USE.md) when applying the template to the first future Factory-managed project workspace.
+3. Tighten project-local ops fields after first real project use.
+4. Capture template and dashboard visibility friction as learning candidates before changing canonical templates.
+5. Design the CLI/context-pack helper or writable dashboard control plane only after read-only dashboard friction is clear.
 
 ## Related Docs
 
 - [Spec](spec.md)
+- [Read-Only Dashboard](dashboard/index.html)
 - [Roadmap](roadmap.md)
 - [Design Docs](design/README.md)
 - [AI Development Team Discovery](../../session-logs/2026-06-03-ai-development-team-discovery.md)
@@ -139,4 +144,4 @@ The next step is to use the discovery pass, checklist, and template on the first
 
 ## Last Updated
 
-2026-06-06
+2026-06-08
