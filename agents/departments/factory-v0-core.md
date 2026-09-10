@@ -84,4 +84,4 @@ This department spec was created after the first Factory dogfood workflow proved
 Related Factory evidence:
 
 - [Manual Workflow](../../design/manual-workflow.md)
-- [Internal Factory Ops Ticket](../../03-projects/ai-development-team/ops/tickets/TICKET-2026-0001-internal-factory-ops.yaml)
+- Internal Factory Ops Ticket `TICKET-2026-0001-internal-factory-ops.yaml` — an ops record, not method; it lives in the private `projects/factory` ops repository and is deliberately absent from this repository.
