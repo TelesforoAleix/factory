@@ -1,3 +1,8 @@
+---
+type: skill
+created: 2026-05-24
+updated: 2026-06-02
+---
 # Idea Logger — Skill Agent
 
 Captures ideas and stores them in the structured backlog.

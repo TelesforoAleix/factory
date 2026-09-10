@@ -1,3 +1,8 @@
+---
+type: project
+created: 2026-06-03
+updated: 2026-06-08
+---
 # The Factory Progress
 
 Live project-state file for The Factory.

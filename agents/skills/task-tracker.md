@@ -1,3 +1,8 @@
+---
+type: skill
+created: 2026-05-24
+updated: 2026-06-02
+---
 # Task Tracker — Skill Agent
 
 Maintains current work state across the brain. Session logs are historical; Task Tracker keeps the live dashboard and project progress files useful.

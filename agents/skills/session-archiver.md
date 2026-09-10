@@ -1,3 +1,8 @@
+---
+type: skill
+created: 2026-05-24
+updated: 2026-06-02
+---
 # Session Archiver — Skill Agent
 
 Records conversation insights and session summaries after every interaction.

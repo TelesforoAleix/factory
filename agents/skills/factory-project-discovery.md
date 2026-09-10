@@ -1,3 +1,7 @@
+---
+type: skill
+created: 2026-06-06
+---
 # Factory Project Discovery - Skill Agent
 
 Runs the first discovery phase before a new Factory-managed project starts execution.

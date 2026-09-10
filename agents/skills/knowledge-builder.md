@@ -1,3 +1,8 @@
+---
+type: skill
+created: 2026-05-24
+updated: 2026-06-02
+---
 # Knowledge Builder — Skill Agent
 
 Processes raw inputs and saved sources into structured, reusable markdown knowledge.
