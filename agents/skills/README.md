@@ -7,11 +7,11 @@ Use this folder for skills that help build, review, plan, test, or ship the owne
 
 ## Current Skills
 
-- [Idea Logger](idea-logger.md): capture product or project ideas into the right backlog.
 - [Factory Project Discovery](factory-project-discovery.md): run project kickoff discovery, version planning, postponed decisions, and first work hierarchy before Factory execution.
-- [Knowledge Builder](knowledge-builder.md): process links, documents, papers, videos, repositories, and source drops.
-- [Session Archiver](session-archiver.md): produce session notes and preserve continuity.
-- [Task Tracker](task-tracker.md): update current-state files and action tracking.
+
+Idea Logger, Knowledge Builder, Session Archiver and Task Tracker used to be listed here. They are
+knowledge-base skills, not method: they read and write one person's private notes, backlog and logs.
+They live in that knowledge base's own repository and were removed from this one.
 
 ## Shared Input Assumption
 
