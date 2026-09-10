@@ -4,7 +4,7 @@ Reusable template examples for installing The Factory into future project worksp
 
 These files live inside the Factory project. They are copyable templates, not live operational state.
 
-The Factory's live self-hosting operational state lives in [Factory Ops](../ops/README.md).
+The Factory's live operational state lives in the workspace of the project it is operating on.
 
 ## Template Sets
 
@@ -15,7 +15,7 @@ The Factory's live self-hosting operational state lives in [Factory Ops](../ops/
 
 - Templates here define the shape of future project workspaces.
 - Real project operational state should later live in the target project's own `ops/` folder.
-- Reusable agent and skill definitions still belong in [04-agents](../../../04-agents/README.md), not in this template folder.
+- Reusable agent and skill definitions still belong in [04-agents](../agents/README.md), not in this template folder.
 
 ## Next Template Work
 

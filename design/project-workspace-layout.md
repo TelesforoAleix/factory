@@ -48,7 +48,7 @@ Possible contents:
 
 Source:
 
-- canonical definitions from `04-agents/`
+- canonical definitions from `agents/`
 - generated or copied into the project workspace
 
 ## `product/`

@@ -247,7 +247,7 @@ Learning candidate scope should be one of:
 
 - project-specific: keep local unless it repeats
 - reusable: candidate for Factory docs, templates, agents, or skills
-- canonical: should be validated before promotion to `04-agents/` or global rules
+- canonical: should be validated before promotion to `agents/` or global rules
 
 Do not auto-promote learning into canonical agents or skills. Capture first, validate later.
 
@@ -343,20 +343,16 @@ Core objects:
 
 - [Internal Factory Ops Ticket](../ops/tickets/TICKET-2026-0001-internal-factory-ops.yaml)
 - [Factory Self-Hosting Task](../ops/tasks/TASK-2026-0001-factory-self-hosting.yaml)
-- [Internal Factory Ops Context Pack](../ops/context-packs/CP-2026-0001-internal-factory-ops.md)
 - [Internal Factory Ops Run](../ops/runs/RUN-2026-0001-internal-factory-ops.json)
 
 Review and release objects:
 
 - [Self-Review](../ops/reviews/REVIEW-2026-0001-internal-factory-ops-self-review.yaml)
 - [Fresh-Context Review](../ops/reviews/REVIEW-2026-0002-internal-factory-ops-fresh-review.yaml)
-- [Release Checklist](../ops/releases/RELEASE-2026-0001-internal-factory-ops.md)
 - [Learning Candidate](../ops/learning/LEARN-2026-0001-manual-workflow-gate.yaml)
 
 Continuity records:
 
-- [Factory Self-Hosting Ops Session](../../../session-logs/2026-06-03-factory-self-hosting-ops.md)
-- [Factory Manual Dogfood Workflow Session](../../../session-logs/2026-06-03-factory-manual-dogfood-workflow.md)
 
 What it proved:
 
@@ -367,6 +363,6 @@ What it proved:
 
 ## Next Use
 
-Use this manual workflow as the shared operating contract for the first reusable Factory agent and department specs in `04-agents/`.
+Use this manual workflow as the shared operating contract for the first reusable Factory agent and department specs in `agents/`.
 
 Those specs should assume that agents operate through tasks, tickets, context packs, run records, reviews, release checklists, and learning candidates until automation exists.

@@ -10,10 +10,10 @@ Act as the Factory Executive Orchestrator for the requested Factory-managed work
 
 ## Source Contracts
 
-- [Factory Role Registry](../../../04-agents/role-registry.md)
-- [Executive Orchestrator Role Spec](../../../04-agents/roles/executive-orchestrator.md)
-- [Factory V0 Core Department Pack](../../../04-agents/departments/factory-v0-core-pack.md)
-- [Factory Manual Workflow](../../../03-projects/ai-development-team/design/manual-workflow.md)
+- [Factory Role Registry](../../agents/role-registry.md)
+- [Executive Orchestrator Role Spec](../../agents/roles/executive-orchestrator.md)
+- [Factory V0 Core Department Pack](../../agents/departments/factory-v0-core-pack.md)
+- [Factory Manual Workflow](../../design/manual-workflow.md)
 
 ## Required Input
 

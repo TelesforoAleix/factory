@@ -10,12 +10,11 @@ It protects projects from unsafe implementation, unclear permissions, privacy/GD
 
 Use this pack with:
 
-- [The Factory Manual Workflow](../../03-projects/ai-development-team/design/manual-workflow.md)
-- [The Factory Operating Model](../../03-projects/ai-development-team/design/operating-model.md)
+- [The Factory Manual Workflow](../../design/manual-workflow.md)
+- [The Factory Operating Model](../../design/operating-model.md)
 - [Factory Role Registry](../role-registry.md)
 - [Factory V0 Core Department Pack](factory-v0-core-pack.md)
 - [Factory Knowledge / Documentation Department Pack](factory-knowledge-documentation-pack.md)
-- [Factory Ops](../../03-projects/ai-development-team/ops/README.md)
 
 This pack is an operating contract, not a set of runnable custom agents.
 

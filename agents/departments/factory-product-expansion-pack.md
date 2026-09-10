@@ -10,16 +10,15 @@ It turns rough ideas, founder intent, research, and project context into discove
 
 Use this pack with:
 
-- [The Factory Manual Workflow](../../03-projects/ai-development-team/design/manual-workflow.md)
-- [The Factory Operating Model](../../03-projects/ai-development-team/design/operating-model.md)
-- [The Factory Source Use Map](../../03-projects/ai-development-team/design/source-use-map.md)
+- [The Factory Manual Workflow](../../design/manual-workflow.md)
+- [The Factory Operating Model](../../design/operating-model.md)
+- [The Factory Source Use Map](../../design/source-use-map.md)
 - [Factory Role Registry](../role-registry.md)
 - [Factory V0 Core Department Pack](factory-v0-core-pack.md)
 - [Factory Founder Interface / Personal Assistant Department Pack](factory-founder-interface-pack.md)
 - [Factory Knowledge / Documentation Department Pack](factory-knowledge-documentation-pack.md)
 - [Factory Security / Privacy / Authority Department Pack](factory-security-privacy-authority-pack.md)
 - [Factory Optimization Department Pack](factory-optimization-pack.md)
-- [Factory Ops](../../03-projects/ai-development-team/ops/README.md)
 
 This pack is an operating contract, not a set of runnable custom agents.
 

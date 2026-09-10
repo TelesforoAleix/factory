@@ -13,12 +13,10 @@ The goal is not to copy Paperclip's server product or autonomous-agent-company f
 
 ## Source Inputs
 
-- [Paperclip source note](../../../knowledge-base/sources/2026-06-03-paperclip.md)
-- [Agent Control Plane Dashboard Patterns](../../../knowledge-base/ai-development/agent-control-plane-dashboard-patterns.md)
 - [The Factory Manual Workflow](manual-workflow.md)
 - [The Factory Operating Model](operating-model.md)
 - [V0 Operating Objects](v0-operating-objects.md)
-- [Factory Role Registry](../../../04-agents/role-registry.md)
+- [Factory Role Registry](../agents/role-registry.md)
 - Specialist read-only passes on Paperclip, Factory process, and dashboard architecture from the 2026-06-08 management-dashboard planning session
 
 ## Product Stance

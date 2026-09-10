@@ -18,4 +18,3 @@ Current Factory wrappers:
 
 Add a focused prompt only when a repeated workflow is stable enough to wrap without duplicating canonical skill or method instructions.
 
-Workspace-level behavior lives in [../copilot-instructions.md](../copilot-instructions.md).

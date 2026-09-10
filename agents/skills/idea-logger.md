@@ -18,7 +18,7 @@ Before applying the steps, normalize dictated input: remove filler, repetition, 
 1. Extract the core idea
 2. Classify: quick-tool vs big-idea using audience and setup friction
 3. Note the source (conversation, article, observation)
-4. Store in `ideas/quick-tools/` or `ideas/big-ideas/`
+4. Store in the idea backlog or the idea backlog
 5. If related to an existing idea, link/append rather than create new
 
 ## Classification Heuristic

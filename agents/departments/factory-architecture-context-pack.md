@@ -10,16 +10,15 @@ It protects system shape, context strategy, technical tradeoffs, and architectur
 
 Use this pack with:
 
-- [The Factory Manual Workflow](../../03-projects/ai-development-team/design/manual-workflow.md)
-- [The Factory Operating Model](../../03-projects/ai-development-team/design/operating-model.md)
-- [The Factory Source Use Map](../../03-projects/ai-development-team/design/source-use-map.md)
-- [The Factory V0 Operating Objects](../../03-projects/ai-development-team/design/v0-operating-objects.md)
+- [The Factory Manual Workflow](../../design/manual-workflow.md)
+- [The Factory Operating Model](../../design/operating-model.md)
+- [The Factory Source Use Map](../../design/source-use-map.md)
+- [The Factory V0 Operating Objects](../../design/v0-operating-objects.md)
 - [Factory Role Registry](../role-registry.md)
 - [Factory V0 Core Department Pack](factory-v0-core-pack.md)
 - [Factory Knowledge / Documentation Department Pack](factory-knowledge-documentation-pack.md)
 - [Factory Security / Privacy / Authority Department Pack](factory-security-privacy-authority-pack.md)
 - [Factory Optimization Department Pack](factory-optimization-pack.md)
-- [Factory Ops](../../03-projects/ai-development-team/ops/README.md)
 
 This pack is an operating contract, not a set of runnable custom agents.
 
@@ -48,7 +47,7 @@ It owns review and guidance for:
 | System Architect | Architecture specialist | Advisory and review; execution only when assigned | Defines system boundaries, modules, data flow, and integration shape |
 | Context Architect | Context specialist | Advisory and review; execution only when assigned | Defines context packs, retrieval/memory/context strategy, provenance, and writeback boundaries |
 | Technical Tradeoff Reviewer | Tradeoff reviewer | Review role | Compares options, risks, complexity, reversibility, and operating cost |
-| Architecture Advisory Agent | Advisory specialist | Advisory-only by default | Reads `knowledge-base/` and project docs to synthesize options and recommendations without executing tickets |
+| Architecture Advisory Agent | Advisory specialist | Advisory-only by default | Reads the knowledge base and project docs to synthesize options and recommendations without executing tickets |
 | Architecture Decision / ADR Reviewer | Decision reviewer | Review/documentation role | Reviews architecture decisions and ADRs for clarity, rationale, consequences, and traceability |
 
 ## Relationship To Core Registry
@@ -113,7 +112,7 @@ The department produces or updates:
 
 ## Advisory-Only Knowledge Access
 
-Architecture advisory roles may use `knowledge-base/` as a read-only reference layer.
+Architecture advisory roles may use the knowledge base as a read-only reference layer.
 
 Allowed:
 
@@ -125,7 +124,7 @@ Allowed:
 
 Not allowed by default:
 
-- edit `knowledge-base/`
+- edit the knowledge base
 - edit product code
 - change Factory ops state
 - create or close tickets
@@ -232,7 +231,7 @@ Boundaries:
 
 Owns:
 
-- read-only synthesis from `knowledge-base/` and Factory/project docs
+- read-only synthesis from the knowledge base and Factory/project docs
 - surfacing relevant source patterns
 - identifying missing context and architecture risks
 - recommending options and next actions

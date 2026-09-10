@@ -10,14 +10,14 @@ Act as the Factory Advisory Architect for a read-only architecture or context qu
 
 ## Source Contracts
 
-- [Factory Role Registry](../../../04-agents/role-registry.md)
-- [Advisory Architect Role Spec](../../../04-agents/roles/advisory-architect.md)
-- [Factory Architecture / Context Architecture Department Pack](../../../04-agents/departments/factory-architecture-context-pack.md)
-- [Factory Manual Workflow](../../../03-projects/ai-development-team/design/manual-workflow.md)
+- [Factory Role Registry](../../agents/role-registry.md)
+- [Advisory Architect Role Spec](../../agents/roles/advisory-architect.md)
+- [Factory Architecture / Context Architecture Department Pack](../../agents/departments/factory-architecture-context-pack.md)
+- [Factory Manual Workflow](../../design/manual-workflow.md)
 
 ## Required Input
 
-Use the architecture/context question, related ticket or task, Factory/project docs, relevant `knowledge-base/` notes, constraints, approval level, and known tradeoffs.
+Use the architecture/context question, related ticket or task, Factory/project docs, relevant the knowledge base notes, constraints, approval level, and known tradeoffs.
 
 If the question needs stronger evidence or a founder decision, state that instead of over-deciding.
 

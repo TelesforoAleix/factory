@@ -57,11 +57,11 @@ Start with `product/DISCOVERY.md` and `product/ROADMAP.md` before creating the f
 
 - [Project Workspace Layout](../../design/project-workspace-layout.md)
 - [Factory Manual Workflow](../../design/manual-workflow.md)
-- [Factory Role Registry](../../../../04-agents/role-registry.md)
-- [Factory Prompts](../../../../.github/prompts/factory/README.md)
-- [Factory Departments](../../../../04-agents/departments/README.md)
-- [Factory Roles](../../../../04-agents/roles/README.md)
+- [Factory Role Registry](../../agents/role-registry.md)
+- [Factory Prompts](../../prompts/factory/README.md)
+- [Factory Departments](../../agents/departments/README.md)
+- [Factory Roles](../../agents/roles/README.md)
 
 ## Boundary
 
-Reusable Factory definitions stay in the brain's `04-agents/` and `.github/prompts/factory/` layers. This template is for project-local working copies, product code, and operating state.
+Reusable Factory definitions stay in the brain's `agents/` and `prompts/factory/` layers. This template is for project-local working copies, product code, and operating state.

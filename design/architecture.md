@@ -24,13 +24,12 @@ Purpose:
 - maintain reusable agent and skill definitions
 - preserve source research and decisions
 - improve agents/skills over time
-- support The Factory's own early development while it still needs close access to `04-agents/` and `knowledge-base/`
+- support The Factory's own early development alongside the reusable definitions in `agents/`
 
 Primary locations:
 
 - [The Factory project](../README.md)
-- [Development Team Layer](../../../04-agents/README.md)
-- [AI Development Knowledge](../../../knowledge-base/ai-development/README.md)
+- [Development Team Layer](../agents/README.md)
 
 ### 2. Project Workspace Layer
 
@@ -52,7 +51,7 @@ project-x/
   ops/
 ```
 
-The Factory is an exception during its own design/build phase. Keeping its development inside `03-projects/ai-development-team/` is acceptable because the project depends directly on the brain's agent layer and knowledge base. Once The Factory is used for external products, project-specific operational state should live in each product workspace.
+The Factory is an exception during its own design/build phase: its design and its reusable definitions in `agents/` are developed together in this repository. Once The Factory is used for external products, project-specific operational state should live in each product workspace.
 
 ### Advisory Knowledge Layer
 
@@ -60,7 +59,7 @@ Some agents should be advisory only.
 
 Purpose:
 
-- read relevant knowledge from `knowledge-base/`
+- read relevant knowledge from the knowledge base
 - synthesize options, risks, and references
 - provide architectural, product, market, privacy, or context advice
 - avoid direct execution, commits, file edits, or operational state changes unless explicitly promoted into another role

@@ -46,7 +46,7 @@ This role makes The Factory feel like a company rather than a set of disconnecte
 
 ## Manual Workflow Duties
 
-Uses [The Factory Manual Workflow](../../03-projects/ai-development-team/design/manual-workflow.md).
+Uses [The Factory Manual Workflow](../../design/manual-workflow.md).
 
 ### Prepare
 
@@ -87,4 +87,4 @@ Stop and escalate when:
 
 ## First Factory Use
 
-Use this role first for creating and routing internal Factory tickets in [Factory Ops](../../03-projects/ai-development-team/ops/README.md).
+Use this role first for creating and routing tickets in the `ops/` layer of the project workspace being operated on.

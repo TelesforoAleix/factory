@@ -752,7 +752,7 @@ Approval card or gate badge with:
 ### Writeback
 
 - Project docs: decision logs, architecture docs, security/privacy notes, release notes, or ticket state when approval changes what can happen.
-- Central brain: reusable approval policies, default thresholds, or security/privacy rules can promote back to Factory docs or `04-agents/` after validation.
+- Central brain: reusable approval policies, default thresholds, or security/privacy rules can promote back to Factory docs or `agents/` after validation.
 
 ### Example Future File
 
@@ -855,7 +855,7 @@ Context panel with:
 ### Writeback
 
 - Project docs: context packs should not become product truth, but stale or missing context can trigger documentation updates.
-- Central brain: reusable context-pack patterns can become templates in Factory docs or `04-agents/` skills after validation.
+- Central brain: reusable context-pack patterns can become templates in Factory docs or `agents/` skills after validation.
 
 ### Example Future File
 
@@ -951,7 +951,7 @@ Review panel or badge with:
 ### Writeback
 
 - Project docs: update docs only when review changes decisions, requirements, architecture, or known risks.
-- Central brain: reusable review failures, checklists, and specialist patterns become learning candidates for `04-agents/` or Factory docs.
+- Central brain: reusable review failures, checklists, and specialist patterns become learning candidates for `agents/` or Factory docs.
 
 ### Example Future File
 
@@ -1085,7 +1085,7 @@ Meaning:
 - `triaged`: owner decides whether it is project-specific, reusable, or noise.
 - `candidate`: concrete improvement proposal exists.
 - `validating`: tested against examples, rubric, or representative tasks.
-- `promoted`: accepted into project docs, central brain knowledge, or canonical `04-agents/` assets.
+- `promoted`: accepted into project docs, central brain knowledge, or canonical `agents/` assets.
 - `rejected`: intentionally not adopted, with reason preserved.
 - `parked`: plausible but not worth validation yet.
 - `archived`: no further active work.
@@ -1124,7 +1124,7 @@ Meaning:
 
 - Parent: run, ticket, review, release, inbox item, or session.
 - Children: validation tasks, proposed skill patches, doc updates, rejected-change memory.
-- Related: central brain knowledge notes and `04-agents/` assets when promoted.
+- Related: central brain knowledge notes and `agents/` assets when promoted.
 
 ### Source Inspiration
 
@@ -1136,7 +1136,7 @@ Meaning:
 
 YAML for the project-local candidate. Use linked Markdown when a candidate needs longer reflection or validation notes.
 
-Project-local candidates start in project `ops/learning/`. Reusable, validated improvements can promote into the central brain or `04-agents/`.
+Project-local candidates start in project `ops/learning/`. Reusable, validated improvements can promote into the central brain or `agents/`.
 
 ### Dashboard Appearance
 
@@ -1161,7 +1161,7 @@ Improvement queue item with:
 ### Writeback
 
 - Project docs: project-specific lessons can update local docs, decisions, templates, or operating rules.
-- Central brain: reusable validated lessons can update Factory design docs, knowledge notes, or canonical `04-agents/` skills/agents.
+- Central brain: reusable validated lessons can update Factory design docs, knowledge notes, or canonical `agents/` skills/agents.
 - Rejected changes: preserve reason so the same weak improvement is not proposed repeatedly.
 
 ### Example Future File
@@ -1189,5 +1189,5 @@ Do not build the dashboard from this document yet. Use it first to stabilize the
 - Choose exact ID-generation rules.
 - Decide whether run events need JSONL in v0 or whether one JSON state file is enough.
 - Decide whether context packs, review records, and release checklists should share a common frontmatter schema.
-- Define validation tasks for learning candidates before promoting changes into `04-agents/`.
+- Define validation tasks for learning candidates before promoting changes into `agents/`.
 - Define how project `ops/` objects are archived after shipping.

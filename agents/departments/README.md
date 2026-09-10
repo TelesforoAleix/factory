@@ -21,10 +21,10 @@ Departments define ownership boundaries and role groupings. They are not runnabl
 
 ## Operating Contract
 
-All Factory departments should use [The Factory Manual Workflow](../../03-projects/ai-development-team/design/manual-workflow.md) until CLI or dashboard automation exists.
+All Factory departments should use [The Factory Manual Workflow](../../design/manual-workflow.md) until CLI or dashboard automation exists.
 
 ## Boundary
 
 - Department specs live here when they are reusable across projects.
-- The Factory product/spec/design home remains [The Factory](../../03-projects/ai-development-team/README.md).
+- The Factory product/spec/design home remains [The Factory](../../README.md).
 - Project-specific operational state belongs in that project's `ops/` folder.

@@ -2,7 +2,7 @@
 
 Project-local instructions, prompts, workflows, hooks, and tool configuration.
 
-Use this folder for project-specific behavior. Keep reusable Factory-wide role and department truth in the brain's canonical `04-agents/` layer, and copy or adapt only what this project needs.
+Use this folder for project-specific behavior. Keep reusable Factory-wide role and department truth in the brain's canonical `agents/` layer, and copy or adapt only what this project needs.
 
 Suggested contents:
 

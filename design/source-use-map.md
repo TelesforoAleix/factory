@@ -8,15 +8,15 @@ The goal is not to copy one repository. The goal is to use the best source for e
 
 | Source | Primary Use | Secondary Use | Do Not Copy Blindly |
 |---|---|---|---|
-| [Paperclip](../../../knowledge-base/sources/2026-06-03-paperclip.md) | Control plane, dashboard, agent communication, task ownership, inbox, approvals, activity | Work hierarchy, run/session ledger, heartbeat concept | API-key-centric runtime, complex agent creation platform, full server/database model as v0 |
-| [ECC](../../../knowledge-base/sources/2026-06-01-ecc.md) | Agent/skill/rule architecture, department breadth, cross-harness portability | Team-builder, security review, hooks/checklists, continuous learning ideas | Full catalog import, global context bloat, unreviewed hooks/MCPs |
-| [gstack](../../../knowledge-base/sources/2026-06-01-gstack.md) | Workflow loop and proven skills: product office hours, engineering review, review, QA, ship, reflect | Safety modes, browser QA, cross-model review, memory/trust policy | Claude-specific commands, auto-commit intensity, browser daemon before needed |
-| [Hermes Agent](../../../knowledge-base/sources/2026-06-03-hermes-agent.md) | Experiential learning intake, memory/session/skill separation, background reflection, curator | Local session search, candidate skill patches, anti-bloat lifecycle | Auto-editing canonical skills, every-session skill creation, full runtime adoption |
-| [SkillOpt](../../../knowledge-base/sources/2026-06-01-skillopt.md) | Validation and promotion of improved skills/agents | Versioned snapshots, rejected-change memory, bounded edits | Heavy optimizer infrastructure before stable validation tasks |
-| [Claude Playbook](../../../knowledge-base/sources/2026-06-01-claude-playbook.md) | Rule/skill/agent/hook placement discipline, compact scaffold | Review/security/fix workflow shape | Claude-specific file layout as canonical |
-| [Anthropic Cybersecurity Skills](../../../knowledge-base/sources/2026-06-01-anthropic-cybersecurity-skills.md) | Security/privacy review anatomy and progressive loading | Risk tags, prerequisites, verification format | Large offensive/security catalog without scoped authorization |
-| [Prompt Master](../../../knowledge-base/sources/2026-06-01-prompt-master.md) | Prompt wrapper anatomy, memory/context blocks, stop conditions | Prompt diagnostics | Long prompts for their own sake |
-| [Agent Reference Repositories](../../../knowledge-base/sources/2026-06-01-agent-reference-repos.md) | Practical skill ideas and agent curriculum coverage | Matt Pocock skill patterns, Microsoft agent curriculum, host architecture awareness | Treating reference catalogs as implementation-ready |
+| Paperclip | Control plane, dashboard, agent communication, task ownership, inbox, approvals, activity | Work hierarchy, run/session ledger, heartbeat concept | API-key-centric runtime, complex agent creation platform, full server/database model as v0 |
+| ECC | Agent/skill/rule architecture, department breadth, cross-harness portability | Team-builder, security review, hooks/checklists, continuous learning ideas | Full catalog import, global context bloat, unreviewed hooks/MCPs |
+| gstack | Workflow loop and proven skills: product office hours, engineering review, review, QA, ship, reflect | Safety modes, browser QA, cross-model review, memory/trust policy | Claude-specific commands, auto-commit intensity, browser daemon before needed |
+| Hermes Agent | Experiential learning intake, memory/session/skill separation, background reflection, curator | Local session search, candidate skill patches, anti-bloat lifecycle | Auto-editing canonical skills, every-session skill creation, full runtime adoption |
+| SkillOpt | Validation and promotion of improved skills/agents | Versioned snapshots, rejected-change memory, bounded edits | Heavy optimizer infrastructure before stable validation tasks |
+| Claude Playbook | Rule/skill/agent/hook placement discipline, compact scaffold | Review/security/fix workflow shape | Claude-specific file layout as canonical |
+| Anthropic Cybersecurity Skills | Security/privacy review anatomy and progressive loading | Risk tags, prerequisites, verification format | Large offensive/security catalog without scoped authorization |
+| Prompt Master | Prompt wrapper anatomy, memory/context blocks, stop conditions | Prompt diagnostics | Long prompts for their own sake |
+| Agent Reference Repositories | Practical skill ideas and agent curriculum coverage | Matt Pocock skill patterns, Microsoft agent curriculum, host architecture awareness | Treating reference catalogs as implementation-ready |
 
 ## Decision Topics
 

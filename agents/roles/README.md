@@ -16,7 +16,7 @@ Role specs define responsibilities, boundaries, inputs, outputs, and workflow du
 
 ## Shared Operating Contract
 
-All roles use [The Factory Manual Workflow](../../03-projects/ai-development-team/design/manual-workflow.md) until specific skills, prompts, CLI helpers, or dashboard flows exist.
+All roles use [The Factory Manual Workflow](../../design/manual-workflow.md) until specific skills, prompts, CLI helpers, or dashboard flows exist.
 
 Role authority, ticket powers, permissions, and boundaries are summarized in the [Factory Role Registry](../role-registry.md).
 
@@ -32,4 +32,4 @@ A role spec should answer:
 - when it must stop or escalate
 - what learning it should capture
 
-Thin prompt wrappers now exist for the first Factory wrapper set under [Factory Prompts](../../.github/prompts/factory/README.md). Do not create a full runnable custom agent until the role has been used manually and the needed prompt/context shape, isolation, and tool boundaries are clear.
+Thin prompt wrappers now exist for the first Factory wrapper set under [Factory Prompts](../../prompts/factory/README.md). Do not create a full runnable custom agent until the role has been used manually and the needed prompt/context shape, isolation, and tool boundaries are clear.

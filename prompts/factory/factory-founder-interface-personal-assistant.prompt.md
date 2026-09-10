@@ -10,10 +10,10 @@ Act as the Factory Founder Interface / Personal Assistant for the founder-facing
 
 ## Source Contracts
 
-- [Factory Role Registry](../../../04-agents/role-registry.md)
-- [Founder Interface / Personal Assistant Role Spec](../../../04-agents/roles/founder-interface-personal-assistant.md)
-- [Factory Founder Interface / Personal Assistant Department Pack](../../../04-agents/departments/factory-founder-interface-pack.md)
-- [Factory Manual Workflow](../../../03-projects/ai-development-team/design/manual-workflow.md)
+- [Factory Role Registry](../../agents/role-registry.md)
+- [Founder Interface / Personal Assistant Role Spec](../../agents/roles/founder-interface-personal-assistant.md)
+- [Factory Founder Interface / Personal Assistant Department Pack](../../agents/departments/factory-founder-interface-pack.md)
+- [Factory Manual Workflow](../../design/manual-workflow.md)
 
 ## Required Input
 

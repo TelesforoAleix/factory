@@ -10,8 +10,8 @@ It coordinates individual role specs, department packs, and future prompt wrappe
 
 All roles in this registry use:
 
-- [The Factory Manual Workflow](../03-projects/ai-development-team/design/manual-workflow.md)
-- [The Factory Operating Model](../03-projects/ai-development-team/design/operating-model.md)
+- [The Factory Manual Workflow](../design/manual-workflow.md)
+- [The Factory Operating Model](../design/operating-model.md)
 - [Factory V0 Core Department](departments/factory-v0-core.md)
 
 ## Role Status Taxonomy
@@ -66,12 +66,12 @@ The first runnable layer should be thin prompt wrappers, not full custom agents.
 | Execution Agent | [Execution Agent](roles/execution-agent.md) | Performs scoped ticket work without committing directly | Existing role spec is enough |
 | Review / QA Agent | [Review / QA Agent](roles/review-qa-agent.md) | Performs fresh-context review before release | Existing role spec is enough |
 | Release Agent | [Release Agent](roles/release-agent.md) | Owns release readiness and commit/PR scope | Existing role spec is enough |
-| Advisory Architect | [Advisory Architect](roles/advisory-architect.md) | Provides read-only architecture/context synthesis from project docs and `knowledge-base/` | Existing role spec is enough; keep read-only by default |
+| Advisory Architect | [Advisory Architect](roles/advisory-architect.md) | Provides read-only architecture/context synthesis from project docs and the knowledge base | Existing role spec is enough; keep read-only by default |
 | Founder Interface / Personal Assistant | [Founder Interface / Personal Assistant](roles/founder-interface-personal-assistant.md) | Manages founder inbox, decisions, status briefings, and answer routing | Department pack remains the supporting contract |
 
-Recommended wrapper home: `.github/prompts/factory/`. Keep canonical role truth in `04-agents/`; wrappers should link back here instead of duplicating entire packs.
+Recommended wrapper home: `prompts/factory/`. Keep canonical role truth in `agents/`; wrappers should link back here instead of duplicating entire packs.
 
-The first wrapper files now live in [Factory Prompts](../.github/prompts/factory/README.md).
+The first wrapper files now live in [Factory Prompts](../prompts/factory/README.md).
 
 ## Cross-Department Boundary Rules
 
@@ -80,7 +80,7 @@ The first wrapper files now live in [Factory Prompts](../.github/prompts/factory
 | Product vs Marketing | Product owns product truth, scope, non-goals, and acceptance criteria. Marketing translates validated product truth into audience, positioning, copy, launch, tags, and market language. | If marketing copy changes meaning or positioning becomes strategic, Product / Feature Owner and Founder Interface decide before release. |
 | Architecture vs Advisory Architect | Core Advisory Architect is read-only in v0. Architecture Lead, System Architect, Context Architect, tradeoff, and ADR roles are v1+ decompositions unless separately assigned a ticket. | ADR writing and ADR review must not self-approve; founder-level tradeoffs go through Founder Interface. |
 | Review / QA vs Security Review | Review / QA owns fresh-context review, test adequacy, and specialist routing. Security / Privacy / Authority owns risk review when credentials, auth, permissions, external services, personal data, privacy, authority, destructive actions, or privileged automation appear. | Release waits for both Review / QA and Security / Privacy / Authority when both are triggered. |
-| Knowledge / Documentation vs Optimization | Knowledge / Documentation captures state, decisions, docs, session history, and learning candidates. Optimization validates, edits, promotes, rejects, or parks reusable workflow, prompt, skill, agent, and template improvements. | Canonical `04-agents/` or `.github/skills/` changes need validation and release gates, not only documentation routing. |
+| Knowledge / Documentation vs Optimization | Knowledge / Documentation captures state, decisions, docs, session history, and learning candidates. Optimization validates, edits, promotes, rejects, or parks reusable workflow, prompt, skill, agent, and template improvements. | Canonical `agents/` or the knowledge base's maintenance skills changes need validation and release gates, not only documentation routing. |
 | Release vs Review / QA | Review / QA produces review/test evidence. Release consumes that evidence, checks branch/staged scope, and decides commit/PR/release readiness. | If Release changes the staged or release scope after Review / QA signoff, request re-review before commit/PR readiness. |
 
 ## Role Cards
@@ -225,7 +225,7 @@ Department: Architecture / Context.
 
 Permissions and boundaries:
 
-- Can read Factory/project docs and relevant `knowledge-base/` notes.
+- Can read Factory/project docs and relevant the knowledge base notes.
 - Can synthesize architecture/context risks, options, and recommendations.
 - Can recommend follow-up tickets, reviews, or founder questions.
 - Cannot execute tickets, edit files, change ops state, or approve release unless separately assigned a different role.

@@ -11,8 +11,8 @@ It packages the first reusable role specs into a usable company-like loop.
 Use this pack with:
 
 - [Factory Role Registry](../role-registry.md)
-- [The Factory Manual Workflow](../../03-projects/ai-development-team/design/manual-workflow.md)
-- [The Factory Operating Model](../../03-projects/ai-development-team/design/operating-model.md)
+- [The Factory Manual Workflow](../../design/manual-workflow.md)
+- [The Factory Operating Model](../../design/operating-model.md)
 - [Factory V0 Core Department](factory-v0-core.md)
 
 ## Included Departments And Roles

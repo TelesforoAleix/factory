@@ -19,21 +19,21 @@ When extracting tasks from voice-dictated text, ignore filler, repetitions, unre
 
 ## Current-State Files
 
-- Global workboard: `session-logs/workboard.md`
+- Global workboard: the workboard
 - Project progress files: `03-projects/[project]/progress.md`
-- Session history: `session-logs/`
+- Session history: session logs
 
 ## Behavior
 
 1. Identify whether the item is global, project-specific, or both.
-2. Update `session-logs/workboard.md` when current focus, active projects, next actions, open threads, or parked items change.
+2. Update the workboard when current focus, active projects, next actions, open threads, or parked items change.
 3. Update the relevant `03-projects/[project]/progress.md` when project phase, completed work, pending deep dives, next moves, or locked decisions change.
 4. Link to the relevant session note instead of duplicating full history.
 5. Keep current-state files short and scannable; detailed reasoning belongs in project docs or session logs.
 
 ## Output
 
-- Updated global workboard in `session-logs/workboard.md`
+- Updated global workboard in the workboard
 - Updated project progress files in `03-projects/[project]/progress.md`
 - Task/action references in session notes when relevant
 

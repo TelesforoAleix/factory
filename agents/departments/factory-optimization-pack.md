@@ -10,16 +10,12 @@ It turns lessons from Factory-managed work into validated improvements without l
 
 Use this pack with:
 
-- [The Factory Manual Workflow](../../03-projects/ai-development-team/design/manual-workflow.md)
-- [The Factory Operating Model](../../03-projects/ai-development-team/design/operating-model.md)
+- [The Factory Manual Workflow](../../design/manual-workflow.md)
+- [The Factory Operating Model](../../design/operating-model.md)
 - [Factory Role Registry](../role-registry.md)
 - [Factory V0 Core Department Pack](factory-v0-core-pack.md)
 - [Factory Knowledge / Documentation Department Pack](factory-knowledge-documentation-pack.md)
 - [Factory Security / Privacy / Authority Department Pack](factory-security-privacy-authority-pack.md)
-- [Self-Improving Agent Learning Loops](../../knowledge-base/ai-development/self-improving-agent-learning-loops.md)
-- [Hermes Agent](../../knowledge-base/sources/2026-06-03-hermes-agent.md)
-- [SkillOpt](../../knowledge-base/sources/2026-06-01-skillopt.md)
-- [Skill Improvement Loop](../../knowledge-base/methods/skill-improvement-loop.md)
 
 This pack is an operating contract, not a runnable optimizer.
 
@@ -65,7 +61,7 @@ Activate this department when a ticket, review, session, or founder correction r
 - recurring review finding
 - a useful tactic that should be reused
 - a prompt/agent/skill boundary problem
-- a candidate change to `04-agents/` assets
+- a candidate change to `agents/` assets
 - a candidate change to Factory templates or manual workflow
 - a rejected idea that agents may rediscover later
 - a need to evaluate whether a local project lesson should become reusable
@@ -100,7 +96,7 @@ The department produces or updates:
 - promotion, rejection, parked, or archived decision
 - rejected-change memory
 - versioned skill/agent/template snapshot when needed
-- updated Factory docs, templates, or `04-agents/` assets after approval
+- updated Factory docs, templates, or `agents/` assets after approval
 - learning-library index or curation note
 - follow-up tickets for validation, editing, security review, or documentation
 
@@ -269,7 +265,7 @@ Learning Intake Curator decides whether it is:
 
 - project-specific
 - reusable Factory pattern
-- candidate for `04-agents/`
+- candidate for `agents/`
 - candidate for Factory docs/templates
 - memory/user preference
 - source note or method note
@@ -323,8 +319,8 @@ Promotion destinations:
 - project-local docs or templates
 - Factory design docs
 - Factory ops templates
-- `04-agents/` role specs, department packs, prompts, or skills
-- `.github/skills/` only when it is a brain OS workflow and separately validated
+- `agents/` role specs, department packs, prompts, or skills
+- the knowledge base's maintenance skills only when it is a brain OS workflow and separately validated
 
 Promoted candidates must update:
 
@@ -377,9 +373,9 @@ project ops/learning -> Factory triage -> validation -> central promotion target
 Rules:
 
 - project-specific candidates stay in project ops unless repeated or reusable
-- reusable Factory candidates can promote to `03-projects/ai-development-team/` docs/templates
-- reusable agent/skill candidates can promote to `04-agents/` only after review and validation
-- brain OS candidates promote to `.github/skills/` only when they manage the brain itself and pass the brain OS validation layer
+- reusable Factory candidates can promote to this repository's docs and templates
+- reusable agent/skill candidates can promote to `agents/` only after review and validation
+- brain OS candidates promote to the knowledge base's maintenance skills only when they manage the brain itself and pass the brain OS validation layer
 - Security / Privacy / Authority review is required for candidates that alter tools, permissions, external services, credential handling, or autonomous behavior
 - founder approval is required for high-impact behavior changes, project truth changes, or external service usage
 
@@ -392,7 +388,7 @@ Optimization depends on Knowledge / Documentation for provenance and continuity,
 - Optimization validates candidates, proposes bounded edits, preserves rejected-change rationale, and decides promotion, rejection, parking, or archive.
 - Docs Reviewer should review documentation clarity after an optimization change, but docs review alone does not prove that a skill, prompt, agent, or workflow change should be promoted.
 
-If Optimization promotes a change to `04-agents/`, Factory templates, or `.github/skills/`, it should update the relevant docs/state trail through Knowledge / Documentation before release.
+If Optimization promotes a change to `agents/`, Factory templates, or the knowledge base's maintenance skills, it should update the relevant docs/state trail through Knowledge / Documentation before release.
 
 ## Routing Rules
 
@@ -468,8 +464,8 @@ Stop and escalate when:
 - proposed change is too broad
 - validation set does not exist for a high-impact change
 - candidate changes security/privacy/authority behavior without specialist review
-- candidate would modify canonical `04-agents/` assets without review
-- candidate would modify brain OS `.github/skills/` without brain OS validation
+- candidate would modify canonical `agents/` assets without review
+- candidate would modify brain OS the knowledge base's maintenance skills without brain OS validation
 - founder approval is needed
 - candidate repeats a previously rejected change
 - promotion would bloat docs or make local quirks global

@@ -2,7 +2,7 @@
 
 Thin prompt wrappers for the first runnable Factory role set.
 
-These prompts are workspace-level entry points. Canonical role truth remains in [Factory Role Registry](../../../04-agents/role-registry.md), [Factory Roles](../../../04-agents/roles/README.md), and [Factory Department Packs](../../../04-agents/departments/README.md).
+These prompts are workspace-level entry points. Canonical role truth remains in [Factory Role Registry](../../agents/role-registry.md), [Factory Roles](../../agents/roles/README.md), and [Factory Department Packs](../../agents/departments/README.md).
 
 ## Current Prompt Wrappers
 

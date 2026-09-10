@@ -123,7 +123,7 @@ The first dashboard does not need to be built immediately. The next step is arch
 
 ## Project Workspace Model
 
-The Factory itself is a special case: its design and early development can remain inside `03-projects/ai-development-team/` so it can directly leverage `04-agents/` and `knowledge-base/` while the operating system is still being designed.
+The Factory itself is a special case: its design and its reusable definitions in `agents/` live together in this repository while the operating system is still being designed.
 
 Normal product projects should use the project workspace model below.
 

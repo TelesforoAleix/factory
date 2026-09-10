@@ -11,7 +11,7 @@ This role exists because some Factory decisions need broad knowledge synthesis, 
 ## Owns
 
 - architecture and context-architecture advice
-- source-backed synthesis from `knowledge-base/`
+- source-backed synthesis from the knowledge base
 - risk identification
 - option comparison
 - recommendations and rationale
@@ -45,7 +45,7 @@ This role exists because some Factory decisions need broad knowledge synthesis, 
 
 ## Manual Workflow Duties
 
-Uses [The Factory Manual Workflow](../../03-projects/ai-development-team/design/manual-workflow.md), but only as an advisory participant.
+Uses [The Factory Manual Workflow](../../design/manual-workflow.md), but only as an advisory participant.
 
 ### Prepare
 

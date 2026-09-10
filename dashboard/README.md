@@ -8,7 +8,7 @@ Open [index.html](index.html) in a browser.
 
 The dashboard reads local ops files in the browser. It does not require the Python renderer, a server, or a database.
 
-- Use `Load Project Folder` and choose either `03-projects/ai-development-team/` or its `ops/` folder.
+- Use `Load Project Folder` and choose either a project workspace or its `ops/` folder.
 - Use `Refresh` after changing ops files when the browser supports directory handles.
 - If the browser does not support directory handles, the dashboard falls back to a folder-file picker.
 

@@ -14,7 +14,7 @@ intent -> ticket -> context pack -> execution -> self-review -> fresh review -> 
 
 ## Operating Contract
 
-All roles in this department set use [The Factory Manual Workflow](../../03-projects/ai-development-team/design/manual-workflow.md).
+All roles in this department set use [The Factory Manual Workflow](../../design/manual-workflow.md).
 
 They operate through:
 
@@ -60,7 +60,7 @@ Advisory Architect is called when the ticket involves architecture, context desi
 This department does not own:
 
 - the owner's final founder decisions
-- canonical brain OS skills under `.github/skills/`
+- canonical brain OS skills under the knowledge base's maintenance skills
 - project-specific product truth outside the active project workspace
 - direct commits from execution agents
 - dashboard or CLI automation before the manual workflow is stable
@@ -83,6 +83,5 @@ This department spec was created after the first Factory dogfood workflow proved
 
 Related Factory evidence:
 
-- [Manual Workflow](../../03-projects/ai-development-team/design/manual-workflow.md)
+- [Manual Workflow](../../design/manual-workflow.md)
 - [Internal Factory Ops Ticket](../../03-projects/ai-development-team/ops/tickets/TICKET-2026-0001-internal-factory-ops.yaml)
-- [Factory Manual Dogfood Workflow Session](../../session-logs/2026-06-03-factory-manual-dogfood-workflow.md)

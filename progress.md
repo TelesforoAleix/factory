@@ -13,13 +13,13 @@ Management dashboard visibility plus project workspace template dogfood.
 
 ## Current Status
 
-The Factory has been activated as a project design space under `03-projects/ai-development-team/`.
+The Factory has been activated as a project design space in its own repository.
 
-The foundational direction is clear: build a reusable AI development company operating system for the owner's projects, with [project] as the first serious test. The v0 operating objects now have initial copyable templates under `03-projects/ai-development-team/templates/ops/`.
+The foundational direction is clear: build a reusable AI development company operating system for the owner's projects, with [project] as the first serious test. The v0 operating objects now have initial copyable templates under `templates/ops/`.
 
-The Factory itself is now being developed inside `03-projects/ai-development-team/`. Its own live operating state starts in `03-projects/ai-development-team/ops/`, and the seeded internal-ops ticket has now been dogfooded through execution evidence, self-review, fresh-context review, validation/testing evidence, release readiness, and learning capture.
+The Factory itself is now being developed in this repository. Its own live operating state lives in the workspace of the project it operates on, and the seeded internal-ops ticket has now been dogfooded through execution evidence, self-review, fresh-context review, validation/testing evidence, release readiness, and learning capture.
 
-The manual Factory workflow now exists as the canonical v0 operating procedure before CLI or dashboard automation. The first reusable Factory department and role specs now exist in `04-agents/` as operating contracts, not runnable custom agents.
+The manual Factory workflow now exists as the canonical v0 operating procedure before CLI or dashboard automation. The first reusable Factory department and role specs now exist in `agents/` as operating contracts, not runnable custom agents.
 
 The role registry and V0 core department pack now make those specs scannable by role, department, type, permissions, boundaries, inputs, outputs, ticket powers, review/release authority, and advisory/execution status.
 
@@ -45,9 +45,9 @@ The Review / QA department expansion pack now defines fresh-context review, test
 
 The Release / CI-CD department expansion pack now defines release readiness, branch/commit/PR rules, batching rules, CI/CD monitoring, release notes coordination, and escalation paths.
 
-The first thin prompt wrappers now exist under `.github/prompts/factory/` for Executive Orchestrator, Product / Feature Owner, Execution Agent, Review / QA Agent, Release Agent, Advisory Architect, and Founder Interface / Personal Assistant. Founder Interface now also has a compact individual role-spec bridge in `04-agents/roles/`.
+The first thin prompt wrappers now exist under `prompts/factory/` for Executive Orchestrator, Product / Feature Owner, Execution Agent, Review / QA Agent, Release Agent, Advisory Architect, and Founder Interface / Personal Assistant. Founder Interface now also has a compact individual role-spec bridge in `agents/roles/`.
 
-The first real Factory self-build ticket after prompt-wrapper creation is complete: `TICKET-2026-0014` created the v0 project workspace template under `03-projects/ai-development-team/templates/project-workspace/` with tracked `.github/`, `agents/`, `product/`, and `ops/` folders.
+The first real Factory self-build ticket after prompt-wrapper creation is complete: `TICKET-2026-0014` created the v0 project workspace template under `templates/project-workspace/` with tracked `.github/`, `agents/`, `product/`, and `ops/` folders.
 
 The reusable ops templates were compared against the latest live dogfood records and still match at the top-level schema. No conservative field cleanup was needed yet.
 
@@ -55,7 +55,7 @@ The project workspace template now has a first-use checklist for applying it to 
 
 The new-project discovery phase is now explicit. Before the first executable ticket in a Factory-managed project, Product should produce or update a discovery brief, roadmap/version plan, first version slice, postponed-decision list, and role/skill routing recommendation. The project workspace template now includes `product/DISCOVERY.md` and `product/ROADMAP.md` for this first pass.
 
-The local dashboard now exists at `03-projects/ai-development-team/dashboard/index.html` as a browser-side read-only management surface. It loads the selected Factory project or `ops/` folder directly in the browser and shows mission control, stage board, role roster, run ledger, release lane, context panel, decision queue, approvals, and learning records without requiring regenerated HTML, a server, CLI bridge, database, or writable control plane.
+The local dashboard now exists at `dashboard/index.html` as a browser-side read-only management surface. It loads the selected Factory project or `ops/` folder directly in the browser and shows mission control, stage board, role roster, run ledger, release lane, context panel, decision queue, approvals, and learning records without requiring regenerated HTML, a server, CLI bridge, database, or writable control plane.
 
 The Paperclip-style management-interface plan now exists in `design/paperclip-style-management-interface.md`. It splits the next dashboard/interface work into read-only drill-down, communication/decision cards, data-contract tightening, CLI bridge, writable control plane, and real project rollout.
 
@@ -75,35 +75,35 @@ The next step is to load the full Factory `ops/` folder in the dashboard and ins
 - The Factory is reusable across projects, not [project]-specific.
 - [project] is the first serious test project.
 - The Factory should replicate a company-like operating model as closely as useful.
-- Canonical design/spec work belongs in `03-projects/ai-development-team/`.
-- The Factory itself can be developed inside `03-projects/ai-development-team/` while it needs direct access to `04-agents/` and `knowledge-base/`.
-- Reusable agents and skills belong in `04-agents/`.
-- First reusable Factory role specs exist in `04-agents/roles/` and use the manual workflow as their shared operating contract.
-- The Factory role registry and V0 core department pack live in `04-agents/` as coordination docs and prompt-wrapper source contracts before full custom agents exist.
+- Canonical design/spec work belongs in this repository.
+- The Factory itself is developed in its own repository, alongside the reusable definitions in `agents/`.
+- Reusable agents and skills belong in `agents/`.
+- First reusable Factory role specs exist in `agents/roles/` and use the manual workflow as their shared operating contract.
+- The Factory role registry and V0 core department pack live in `agents/` as coordination docs and prompt-wrapper source contracts before full custom agents exist.
 - The Factory role registry now reflects all department packs, not only the original six core roles.
 - Department expansion roles decompose or support core v0 roles when activation triggers apply; they are not runnable by default.
-- First runnable prompt wrappers should be thin `.prompt.md` wrappers under the repo's GitHub prompt layer, with `04-agents/` remaining the source of truth.
+- First runnable prompt wrappers should be thin `.prompt.md` wrappers under the repo's GitHub prompt layer, with `agents/` remaining the source of truth.
 - Founder Interface / Personal Assistant now has an individual role-spec bridge because it is part of the first wrapper set.
-- The first Factory prompt wrappers live under `.github/prompts/factory/` and are thin wrappers over the canonical role specs and department packs.
-- The Knowledge / Documentation department pack lives in `04-agents/departments/` as the reusable documentation/state/decision/session/learning contract.
-- The Security / Privacy / Authority department pack lives in `04-agents/departments/` as the reusable risk review and approval-routing contract.
-- The Optimization department pack lives in `04-agents/departments/` as the reusable learning-intake, validation, promotion, and curation contract.
-- The Architecture / Context Architecture department pack lives in `04-agents/departments/` as the reusable system/context architecture, tradeoff, advisory, and ADR-review contract.
-- The Marketing department pack lives in `04-agents/departments/` as the reusable positioning/copy/launch/tags/market-research contract.
-- The Founder Interface / Personal Assistant department pack lives in `04-agents/departments/` as the reusable founder inbox, decision interview, status briefing, and decision-routing contract.
-- The Product department expansion pack lives in `04-agents/departments/` as the reusable rough-idea-to-work-hierarchy and acceptance-criteria contract.
-- The Engineering department expansion pack lives in `04-agents/departments/` as the reusable context-pack execution, implementation, refactor, integration, debugging, and handoff contract.
-- The Review / QA department expansion pack lives in `04-agents/departments/` as the reusable fresh-context review, test planning, regression, UX/UI routing, revision review, and review/test separation contract.
-- The Release / CI-CD department expansion pack lives in `04-agents/departments/` as the reusable release-readiness, branch/commit/PR, batching, CI/CD monitoring, release notes, and escalation contract.
+- The first Factory prompt wrappers live under `prompts/factory/` and are thin wrappers over the canonical role specs and department packs.
+- The Knowledge / Documentation department pack lives in `agents/departments/` as the reusable documentation/state/decision/session/learning contract.
+- The Security / Privacy / Authority department pack lives in `agents/departments/` as the reusable risk review and approval-routing contract.
+- The Optimization department pack lives in `agents/departments/` as the reusable learning-intake, validation, promotion, and curation contract.
+- The Architecture / Context Architecture department pack lives in `agents/departments/` as the reusable system/context architecture, tradeoff, advisory, and ADR-review contract.
+- The Marketing department pack lives in `agents/departments/` as the reusable positioning/copy/launch/tags/market-research contract.
+- The Founder Interface / Personal Assistant department pack lives in `agents/departments/` as the reusable founder inbox, decision interview, status briefing, and decision-routing contract.
+- The Product department expansion pack lives in `agents/departments/` as the reusable rough-idea-to-work-hierarchy and acceptance-criteria contract.
+- The Engineering department expansion pack lives in `agents/departments/` as the reusable context-pack execution, implementation, refactor, integration, debugging, and handoff contract.
+- The Review / QA department expansion pack lives in `agents/departments/` as the reusable fresh-context review, test planning, regression, UX/UI routing, revision review, and review/test separation contract.
+- The Release / CI-CD department expansion pack lives in `agents/departments/` as the reusable release-readiness, branch/commit/PR, batching, CI/CD monitoring, release notes, and escalation contract.
 - Some agents should be advisory-only: they can read/synthesize knowledge and provide recommendations, but do not execute tickets or edit code.
 - Project-specific operational output should live in each project workspace, not in the brain by default.
 - Preferred project workspace folders: `.github/`, `agents/`, `product/`, `ops/`.
-- The copyable project workspace template lives under `03-projects/ai-development-team/templates/project-workspace/`.
-- The project workspace first-use checklist lives under `03-projects/ai-development-team/templates/project-workspace/FIRST-USE.md`.
+- The copyable project workspace template lives under `templates/project-workspace/`.
+- The project workspace first-use checklist lives under `templates/project-workspace/FIRST-USE.md`.
 - Every new Factory-managed project should run project discovery before the first executable ticket.
 - The new-project discovery pass should capture objectives, product shape, first version scope, later-version candidates, and visible postponed decisions.
 - The project workspace template includes `product/DISCOVERY.md` and `product/ROADMAP.md` as the default discovery and version-planning artifacts.
-- Factory Project Discovery lives in `04-agents/skills/` as reusable teammate expertise for kickoff work, not as a full custom agent.
+- Factory Project Discovery lives in `agents/skills/` as reusable teammate expertise for kickoff work, not as a full custom agent.
 - Work hierarchy: Project -> Goal -> Feature -> Task -> Ticket.
 - Ticket is the smallest assignable unit.
 - Tickets always belong to exactly one task; tasks can contain many tickets.
@@ -115,9 +115,9 @@ The next step is to load the full Factory `ops/` folder in the dashboard and ins
 - Marketing is a Factory department for market-facing copy, tags, positioning, launch materials, and market research when relevant.
 - Markdown should hold product/spec/design docs; YAML/JSON should hold operational state when useful.
 - V0 operating objects are task, ticket, run/session, founder inbox item, approval, context pack, review record, release checklist, and learning candidate.
-- Initial v0 ops templates live under `03-projects/ai-development-team/templates/ops/` before being copied into any real project workspace.
-- The Factory's own live operational state lives under `03-projects/ai-development-team/ops/` while The Factory is being built.
-- Manual Factory operation is defined in `03-projects/ai-development-team/design/manual-workflow.md` and should be the shared operating contract for early agents.
+- Initial v0 ops templates live under `templates/ops/` before being copied into any real project workspace.
+- The Factory's own live operational state lives under `ops/` while The Factory is being built.
+- Manual Factory operation is defined in `design/manual-workflow.md` and should be the shared operating contract for early agents.
 - Recommended storage direction: YAML for most state objects, JSON or JSONL for run/session state and events, Markdown with YAML frontmatter for context packs and release checklists, and YAML for v0 review records.
 - A read-only browser-side management dashboard can exist before the CLI bridge or writable control plane, as long as it reads file-backed ops state and does not become a second source of truth.
 - Browser folder selection is the current local-file permission boundary for direct dashboard data loading.
@@ -134,7 +134,6 @@ The next step is to load the full Factory `ops/` folder in the dashboard and ins
 - [Source Comparison Plan](design/source-comparison-plan.md)
 - [Source Use Map](design/source-use-map.md)
 - [V0 Operating Objects](design/v0-operating-objects.md)
-- [Factory Ops](ops/README.md)
 - [Management Dashboard](dashboard/index.html)
 - [Templates](templates/README.md)
 - [Open Questions](design/open-questions.md)
@@ -144,7 +143,7 @@ The next step is to load the full Factory `ops/` folder in the dashboard and ins
 
 1. Open the [Management Dashboard](dashboard/index.html), load the full Factory `ops/` folder, and inspect search/filtering, task/ticket drill-down, communication cards, and the sample interaction record with real data.
 2. Decide whether the next interface slice is saved dashboard views, interaction write/routing behavior, or real-project rollout.
-3. Use [Factory Project Discovery](../../04-agents/skills/factory-project-discovery.md) and the [Project Workspace First-Use Checklist](templates/project-workspace/FIRST-USE.md) when applying the template to the first future Factory-managed project workspace.
+3. Use [Factory Project Discovery](agents/skills/factory-project-discovery.md) and the [Project Workspace First-Use Checklist](templates/project-workspace/FIRST-USE.md) when applying the template to the first future Factory-managed project workspace.
 4. Capture template and dashboard visibility friction as learning candidates before changing canonical templates.
 5. Delay CLI/context-pack helper or writable dashboard control-plane work until the read-only interface proves what writes are actually needed.
 
@@ -154,10 +153,6 @@ The next step is to load the full Factory `ops/` folder in the dashboard and ins
 - [Management Dashboard](dashboard/index.html)
 - [Roadmap](roadmap.md)
 - [Design Docs](design/README.md)
-- [AI Development Team Discovery](../../session-logs/2026-06-03-ai-development-team-discovery.md)
-- [AI Development Team Blueprint](../../knowledge-base/ai-development/ai-development-team-blueprint.md)
-- [Agent Control Plane Dashboard Patterns](../../knowledge-base/ai-development/agent-control-plane-dashboard-patterns.md)
-- [Self-Improving Agent Learning Loops](../../knowledge-base/ai-development/self-improving-agent-learning-loops.md)
 
 ## Last Updated
 

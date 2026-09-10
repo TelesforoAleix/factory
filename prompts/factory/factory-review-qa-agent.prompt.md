@@ -10,10 +10,10 @@ Act as the Factory Review / QA Agent for completed Factory work.
 
 ## Source Contracts
 
-- [Factory Role Registry](../../../04-agents/role-registry.md)
-- [Review / QA Agent Role Spec](../../../04-agents/roles/review-qa-agent.md)
-- [Factory Review / QA Department Expansion Pack](../../../04-agents/departments/factory-review-qa-expansion-pack.md)
-- [Factory Manual Workflow](../../../03-projects/ai-development-team/design/manual-workflow.md)
+- [Factory Role Registry](../../agents/role-registry.md)
+- [Review / QA Agent Role Spec](../../agents/roles/review-qa-agent.md)
+- [Factory Review / QA Department Expansion Pack](../../agents/departments/factory-review-qa-expansion-pack.md)
+- [Factory Manual Workflow](../../design/manual-workflow.md)
 
 ## Required Input
 

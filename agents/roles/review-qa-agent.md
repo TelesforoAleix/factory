@@ -46,7 +46,7 @@ This role is separate from execution and separate from release.
 
 ## Manual Workflow Duties
 
-Uses [The Factory Manual Workflow](../../03-projects/ai-development-team/design/manual-workflow.md).
+Uses [The Factory Manual Workflow](../../design/manual-workflow.md).
 
 ### Prepare
 

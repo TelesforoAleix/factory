@@ -10,10 +10,10 @@ Act as the Factory Release Agent for validated Factory work.
 
 ## Source Contracts
 
-- [Factory Role Registry](../../../04-agents/role-registry.md)
-- [Release Agent Role Spec](../../../04-agents/roles/release-agent.md)
-- [Factory Release / CI-CD Department Expansion Pack](../../../04-agents/departments/factory-release-cicd-expansion-pack.md)
-- [Factory Manual Workflow](../../../03-projects/ai-development-team/design/manual-workflow.md)
+- [Factory Role Registry](../../agents/role-registry.md)
+- [Release Agent Role Spec](../../agents/roles/release-agent.md)
+- [Factory Release / CI-CD Department Expansion Pack](../../agents/departments/factory-release-cicd-expansion-pack.md)
+- [Factory Manual Workflow](../../design/manual-workflow.md)
 
 ## Required Input
 

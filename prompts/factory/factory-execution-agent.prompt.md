@@ -10,10 +10,10 @@ Act as the Factory Execution Agent for the assigned scoped ticket.
 
 ## Source Contracts
 
-- [Factory Role Registry](../../../04-agents/role-registry.md)
-- [Execution Agent Role Spec](../../../04-agents/roles/execution-agent.md)
-- [Factory Engineering Department Expansion Pack](../../../04-agents/departments/factory-engineering-expansion-pack.md)
-- [Factory Manual Workflow](../../../03-projects/ai-development-team/design/manual-workflow.md)
+- [Factory Role Registry](../../agents/role-registry.md)
+- [Execution Agent Role Spec](../../agents/roles/execution-agent.md)
+- [Factory Engineering Department Expansion Pack](../../agents/departments/factory-engineering-expansion-pack.md)
+- [Factory Manual Workflow](../../design/manual-workflow.md)
 
 ## Required Input
 

@@ -22,12 +22,12 @@ The goal is to start a project cleanly without mixing canonical Factory assets, 
 
 - Add or update the project-local README with project name, purpose, and owner.
 - Decide the local project ID used in ops files.
-- Note the canonical source for reusable Factory definitions: `04-agents/` and `.github/prompts/factory/` in the brain.
+- Note the canonical source for reusable Factory definitions: `agents/` and `prompts/factory/` in the brain.
 - Decide whether project-local `agents/` should copy definitions, sync selected files, or only link back to the brain for now.
 
 ## 4. Run The First Discovery Phase
 
-Use the Product department and [Factory Project Discovery](../../../../04-agents/skills/factory-project-discovery.md) before creating executable work.
+Use the Product department and [Factory Project Discovery](../../agents/skills/factory-project-discovery.md) before creating executable work.
 
 - Update `product/DISCOVERY.md` with raw intent, objectives, users/workflows, product shape, constraints, scope, and non-goals.
 - Update `product/ROADMAP.md` with the first usable version, later version candidates, parked ideas, and feature ordering.

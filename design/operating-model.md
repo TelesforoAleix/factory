@@ -124,7 +124,7 @@ Primary responsibility: provide knowledge-backed advice without executing work.
 
 Owns:
 
-- reading relevant notes from `knowledge-base/`
+- reading relevant notes from the knowledge base
 - surfacing useful references and prior decisions
 - comparing options
 - identifying risks and missing context

@@ -10,11 +10,10 @@ It preserves project truth, operating continuity, decisions, documentation quali
 
 Use this pack with:
 
-- [The Factory Manual Workflow](../../03-projects/ai-development-team/design/manual-workflow.md)
-- [The Factory Operating Model](../../03-projects/ai-development-team/design/operating-model.md)
+- [The Factory Manual Workflow](../../design/manual-workflow.md)
+- [The Factory Operating Model](../../design/operating-model.md)
 - [Factory Role Registry](../role-registry.md)
 - [Factory V0 Core Department Pack](factory-v0-core-pack.md)
-- [Factory Ops](../../03-projects/ai-development-team/ops/README.md)
 
 This pack is an operating contract, not a set of runnable custom agents.
 
@@ -53,7 +52,7 @@ Activate this department when a ticket:
 - produces an important decision, ADR, founder answer, or approval
 - has a session/run that changes current focus or next actions
 - exposes documentation drift, stale links, unclear status, or missing navigation
-- creates reusable learning that might belong in Factory docs or `04-agents/`
+- creates reusable learning that might belong in Factory docs or `agents/`
 - has enough complexity that future agents will need a durable handoff trail
 
 ## Inputs
@@ -209,7 +208,7 @@ Ticket powers:
 
 Boundaries:
 
-- does not promote to canonical `04-agents/` or global rules without validation
+- does not promote to canonical `agents/` or global rules without validation
 - does not delete rejected learning without preserving rationale
 - does not treat one-off project quirks as global rules
 
@@ -320,7 +319,7 @@ Stop and escalate when:
 - dashboard state automation
 - scheduled documentation audits
 - full ADR template system
-- automatic promotion into `04-agents/`
+- automatic promotion into `agents/`
 - cross-project knowledge sync automation
 
 ## First Use

@@ -20,12 +20,12 @@ Many conversations are dictated. When archiving, clean away filler, repetitions,
 ## Behavior
 
 1. Extract key decisions, insights, challenges, open threads, and action items from the session.
-2. Create a dated session note in `session-logs/`.
+2. Create a dated session note in session logs.
 3. If any new ideas emerged, flag for Idea Logger.
 4. If any knowledge was generated, flag for Knowledge Builder.
 5. If decisions changed a project, update the relevant project docs.
 6. If the session changed current focus, next actions, open threads, or project status, update Task Tracker outputs:
-   - `session-logs/workboard.md`
+   - the workboard
    - relevant `03-projects/[project]/progress.md`
 7. Keep logging mostly invisible in-chat; provide only a short receipt when helpful.
 
