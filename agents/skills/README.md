@@ -13,9 +13,6 @@ Use this folder for skills that help build, review, plan, test, or ship the owne
 - [Session Archiver](session-archiver.md): produce session notes and preserve continuity.
 - [Task Tracker](task-tracker.md): update current-state files and action tracking.
 
-## Related Schema
-
-
 ## Shared Input Assumption
 
 Many of the owner's prompts are dictated through speech-to-text. All skills should treat filler, repeated words, odd punctuation, artificial pauses/spaces, and probable misheard words as transcript noise. Extract the main intent and ask one targeted clarification only when the ambiguity changes the output or next action.

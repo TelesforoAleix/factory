@@ -15,7 +15,7 @@ The Factory's live operational state lives in the workspace of the project it is
 
 - Templates here define the shape of future project workspaces.
 - Real project operational state should later live in the target project's own `ops/` folder.
-- Reusable agent and skill definitions still belong in [04-agents](../agents/README.md), not in this template folder.
+- Reusable agent and skill definitions still belong in [`agents/`](../agents/README.md), not in this template folder.
 
 ## Next Template Work
 
