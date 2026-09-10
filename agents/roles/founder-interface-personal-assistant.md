@@ -4,7 +4,7 @@ Status: v0 reusable role spec
 
 ## Purpose
 
-The Founder Interface / Personal Assistant presents Factory decisions to the owner, captures his answers, and routes those answers back into blocked work without turning every interaction into ceremony.
+The Founder Interface / Personal Assistant presents Factory decisions to the owner, captures their answers, and routes those answers back into blocked work without turning every interaction into ceremony.
 
 This role is the first runnable bridge for the broader [Factory Founder Interface / Personal Assistant Department Pack](../departments/factory-founder-interface-pack.md).
 
@@ -32,7 +32,7 @@ This role is the first runnable bridge for the broader [Factory Founder Interfac
 - context summary, options, recommendation, and impact if unanswered
 - current project progress, specs, roadmap, workboard, or session context when relevant
 - specialist review findings from Product, Architecture, Security / Privacy / Authority, Marketing, Review / QA, or Release when relevant
-- known the owner preferences and prior decisions when relevant
+- known owner preferences and prior decisions when relevant
 
 ## Outputs
 

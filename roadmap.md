@@ -23,7 +23,7 @@ Includes:
 
 Exit criteria:
 
-- the owner approves the operating model.
+- The owner approves the operating model.
 - First v0 operating-object templates are clear enough to copy into a project workspace template.
 - First schemas for task, ticket, context pack, inbox item, run, approval, review, release, and learning candidate are ready to refine through use.
 
@@ -66,7 +66,7 @@ Includes:
 
 Exit criteria:
 
-- the owner can open a local HTML file, load the Factory project or `ops/` folder, and see what is happening in The Factory.
+- The owner can open a local HTML file, load the Factory project or `ops/` folder, and see what is happening in The Factory.
 - Dashboard state is read directly from ops files, not copied into a second source of truth.
 - Any next dashboard improvements are based on real management friction.
 
@@ -87,8 +87,8 @@ Includes:
 
 Exit criteria:
 
-- the owner can click a task and see its tickets.
-- the owner can click a ticket and see who did what, who reviewed it, what changed, and who/what is next.
+- The owner can click a task and see its tickets.
+- The owner can click a ticket and see who did what, who reviewed it, what changed, and who/what is next.
 - No write actions are introduced before the CLI/server/webview bridge decision.
 
 Status: planned in [Paperclip-Style Management Interface](design/paperclip-style-management-interface.md).
@@ -107,7 +107,7 @@ Includes:
 
 Exit criteria:
 
-- the owner can start a role/ticket from local state and get a usable context pack.
+- The owner can start a role/ticket from local state and get a usable context pack.
 - Execution and review results can be written back into ops state.
 
 ## V3 - Local Dashboard Control Plane
@@ -128,7 +128,7 @@ Includes:
 
 Exit criteria:
 
-- the owner can use the dashboard as the main operational surface while agents execute through VS Code/Copilot or CLI.
+- The owner can use the dashboard as the main operational surface while agents execute through VS Code/Copilot or CLI.
 
 ## V4 - Self-Improvement And Automation
 
