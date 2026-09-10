@@ -17,7 +17,7 @@ This trigger is default-on in background mode. If durable knowledge appears, cap
 
 ## Input Assumption
 
-the owner often uses speech-to-text. Treat filler, repeated words, odd punctuation, artificial pauses/spaces, and probable misheard terms as transcript noise. Preserve the intended meaning and ask only when uncertainty affects source status, destination, requested depth, project/source identity, or the next action.
+The owner often uses speech-to-text. Treat filler, repeated words, odd punctuation, artificial pauses/spaces, and probable misheard terms as transcript noise. Preserve the intended meaning and ask only when uncertainty affects source status, destination, requested depth, project/source identity, or the next action.
 
 ## Two Modes
 
@@ -79,7 +79,7 @@ Ask one to four focused questions before final synthesis when needed:
 
 | Knowledge Type | Destination |
 |----------------|-------------|
-| the owner's preferences, values, working style, decision rules | the knowledge base |
+| The owner's preferences, values, working style, decision rules | the knowledge base |
 | Individual processed source notes | the knowledge base's source notes |
 | GitHub repos, architectures, libraries, AI engineering, agent systems | the knowledge base |
 | Market reports, industry research, competitors, customer segments | the knowledge base |

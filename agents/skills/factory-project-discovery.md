@@ -25,7 +25,7 @@ This skill should run before execution when objectives, product shape, first ver
 
 ## Input Assumption
 
-the owner may describe the project through dictated speech. Remove filler, repetition, and likely transcription artifacts while preserving intent. Ask only when ambiguity changes project identity, product direction, first version scope, approval, or execution readiness.
+The owner may describe the project through dictated speech. Remove filler, repetition, and likely transcription artifacts while preserving intent. Ask only when ambiguity changes project identity, product direction, first version scope, approval, or execution readiness.
 
 ## Discovery Sequence
 

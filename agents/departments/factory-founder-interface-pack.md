@@ -328,7 +328,7 @@ After routing is complete, Founder Inbox Manager sets status to `routed` or `clo
 | Inbox item lacks clear options | Decision Interviewer | Raising agent, Product / Feature Owner |
 | Item is ready to ask the owner | Personal Assistant Agent | Founder Inbox Manager |
 | Multiple open decisions exist | Status Briefing Agent | Founder Interface Lead |
-| the owner answers in chat | Personal Assistant Agent | Founder Inbox Manager, Decision Router |
+| The owner answers in chat | Personal Assistant Agent | Founder Inbox Manager, Decision Router |
 | Answer changes product truth | Decision Router | Product / Feature Owner, Decision / ADR Archivist |
 | Answer changes architecture/context direction | Decision Router | Architecture / Context Department, Decision / ADR Archivist |
 | Answer affects risk, privacy, credentials, permissions, or paid/external services | Security / Privacy / Authority Department | Decision Router |

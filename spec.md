@@ -89,7 +89,7 @@ The Factory separates responsibilities:
 
 ## Founder Inbox
 
-the owner should not have to inspect every agent transcript.
+The owner should not have to inspect every agent transcript.
 
 Important questions and blockers should flow to a founder inbox with:
 
