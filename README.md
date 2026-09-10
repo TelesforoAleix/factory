@@ -4,7 +4,7 @@ Reusable AI development company operating system for the owner's projects.
 
 The Factory is the design home for the agentic development team: product, architecture, engineering, review, release, documentation, security, context, and optimization roles working through a visible operating system.
 
-It is not [project]-specific. [project] is the first serious test project, but The Factory should be reusable for future tools, products, demos, and client/project work.
+It is not built for any single project. The Factory should be reusable for tools, products, demos, and client or project work.
 
 ## Entry Points
 
@@ -18,10 +18,10 @@ It is not [project]-specific. [project] is the first serious test project, but T
 ## Layer Boundary
 
 - This folder holds the product/architecture/spec work for The Factory.
-- This folder is also the live build home for The Factory itself while the system needs direct access to the brain's knowledge and reusable agent layers.
+- This repository is also the live build home for The Factory itself while the operating system is being designed.
 - The Factory's own operational state lives in the workspace of the project it is operating on, never in this repository.
 - Reusable agent and skill definitions belong in [04-agents](agents/README.md).
-- Project-specific operational state should live inside each project workspace, not in this brain by default.
+- Project-specific operational state should live inside each project workspace, not here by default.
 
 ## Related Knowledge
 

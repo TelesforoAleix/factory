@@ -26,7 +26,7 @@ Many conversations are dictated. When archiving, clean away filler, repetitions,
 5. If decisions changed a project, update the relevant project docs.
 6. If the session changed current focus, next actions, open threads, or project status, update Task Tracker outputs:
    - the workboard
-   - relevant `03-projects/[project]/progress.md`
+   - relevant the project's `progress.md`
 7. Keep logging mostly invisible in-chat; provide only a short receipt when helpful.
 
 ## In-Chat Receipt Style

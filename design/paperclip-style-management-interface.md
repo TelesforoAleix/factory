@@ -326,10 +326,10 @@ Goal: use the interface on a real Factory-managed project.
 
 Tickets:
 
-- `DASH-501`: Apply dashboard to first future Factory-managed workspace, likely [project].
+- `DASH-501`: Apply dashboard to the first future Factory-managed workspace.
 - `DASH-502`: Capture first-use friction as learning candidates.
 - `DASH-503`: Tighten project-local ops templates based on real work.
-- `DASH-504`: Decide whether the dashboard remains brain-local, becomes template-local, or both.
+- `DASH-504`: Decide whether the dashboard remains knowledge-base-local, becomes template-local, or both.
 
 Definition of done:
 

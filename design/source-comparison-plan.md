@@ -84,7 +84,7 @@ Sources:
 
 - SkillOpt
 - Hermes Agent
-- existing Brain OS validation work
+- existing knowledge-base validation work
 - ECC continuous learning patterns
 
 Questions:

@@ -14,9 +14,9 @@ It should separate:
 
 ## Core Layers
 
-### 1. Canonical Brain Layer
+### 1. Canonical Factory Layer
 
-Lives in this brain.
+Lives in this repository.
 
 Purpose:
 
@@ -39,7 +39,7 @@ Purpose:
 
 - run The Factory for a specific project
 - keep project-specific tickets, runs, inbox, approvals, and archives local to the project
-- avoid flooding the brain with every operational artifact
+- avoid flooding this repository with every operational artifact
 
 Recommended structure:
 

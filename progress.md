@@ -15,7 +15,7 @@ Management dashboard visibility plus project workspace template dogfood.
 
 The Factory has been activated as a project design space in its own repository.
 
-The foundational direction is clear: build a reusable AI development company operating system for the owner's projects, with [project] as the first serious test. The v0 operating objects now have initial copyable templates under `templates/ops/`.
+The foundational direction is clear: build a reusable AI development company operating system for the owner's projects, with a first serious test project. The v0 operating objects now have initial copyable templates under `templates/ops/`.
 
 The Factory itself is now being developed in this repository. Its own live operating state lives in the workspace of the project it operates on, and the seeded internal-ops ticket has now been dogfooded through execution evidence, self-review, fresh-context review, validation/testing evidence, release readiness, and learning capture.
 
@@ -72,8 +72,7 @@ The next step is to load the full Factory `ops/` folder in the dashboard and ins
 ## Locked Decisions
 
 - Name: The Factory.
-- The Factory is reusable across projects, not [project]-specific.
-- [project] is the first serious test project.
+- The Factory is reusable across projects, not specific to any one of them.
 - The Factory should replicate a company-like operating model as closely as useful.
 - Canonical design/spec work belongs in this repository.
 - The Factory itself is developed in its own repository, alongside the reusable definitions in `agents/`.
@@ -96,7 +95,7 @@ The next step is to load the full Factory `ops/` folder in the dashboard and ins
 - The Review / QA department expansion pack lives in `agents/departments/` as the reusable fresh-context review, test planning, regression, UX/UI routing, revision review, and review/test separation contract.
 - The Release / CI-CD department expansion pack lives in `agents/departments/` as the reusable release-readiness, branch/commit/PR, batching, CI/CD monitoring, release notes, and escalation contract.
 - Some agents should be advisory-only: they can read/synthesize knowledge and provide recommendations, but do not execute tickets or edit code.
-- Project-specific operational output should live in each project workspace, not in the brain by default.
+- Project-specific operational output should live in each project workspace, not here by default.
 - Preferred project workspace folders: `.github/`, `agents/`, `product/`, `ops/`.
 - The copyable project workspace template lives under `templates/project-workspace/`.
 - The project workspace first-use checklist lives under `templates/project-workspace/FIRST-USE.md`.

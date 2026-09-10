@@ -34,7 +34,7 @@ Use this brief before the first Factory-managed execution loop. Keep raw intent 
 
 ## Knowledge Inputs
 
-- Relevant brain notes:
+- Relevant knowledge-base notes:
 - Source material:
 - Prior decisions:
 - Domain assumptions:

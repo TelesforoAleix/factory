@@ -271,7 +271,7 @@ Boundaries:
 - Confirm current branch before release action.
 - Confirm intended target branch or PR base.
 - Follow project-specific branch rules before staging or committing.
-- Do not commit [project]-specific work on `main`; [project] project truth belongs on `project/[project]` after bringing in the latest shared `main` state.
+- Do not commit project-specific work on `main`; project truth belongs on that project's own branch after bringing in the latest shared `main` state.
 - Do not create or switch branches unless the ticket or project workflow calls for it.
 - Stop if branch state, upstream state, or merge/rebase state is unclear.
 

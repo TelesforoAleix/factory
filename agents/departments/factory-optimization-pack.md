@@ -320,7 +320,7 @@ Promotion destinations:
 - Factory design docs
 - Factory ops templates
 - `agents/` role specs, department packs, prompts, or skills
-- the knowledge base's maintenance skills only when it is a brain OS workflow and separately validated
+- knowledge-base maintenance skills only when it is a knowledge-base workflow and separately validated
 
 Promoted candidates must update:
 
@@ -375,7 +375,7 @@ Rules:
 - project-specific candidates stay in project ops unless repeated or reusable
 - reusable Factory candidates can promote to this repository's docs and templates
 - reusable agent/skill candidates can promote to `agents/` only after review and validation
-- brain OS candidates promote to the knowledge base's maintenance skills only when they manage the brain itself and pass the brain OS validation layer
+- knowledge-base candidates promote to knowledge-base maintenance skills only when they manage the knowledge base itself and pass its validation layer
 - Security / Privacy / Authority review is required for candidates that alter tools, permissions, external services, credential handling, or autonomous behavior
 - founder approval is required for high-impact behavior changes, project truth changes, or external service usage
 
@@ -465,7 +465,7 @@ Stop and escalate when:
 - validation set does not exist for a high-impact change
 - candidate changes security/privacy/authority behavior without specialist review
 - candidate would modify canonical `agents/` assets without review
-- candidate would modify brain OS the knowledge base's maintenance skills without brain OS validation
+- candidate would modify knowledge-base maintenance skills without the knowledge base's own validation
 - founder approval is needed
 - candidate repeats a previously rejected change
 - promotion would bloat docs or make local quirks global
@@ -492,7 +492,7 @@ SkillOpt contributes:
 The Factory uses both:
 
 ```text
-Hermes for intake, SkillOpt for promotion, Brain OS markdown/git for governance
+Hermes for intake, SkillOpt for promotion, markdown/git for governance
 ```
 
 ## Not In V0

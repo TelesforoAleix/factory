@@ -217,7 +217,7 @@ Factory approach:
 
 Open design point:
 
-Where project-specific learning candidates live before promotion. Candidate lessons may start in project `ops/`, then promote to the central brain if reusable across projects.
+Where project-specific learning candidates live before promotion. Candidate lessons may start in project `ops/`, then promote to the shared knowledge layer if reusable across projects.
 
 ### 12. Dashboard And Bridge
 

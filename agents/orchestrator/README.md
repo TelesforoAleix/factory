@@ -14,7 +14,7 @@ The previous personal assistant prompt/spec has been removed. The active operati
 | Skill | Purpose | Output |
 |-------|---------|--------|
 | Idea Logger | Captures ideas into structured backlog notes | the idea backlog entries |
-| Knowledge Builder | Routes and processes source material through the brain OS | the inbox, the knowledge base, indexes, sessions |
+| Knowledge Builder | Routes and processes source material through the knowledge-base maintenance layer | the inbox, the knowledge base, indexes, sessions |
 | Task Tracker | Logs tasks and activities | session logs entries |
 | Session Archiver | Records conversation threads and session logs | session logs |
 
@@ -27,7 +27,7 @@ Workspace-level Copilot behavior lives in the workspace instructions. This is th
 - raw source batches go to the inbox
 - processed knowledge goes to the knowledge base
 - project ideas go to the idea backlog
-- activated work goes to `03-projects/`
+- activated work goes to its own project workspace
 - every meaningful conversation gets a session note in session logs
 
 The Copilot instructions are the baseline. Focused prompts or agents should be added only after a reusable workflow has been validated as a skill or method.
@@ -43,7 +43,7 @@ The Copilot instructions are the baseline. Focused prompts or agents should be a
 
 ## Agent Boundary Decision
 
-No extra custom agent is needed yet for source processing. The current Brain OS `Knowledge Builder` skill should own capture and deep-dive workflows.
+No extra custom agent is needed yet for source processing. A knowledge-base source-routing skill should own capture and deep-dive workflows.
 
 Add a dedicated source researcher or project lead agent only when the work needs a separate context window, a repeated multi-step workflow, or different tool permissions.
 

@@ -202,7 +202,7 @@ Task detail page or board group with:
 ### Writeback
 
 - Project docs: update roadmap, PRD, architecture notes, changelog, or decision log when task scope changes product truth.
-- Central brain: write back only if the task produces reusable Factory knowledge, agent improvements, or cross-project patterns.
+- Shared knowledge layer: write back only if the task produces reusable Factory knowledge, agent improvements, or cross-project patterns.
 
 ### Example Future File
 
@@ -314,7 +314,7 @@ Opening the card should show acceptance criteria, context pack, run history, rev
 ### Writeback
 
 - Project docs: update relevant specs, PRDs, decisions, architecture docs, changelog, and task state when ticket output changes product truth.
-- Central brain: create a learning candidate when the ticket reveals reusable agent, skill, workflow, architecture, or product pattern learning.
+- Shared knowledge layer: create a learning candidate when the ticket reveals reusable agent, skill, workflow, architecture, or product pattern learning.
 
 ### Example Future File
 
@@ -426,7 +426,7 @@ Run row or activity card with:
 ### Writeback
 
 - Project docs: usually no direct writeback unless the run produced a decision, implementation result, or documentation update.
-- Central brain: summarize only reusable lessons, agent failures, or improvement candidates. Do not flood the brain with routine run state.
+- Shared knowledge layer: summarize only reusable lessons, agent failures, or improvement candidates. Do not flood the shared knowledge layer with routine run state.
 
 ### Example Future File
 
@@ -543,7 +543,7 @@ Communication card with:
 
 - Project ops: route answer/outcome back to related tickets, tasks, approvals, or reviews.
 - Project docs: write durable decisions into design docs or decision notes when they change project truth.
-- Central brain: only promote reusable communication patterns after repeated evidence.
+- Shared knowledge layer: only promote reusable communication patterns after repeated evidence.
 
 ### Example Future File
 
@@ -654,7 +654,7 @@ Inbox card with:
 ### Writeback
 
 - Project docs: write final decisions into decision logs, PRDs, specs, architecture docs, or ticket/task state.
-- Central brain: write back only if the answer changes reusable Factory rules, the owner's durable preferences, or cross-project product principles.
+- Shared knowledge layer: write back only if the answer changes reusable Factory rules, the owner's durable preferences, or cross-project product principles.
 
 ### Example Future File
 
@@ -752,7 +752,7 @@ Approval card or gate badge with:
 ### Writeback
 
 - Project docs: decision logs, architecture docs, security/privacy notes, release notes, or ticket state when approval changes what can happen.
-- Central brain: reusable approval policies, default thresholds, or security/privacy rules can promote back to Factory docs or `agents/` after validation.
+- Shared knowledge layer: reusable approval policies, default thresholds, or security/privacy rules can promote back to Factory docs or `agents/` after validation.
 
 ### Example Future File
 
@@ -764,7 +764,7 @@ Approval card or gate badge with:
 
 A context pack is the bounded packet of information given to an execution, review, release, or specialist agent.
 
-It lets agents work in isolated sessions without pulling the entire project or brain into context.
+It lets agents work in isolated sessions without pulling the entire project or knowledge base into context.
 
 ### Owner
 
@@ -855,7 +855,7 @@ Context panel with:
 ### Writeback
 
 - Project docs: context packs should not become product truth, but stale or missing context can trigger documentation updates.
-- Central brain: reusable context-pack patterns can become templates in Factory docs or `agents/` skills after validation.
+- Shared knowledge layer: reusable context-pack patterns can become templates in Factory docs or `agents/` skills after validation.
 
 ### Example Future File
 
@@ -951,7 +951,7 @@ Review panel or badge with:
 ### Writeback
 
 - Project docs: update docs only when review changes decisions, requirements, architecture, or known risks.
-- Central brain: reusable review failures, checklists, and specialist patterns become learning candidates for `agents/` or Factory docs.
+- Shared knowledge layer: reusable review failures, checklists, and specialist patterns become learning candidates for `agents/` or Factory docs.
 
 ### Example Future File
 
@@ -1050,7 +1050,7 @@ Release gate card with:
 ### Writeback
 
 - Project docs: changelog, release notes, task/ticket status, roadmap, decision log when needed.
-- Central brain: release workflow improvements become learning candidates; canonical release-agent changes require validation before promotion.
+- Shared knowledge layer: release workflow improvements become learning candidates; canonical release-agent changes require validation before promotion.
 
 ### Example Future File
 
@@ -1085,7 +1085,7 @@ Meaning:
 - `triaged`: owner decides whether it is project-specific, reusable, or noise.
 - `candidate`: concrete improvement proposal exists.
 - `validating`: tested against examples, rubric, or representative tasks.
-- `promoted`: accepted into project docs, central brain knowledge, or canonical `agents/` assets.
+- `promoted`: accepted into project docs, shared knowledge-layer knowledge, or canonical `agents/` assets.
 - `rejected`: intentionally not adopted, with reason preserved.
 - `parked`: plausible but not worth validation yet.
 - `archived`: no further active work.
@@ -1124,7 +1124,7 @@ Meaning:
 
 - Parent: run, ticket, review, release, inbox item, or session.
 - Children: validation tasks, proposed skill patches, doc updates, rejected-change memory.
-- Related: central brain knowledge notes and `agents/` assets when promoted.
+- Related: shared knowledge-layer notes and `agents/` assets when promoted.
 
 ### Source Inspiration
 
@@ -1136,7 +1136,7 @@ Meaning:
 
 YAML for the project-local candidate. Use linked Markdown when a candidate needs longer reflection or validation notes.
 
-Project-local candidates start in project `ops/learning/`. Reusable, validated improvements can promote into the central brain or `agents/`.
+Project-local candidates start in project `ops/learning/`. Reusable, validated improvements can promote into the shared knowledge layer or `agents/`.
 
 ### Dashboard Appearance
 
@@ -1161,7 +1161,7 @@ Improvement queue item with:
 ### Writeback
 
 - Project docs: project-specific lessons can update local docs, decisions, templates, or operating rules.
-- Central brain: reusable validated lessons can update Factory design docs, knowledge notes, or canonical `agents/` skills/agents.
+- Shared knowledge layer: reusable validated lessons can update Factory design docs, knowledge notes, or canonical `agents/` skills/agents.
 - Rejected changes: preserve reason so the same weak improvement is not proposed repeatedly.
 
 ### Example Future File

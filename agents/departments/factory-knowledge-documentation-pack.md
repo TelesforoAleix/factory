@@ -66,7 +66,7 @@ The department may need:
 - progress, roadmap, and design docs
 - existing README/index/navigation files
 - related knowledge/source notes
-- current workboard and brain log when the session changes active state
+- current workboard and knowledge-base log when the session changes active state
 - validation output such as wiki health, lint, tests, or review findings
 
 ## Outputs
@@ -77,7 +77,7 @@ The department produces or updates:
 - run/session summaries
 - progress files
 - workboard updates when active focus or next actions change
-- brain log entries for meaningful events
+- knowledge-base log entries for meaningful events
 - README/index/navigation links
 - decision or ADR records
 - documentation review findings
@@ -246,7 +246,7 @@ Depending on the ticket, this department should produce or update:
 - run summary
 - progress/current-state update
 - workboard update when active focus changes
-- brain log entry for meaningful Factory events
+- knowledge-base log entry for meaningful Factory events
 - README/index/navigation update
 - decision/ADR record when durable choices are made
 - docs review record or review finding

@@ -361,4 +361,4 @@ Stop and escalate when:
 
 ## First Use
 
-Use this pack for Factory tickets that touch external services, agent authority, future dashboard/CLI bridges, project workspace permissions, [project] authority/privacy design, or any security/privacy-sensitive implementation.
+Use this pack for Factory tickets that touch external services, agent authority, future dashboard/CLI bridges, project workspace permissions, project authority and privacy design, or any security/privacy-sensitive implementation.

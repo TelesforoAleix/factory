@@ -60,7 +60,7 @@ Advisory Architect is called when the ticket involves architecture, context desi
 This department does not own:
 
 - the owner's final founder decisions
-- canonical brain OS skills under the knowledge base's maintenance skills
+- canonical knowledge-base maintenance skills
 - project-specific product truth outside the active project workspace
 - direct commits from execution agents
 - dashboard or CLI automation before the manual workflow is stable

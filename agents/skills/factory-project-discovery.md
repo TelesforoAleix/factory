@@ -32,7 +32,7 @@ the owner may describe the project through dictated speech. Remove filler, repet
 1. Capture the raw product intent in the owner's words.
 2. Identify objectives, target users or audience, core workflows, success signals, and constraints.
 3. Separate known facts, assumptions, open questions, and decisions needed later.
-4. Check the brain for relevant project history, source notes, personal principles, domain knowledge, and reusable patterns.
+4. Check the knowledge base for relevant project history, source notes, personal principles, domain knowledge, and reusable patterns.
 5. Draft the first version slice: what must be in the first usable release, what belongs in later versions, and what is explicitly out of scope.
 6. Create a postponed decision list with trigger conditions so deferred decisions are visible instead of forgotten.
 7. Place the first work into the Factory hierarchy: Project -> Goal -> Feature -> Task -> Ticket.

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The Factory should be reusable across projects without putting every operational artifact in the brain.
+The Factory should be reusable across projects without putting every operational artifact in this repository.
 
 Each real project gets its own workspace that syncs reusable agents and keeps project-specific product and ops state local.
 
@@ -30,7 +30,7 @@ Possible contents:
 
 Source:
 
-- copied or synced from the brain's canonical agent system
+- copied or synced from the canonical agent system in this repository
 - adapted with project-specific context
 
 ## `agents/`
@@ -122,4 +122,4 @@ The next design pass should define minimal v0 schemas for:
 
 ## Guardrail
 
-The brain should keep reusable design and high-level project knowledge. The project workspace should keep day-to-day operational state.
+This repository should keep reusable design and high-level method. The project workspace should keep day-to-day operational state.

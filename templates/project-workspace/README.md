@@ -2,7 +2,7 @@
 
 Copyable v0 workspace scaffold for installing The Factory into future project workspaces.
 
-This template keeps project-specific product work and operating state outside the brain while preserving a simple connection to the canonical Factory role and prompt system.
+This template keeps project-specific product work and operating state outside the Factory repository while preserving a simple connection to the canonical Factory role and prompt system.
 
 ## Structure
 
@@ -64,4 +64,4 @@ Start with `product/DISCOVERY.md` and `product/ROADMAP.md` before creating the f
 
 ## Boundary
 
-Reusable Factory definitions stay in the brain's `agents/` and `prompts/factory/` layers. This template is for project-local working copies, product code, and operating state.
+Reusable Factory definitions stay in the Factory repository's `agents/` and `prompts/factory/` layers. This template is for project-local working copies, product code, and operating state.

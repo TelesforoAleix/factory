@@ -48,13 +48,13 @@ Current v0 direction: YAML for tasks, tickets, inbox items, approvals, review re
 - What validation tasks should be created first?
 - How should rejected improvements be stored?
 - How does central optimization coordinate with department-owned improvement notes?
-- Do project-specific learning candidates start in project `ops/` and promote to the central brain only when reusable?
+- Do project-specific learning candidates start in project `ops/` and promote to the shared knowledge layer only when reusable?
 
 ## Project Sync
 
 - How should canonical `agents/` definitions sync into project workspaces?
 - Should project overrides be allowed?
-- How should updates from the brain propagate to active project workspaces without overwriting project-specific changes?
+- How should updates from the Factory repository propagate to active project workspaces without overwriting project-specific changes?
 - How should The Factory's internal `ops/` tickets trigger changes in canonical `agents/` assets without blurring ownership?
 
 ## Naming

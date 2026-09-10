@@ -8,7 +8,7 @@ It should feel like a software company made of agents and skills: managers own a
 
 The Factory helps the owner build projects without losing product intent, architectural decisions, task state, or learning across long agent-assisted development cycles.
 
-The first serious test is [project], but The Factory is not an [project]-only team. It should be reusable for any project the owner starts.
+The Factory is not built for a single project. It should be reusable for any project it is applied to.
 
 ## Core Thesis
 
@@ -18,7 +18,7 @@ The stable system should include:
 
 - a reusable agent and skill layer
 - a project-specific operational layer
-- read-only advisory agents that can use brain knowledge without executing work
+- read-only advisory agents that can use knowledge-base material without executing work
 - clear work objects and ownership
 - context packs for isolated agent sessions
 - explicit review and release gates
@@ -138,11 +138,11 @@ project-x/
 ```
 
 - `.github/`: project-local instructions, prompts, and tool configuration.
-- `agents/`: synced reusable agent/skill layer from the brain.
+- `agents/`: the reusable agent and skill layer, canonical in this repository.
 - `product/`: actual product code and artifacts.
 - `ops/`: project-specific tickets, runs, dashboard state, approvals, inbox, and operational logs.
 
-The brain remains the canonical design/source for reusable agents. Project operational state should not flood the brain.
+This repository remains the canonical design and source for reusable agents. Project operational state should not flood it.
 
 ## State And Data Direction
 
@@ -180,13 +180,13 @@ Overlapping source patterns should be compared before implementation rather than
 
 ## What The Factory Is Not
 
-- Not an [project]-only development team.
+- Not a development team built for a single project.
 - Not a loose pile of prompts.
 - Not a generic chatbot.
 - Not an always-on autonomous runtime in v0.
 - Not a dashboard-first project before the operating model is defined.
 - Not a system where every agent does everything.
-- Not a replacement for the brain's markdown/git memory.
+- Not a replacement for a markdown/git knowledge base.
 
 ## Success Criteria
 

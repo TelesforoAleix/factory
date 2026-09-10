@@ -47,7 +47,7 @@ Clarify:
 - objectives and why the project matters
 - target users, audience, or workflow
 - product shape, scope, and non-goals
-- constraints, dependencies, and relevant brain knowledge
+- constraints, dependencies, and relevant knowledge-base material
 - first usable version scope
 - later-version candidates and parked ideas
 - decisions needed now versus decisions that can wait
@@ -274,10 +274,10 @@ Update project docs when the work changes durable truth:
 - README/index files
 - decision notes
 
-Update brain continuity when the session changes active focus, next actions, or durable learning:
+Update knowledge-base continuity when the session changes active focus, next actions, or durable learning:
 
 - workboard
-- brain log
+- knowledge-base log
 - session note
 
 ## Required Artifacts
