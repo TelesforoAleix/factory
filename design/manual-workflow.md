@@ -339,17 +339,20 @@ Practical notes:
 
 The first manual dogfood pass used the seeded internal Factory ops ticket.
 
+The records below are ops output, not method, so they are named here rather than linked: they live
+in the private `projects/factory` ops repository and are deliberately absent from this repository.
+
 Core objects:
 
-- [Internal Factory Ops Ticket](../ops/tickets/TICKET-2026-0001-internal-factory-ops.yaml)
-- [Factory Self-Hosting Task](../ops/tasks/TASK-2026-0001-factory-self-hosting.yaml)
-- [Internal Factory Ops Run](../ops/runs/RUN-2026-0001-internal-factory-ops.json)
+- Internal Factory Ops Ticket `TICKET-2026-0001-internal-factory-ops.yaml`
+- Factory Self-Hosting Task `TASK-2026-0001-factory-self-hosting.yaml`
+- Internal Factory Ops Run `RUN-2026-0001-internal-factory-ops.json`
 
 Review and release objects:
 
-- [Self-Review](../ops/reviews/REVIEW-2026-0001-internal-factory-ops-self-review.yaml)
-- [Fresh-Context Review](../ops/reviews/REVIEW-2026-0002-internal-factory-ops-fresh-review.yaml)
-- [Learning Candidate](../ops/learning/LEARN-2026-0001-manual-workflow-gate.yaml)
+- Self-Review `REVIEW-2026-0001-internal-factory-ops-self-review.yaml`
+- Fresh-Context Review `REVIEW-2026-0002-internal-factory-ops-fresh-review.yaml`
+- Learning Candidate `LEARN-2026-0001-manual-workflow-gate.yaml`
 
 Continuity records:
 

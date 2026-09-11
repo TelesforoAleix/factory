@@ -8,7 +8,6 @@ Development-team agents, prompts, workflows, and skills for building the owner's
 - [Role Registry](role-registry.md): registry of Factory roles, departments, authority, boundaries, inputs, outputs, and ticket powers.
 - [Departments](departments/README.md): reusable Factory department specs.
 - [Roles](roles/README.md): reusable Factory role specs.
-- [Orchestrator](orchestrator/README.md): current orchestrator status and future agent boundary rules.
 - [Skills](skills/README.md): reusable development-team workflow definitions for ideas, sessions, tasks, and project-building support.
 
 ## Current Agent Files

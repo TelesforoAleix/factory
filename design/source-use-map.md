@@ -105,7 +105,7 @@ Factory approach:
 
 - Founder inbox is an operational queue, shown in dashboard and surfaced by the personal assistant agent.
 - If a ticket raises a founder question, the ticket is blocked until the owner answers.
-- the owner answers through the personal assistant.
+- The owner answers through the personal assistant.
 - The personal assistant records the decision and unblocks/routes the ticket.
 - Important inbox items include up to three options, recommendation, context, and impact.
 

@@ -300,7 +300,7 @@ Tickets:
 
 Definition of done:
 
-- the owner can start a role/ticket from dashboard context without hand-assembling all files.
+- The owner can start a role/ticket from dashboard context without hand-assembling all files.
 - Writes are explicit, validated, and inspectable in git.
 
 ### Phase 5: Writable Control Plane

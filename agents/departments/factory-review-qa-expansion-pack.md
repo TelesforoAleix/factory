@@ -13,7 +13,7 @@ Use this pack with:
 - [The Factory Manual Workflow](../../design/manual-workflow.md)
 - [The Factory Operating Model](../../design/operating-model.md)
 - [The Factory V0 Operating Objects](../../design/v0-operating-objects.md)
-- [Review Record Template](../../03-projects/ai-development-team/templates/ops/review-record.yaml)
+- [Review Record Template](../../templates/ops/review-record.yaml)
 - [Release Checklist Template](../../templates/ops/release-checklist.md)
 - [Factory Role Registry](../role-registry.md)
 - [Factory V0 Core Department Pack](factory-v0-core-pack.md)

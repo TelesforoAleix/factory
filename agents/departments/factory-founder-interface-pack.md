@@ -13,7 +13,7 @@ Use this pack with:
 - [The Factory Manual Workflow](../../design/manual-workflow.md)
 - [The Factory Operating Model](../../design/operating-model.md)
 - [The Factory V0 Operating Objects](../../design/v0-operating-objects.md)
-- [Founder Inbox Item Template](../../03-projects/ai-development-team/templates/ops/founder-inbox-item.yaml)
+- [Founder Inbox Item Template](../../templates/ops/founder-inbox-item.yaml)
 - [Factory Role Registry](../role-registry.md)
 - [Factory V0 Core Department Pack](factory-v0-core-pack.md)
 - [Factory Knowledge / Documentation Department Pack](factory-knowledge-documentation-pack.md)

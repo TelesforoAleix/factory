@@ -87,7 +87,7 @@ The department may need:
 - design/UX context
 - security/privacy/authority constraints for claims
 - architecture/context limitations that affect claims
-- existing brand voice or the owner preferences
+- existing brand voice or owner preferences
 - launch channel or distribution goal
 - acceptance criteria and required reviewers
 
