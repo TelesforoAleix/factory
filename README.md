@@ -6,8 +6,39 @@ The Factory is the design home for the agentic development team: product, archit
 
 It is not built for any single project. The Factory should be reusable for tools, products, demos, and client or project work.
 
+## Quickstart
+
+Factory Workbench runs a project end to end with **nothing else installed** — no
+backend, no API key, no account. Python 3.11+ and `git` are all it needs.
+
+```bash
+pip install pyyaml
+
+# See the whole loop run: 14 steps, 7 planted refusals, a deterministic fake adapter.
+python3 acceptance/synthetic_project.py
+
+# Then drive your own project.
+python3 -m workbench.cli init ~/projects/my-project --project-id MYPROJ --title "My project"
+python3 -m workbench.cli --project ~/projects/my-project \
+    create task --title "First task" \
+    --fields '{"intent":"why this exists","acceptance_criteria":["what done means"]}'
+
+# Open the control plane.
+python3 -m workbench.cli --project ~/projects/my-project serve
+# -> http://127.0.0.1:8765/
+```
+
+`serve` binds loopback only and has no login: the OS user boundary is the
+boundary. It is not built for public exposure.
+
+Workbench holds **no** backend credential, no model registry and no tool
+implementation. AI work goes through a configured execution adapter, and the one
+that ships is a deterministic fake — so the quickstart above is repeatable, costs
+nothing, and calls nothing.
+
 ## Entry Points
 
+- [Workbench](workbench/README.md)
 - [Spec](spec.md)
 - [Progress](progress.md)
 - [Roadmap](roadmap.md)
@@ -25,7 +56,17 @@ It is not built for any single project. The Factory should be reusable for tools
 
 ## Current Status
 
-Active self-hosting/spec phase. The first `ops/` templates exist, and a browser-side [management dashboard](dashboard/index.html) now loads local ops records for mission control, stage board, role roster, run ledger, release lane, context panel, decisions, approvals, and learning before CLI or writable dashboard automation.
+**Factory Workbench is executable.** The dashboard is no longer read-only: served
+by `workbench serve`, it loads records as JSON from the local server and can
+approve, advance and assign — every action going through one validated write
+engine that the CLI shares.
+
+What that replaces: the dashboard used to parse records in the browser with a
+hand-rolled YAML subset parser that silently dropped nested structure. The server
+parses now, so there is one parser and one validator in the system.
+
+Still ahead: the full catalogue migration, and any real execution adapter — only
+the deterministic fake exists, which is deliberate.
 
 ## Licence
 
