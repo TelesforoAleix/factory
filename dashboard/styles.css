@@ -270,7 +270,11 @@ tr:last-child td { border-bottom: 0; }
 .workbench-actions-label { margin-top: 1rem; font-size: 0.75rem; text-transform: uppercase;
   letter-spacing: 0.06em; opacity: 0.65; }
 .workbench-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.4rem; }
-.workbench-action { padding: 0.35rem 0.7rem; border-radius: 6px; border: 1px solid #c7ccd1;
-  background: #fff; cursor: pointer; font-size: 0.85rem; }
-.workbench-action:hover { background: #f2f4f6; }
+/* The base `button` rule sets color:#fff for filled buttons. These are outline
+   buttons on a white background, so they must set their own colour or they are
+   white on white — which renders as an empty box with the label still in the DOM. */
+.workbench-action { padding: 0.35rem 0.7rem; border-radius: 6px; border: 1px solid #bddbd8;
+  background: #ffffff; color: var(--accent); cursor: pointer; font-size: 0.85rem;
+  min-height: 30px; font-weight: 600; }
+.workbench-action:hover { background: #f2f7f6; }
 body.workbench-mode .browser-boundary-note { display: none; }

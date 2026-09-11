@@ -54,7 +54,33 @@ async function workbenchLoad() {
   state.records = toDashboardShape(payload.records);
   state.loadedLabel = `${payload.project_id} (live)`;
   render(state.records);
+  workbenchRelabel();
   workbenchDecorate();
+}
+
+/* dashboard.js was written for a read-only file:// viewer and says so in three
+   places. Leaving those while offering write buttons would make the page lie
+   about its own mode, which is a worse bug than it looks: the labels are how a
+   person decides whether an action is safe. */
+function workbenchRelabel() {
+  const status = document.getElementById("dataStatus");
+  if (status) status.textContent =
+    `Live: project ${WORKBENCH.projectId}. Writes go through the Workbench engine.`;
+
+  const phase = document.getElementById("missionPhase");
+  if (phase) phase.textContent = "Writable";
+
+  // "Current project" is hardcoded to FACTORY in dashboard.js's mission cards.
+  for (const card of document.querySelectorAll("#missionCards .mission-card, #missionCards > *")) {
+    const label = card.querySelector("*");
+    if (label && label.textContent.trim() === "Current project") {
+      const value = label.nextElementSibling;
+      const note = value && value.nextElementSibling;
+      if (value) value.textContent = WORKBENCH.projectId;
+      if (note) note.textContent = "Served by Factory Workbench";
+      break;
+    }
+  }
 }
 
 function workbenchNotice(message, kind) {
@@ -87,6 +113,11 @@ function workbenchDecorate() {
   if (!panel || !state.selected?.id) return;
   const record = state.indexes.byId.get(state.selected.id);
   if (!record) return;
+
+  // Decorating runs after every render *and* every click, so it must be
+  // idempotent: without this the action block is appended again each time.
+  panel.querySelectorAll(".workbench-actions, .workbench-actions-label")
+       .forEach((node) => node.remove());
 
   const actions = document.createElement("div");
   actions.className = "workbench-actions";
