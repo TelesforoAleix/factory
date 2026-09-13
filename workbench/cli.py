@@ -115,6 +115,23 @@ def cmd_audit(args) -> int:
     return 0
 
 
+def cmd_run(args) -> int:
+    """Phase 23.0: the smallest action that calls the configured adapter."""
+    from workbench.adapters.select import make_adapter
+    proj = project.open_project(Path(args.project))
+    backend = make_adapter(proj.adapter)
+    engine = Engine(proj, actor=human(args.actor, proj.project_id))
+    run, result = engine.run(args.id, backend)
+    mark = "REFUSED" if result.refused else "ok"
+    print(f"{run['id']}  {mark:<8} adapter={backend.name} model={result.model} "
+          f"request_id={run.get('request_id')}")
+    if result.refused:
+        print(f"    reason: {result.reason}")
+    else:
+        print(f"    output ({len(result.output)} chars): {result.output[:200]}")
+    return 0
+
+
 def cmd_serve(args) -> int:
     from workbench.server import serve
     serve(Path(args.project), host=args.host, port=args.port, actor=args.actor)
@@ -161,6 +178,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("audit", help="print the audit trail")
     p.set_defaults(func=cmd_audit)
+
+    p = sub.add_parser("run", help="run one ticket or task through the project's configured adapter")
+    p.add_argument("id"); p.set_defaults(func=cmd_run)
 
     p = sub.add_parser("serve", help="run the local dashboard server")
     p.add_argument("--host", default="127.0.0.1"); p.add_argument("--port", type=int, default=8765)

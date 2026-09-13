@@ -18,6 +18,7 @@ from pathlib import Path
 
 from workbench import agents as agents_module
 from workbench import approvals, audit, ids, records, schema
+from workbench.adapters import Request
 from workbench.budget import Budget
 from workbench.errors import ScopeViolation, ValidationError
 from workbench.identity import Identity
@@ -212,3 +213,77 @@ class Engine:
             },
         )
         return result
+
+    # -- the smallest action that calls the configured adapter (Phase 23.0) ---
+
+    def run(self, item_id: str, backend, *, max_calls: int = 1) -> tuple[dict, "object"]:
+        """Run one work item through ``backend`` and record what came back.
+
+        The 23.0 brief §6.6's "smallest Workbench action that calls the
+        configured adapter": build a ``Request`` from the item, call the
+        adapter once, record a ``run`` object (an existing type, existing
+        statuses -- no 94th status) and link it from the item. Results are the
+        client's to record (23.0 brief §6.3): the endpoint returns and forgets,
+        this is where the answer lives.
+
+        What the Request is made of, and what it is not:
+          agent_role   the item's ``assigned_agent``. Factory has no JSON agent
+                       manifests yet (roles are prose under agents/roles/), so
+                       the roster name is the role key -- named in the handover.
+          task_summary the item's title.
+          instructions ``objective`` (ticket) or ``intent`` (task).
+          context      empty. Nothing on an item is *selected content*; context
+                       assembly is Phase 23.2's, and the endpoint adds nothing.
+          capabilities the agent's -- none, for a roster-name agent; a backend
+                       that advertises none refuses one that declares any, at
+                       activation, before any call (ADR-034 §6).
+          priority     the item's, in Factory's vocabulary; the adapter maps.
+        """
+        item = records.find(self.project.ops, item_id)
+        if item.get("object_type") not in ("ticket", "task"):
+            self._refuse("run", item_id, ValidationError(
+                f"{item_id} is a {item.get('object_type')}; run takes a ticket or a task"))
+        agent_name = item.get("assigned_agent")
+        if not agent_name:
+            self._refuse("run", item_id, ValidationError(f"{item_id} has no assigned_agent"))
+        self.require_on_roster(agent_name)
+        agent = agents_module.parse({"agent": agent_name, "role": agent_name},
+                                    source=f"{item_id}.assigned_agent")
+        self.activate(agent, backend)
+
+        instructions = item.get("objective") or item.get("intent") or ""
+        request = Request(
+            agent_role=agent.role,
+            task_summary=str(item.get("title", "")),
+            instructions=str(instructions),
+            context=(),
+            capabilities=agent.capabilities,
+            priority=str(item.get("priority", "medium")),
+        )
+        budget = Budget(max_calls=max_calls, max_cost=None)
+        result = self.execute(agent=agent, backend=backend, request=request,
+                              budget=budget, work_item=item_id)
+
+        link = "related_ticket_id" if item["object_type"] == "ticket" else "related_task_id"
+        run = self.create("run", {
+            "status": "refused" if result.refused else "succeeded",
+            "run_type": "execution",
+            "agent_id": agent.name,
+            "agent_digest": agent.digest(),
+            "adapter": backend.name,
+            # The endpoint's correlation id, when the adapter has one. Out of
+            # band because Result carries no such field -- see adapters/homelab.py.
+            "request_id": getattr(backend, "last_request_id", None),
+            link: item_id,
+            "model": result.model,
+            "cost": result.cost,
+            "tokens": result.tokens,
+            "refused": result.refused,
+            "reason": result.reason,
+            "output": result.output,
+            "budget": budget.as_dict(),
+        })
+        run_ids = list(item.get("run_ids") or [])
+        run_ids.append(run["id"])
+        self.update(item_id, {"run_ids": run_ids})
+        return run, result

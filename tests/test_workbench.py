@@ -24,6 +24,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from workbench import agents, approvals, audit, gitops, project, records, schema
 from workbench.adapters import Request
 from workbench.adapters.fake import FakeAdapter
+from workbench.adapters.homelab import REFUSAL_KINDS, HomelabAdapter
+from workbench.adapters.select import make_adapter
 from workbench.budget import Budget
 from workbench.engine import Engine
 from workbench.errors import (ApprovalRequired, BudgetExhausted, CapabilityUnsupported,
@@ -398,6 +400,224 @@ class TestDeterministicAdapter(Base):
         """ADR-035 §4 — the interface must not leak backend-specific concepts."""
         for forbidden in ("model", "provider", "api_key", "temperature", "system_prompt"):
             self.assertNotIn(forbidden, Request.__dataclass_fields__)
+
+
+# ---------------------------------------------------------------------------
+# Phase 23.0 -- the second adapter (ADR-035 §4, Phase 20.0 brief §8.1.3)
+# ---------------------------------------------------------------------------
+
+import http.server
+import socket
+import threading
+
+
+class _StubEndpoint:
+    """A loopback HTTP stub standing in for homelab's harness.
+
+    `reply` is (status, body-dict) and is swapped per test. It records the last
+    request body and headers so a test can assert what the adapter sent.
+    """
+
+    def __init__(self):
+        stub = self
+        self.reply = (200, {"ok": True})
+        self.last_body = None
+        self.last_headers = None
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):  # noqa: D401
+                return
+
+            def do_POST(self):
+                n = int(self.headers.get("Content-Length", "0"))
+                stub.last_body = json.loads(self.rfile.read(n).decode("utf-8"))
+                stub.last_headers = dict(self.headers)
+                status, body = stub.reply
+                data = json.dumps(body).encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+        self.server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}/v1/request"
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def close(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+class TestHomelabAdapter(unittest.TestCase):
+    def setUp(self):
+        self.stub = _StubEndpoint()
+        self.adapter = HomelabAdapter(url=self.stub.url, timeout=5)
+        self.request = Request(agent_role="execution-agent", task_summary="Sockets",
+                               instructions="What is a socket unit?", context=("a", "b"),
+                               priority="medium")
+
+    def tearDown(self):
+        self.stub.close()
+
+    def test_same_shape_as_the_fake(self):
+        """ADR-035 §4: the two adapters have the same shape. Same protocol methods, same
+        Request in, same Result out -- and the interface's absent-field test is unchanged."""
+        for name in ("name", "capabilities", "tools", "execute"):
+            self.assertTrue(hasattr(HomelabAdapter, name) or hasattr(self.adapter, name))
+        for forbidden in ("model", "provider", "api_key", "temperature", "system_prompt"):
+            self.assertNotIn(forbidden, Request.__dataclass_fields__)
+
+    def test_ok_maps_to_result(self):
+        self.stub.reply = (200, {"ok": True, "request_id": "abc123", "class": "question",
+                                 "text": "An answer.", "provider": "p", "model": "m"})
+        result = self.adapter.execute(self.request)
+        self.assertFalse(result.refused)
+        self.assertEqual(result.output, "An answer.")
+        self.assertEqual(result.model, "m")
+        self.assertIsNone(result.cost, "unknown cost stays unknown")
+        self.assertEqual(self.adapter.last_request_id, "abc123")
+
+    def test_every_endpoint_refusal_kind_maps_to_refused_with_the_kind_in_reason(self):
+        """The 23.0 orchestrator's S3 requirement, kind by kind -- against the control above."""
+        statuses = {"bad_request": 400, "identity_in_body": 400, "too_large": 413,
+                    "needs_decomposition": 422, "not_a_request": 422, "unclassifiable": 422,
+                    "helper_unavailable": 503, "unknown_role": 400, "ineligible": 422,
+                    "exhausted": 429, "error": 502}
+        self.assertEqual(set(statuses), set(REFUSAL_KINDS))
+        for kind in REFUSAL_KINDS:
+            stage = "helper" if kind in ("unknown_role", "ineligible", "exhausted", "error") else "endpoint"
+            self.stub.reply = (statuses[kind], {"ok": False, "request_id": f"id-{kind}", "kind": kind,
+                                                "message": f"why {kind}", "stage": stage})
+            result = self.adapter.execute(self.request)
+            self.assertTrue(result.refused, kind)
+            self.assertTrue(result.reason.startswith(f"{kind}: "), (kind, result.reason))
+            self.assertIn(stage, result.reason)
+            self.assertEqual(result.output, "")
+            self.assertIsNone(result.model)
+            self.assertEqual(self.adapter.last_request_id, f"id-{kind}")
+
+    def test_unreachable_endpoint_is_a_refusal_not_an_exception(self):
+        dead = HomelabAdapter(url="http://127.0.0.1:1/v1/request", timeout=2)
+        result = dead.execute(self.request)
+        self.assertTrue(result.refused)
+        self.assertTrue(result.reason.startswith("endpoint_unreachable: "))
+        self.assertIsNone(dead.last_request_id)
+
+    def test_payload_names_no_model_and_declares_no_identity(self):
+        self.stub.reply = (200, {"ok": True, "text": "x", "request_id": "r"})
+        self.adapter.execute(self.request)
+        body = self.stub.last_body
+        self.assertEqual(body["v"], 1)
+        self.assertEqual(body["kind"], "question")
+        self.assertEqual(body["role"], "execution-agent")
+        self.assertEqual(body["question"], "Sockets\n\nWhat is a socket unit?")
+        self.assertEqual(body["context"], [{"text": "a", "source": None}, {"text": "b", "source": None}])
+        for absent in ("model", "provider", "client", "user", "user_id", "origin", "request_id", "ts"):
+            self.assertNotIn(absent, body)
+        self.assertEqual(self.stub.last_headers.get("X-Homelab-Client"), "workbench")
+
+    def test_priority_is_translated_never_selected(self):
+        """Factory's `medium`/`urgent` are not in the endpoint's enum; the adapter maps them.
+        (23.0 brief §6.6 correction: without this, every default Request is refused.)"""
+        for factory_value, endpoint_value in (("low", "low"), ("medium", "normal"),
+                                              ("high", "high"), ("urgent", "critical")):
+            body = self.adapter.build_payload(Request(agent_role="r", task_summary="",
+                                                      instructions="i", priority=factory_value))
+            self.assertEqual(body["priority"], endpoint_value)
+        self.assertEqual(self.adapter.build_payload(Request(agent_role="r", task_summary="",
+                                                            instructions="i"))["complexity"], "medium")
+        result = self.adapter.execute(Request(agent_role="r", task_summary="", instructions="i",
+                                              priority="whenever"))
+        self.assertTrue(result.refused)
+        self.assertIn("bad_request", result.reason)
+
+    def test_advertises_no_capabilities_so_a_capable_agent_is_refused_at_activation(self):
+        """ADR-034 §6 -- and the honest statement of what the endpoint cannot do in 23.0."""
+        self.assertEqual(self.adapter.capabilities(), ())
+        self.assertEqual(self.adapter.tools(), ())
+        capable = agents.parse({"agent": "a", "role": "r", "capabilities": ["repository_read"]})
+        with self.assertRaises(CapabilityUnsupported):
+            agents.check_compatibility(capable, self.adapter)
+        agents.check_compatibility(agents.parse({"agent": "a", "role": "r"}), self.adapter)
+
+
+class TestAdapterSelection(Base):
+    def test_default_is_fake(self):
+        self.assertEqual(project.open_project(self.project.root).adapter, "fake")
+        self.assertEqual(make_adapter("fake").name, "fake")
+
+    def test_homelab_by_one_key(self):
+        meta = self.project.ops / "project.json"
+        data = json.loads(meta.read_text()); data["adapter"] = "homelab"
+        meta.write_text(json.dumps(data))
+        self.assertEqual(project.open_project(self.project.root).adapter, "homelab")
+        self.assertEqual(make_adapter("homelab").name, "homelab")
+
+    def test_unknown_adapter_is_refused(self):
+        meta = self.project.ops / "project.json"
+        data = json.loads(meta.read_text()); data["adapter"] = "claude-code"
+        meta.write_text(json.dumps(data))
+        with self.assertRaises(ValidationError):
+            project.open_project(self.project.root)
+        with self.assertRaises(ValidationError):
+            make_adapter("claude-code")
+
+
+class TestRun(Base):
+    """`workbench.cli run <item>` -- the smallest action that calls the configured adapter."""
+
+    def _ticket(self, **extra):
+        task = self.engine.create("task", {"title": "T", "intent": "i", "acceptance_criteria": ["a"]})
+        return self.engine.create("ticket", {"title": "Sockets", "task_id": task["id"],
+                                             "objective": "What is a socket unit?",
+                                             "acceptance_criteria": ["a"], "priority": "medium",
+                                             **extra})
+
+    def test_run_on_the_fake_records_a_run_and_links_it(self):
+        ticket = self._ticket(assigned_agent="execution-agent")
+        self.engine.add_to_roster("execution-agent")
+        run, result = self.engine.run(ticket["id"], FakeAdapter())
+        self.assertFalse(result.refused)
+        self.assertEqual(run["object_type"], "run")
+        self.assertEqual(run["status"], "succeeded")
+        self.assertIn(run["status"], schema.get("run").statuses, "no 94th status")
+        self.assertEqual(run["adapter"], "fake")
+        self.assertEqual(run["related_ticket_id"], ticket["id"])
+        self.assertEqual(run["output"], result.output)
+        self.assertIsNone(run["request_id"], "the fake has no correlation id")
+        self.assertIn(run["id"], records.find(self.project.ops, ticket["id"])["run_ids"])
+        actions = [e["action"] for e in audit.read(self.project.ops)]
+        self.assertIn("execute", actions)
+
+    def test_unrostered_agent_is_refused_and_the_control_passes(self):
+        ticket = self._ticket(assigned_agent="execution-agent")
+        with self.assertRaises(ScopeViolation):
+            self.engine.run(ticket["id"], FakeAdapter())
+        self.engine.add_to_roster("execution-agent")
+        self.engine.run(ticket["id"], FakeAdapter())
+
+    def test_item_without_an_agent_is_refused(self):
+        ticket = self._ticket()
+        with self.assertRaises(ValidationError):
+            self.engine.run(ticket["id"], FakeAdapter())
+
+    def test_a_refusal_from_the_adapter_is_a_refused_run(self):
+        ticket = self._ticket(assigned_agent="execution-agent")
+        self.engine.add_to_roster("execution-agent")
+        stub = _StubEndpoint()
+        try:
+            stub.reply = (422, {"ok": False, "request_id": "rid", "kind": "needs_decomposition",
+                                "message": "m", "stage": "endpoint"})
+            run, result = self.engine.run(ticket["id"], HomelabAdapter(url=stub.url, timeout=5))
+        finally:
+            stub.close()
+        self.assertTrue(result.refused)
+        self.assertEqual(run["status"], "refused")
+        self.assertEqual(run["request_id"], "rid")
+        self.assertTrue(run["reason"].startswith("needs_decomposition: "))
+        self.assertEqual(stub.last_body["role"], "execution-agent")
+        self.assertEqual(stub.last_body["priority"], "normal")
 
 
 if __name__ == "__main__":
