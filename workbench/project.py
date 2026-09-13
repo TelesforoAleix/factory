@@ -27,6 +27,10 @@ class Project:
     root: Path
     ops: Path
     project_id: str
+    # Which execution adapter `run` uses (Phase 23.0). Read from project.json's
+    # "adapter" key; absent means "fake" -- a project gets a real backend only
+    # by saying so.
+    adapter: str = "fake"
 
     @property
     def agents_ref(self) -> Path:
@@ -54,7 +58,10 @@ def open_project(path: Path) -> Project:
     project_id = meta.get("project_id")
     if not project_id:
         raise ValidationError(f"{meta_path} has no project_id")
-    return Project(root=root, ops=ops, project_id=project_id)
+    adapter = meta.get("adapter", "fake")
+    if adapter not in ("fake", "homelab"):
+        raise ValidationError(f"{meta_path}: adapter must be 'fake' or 'homelab', not {adapter!r}")
+    return Project(root=root, ops=ops, project_id=project_id, adapter=adapter)
 
 
 def create(root: Path, *, project_id: str, title: str, factory_ref: str = "..") -> Project:
