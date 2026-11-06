@@ -1,5 +1,6 @@
 """Validated, locked state updates. No executor is launched here."""
-import fcntl
+from contextlib import contextmanager
+from contextvars import ContextVar
 import json
 import os
 from pathlib import Path
@@ -41,7 +42,7 @@ def validate(data):
         raise StateError("invalid state: slice ids must be unique")
 
 
-def load(path):
+def _file_load(path):
     with Path(path).open() as stream:
         data = json.load(stream)
     validate(data)
@@ -55,7 +56,7 @@ def git(root, *args):
     return result.stdout.strip()
 
 
-def commit_state(path, outbox, command, slice_id):
+def _file_commit(path, outbox, command, slice_id):
     probe = subprocess.run(["git", "-C", str(path.parent), "rev-parse", "--show-toplevel"], text=True, capture_output=True)
     if probe.returncode:
         return
@@ -85,16 +86,13 @@ def commit_state(path, outbox, command, slice_id):
 
 
 def update(path, slice_id, command, actor, change, commit=False, *, create=None, event=None):
-    path = Path(path).expanduser().resolve()
-    # A stable sidecar inode is necessary: locking the replaced file loses exclusion.
-    with Path(str(path) + ".lock").open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with locked(path):
         return update_locked(path, slice_id, command, actor, change, commit,
                              create=create, event=event)
 
 
-def update_locked(path, slice_id, command, actor, change, commit=False, *, create=None, event=None):
-    """The shared command path for callers already holding the state sidecar lock."""
+def _update_locked(path, slice_id, command, actor, change, commit=False, *, create=None, event=None):
+    """The shared command path for callers already holding the store lock."""
     outbox = Path(str(path) + ".outbox.jsonl")
     data = load(path)
     item = next((item for item in data["slices"] if item["id"] == slice_id), None)
@@ -108,18 +106,14 @@ def update_locked(path, slice_id, command, actor, change, commit=False, *, creat
     at = now().isoformat()
     notice, warning = change(item, data, at)
     item["log"].append({"at": at, "actor": actor, "event": event or command})
-    save(path, data)
-    if notice is not None:
-        with outbox.open("a") as stream:
-            stream.write(json.dumps({"at": at, "id": slice_id, "event": command, "text": notice}, ensure_ascii=False) + "\n")
-            stream.flush()
-            os.fsync(stream.fileno())
+    notices = [] if notice is None else [{"at": at, "id": slice_id, "event": command, "text": notice}]
+    save(path, data, notices)
     if commit:
         commit_state(path, outbox, command, slice_id)
     return warning
 
 
-def save(path, data):
+def _file_save(path, data):
     """Validate and atomically replace state; caller holds the sidecar lock."""
     validate(data)
     payload = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
@@ -135,3 +129,70 @@ def save(path, data):
     finally:
         if temp and os.path.exists(temp):
             os.unlink(temp)
+
+
+# Public compatibility facade. A locked pass reuses one store/transaction, including
+# nested order mutations. Context-local binding also permits independent writers.
+_ACTIVE = ContextVar("cplane_store", default=None)
+
+
+def postgres():
+    return "CPLANE_DATABASE_URL" in os.environ
+
+
+def store(path):
+    active = _ACTIVE.get()
+    if active is not None:
+        return active
+    from .stores import FileStore, PostgresStore
+    return PostgresStore(os.environ["CPLANE_DATABASE_URL"]) if postgres() else FileStore(path)
+
+
+@contextmanager
+def locked(path):
+    if _ACTIVE.get() is not None:
+        yield _ACTIVE.get()
+        return
+    backend = store(path)
+    with backend.locked():
+        token = _ACTIVE.set(backend)
+        try:
+            yield backend
+        finally:
+            _ACTIVE.reset(token)
+
+
+def load(path):
+    return store(path).load()
+
+
+def save(path, data, notices=()):
+    store(path).save(data, notices)
+
+
+def append_notices(path, notices, *, ensure_ascii=False):
+    store(path).append_notices(notices, ensure_ascii=ensure_ascii)
+
+
+def snapshot(path):
+    return store(path).snapshot()
+
+
+def size(path):
+    return store(path).size()
+
+
+def commit_state(path, outbox, command, slice_id):
+    if not postgres():
+        store(path).commit(command, slice_id)
+
+
+def update_locked(path, slice_id, command, actor, change, commit=False, *, create=None, event=None):
+    backend = store(path)
+    with backend.mutation():
+        token = _ACTIVE.set(backend)
+        try:
+            return _update_locked(path, slice_id, command, actor, change, commit,
+                                  create=create, event=event)
+        finally:
+            _ACTIVE.reset(token)

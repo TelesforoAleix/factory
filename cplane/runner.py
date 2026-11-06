@@ -1,6 +1,5 @@
 """One locked scheduling pass. Adapters keep external effects fakeable."""
 from datetime import datetime, timedelta
-import fcntl
 import hashlib
 import json
 import os
@@ -115,6 +114,8 @@ class Git:
         call('worktree', 'prune')
 
     def pull(self, path):
+        if state.postgres():
+            return
         probe = subprocess.run(['git', '-C', str(path.parent), 'rev-parse', '--show-toplevel'],
                                capture_output=True, text=True)
         if not probe.returncode:
@@ -517,8 +518,7 @@ class Runner:
                 self.merge(item, job)
 
     def run(self):
-        with Path(str(self.path) + '.lock').open('a') as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
+        with state.locked(self.path):
             self.git.pull(self.path)
             orders_changed = self.orders.collect(self)
             self.data = state.load(self.path)
@@ -598,14 +598,7 @@ class Runner:
                         self.slice_failure(item, 'start')
             changed = json.dumps(self.data, ensure_ascii=False, separators=(',', ':')) != state_before
             if changed or self.notices:
-                state.save(self.path, self.data)
-            if self.notices:
-                outbox = Path(str(self.path) + '.outbox.jsonl')
-                with outbox.open('a') as stream:
-                    for notice in self.notices:
-                        stream.write(json.dumps(notice, ensure_ascii=False) + '\n')
-                    stream.flush()
-                    os.fsync(stream.fileno())
+                state.save(self.path, self.data, self.notices)
             if orders_changed or changed or self.notices:
                 self.git.commit(self.path)
             busy = set()
