@@ -1,4 +1,6 @@
-# Repository instructions
+# Factory repository instructions
+
+Factory’s core is the `cplane` scheduler and runner.
 
 This repository implements a scheduler's state file, commands, and runner. The runner
 starts and resumes Codex and Claude agents only as the runner slice contract describes: at most two at once, never two in one

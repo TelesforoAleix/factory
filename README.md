@@ -1,4 +1,6 @@
-# Control plane
+# Factory
+
+Factory’s core is the `cplane` scheduler and runner.
 
 A scheduler's state file and its commands. `cplane` helps an owner schedule slices of
 coding work, answer questions, approve merges, and see what is pending. It records
