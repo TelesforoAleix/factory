@@ -89,3 +89,74 @@ def test_prompt(setup, capsys):
     path, _, _, _, _ = setup
     assert cli.main(["--state", str(path), "cut-prompt", "voice/W1"]) == 0
     assert capsys.readouterr().out.endswith(BRIEF)
+
+
+@pytest.mark.parametrize('marker', ['```', '~~~~'])
+def test_sections_skip_fenced_headings(marker):
+    rules = f'## Fixed decisions\nKeep.\n{marker}text\n# embedded heading\n## Do not fake\n{marker}\nStill fixed.\n'
+    brief = f'{marker}\n## Do not outside\n{marker}\n' + rules + '## Handover\nOther.'
+    assert cut.sections(brief, 's') == rules
+
+
+def test_archive_revision_used_for_submission(setup):
+    path, _, capture, args, repo = setup
+    import shutil
+    shutil.rmtree(repo / '.git')
+    (repo / 'REVISION').write_text('archive-revision\n')
+    assert cli.main(args) == 0
+    assert capture.exists()
+    assert state.load(path)['slices'][0]['log'][-1]['event'] == 'cut-submit: skills archive-revision'
+
+
+def test_archive_revision_missing_refuses(setup, capsys):
+    _, _, capture, args, repo = setup
+    import shutil
+    shutil.rmtree(repo / '.git')
+    assert cli.main(args) == 1
+    assert 'REVISION' in capsys.readouterr().err
+    assert not capture.exists()
+
+
+def test_dirty_skills_refuse_even_with_revision(setup, capsys):
+    _, _, capture, args, repo = setup
+    (repo / 'skills/cut.md').write_text('dirty')
+    (repo / 'REVISION').write_text('must-not-override-checkout')
+    assert cli.main(args) == 1
+    assert 'committed' in capsys.readouterr().err
+    assert not capture.exists()
+
+
+def test_status_argv_and_unknown_slice(tmp_path, monkeypatch):
+    fake = tmp_path / 'status.py'
+    fake.write_text('import json,sys\nassert sys.argv[1] == "voice/W1"\nprint("[]")\n')
+    monkeypatch.setenv('CPLANE_TASK_STATUS', json.dumps([sys.executable, str(fake)]))
+    assert cut.status('voice/W1') == []
+
+
+@pytest.mark.parametrize('output', ['SECRET malformed', '{}', '[{"id":"x"}]',
+                                  '[{"id":"x","position":1,"title":"t","status":"unknown","reason":null}]'])
+def test_invalid_status_is_redacted(monkeypatch, output):
+    from unittest.mock import Mock
+    monkeypatch.setenv('CPLANE_TASK_STATUS', '["synthetic-status"]')
+    monkeypatch.setattr(cut.subprocess, 'run', Mock(return_value=subprocess.CompletedProcess([], 0, output, 'SECRET')))
+    with pytest.raises(state.StateError, match='invalid tickets') as error:
+        cut.status('voice/W1')
+    assert output not in str(error.value) and 'SECRET' not in str(error.value)
+
+
+@pytest.mark.parametrize('outcome', ['queued', 'running', 'done', 'failed', 'escalated'])
+def test_status_accepts_queue_records(monkeypatch, outcome):
+    from unittest.mock import Mock
+    records = [dict(id='id-1', position=1, title='Ticket', status=outcome, reason=None)]
+    monkeypatch.setenv('CPLANE_TASK_STATUS', '["synthetic-status", "--json"]')
+    run = Mock(return_value=subprocess.CompletedProcess([], 0, json.dumps(records), ''))
+    monkeypatch.setattr(cut.subprocess, 'run', run)
+    assert cut.status('voice/W1') == records
+    assert run.call_args.args[0] == ['synthetic-status', '--json', 'voice/W1']
+
+
+@pytest.mark.parametrize('command', ['', '{}', '[]', '[1]'])
+def test_invalid_status_command_refuses(monkeypatch, command):
+    monkeypatch.setenv('CPLANE_TASK_STATUS', command)
+    with pytest.raises(state.StateError, match='JSON argument list'):
+        cut.status('voice/W1')

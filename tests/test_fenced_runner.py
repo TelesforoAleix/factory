@@ -643,3 +643,226 @@ def test_fenced_full_runner_delivery_approval_resume_and_handover(delivery, make
     assert d['secret'] not in path.read_text()
     assert d['secret'] not in Path(str(path) + '.outbox.jsonl').read_text()
     assert d['secret'] not in str(capsys.readouterr())
+
+
+@pytest.fixture
+def ticket_runner(delivery, make_state, monkeypatch):
+    from cplane import cut
+    d = delivery
+    path = make_state()
+    data = state.load(path)
+    item = data['slices'][0]
+    item.update(flow='tickets', slot='2020-01-01T00:00:00+00:00')
+    state.save(path, data)
+    brief = path.parent / item['brief']
+    brief.parent.mkdir()
+    brief.write_text('## Fixed decisions\nKeep this rule.\n## Do not\nNever that.\n')
+    processes = SyntheticProcesses()
+    runner = Runner(path, processes=processes, github=Mock(), git=Mock(),
+                    runs=d['root'] / 'control', codex_reader=lambda: 5)
+    metadata = {key: d['job'][key] for key in ('repo', 'repository', 'branch', 'base', 'default')}
+    runner.fence.prepare = Mock(return_value=metadata)
+    monkeypatch.setattr(cut, 'skills_version', Mock(return_value='synthetic-revision'))
+    status = Mock(return_value=[])
+    submit = Mock(return_value=['id-1'])
+    monkeypatch.setattr(cut, 'status', status)
+    monkeypatch.setattr(cut, 'submit', submit)
+    runner.run()
+    plan = dict(tickets=[dict(title='Implement', files=['src/a.py'], change='Implement it', check='pytest')],
+                test_files=['tests/test_a.py'])
+    return runner, processes, plan, status, submit
+
+
+def ticket(position=1, status='queued', reason=None):
+    return dict(id=f'id-{position}', position=position, title=f'Ticket {position}', status=status, reason=reason)
+
+
+def finish_cut(processes, plan):
+    processes.finish('waiting', '```json\n' + json.dumps(plan) + '\n```')
+
+
+def test_ticket_cut_delivers_and_submits_once(ticket_runner, delivery):
+    runner, processes, plan, status, submit = ticket_runner
+    first = processes.started[0]
+    assert 'Change test files only' in first['prompt']
+    assert 'kind "waiting"' in first['prompt']
+    assert 'PR description' not in first['prompt']
+    finish_cut(processes, plan)
+    runner.run()
+    submit.assert_called_once()
+    task = submit.call_args.args[0]
+    assert task['base_commit'] == delivery['tip']
+    assert task['branch'] == first['branch']
+    assert task['tasks'][0]['pinned_paths'] == plan['test_files']
+    assert 'Keep this rule.' in task['tasks'][0]['goal']
+    assert delivery['g'](delivery['remote'], 'rev-parse', 'refs/heads/' + first['branch']) == delivery['tip']
+    status.return_value = [ticket()]
+    runner.run()
+    runner.run()
+    assert status.call_count == 4
+    assert submit.call_count == 1 and len(processes.started) == 1
+    runner.github.open.assert_not_called()
+
+
+@pytest.mark.parametrize('plan', [None, {}, {'tickets': [], 'test_files': []}])
+def test_invalid_ticket_plan_never_delivers_or_submits(ticket_runner, plan):
+    runner, processes, _, status, submit = ticket_runner
+    runner.fence.publish = Mock()
+    finish_cut(processes, plan)
+    runner.run()
+    item = state.load(runner.path)['slices'][0]
+    assert item['attention']['kind'] == 'escalation'
+    assert 'invalid plan' in item['attention']['body']
+    runner.fence.publish.assert_not_called()
+    submit.assert_not_called()
+
+
+def test_existing_tickets_are_followed_without_submit(ticket_runner):
+    runner, processes, plan, status, submit = ticket_runner
+    status.return_value = [ticket(status='running')]
+    runner.fence.publish = Mock(side_effect=AssertionError('existing workers own the branch'))
+    finish_cut(processes, plan)
+    runner.run()
+    runner.run()
+    submit.assert_not_called()
+    assert state.load(runner.path)['slices'][0]['attention'] is None
+
+
+@pytest.mark.parametrize('error', [state.StateError('submit refused'), OSError('could not start'),
+                                  ValueError('bad reply')])
+def test_failed_submission_is_never_retried(ticket_runner, error):
+    runner, processes, plan, status, submit = ticket_runner
+    submit.side_effect = error
+    finish_cut(processes, plan)
+    runner.run()
+    assert state.load(runner.path)['slices'][0]['attention']['kind'] == 'escalation'
+    runner.run()
+    # Even clearing attention cannot authorize an automatic duplicate submit.
+    data = state.load(runner.path)
+    data['slices'][0]['attention'] = None
+    state.save(runner.path, data)
+    runner.run()
+    assert submit.call_count == 1
+    assert 'will not retry' in state.load(runner.path)['slices'][0]['attention']['body']
+
+
+@pytest.mark.parametrize('outcome', ['queued', 'running', 'done', 'failed', 'escalated'])
+def test_ticket_outcomes(ticket_runner, outcome):
+    runner, processes, plan, status, submit = ticket_runner
+    finish_cut(processes, plan)
+    runner.run()
+    status.return_value = [ticket(status=outcome, reason='synthetic reason')]
+    runner.run()
+    attention = state.load(runner.path)['slices'][0]['attention']
+    if outcome in ('queued', 'running'):
+        assert attention is None
+    elif outcome == 'done':
+        assert attention['body'] == 'tickets done'
+    else:
+        assert attention['kind'] == 'escalation'
+        assert 'id-1' in attention['body'] and 'synthetic reason' in attention['body']
+    runner.github.open.assert_not_called()
+    assert submit.call_count == 1
+
+
+def test_ticket_done_waits_for_every_ticket(ticket_runner):
+    runner, processes, plan, status, _ = ticket_runner
+    finish_cut(processes, plan)
+    runner.run()
+    status.return_value = [ticket(status='done'), ticket(2, 'running')]
+    runner.run()
+    assert state.load(runner.path)['slices'][0]['attention'] is None
+
+
+def test_interrupted_submission_follows_but_does_not_retry(ticket_runner):
+    runner, processes, plan, status, submit = ticket_runner
+    finish_cut(processes, plan)
+    runner.run()
+    job = runner.jobs['voice/W1']
+    job['phase'] = 'submitting'
+    runner.save_job(job)
+    status.return_value = [ticket(status='running')]
+    runner.run()
+    assert runner.jobs['voice/W1']['phase'] == 'tickets'
+    assert submit.call_count == 1
+
+
+def test_tickets_refuse_unfenced_runner(make_state, tmp_path, monkeypatch):
+    monkeypatch.delenv('CPLANE_FENCE', raising=False)
+    path = make_state()
+    data = state.load(path)
+    data['slices'][0].update(flow='tickets', slot='2020-01-01T00:00:00+00:00')
+    state.save(path, data)
+    brief = tmp_path / 'briefs/W1.md'
+    brief.parent.mkdir()
+    brief.write_text('Synthetic')
+    processes = Mock()
+    runner = Runner(path, processes=processes, git=Mock())
+    runner.run()
+    assert 'needs fenced mode' in state.load(path)['slices'][0]['attention']['body']
+    processes.start.assert_not_called()
+
+
+def test_resume_after_merge_waiting_cannot_publish(delivery, make_state):
+    d = delivery
+    runner = Runner(make_state(), github=Mock(), git=Mock(), processes=Mock(start=Mock(return_value=123)), codex_reader=lambda: 5)
+    item = state.load(runner.path)['slices'][0]
+    item['session'] = dict(tool='codex', id='synthetic-session', folder=str(d['work']))
+    previous = {**d['job'], 'sha': 'merged-sha', 'phase': 'node-step'}
+    runner.jobs = {item['id']: previous}
+    runner.data = dict(slices=[item])
+    runner.at = datetime.now(timezone.utc).isoformat()
+    runner.fence.resume = Mock(return_value={key: previous[key] for key in ('repo', 'repository', 'branch', 'base', 'default')})
+    runner.fence.publish = Mock()
+    assert runner.launch(item, 'Node step answered', resume=True)
+    resumed = runner.jobs[item['id']]
+    assert resumed['sha'] == 'merged-sha'
+    resumed.update(phase='ended', final=dict(kind='waiting', body='```json\n' + json.dumps(request(resumed)) + '\n```'))
+    runner.apply_final(item, resumed)
+    runner.fence.publish.assert_not_called()
+    runner.github.open.assert_not_called()
+    assert item['attention']['kind'] == 'node-step'
+    resumed.update(phase='ended', final=dict(kind='handover', body='Handover'))
+    runner.apply_final(item, resumed)
+    assert item['state'] == 'in review'
+
+
+def test_status_failure_prevents_submit(ticket_runner):
+    runner, processes, plan, status, submit = ticket_runner
+    status.side_effect = state.StateError('status command failed')
+    finish_cut(processes, plan)
+    runner.run()
+    assert state.load(runner.path)['slices'][0]['attention']['kind'] == 'escalation'
+    submit.assert_not_called()
+
+
+def test_submission_recovers_when_state_save_was_lost(ticket_runner, monkeypatch):
+    runner, processes, plan, status, submit = ticket_runner
+    finish_cut(processes, plan)
+    before = runner.path.read_bytes()
+    with monkeypatch.context() as context:
+        context.setattr(state, 'save', Mock(side_effect=OSError('interrupted state save')))
+        with pytest.raises(OSError):
+            runner.run()
+    assert runner.path.read_bytes() == before
+    status.return_value = [ticket(status='running')]
+    runner.run()
+    item = state.load(runner.path)['slices'][0]
+    assert item['state'] == 'issued' and item['session']['id'] == 'synthetic-session'
+    assert len(processes.started) == 1 and submit.call_count == 1
+
+
+def test_explicit_cli_flow_keeps_existing_delivery(delivery, make_state, monkeypatch):
+    from cplane import cut
+    runner = Runner(make_state(), github=Mock(), git=Mock())
+    item = state.load(runner.path)['slices'][0]
+    item['flow'] = 'cli'
+    job = delivery['job']
+    job['final'] = dict(kind='waiting', body='```json\n' + json.dumps(request(job)) + '\n```')
+    runner.at = datetime.now(timezone.utc).isoformat()
+    status = Mock(side_effect=AssertionError('CLI flow never reads the queue'))
+    monkeypatch.setattr(cut, 'status', status)
+    runner.apply_final(item, job)
+    assert job['phase'] == 'pr' and job['tip'] == delivery['tip']
+    runner.github.open.assert_called_once_with('example/repo', request(job))
+    status.assert_not_called()

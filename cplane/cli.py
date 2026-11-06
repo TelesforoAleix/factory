@@ -140,6 +140,7 @@ def parser():
         for field in ("repo", "feature", "title", "brief", "model"):
             sub.add_argument(f"--{field}", required=command == "add" and field in ("repo", "feature", "title"), default=argparse.SUPPRESS)
         sub.add_argument("--effort", choices=("low", "medium", "high", "xhigh", "max", "ultra"), default=argparse.SUPPRESS)
+        sub.add_argument("--flow", choices=("cli", "tickets"), default=argparse.SUPPRESS)
         sub.add_argument("--tool", choices=("codex", "claude"), default=argparse.SUPPRESS)
         if command == "add":
             sub.add_argument("--role", default="cutter", help="role whose first cli route sets tool, model and effort when neither --tool nor --model is given (read from the local roles-command; default: cutter)")
@@ -274,11 +275,7 @@ def main(argv=None):
                     raise state.StateError("plan.json cannot be read as JSON") from None
                 cutter.validate_plan(plan)
                 root = Path(__file__).resolve().parent.parent
-                status = subprocess.run(["git", "-C", str(root), "status", "--porcelain", "--", "skills"], capture_output=True, text=True)
-                revision = subprocess.run(["git", "-C", str(root), "log", "-1", "--format=%H", "HEAD", "--", "skills"], capture_output=True, text=True)
-                if status.returncode or status.stdout or revision.returncode or not revision.stdout.strip():
-                    raise state.StateError("skills must be committed in a git checkout before submission")
-                event = "cut-submit: skills " + revision.stdout.strip()
+                event = "cut-submit: skills " + cutter.skills_version(root)
                 def change(item, data, at):
                     task_file = cutter.build_task_file(args.id, args.repository, args.branch, args.base, plan, brief_for(item))
                     ids = cutter.submit(task_file)

@@ -215,9 +215,22 @@ sudo uv python install 3.13
 ```
 
 The uv installer and versioned URL are documented in [uv installation](https://docs.astral.sh/uv/getting-started/installation/).
-Install a reviewed checkout at `/opt/factory`, owned by root and unwritable by
+Install the reviewed archive at `/opt/factory`, owned by root and unwritable by
 21000. It is separate from both agent copies and the orchestrator's briefs clone.
-Preserve an existing `/opt/factory/node` installation when placing the checkout.
+Preserve an existing `/opt/factory/node` installation when placing the archive.
+The installer must write the reviewed source revision followed by a newline to
+`/opt/factory/REVISION` (root:root, mode 0644). For example, with the reviewed
+commit in `REVIEWED_SHA`, use:
+
+```sh
+printf '%s\n' "$REVIEWED_SHA" | sudo tee /opt/factory/REVISION >/dev/null
+sudo chown root:root /opt/factory/REVISION
+sudo chmod 0644 /opt/factory/REVISION
+```
+
+Archive installations use this file as the skills version; a missing or empty file refuses ticket cutting/submission.
+In a git checkout the skills must still be committed and clean; `REVISION`
+does not override that check.
 
 ```sh
 sudo uv sync --project /opt/factory --python 3.13 --frozen --no-dev
@@ -298,7 +311,7 @@ replaced by `-` (for example `voice/W1` becomes `slice/voice-W1`). It pins the
 clean clone's fetched default-branch commit as the base. Both values are saved
 in root-owned job metadata before starting the tool, and resumes reuse them.
 Every turn's prompt says the assigned branch overrides any branch in the brief.
-The v1 slice schema is unchanged.
+The state contract remains version 1; `flow` is an optional slice field.
 
 Run metadata and supervisor stdout/stderr stay in root-owned turn folders under
 `/srv/factory/runs/<anchor-hash>/<turn-id>`. Only their `io` child is mounted in a
@@ -312,14 +325,51 @@ Keep copies and the selected login until acceptance so resumes find both files
 and session. A missing session or copy raises attention; no fresh session is
 silently substituted. Normal cleanup after acceptance is an operator action.
 
-Both tools commit and end `waiting` with the existing JSON PR request. The runner
-exports the branch in the offline container, snapshots the bundle as a regular
+Slices default to `flow: cli` when the field is absent. Planners opt in to the
+queue with `cplane add --flow tickets` or `cplane edit ID --flow tickets` (and
+identify themselves with `--actor`); `--flow cli` selects the existing flow.
+Issued and awaiting-handover slices still permit only title/dependency edits.
+Only opt in repositories with a queue push key. A tickets slice requires fenced
+mode; an unfenced attempt raises attention without starting an executor.
+
+For `flow: tickets`, the first CLI turn receives `skills/cut.md` and the brief,
+commits tests on its assigned branch, and ends `waiting` with a fenced JSON plan
+matching `schema/plan.schema.json`. The runner validates it and delivers its
+commit through the same bundle path, without opening a PR. It builds the queue
+task file using the delivered tip as `base_commit` and the assigned branch.
+Queue workers push each finished ticket's commit to that branch.
+
+Configure both queue commands in the private runner environment as JSON argv:
+
+```ini
+CPLANE_TASK_SUBMIT='["/absolute/path/task-submit"]'
+CPLANE_TASK_STATUS='["/absolute/path/task-status"]'
+```
+
+Submit reads the task file on stdin and returns a JSON list of IDs. Status is
+called with the slice name appended as one argument and returns a position-ordered
+JSON list of `{id, position, title, status, reason}` records; an unknown slice
+returns `[]`. Status is `queued`, `running`, `done`, `failed` or `escalated`.
+Commands run directly, without a shell. Command failure diagnostics are suppressed.
+The runner reads status before every submit; existing tickets are followed and
+never resubmitted. It saves submission intent before calling the queue. Any failed
+or interrupted submission raises attention and is never automatically retried.
+Reconcile ambiguous submissions with the queue before any operator recovery.
+Each following pass reads status: queued/running keep waiting, failed/escalated
+raise attention naming the ticket and reason, and all done raises `tickets done`
+attention. Review after tickets is a later slice.
+
+For `flow: cli`, both tools commit and end `waiting` with the existing JSON PR
+request. The runner exports the branch in the offline container, snapshots the bundle as a regular
 file, fetches it into the clean clone with `transfer.fsckObjects=true`, checks the
 pinned branch/default/base, then pushes and opens the PR. Host Git never reads
 config, hooks, branches, status or logs from an agent's copy. In fenced mode
 tidying is skipped. CI must include a successful check on the delivered
 head. A stop-before-merge slice still awaits owner approval. The runner merges
-only that head and resumes the same session with `merged as <sha>`.
+only that head and resumes the same session with `merged as <sha>`. The saved job
+retains the merge across resumed turns (including node-step answers); after a
+merge, replies only collect the handover or raise attention. A later `waiting`
+reply never delivers another bundle or opens a second PR.
 Fenced capacity counts live jobs even when their slice is paused. An issued
 slice with missing local job metadata also reserves capacity until reconciled;
 pause/attention does not prove that its container has stopped.

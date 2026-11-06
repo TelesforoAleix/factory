@@ -307,3 +307,21 @@ def test_review_records_actor_timestamp_and_first_line_notice(make_state, slice_
     # Replacing attention must remove the review and require a fresh one.
     assert invoke(path, 'attention', 'voice/W1', '--kind', 'merge', '--body', 'New PR') == 0
     assert 'review' not in load(path)['slices'][0]['attention']
+
+
+def test_flow_add_edit_and_issued_guard(make_state):
+    from cplane import cli, state
+    path = make_state()
+    prefix = ['--state', str(path), '--actor', 'planner']
+    assert cli.main(prefix + ['edit', 'voice/W1', '--flow', 'tickets']) == 0
+    assert state.load(path)['slices'][0]['flow'] == 'tickets'
+    assert cli.main(prefix + ['edit', 'voice/W1', '--flow', 'cli']) == 0
+    assert state.load(path)['slices'][0]['flow'] == 'cli'
+    assert cli.main(prefix + ['add', '--id', 'voice/W2', '--repo', 'owner/repo', '--feature', 'f',
+                              '--title', 'Second', '--tool', 'codex', '--flow', 'tickets']) == 0
+    assert state.load(path)['slices'][1]['flow'] == 'tickets'
+    data = state.load(path)
+    data['slices'][0]['state'] = 'issued'
+    state.save(path, data)
+    assert cli.main(prefix + ['edit', 'voice/W1', '--flow', 'tickets']) == 1
+    assert state.load(path)['slices'][0]['flow'] == 'cli'
