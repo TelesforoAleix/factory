@@ -14,7 +14,7 @@ import time
 
 from .fence import trusted_directory, host_environment, WORK_ROOT, CLEAN_ROOT
 from .state import StateError
-from .stores import PostgresStore
+from .stores import PostgresStore, REPOSITORY
 
 BRIEFS = Path('/srv/factory/briefs')
 RUNS = Path('/srv/factory/runs')
@@ -22,22 +22,32 @@ LOG = logging.getLogger(__name__)
 
 
 def export_tree(clone, destination):
-    """Only trusted clone Git; reject archive links and special files before extraction."""
+    """Only trusted clone Git; omit links and reject unsafe archive entries."""
     trusted_directory(clone)
     result = subprocess.run(['git', '-C', str(clone), '-c', 'core.hooksPath=/dev/null',
                              '-c', 'core.fsmonitor=false', 'archive', '--format=tar', 'HEAD'],
                             capture_output=True, check=True, env=host_environment())
     with tarfile.open(fileobj=io.BytesIO(result.stdout)) as archive:
+        members = []
         for member in archive.getmembers():
             path = Path(member.name)
-            if (path.is_absolute() or '..' in path.parts or '.git' in path.parts
-                    or not (member.isfile() or member.isdir())):
+            if path.is_absolute() or '..' in path.parts or '.git' in path.parts:
                 raise StateError('Export contains unsafe entries')
+            if member.issym() or member.islnk():
+                continue
+            if not (member.isfile() or member.isdir()):
+                raise StateError('Export contains unsafe entries')
+            members.append(member)
         destination.mkdir(mode=0o700)
-        archive.extractall(destination, filter='data')
+        archive.extractall(destination, members=members, filter='data')
 
 
 def workspace(session):
+    repositories = session['repositories']
+    if (not isinstance(repositories, list) or any(
+            not isinstance(repository, str) or not REPOSITORY.fullmatch(repository)
+            for repository in repositories)):
+        raise StateError('Invalid session repository')
     trusted_directory(WORK_ROOT)
     folder = WORK_ROOT / f'session-{session["id"]}'
     if session['cli_session_id']:
@@ -83,7 +93,8 @@ def turn_command(turn, folder, paths, run):
     for path in paths:
         args += ['--read-only-path', str(path)]
     if tool == 'codex':
-        command = ['codex', 'exec', '--skip-git-repo-check', '--json', '-m', session['model']]
+        command = ['codex', 'exec', '--skip-git-repo-check', '--json', '-m', session['model'],
+                   '-c', 'model_reasoning_effort="medium"']
         if session['cli_session_id']:
             command += ['resume', session['cli_session_id']]
     else:

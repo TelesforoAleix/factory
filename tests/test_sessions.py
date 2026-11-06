@@ -1,7 +1,9 @@
 """Synthetic session stores, archives and fenced launches; no real model calls."""
+import io
 import os
 from pathlib import Path
 import subprocess
+import tarfile
 from unittest.mock import Mock
 
 import pytest
@@ -79,9 +81,71 @@ def test_plain_export_and_planted_link(tmp_path):
     (source / 'link').symlink_to('/etc/passwd')
     subprocess.run(['git', '-C', str(source), 'add', '.'], check=True)
     subprocess.run(['git', '-C', str(source), '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'link'], check=True)
-    with pytest.raises(Exception, match='unsafe entries'):
-        sessions.export_tree(source, tmp_path / 'bad')
-    assert not (tmp_path / 'bad').exists()
+    linked_export = tmp_path / 'linked-export'
+    sessions.export_tree(source, linked_export)
+    assert (linked_export / 'brief.md').read_text() == 'synthetic'
+    assert not os.path.lexists(linked_export / 'link')
+
+
+@pytest.mark.parametrize('link_type', [tarfile.SYMTYPE, tarfile.LNKTYPE])
+def test_export_omits_archive_links(tmp_path, monkeypatch, link_type):
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode='w') as archive:
+        regular = tarfile.TarInfo('brief.md')
+        regular.size = 9
+        archive.addfile(regular, io.BytesIO(b'synthetic'))
+        link = tarfile.TarInfo('.claude/skills')
+        link.type = link_type
+        link.linkname = 'brief.md'
+        archive.addfile(link)
+    monkeypatch.setattr(sessions.subprocess, 'run', Mock(return_value=
+                        subprocess.CompletedProcess([], 0, buffer.getvalue())))
+    destination = tmp_path / 'export'
+    sessions.export_tree(tmp_path, destination)
+    assert (destination / 'brief.md').read_text() == 'synthetic'
+    assert not os.path.lexists(destination / '.claude/skills')
+    assert not (destination / '.claude').exists()
+
+
+@pytest.mark.parametrize('name,kind', [('/absolute', tarfile.REGTYPE),
+                                     ('../escape', tarfile.REGTYPE),
+                                     ('.git/config', tarfile.REGTYPE),
+                                     ('pipe', tarfile.FIFOTYPE),
+                                     ('/absolute-link', tarfile.SYMTYPE),
+                                     ('../escape-link', tarfile.LNKTYPE)])
+def test_export_still_refuses_unsafe_entries(tmp_path, monkeypatch, name, kind):
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode='w') as archive:
+        member = tarfile.TarInfo(name)
+        member.type = kind
+        member.linkname = 'brief.md'
+        archive.addfile(member)
+    monkeypatch.setattr(sessions.subprocess, 'run', Mock(return_value=
+                        subprocess.CompletedProcess([], 0, buffer.getvalue())))
+    destination = tmp_path / 'export'
+    with pytest.raises(sessions.StateError, match='unsafe entries'):
+        sessions.export_tree(tmp_path, destination)
+    assert not destination.exists()
+
+
+@pytest.mark.parametrize('repository', ['../outside', 'owner/../../outside',
+                                       '/absolute/repo', 'owner/repo/extra', '', None])
+@pytest.mark.parametrize('resume', [None, 'saved-id'])
+def test_turn_rejects_invalid_stored_repository(tmp_path, monkeypatch, repository, resume):
+    monkeypatch.setattr(sessions, 'WORK_ROOT', tmp_path)
+    export = Mock(side_effect=AssertionError('export must not run'))
+    launch = Mock(side_effect=AssertionError('CLI must not run'))
+    monkeypatch.setattr(sessions, 'export_tree', export)
+    monkeypatch.setattr(sessions.subprocess, 'run', launch)
+    turn = dict(id=7, text='synthetic', session=dict(
+        id=1, cli_session_id=resume, repositories=[repository]))
+    store = Mock()
+    sessions.execute_turn(turn, store)
+    store.finish_session_turn.assert_called_once_with(
+        turn, 'Turn failed. Create a new session.', failed=True)
+    export.assert_not_called()
+    launch.assert_not_called()
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_resume_rejects_link_without_host_write(tmp_path, monkeypatch):
@@ -97,14 +161,17 @@ def test_resume_rejects_link_without_host_write(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize('tool', ['codex', 'claude'])
-def test_one_message_and_resume(tool, tmp_path):
-    turn = dict(id=7, text='literal $(false)', session=dict(tool=tool, model='synthetic', cli_session_id='saved-id'))
+@pytest.mark.parametrize('resume', [None, 'saved-id'])
+def test_one_message_and_resume(tool, resume, tmp_path):
+    turn = dict(id=7, text='literal $(false)', session=dict(tool=tool, model='synthetic', cli_session_id=resume))
     args = sessions.turn_command(turn, tmp_path, [tmp_path / 'repos/name'], tmp_path / 'run')
     assert args[:2] == ['factory-cli', 'run']
     assert args[-1] == turn['text']
     assert args[args.index('--read-only-path') + 1] == str(tmp_path / 'repos/name')
-    assert ('--resume' if tool == 'claude' else 'resume') in args
-    assert 'saved-id' in args
+    assert (('--resume' if tool == 'claude' else 'resume') in args) == bool(resume)
+    assert ('saved-id' in args) == bool(resume)
+    if tool == 'codex':
+        assert args[args.index('-c') + 1] == 'model_reasoning_effort="medium"'
 
 
 def test_timeout_short_failure_and_cleanup_uncertainty(tmp_path, monkeypatch):
