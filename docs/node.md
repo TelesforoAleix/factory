@@ -485,10 +485,11 @@ sudo systemctl enable --now factory-sessions.service
 Rebuild the UI and reinstall its updated unit with the existing installation
 procedure, run daemon-reload, and restart factory-ui.
 Open Home Lab sessions or Factory sessions. Specify the tool, model, and optional
-comma-separated `owner/repo` names. Clean root-owned bare clones must already
-exist at `/srv/factory/clean/<owner>/<repo>.git` with HEAD set to the desired
-snapshot. Planning is exported from HEAD of the root-only `/srv/factory/briefs`
-clone; uncommitted files are excluded. This service neither fetches nor publishes.
+comma-separated `owner/repo` names. On the first turn, the service creates any missing root-owned bare clone at
+`/srv/factory/clean/<owner>/<repo>.git`, fetches its branches, and exports the
+remote-tracking default branch. Planning is exported from HEAD of the root-only
+`/srv/factory/briefs` clone; uncommitted files are excluded. The service does not
+publish changes.
 
 Each session gets a new 0700 workspace owned by 21000:21000. Archives exclude
 Git metadata; exports with links or special entries fail closed. `planning/` is
