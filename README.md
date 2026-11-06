@@ -35,7 +35,7 @@ uv run cplane --actor owner --commit slot example/W1 '2026-10-19T03:00:00+02:00'
 ```
 
 `--state PATH` overrides `CPLANE_STATE`. Global options may appear before or after
-the command. The state file must already exist. It belongs to a separate repository;
+the command. With the file store, the state file must already exist. It belongs to a separate repository;
 this repository contains only the schema and synthetic test fixtures.
 
 | Command | Purpose |
@@ -255,7 +255,8 @@ uv run cplane export /tmp/exported-state.json
 names in `cplane_migrations` in one locked transaction. It is safe to run twice.
 Ordinary commands require migration to have run; they never apply it implicitly.
 `import` reads the source file and its optional `<state file>.outbox.jsonl`,
-validates state, and inserts everything in one transaction. It refuses a database
+validates state, and inserts everything in one transaction. Use a stable offline
+copy of the source state and outbox during import. It refuses a database
 containing any slice or notice and never changes the source files. `export path`
 writes state JSON to the path and notices, in order, to `<path>.outbox.jsonl`,
 including an empty outbox when there are no notices. JSON formatting may differ;
@@ -284,7 +285,7 @@ uv run cplane uninstall-agent
 Only `run` starts or resumes executors. It makes one pass under the state lock:
 pull the state repository, collect finished turns, deliver answers and approvals,
 start due slices, validate and save state, append notices, then commit and push.
-The runner always syncs state in a git repository; it does not need `--commit`.
+With the file store, the runner always syncs state in a git repository; it does not need `--commit`.
 Outside git it still saves state and notices, which is useful for temporary tests.
 Brief paths resolve relative to the state file's directory. Repository checkouts
 resolve as `$CPLANE_REPOS/<repository-name>` (default `~/Code`). Existing owner
@@ -383,7 +384,7 @@ escalations create attention; an escalation sets `escalated`. Ordinary waiting
 messages without a PR to watch create node-step attention. A terminated turn
 without a valid, fresh final message raises escalation with a summary of the tool, exit code and first
 stderr error line, followed by the last 40 log lines. All runner actions
-append log entries with actor `runner`. Notices go to the existing local outbox;
+append log entries with actor `runner`. Notices go to the selected store (the local outbox in file mode);
 there is no external notification sender.
 
 The detached supervisor writes executor output, final replies, session IDs, exit

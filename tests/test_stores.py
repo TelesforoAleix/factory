@@ -319,3 +319,10 @@ def test_collector_uses_store(backend, tmp_path, monkeypatch, drop):
         assert not path.exists()
         assert not Path(str(path) + '.lock').exists()
         assert not Path(str(path) + '.outbox.jsonl').exists()
+
+
+def test_empty_url_selects_database_and_refuses_defaults(monkeypatch, capsys):
+    monkeypatch.setenv('CPLANE_DATABASE_URL', '')
+    assert state.postgres()
+    assert main(['pending']) == 1
+    assert capsys.readouterr().err == 'cplane: Postgres connection failed\n'

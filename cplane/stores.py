@@ -75,6 +75,8 @@ LOCK_KEY = 0x43504C414E45
 
 class PostgresStore:
     def __init__(self, url):
+        if not url:
+            raise state.StateError("Postgres connection failed")
         global psycopg, Jsonb
         try:
             import psycopg
