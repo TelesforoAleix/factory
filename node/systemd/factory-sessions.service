@@ -1,0 +1,19 @@
+[Unit]
+Description=Factory fenced session turns
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+User=root
+Group=root
+WorkingDirectory=/opt/factory
+EnvironmentFile=/etc/factory/runner.env
+ExecStart=/opt/factory/.venv/bin/python -m cplane.sessions
+UMask=0077
+KillMode=control-group
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

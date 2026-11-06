@@ -228,3 +228,64 @@ def test_filter_exact_hosts_and_ports():
                   'api.openai.com.evil.test:443', 'http://github.com/', '127.0.0.1:443',
                   'evil.pypi.org:443', 'pypi.org:80', 'pypi.org.evil.com:443']:
         assert not allowed(value)
+
+
+def test_read_only_export_mount(launcher):
+    repo = launcher.WORK_ROOT / 'repo'
+    export = repo / 'repos/name'
+    export.mkdir(parents=True)
+    args = build(launcher, read_only_paths=[export])
+    assert values(args, '--mount')[-1] == f'type=bind,src={export},dst=/work/repos/name,readonly'
+    assert values(args, '--cap-drop') == ['ALL']
+    assert values(args, '--network') == ['factory-cli']
+    link = repo / 'repos/linked'
+    link.symlink_to(export, target_is_directory=True)
+    with pytest.raises(ValueError):
+        build(launcher, read_only_paths=[link])
+    with pytest.raises(ValueError):
+        build(launcher, read_only_paths=[launcher.LOGIN_ROOT / 'codex'])
+
+
+def test_session_timeout_removes_container(launcher, monkeypatch):
+    calls = []
+    def run(args, **kwargs):
+        calls.append((args, kwargs))
+        if args[:2] == ['docker', 'run']:
+            raise subprocess.TimeoutExpired(args, 1200)
+        return subprocess.CompletedProcess(args, 0, stdout=b'synthetic-container\n')
+    monkeypatch.setattr(launcher.subprocess, 'run', run)
+    assert launcher.main(['run', '--tool', 'codex', '--repo', str(launcher.WORK_ROOT / 'repo'),
+                          '--run', str(launcher.RUN_ROOT / 'turn'), '--session-turn', '7',
+                          '--', 'codex', 'exec', '--', 'synthetic']) == 124
+    assert calls[0][1]['timeout'] == 1200
+    assert calls[-1][0] == ['docker', 'rm', '-f', 'factory-session-turn-7']
+
+
+def test_agent_cannot_write_named_repository(launcher):
+    """Exercise the constructed bind mounts with a synthetic CLI, when Docker exists."""
+    import shutil
+    if not shutil.which('docker'):
+        pytest.skip('Docker unavailable; mount construction covered above')
+    subprocess.run(['docker', 'pull', 'python:3.13-slim'], check=True, capture_output=True)
+    repo = launcher.WORK_ROOT / 'repo'
+    export = repo / 'repos/name'
+    export.mkdir(parents=True)
+    (export / 'source.txt').write_text('original')
+    # Parent is writable, so failure demonstrates the nested read-only mount.
+    args = build(launcher, read_only_paths=[export])
+    index = args.index(launcher.IMAGE)
+    args = args[:index] + ['python:3.13-slim', 'python', '-c', '''
+from pathlib import Path
+Path('/work/planning.txt').write_text('allowed')
+for path in ('/work/repos/name/source.txt', '/work/repos/name/new.txt'):
+    try:
+        Path(path).write_text('forbidden')
+    except OSError as error:
+        assert error.errno == 30, error
+    else:
+        raise AssertionError('repository was writable')
+''']
+    args[args.index('--network') + 1] = 'none'
+    subprocess.run(args, check=True, capture_output=True)
+    assert (export / 'source.txt').read_text() == 'original'
+    assert not (export / 'new.txt').exists()

@@ -63,7 +63,7 @@ def bundle_arguments(*, repo, run, branch):
             'bundle', 'create', '/run/factory/branch.bundle', 'HEAD', f'refs/heads/{branch}']
 
 
-def docker_arguments(tool, *, repo=None, run=None, command=(), login=False):
+def docker_arguments(tool, *, repo=None, run=None, command=(), login=False, read_only_paths=(), container_name=None):
     """Return docker run as plain data; no shell and no host environment forwarding."""
     if tool not in TOOLS:
         raise ValueError('unknown tool')
@@ -72,6 +72,10 @@ def docker_arguments(tool, *, repo=None, run=None, command=(), login=False):
     if (stat.S_IMODE(info.st_mode) != 0o700 or info.st_uid != UID or info.st_gid != GID):
         raise ValueError('login directory must be owned by 21000:21000 with mode 0700')
     args = [*sealed_arguments(NETWORK), '--mount', f'type=bind,src={credentials},dst=/login']
+    if container_name:
+        if not re.fullmatch(r'factory-session-turn-[0-9]+', container_name):
+            raise ValueError('invalid session container name')
+        args += ['--name', container_name]
     environment = {
         'HOME': '/home/agent', 'XDG_CONFIG_HOME': '/login/xdg',
         'HTTP_PROXY': 'http://cli-proxy:8888', 'HTTPS_PROXY': 'http://cli-proxy:8888',
@@ -99,6 +103,12 @@ def docker_arguments(tool, *, repo=None, run=None, command=(), login=False):
             raise ValueError('run requires a command after --')
         args += ['--mount', f'type=bind,src={repo},dst=/work',
                  '--mount', f'type=bind,src={run},dst=/run/factory', '--workdir', '/work']
+        for path in read_only_paths:
+            path = within(path, repo)
+            relative = path.relative_to(repo)
+            if len(relative.parts) != 2 or relative.parts[0] != 'repos':
+                raise ValueError('read-only path must name a repository export')
+            args += ['--mount', f'type=bind,src={path},dst=/work/{relative},readonly']
         command = list(command)
         # Disable the CLI sandbox: this sealed container supplies the sandbox.
         if command[0] != tool:
@@ -117,6 +127,15 @@ def docker_arguments(tool, *, repo=None, run=None, command=(), login=False):
     return [*args, IMAGE, *command]
 
 
+def remove_session_container(turn_id):
+    name = f'factory-session-turn-{turn_id}'
+    result = subprocess.run(['docker', 'ps', '-aq', '--filter', f'name=^/{name}$'],
+                            capture_output=True, check=True)
+    if result.stdout.strip():
+        subprocess.run(['docker', 'rm', '-f', name], stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, check=True)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='action', required=True)
@@ -124,7 +143,11 @@ def main(argv=None):
     execute.add_argument('--tool', choices=TOOLS, required=True)
     execute.add_argument('--repo', required=True)
     execute.add_argument('--run', required=True)
+    execute.add_argument('--read-only-path', action='append', default=[])
+    execute.add_argument('--session-turn', type=int)
     execute.add_argument('command', nargs=argparse.REMAINDER)
+    cleanup = sub.add_parser('session-cleanup')
+    cleanup.add_argument('turn_id', type=int)
     authenticate = sub.add_parser('login')
     authenticate.add_argument('tool', choices=TOOLS)
     bundle = sub.add_parser('bundle')
@@ -133,6 +156,9 @@ def main(argv=None):
     bundle.add_argument('--branch', required=True)
     options = parser.parse_args(argv)
     try:
+        if options.action == 'session-cleanup':
+            remove_session_container(options.turn_id)
+            return 0
         login = options.action == 'login'
         if login:
             if not sys.stdin.isatty() or not sys.stdout.isatty():
@@ -144,10 +170,25 @@ def main(argv=None):
             if options.command[:1] != ['--']:
                 raise ValueError('run requires -- before the command')
             args = docker_arguments(options.tool, repo=options.repo, run=options.run,
-                                    command=options.command[1:])
+                                    command=options.command[1:],
+                                    read_only_paths=options.read_only_path,
+                                    container_name=(f'factory-session-turn-{options.session_turn}'
+                                                    if options.session_turn else None))
+        if options.action == 'run' and options.session_turn:
+            try:
+                return subprocess.run(args, stdin=subprocess.DEVNULL, check=False, timeout=1200).returncode
+            except subprocess.TimeoutExpired:
+                print('factory-cli: session turn timed out', file=sys.stderr)
+                return 124
+            finally:
+                try:
+                    remove_session_container(options.session_turn)
+                except (OSError, subprocess.CalledProcessError):
+                    print('factory-cli: session cleanup failed', file=sys.stderr)
+                    return 125
         return subprocess.run(args, stdin=None if login else subprocess.DEVNULL,
                               check=False).returncode
-    except (ValueError, OSError):
+    except (ValueError, OSError, subprocess.CalledProcessError):
         # Do not echo arguments, environment, or potentially sensitive OS error text.
         print('factory-cli: refused; check paths, login ownership/mode, command and Docker availability',
               file=sys.stderr)

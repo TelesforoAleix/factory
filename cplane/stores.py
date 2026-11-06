@@ -4,6 +4,7 @@ import fcntl
 from importlib.resources import files
 import json
 import os
+import re
 from pathlib import Path
 from typing import Protocol, ContextManager
 
@@ -176,3 +177,90 @@ class PostgresStore:
             if self.connection.execute('SELECT EXISTS (SELECT 1 FROM cplane_slices) OR EXISTS (SELECT 1 FROM cplane_notices)').fetchone()[0]:
                 raise state.StateError('import requires an empty database')
             self.save(data, [notice for _, notice in notices])
+
+    def sessions(self, area, session_id=None):
+        with self.locked():
+            rows = self.connection.execute(
+                'SELECT id, area, title, tool, model, state, cli_session_id, repositories '
+                'FROM cplane_sessions WHERE area = %s AND (%s::bigint IS NULL OR id = %s) ORDER BY id',
+                (area, session_id, session_id))
+            keys = ('id', 'area', 'title', 'tool', 'model', 'state', 'cli_session_id', 'repositories')
+            return [dict(zip(keys, row)) for row in rows]
+
+    def create_session(self, area, title, tool, model, repositories):
+        title, tool, model, repositories = validate_session(
+            dict(title=title, tool=tool, model=model, repositories=repositories), area)
+        with self.mutation():
+            return self.connection.execute(
+                'INSERT INTO cplane_sessions (area, title, tool, model, repositories) '
+                'VALUES (%s, %s, %s, %s, %s) RETURNING id',
+                (area, title, tool, model, Jsonb(repositories))).fetchone()[0]
+
+    def session_messages(self, area, session_id, text=None):
+        with self.mutation():
+            sessions = self.sessions(area, session_id)
+            if not sessions:
+                raise state.StateError('Session not found')
+            if text is not None:
+                if sessions[0]['state'] == 'failed':
+                    raise state.StateError('Session failed; create a new session')
+                self.connection.execute(
+                    "INSERT INTO cplane_session_messages (session, role, text, status) VALUES (%s, 'owner', %s, 'queued')",
+                    (session_id, text))
+            rows = self.connection.execute(
+                'SELECT id, role, text, status, time FROM cplane_session_messages WHERE session = %s ORDER BY id',
+                (session_id,))
+            return [dict(id=r[0], role=r[1], text=r[2], status=r[3], time=r[4].isoformat()) for r in rows]
+
+    def claim_session_turn(self):
+        with self.mutation():
+            if self.connection.execute("SELECT count(*) FROM cplane_session_messages WHERE status = 'running'").fetchone()[0] >= 2:
+                return None
+            row = self.connection.execute(
+                "SELECT m.id, m.session, m.text, s.area FROM cplane_session_messages m "
+                "JOIN cplane_sessions s ON s.id = m.session WHERE m.status = 'queued' "
+                "AND s.state = 'idle' ORDER BY m.id LIMIT 1").fetchone()
+            if not row:
+                return None
+            session = self.sessions(row[3], row[1])[0]
+            self.connection.execute("UPDATE cplane_session_messages SET status = 'running' WHERE id = %s", (row[0],))
+            self.connection.execute("UPDATE cplane_sessions SET state = 'running' WHERE id = %s", (row[1],))
+            return dict(id=row[0], session=session, text=row[2])
+
+    def finish_session_turn(self, turn, reply, cli_id=None, failed=False):
+        with self.mutation():
+            status = 'failed' if failed else 'done'
+            self.connection.execute('UPDATE cplane_session_messages SET status = %s WHERE id = %s', (status, turn['id']))
+            self.connection.execute(
+                "INSERT INTO cplane_session_messages (session, role, text, status) VALUES (%s, 'assistant', %s, %s)",
+                (turn['session']['id'], reply, status))
+            self.connection.execute(
+                'UPDATE cplane_sessions SET state = %s, cli_session_id = COALESCE(%s, cli_session_id) WHERE id = %s',
+                ('failed' if failed else 'idle', cli_id, turn['session']['id']))
+            if failed:
+                self.connection.execute("UPDATE cplane_session_messages SET status = 'failed' WHERE session = %s AND status = 'queued'",
+                                        (turn['session']['id'],))
+
+    def interrupted_session_turns(self):
+        with self.locked():
+            rows = list(self.connection.execute(
+                "SELECT m.id, s.id, s.area FROM cplane_session_messages m JOIN cplane_sessions s ON s.id = m.session WHERE m.status = 'running'"))
+            return [dict(id=r[0], session=self.sessions(r[2], r[1])[0]) for r in rows]
+
+
+REPOSITORY = re.compile(r'[A-Za-z0-9_-][A-Za-z0-9_.-]*/[A-Za-z0-9_-][A-Za-z0-9_.-]*')
+
+
+def validate_session(payload, area):
+    if area not in ('homelab', 'factory') or not isinstance(payload, dict):
+        raise ValueError('Invalid session')
+    title, tool, model = (payload.get(key) for key in ('title', 'tool', 'model'))
+    repositories = payload.get('repositories', [])
+    if (not isinstance(title, str) or not title.strip() or len(title) > 200
+            or tool not in ('codex', 'claude') or not isinstance(model, str)
+            or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,99}', model)
+            or not isinstance(repositories, list) or len(repositories) > 20
+            or any(not isinstance(r, str) or not REPOSITORY.fullmatch(r) for r in repositories)
+            or len({r.split('/')[1] for r in repositories}) != len(repositories)):
+        raise ValueError('Invalid session fields')
+    return title.strip(), tool, model, repositories

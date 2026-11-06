@@ -1,5 +1,5 @@
 [Unit]
-Description=Factory read-only web interface
+Description=Factory owner web interface
 After=network-online.target
 Wants=network-online.target
 
@@ -14,6 +14,7 @@ NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=yes
+InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock -/usr/bin/docker -/usr/local/bin/docker -/usr/local/bin/factory-cli -/srv/factory
 Restart=on-failure
 
 [Install]

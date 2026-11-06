@@ -462,3 +462,50 @@ publishing, use `sudo tailscale serve reset`; stop the service with
 `sudo systemctl disable --now factory-ui.service`. Serve reset removes all Serve
 configuration on that node, so inspect its status first if it is used for other
 services.
+
+## Owner message sessions
+
+The web service only reads/writes session rows. It has no Docker group, socket,
+CLI execution, or access to briefs/logins. Its systemd mount namespace also hides
+the Docker sockets, Docker/launcher binaries and `/srv/factory`. `factory-sessions.service` is a separate
+root process with Docker access and the existing private database environment.
+Run the existing `cplane migrate` before starting either updated service; migration
+002 adds sessions/messages without changing version 1 scheduler state.
+
+After review and merge, the orchestrator installs and starts the service:
+
+```sh
+sudo install -o root -g root -m 0755 /opt/factory/node/bin/factory-cli /usr/local/bin/factory-cli
+sudo install -o root -g root -m 0644 /opt/factory/node/systemd/factory-sessions.service /etc/systemd/system/
+sudo factory-cplane migrate
+sudo systemctl daemon-reload
+sudo systemctl enable --now factory-sessions.service
+```
+
+Rebuild the UI and reinstall its updated unit with the existing installation
+procedure, run daemon-reload, and restart factory-ui.
+Open Home Lab sessions or Factory sessions. Specify the tool, model, and optional
+comma-separated `owner/repo` names. Clean root-owned bare clones must already
+exist at `/srv/factory/clean/<owner>/<repo>.git` with HEAD set to the desired
+snapshot. Planning is exported from HEAD of the root-only `/srv/factory/briefs`
+clone; uncommitted files are excluded. This service neither fetches nor publishes.
+
+Each session gets a new 0700 workspace owned by 21000:21000. Archives exclude
+Git metadata; exports with links or special entries fail closed. `planning/` is
+writable; each `repos/<name>` is overmounted read-only with the existing fence.
+No clean clone or briefs clone is mounted. Duplicate repository basenames are
+rejected. Exports are made once; resumed turns never refresh or repair paths in
+an agent-owned workspace. Host Git runs only in the root-owned source clones.
+
+The service checks the queue every two seconds, permits one turn per session
+and two session turns total, and uses login-folder CLI resume IDs. These session
+slots are separate from scheduler slice capacity. A turn is limited to 20 minutes;
+the launcher forcibly removes its named container before releasing the slot.
+Failure details stay in the journal; the page gets a short failure message and
+requires a fresh session. Queued messages in that failed session are marked failed.
+On service restart, interrupted turns have their named containers removed before
+being marked failed; they are never replayed. Stop the service to stop issuing
+turns; on restart it reconciles any containers left by an abrupt service stop.
+Workspaces/login histories and database messages are retained for operator cleanup.
+No planning changes are written back. After installation the orchestrator performs
+a real two-message session smoke test; this implementation does not run one.

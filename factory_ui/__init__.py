@@ -115,6 +115,40 @@ def create_app(store=None):
         except Exception:
             return jsonify(error='State unavailable'), 503
 
+    @app.route('/api/<area>/sessions', methods=['GET', 'POST'])
+    def sessions(area):
+        if area not in ('homelab', 'factory'):
+            return jsonify(error='Not found'), 404
+        try:
+            store = backend()
+            if request.method == 'GET':
+                return jsonify([{k: v for k, v in item.items() if k != 'cli_session_id'}
+                                for item in store.sessions(area)])
+            from cplane.stores import validate_session
+            fields = validate_session(request.get_json(silent=True), area)
+            return jsonify(id=store.create_session(area, *fields)), 201
+        except ValueError:
+            return jsonify(error='Invalid session fields'), 400
+        except Exception:
+            return jsonify(error='Sessions unavailable'), 503
+
+    @app.route('/api/<area>/sessions/<int:session_id>/messages', methods=['GET', 'POST'])
+    def messages(area, session_id):
+        if area not in ('homelab', 'factory'):
+            return jsonify(error='Not found'), 404
+        text = None
+        if request.method == 'POST':
+            payload = request.get_json(silent=True)
+            text = payload.get('text') if isinstance(payload, dict) else None
+            if not isinstance(text, str) or not text.strip() or len(text) > 32000:
+                return jsonify(error='Message must contain 1–32000 characters'), 400
+        try:
+            return jsonify(backend().session_messages(area, session_id, text))
+        except state.StateError as error:
+            return jsonify(error=str(error)), 400
+        except Exception:
+            return jsonify(error='Messages unavailable'), 503
+
     @app.get('/')
     @app.get('/<path:path>')
     def frontend(path=''):
