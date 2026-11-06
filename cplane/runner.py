@@ -148,7 +148,13 @@ class Git:
         return result.stdout.strip() if result.returncode == 0 else ''
 
 
+class GitHubReadError(state.StateError):
+    pass
+
+
 class GitHub:
+    successful_reads = 0
+
     def repository(self, path):
         if fenced():
             raise state.StateError('host origin read refused in fenced mode')
@@ -165,12 +171,21 @@ class GitHub:
     def call(self, repo, *args):
         options = {'env': fence.github_environment(), 'cwd': '/'} if fenced() else {}
         command = ['gh', *args] if args and args[0] == 'api' else ['gh', *args, '-R', repo]
-        result = subprocess.run(command, text=True, capture_output=True, **options)
-        if result.returncode:
-            if fenced():
-                raise state.StateError('gh operation failed')
-            raise state.StateError('gh: ' + (result.stderr.strip() or result.stdout.strip()))
-        return result.stdout.strip()
+        read = args[:2] in (('pr', 'view'), ('pr', 'list')) or args[:1] == ('api',)
+        attempts = 3 if fenced() and read else 1
+        for attempt in range(attempts):
+            result = subprocess.run(command, text=True, capture_output=True, **options)
+            if not result.returncode:
+                if fenced() and read:
+                    self.successful_reads += 1
+                return result.stdout.strip()
+            if attempt + 1 < attempts:
+                time.sleep(5)
+        if fenced():
+            if read:
+                raise GitHubReadError('gh operation failed')
+            raise state.StateError('gh operation failed')
+        raise state.StateError('gh: ' + (result.stderr.strip() or result.stdout.strip()))
 
     def open(self, repo, request):
         # Recover an already-created PR if a previous pass stopped before saving its number.
@@ -761,7 +776,9 @@ class Runner:
                 previous = self.jobs.get(job['id'])
                 if previous is None or previous['started_ns'] < job['started_ns']:
                     self.jobs[job['id']] = job
+            read_failures, read_successes = set(), set()
             for item in self.data['slices']:
+                read_start = self.github.successful_reads if isinstance(self.github, GitHub) else 0
                 if item['state'] == 'accepted':
                     # An accepted slice's finished process must not hold a slot.
                     job = self.jobs.get(item['id'])
@@ -801,14 +818,35 @@ class Runner:
                             self.collect(item, job)
                         if phase_before == 'pr':
                             self.pr_checks(item, job)
+                except GitHubReadError:
+                    read_failures.add(item['id'])
                 except Exception:
                     self.slice_failure(item, 'collect/deliver')
+                finally:
+                    if isinstance(self.github, GitHub) and self.github.successful_reads > read_start:
+                        read_successes.add(item['id'])
             for item in self.data['slices']:
-                if item['state'] != 'accepted':
+                read_start = self.github.successful_reads if isinstance(self.github, GitHub) else 0
+                if item['state'] != 'accepted' and item['id'] not in read_failures:
                     try:
                         self.deliver(item)
+                    except GitHubReadError:
+                        read_failures.add(item['id'])
                     except Exception:
                         self.slice_failure(item, 'delivery')
+                    finally:
+                        if isinstance(self.github, GitHub) and self.github.successful_reads > read_start:
+                            read_successes.add(item['id'])
+                job = self.jobs.get(item['id'])
+                if job and item['id'] in read_failures:
+                    job['github_read_failures'] = job.get('github_read_failures', 0) + 1
+                    self.save_job(job)
+                    self.log(item, 'checks: pending')
+                    if job['github_read_failures'] >= 6:
+                        self.attention(item, 'escalation', 'GitHub reads failed for 6 consecutive passes')
+                elif job and item['id'] in read_successes and job.get('github_read_failures'):
+                    job['github_read_failures'] = 0
+                    self.save_job(job)
             accepted = {s['id'] for s in self.data['slices'] if s['state'] == 'accepted'}
             for item in self.data['slices']:
                 if (item['state'] == 'ready' and not item['paused'] and item['slot']

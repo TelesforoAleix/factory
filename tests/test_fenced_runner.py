@@ -312,6 +312,7 @@ def test_fenced_usage_reads_login_folders_only(tmp_path, monkeypatch):
 
 def test_gh_token_is_only_in_call_environment_and_error_is_redacted(delivery, monkeypatch):
     d = delivery
+    monkeypatch.setattr(time, 'sleep', lambda _: None)
     calls = []
     def run(args, **kwargs):
         calls.append((args, kwargs))
@@ -1211,3 +1212,72 @@ def test_review_cannot_bypass_pr_flow_with_handover(ticket_runner):
     assert item['state'] == 'escalated' and 'invalid review' in item['attention']['body']
     assert submit.call_count == 1
     runner.github.open.assert_not_called()
+
+
+def test_fenced_gh_retries_reads_but_not_writes(delivery, monkeypatch):
+    sleep = Mock()
+    monkeypatch.setattr(time, 'sleep', sleep)
+    run = Mock(side_effect=[subprocess.CompletedProcess([], 1, '', 'secret'),
+                            subprocess.CompletedProcess([], 0, 'ok', '')])
+    monkeypatch.setattr(subprocess, 'run', run)
+    assert GitHub().call('example/repo', 'pr', 'view', '1') == 'ok'
+    assert run.call_count == 2
+    sleep.assert_called_once_with(5)
+    run.reset_mock(side_effect=True)
+    run.return_value = subprocess.CompletedProcess([], 1, '', 'secret')
+    for action in ('create', 'merge'):
+        with pytest.raises(state.StateError, match='gh operation failed'):
+            GitHub().call('example/repo', 'pr', action)
+    assert run.call_count == 2
+
+
+def test_unfenced_gh_failure_is_not_retried(monkeypatch):
+    monkeypatch.delenv('CPLANE_FENCE', raising=False)
+    run = Mock(return_value=subprocess.CompletedProcess([], 1, '', 'diagnostic'))
+    monkeypatch.setattr(subprocess, 'run', run)
+    with pytest.raises(state.StateError, match='gh: diagnostic'):
+        GitHub().call('example/repo', 'pr', 'view', '1')
+    assert run.call_count == 1
+    assert 'env' not in run.call_args.kwargs
+
+
+def test_read_failure_counts_passes_and_success_resets(delivery, make_state, monkeypatch):
+    d = delivery
+    path = make_state()
+    data = state.load(path)
+    item = data['slices'][0]
+    item.update(state='issued', pr=12, session=dict(tool='codex', id='synthetic-session', folder=str(d['work'])))
+    item['log'].append(dict(at=datetime.now(timezone.utc).isoformat(), actor='runner',
+                            event='collected turn: turn-1'))
+    state.save(path, data)
+    runner = Runner(path, git=Mock(), runs=d['root'] / 'control')
+    folder = runner.runs / 'turn-1'
+    folder.mkdir(parents=True)
+    job = d['job']
+    job.update(run=str(folder), phase='pr', tip=d['tip'], request=request(job))
+    runner.save_job(job)
+    monkeypatch.setattr(time, 'sleep', lambda _: None)
+    failing = [True]
+    def run(args, **kwargs):
+        if failing[0]:
+            return subprocess.CompletedProcess(args, 1, '', d['secret'])
+        response = {'headRefOid': d['tip']} if args[1:3] == ['pr', 'view'] else {'workflow_runs': []}
+        return subprocess.CompletedProcess(args, 0, json.dumps(response), '')
+    monkeypatch.setattr(subprocess, 'run', run)
+    for count in range(1, 4):
+        runner.run()
+        assert json.loads((folder / 'job.json').read_text())['github_read_failures'] == count
+        assert state.load(path)['slices'][0]['attention'] is None
+    failing[0] = False
+    runner.run()
+    assert json.loads((folder / 'job.json').read_text())['github_read_failures'] == 0
+    failing[0] = True
+    for count in range(1, 7):
+        runner.run()
+        saved = state.load(path)['slices'][0]
+        assert json.loads((folder / 'job.json').read_text())['github_read_failures'] == count
+        if count < 6:
+            assert saved['attention'] is None
+        else:
+            assert saved['attention']['kind'] == 'escalation'
+            assert d['secret'] not in saved['attention']['body']
