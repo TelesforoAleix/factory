@@ -358,26 +358,15 @@ def test_fenced_checks_bind_to_delivered_head():
 ])
 def test_fenced_checks_actions_results(runs, jobs, expected):
     gh = GitHub()
-    responses = [json.dumps({'headRefOid': 'tip'}), json.dumps([{'workflow_runs': runs}])]
-    responses.extend(json.dumps([{'jobs': page}]) for page in jobs)
+    responses = [json.dumps({'headRefOid': 'tip'}), json.dumps({'workflow_runs': runs})]
+    responses.extend(json.dumps({'jobs': run_jobs}) for run_jobs in jobs)
     gh.call = Mock(side_effect=responses)
     assert gh.checks('example/repo', 1, expected='tip') == expected
     assert gh.call.call_args_list[1].args == (
-        'example/repo', 'api', 'repos/example/repo/actions/runs?head_sha=tip&per_page=100',
-        '--paginate', '--slurp')
-
-
-def test_fenced_checks_reads_all_pages():
-    gh = GitHub()
-    gh.call = Mock(side_effect=[
-        '{"headRefOid":"tip"}',
-        json.dumps([{'workflow_runs': [{'id': 1, 'status': 'completed'}]},
-                    {'workflow_runs': [{'id': 2, 'status': 'completed'}]}]),
-        json.dumps([{'jobs': [{'name': 'test', 'status': 'completed', 'conclusion': 'success'}]}]),
-        json.dumps([{'jobs': []}, {'jobs': [{'name': 'lint', 'status': 'completed',
-                                            'conclusion': 'failure'}]}]),
-    ])
-    assert gh.checks('example/repo', 1, expected='tip') == ('red', 'lint')
+        'example/repo', 'api', 'repos/example/repo/actions/runs?head_sha=tip&per_page=100')
+    for index, run in enumerate(runs, start=2):
+        assert gh.call.call_args_list[index].args == (
+            'example/repo', 'api', f"repos/example/repo/actions/runs/{run['id']}/jobs?per_page=100")
 
 
 def test_gh_api_uses_per_call_token_without_repo_flag(delivery, monkeypatch):

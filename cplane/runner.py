@@ -192,14 +192,12 @@ class GitHub:
             info = json.loads(self.call(repo, 'pr', 'view', str(number), '--json', 'headRefOid'))
             if info['headRefOid'] != expected:
                 raise state.StateError('PR head differs from delivered bundle')
-            pages = json.loads(self.call(repo, 'api', f'repos/{repo}/actions/runs?head_sha={expected}&per_page=100',
-                                         '--paginate', '--slurp'))
-            runs = [run for page in pages for run in page['workflow_runs']]
+            info = json.loads(self.call(repo, 'api', f'repos/{repo}/actions/runs?head_sha={expected}&per_page=100'))
+            runs = info['workflow_runs']
             jobs = []
             for run in runs:
-                pages = json.loads(self.call(repo, 'api', f"repos/{repo}/actions/runs/{run['id']}/jobs?per_page=100",
-                                             '--paginate', '--slurp'))
-                jobs.extend(job for page in pages for job in page['jobs'])
+                info = json.loads(self.call(repo, 'api', f"repos/{repo}/actions/runs/{run['id']}/jobs?per_page=100"))
+                jobs.extend(info['jobs'])
             passed = {job['name'] for job in jobs
                       if job['status'] == 'completed' and job['conclusion'] == 'success'}
             pending = not runs or not passed or any(run['status'] != 'completed' for run in runs)
