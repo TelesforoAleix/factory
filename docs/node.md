@@ -2,8 +2,9 @@
 
 Factory's independent Docker stack fences each CLI run in one container. It copies
 Home Lab's sealed-task and two-network proxy pattern without modifying Home Lab.
-Nothing here wires it into `cplane`; runner integration is a later slice. The host
-prepares a credential-free repository copy and pushes changes after the run.
+`CPLANE_FENCE=1` routes runner turns and usage warm-ups through `factory-cli run`.
+With it unset, the Mac launchd runner keeps its existing commands and behaviour.
+The host prepares a credential-free repository copy and pushes changes after the run.
 The image contains Claude Code **2.1.318**, codex-cli **0.162.1**, git, Python 3.13
 and uv 0.11.18. CLI versions are fixed; base-image tags and OS packages update on
 rebuild. No secret belongs in either build context or image layer.
@@ -51,17 +52,15 @@ binding are separate operations, not protection against a hostile host process.
 Prepare a fresh repository copy without secrets, credential helpers, authenticated
 remote URLs, private git configuration or hooks. Do not bind a host clone carrying
 credentials. A linked worktree pointing outside the copy cannot work inside.
-For a public synthetic example:
+For a synthetic CLI-only check with empty folders (no Git or private state):
 
 ```sh
 sudo install -d -o 21000 -g 21000 -m 0700 \
   /srv/factory/work/fence-demo /srv/factory/runs/fence-demo
-sudo -u factory-cli git -c credential.helper= clone \
-  https://github.com/octocat/Hello-World.git /srv/factory/work/fence-demo
 sudo factory-cli run --tool codex --repo /srv/factory/work/fence-demo \
-  --run /srv/factory/runs/fence-demo -- codex exec -- 'Inspect the README'
+  --run /srv/factory/runs/fence-demo -- codex exec --skip-git-repo-check -- 'Reply with: ok'
 sudo factory-cli run --tool claude --repo /srv/factory/work/fence-demo \
-  --run /srv/factory/runs/fence-demo -- claude -p -- 'Inspect the README'
+  --run /srv/factory/runs/fence-demo -- claude -p -- 'Reply with: ok'
 ```
 
 Container paths are `/work`, `/run/factory` and `/login`; use container paths for
@@ -157,7 +156,10 @@ read-only root, tmpfs home and `/tmp`, 4 GiB memory including swap, 2 CPUs,
 256 PIDs and `--pull never`. It has no Docker socket, host network,
 `/srv/homelab`, deploy key or GitHub credential. Only its selected login,
 repository and run folder are mounted. Login mounts only its selected login.
-Docker logging is disabled for both proxy and CLI containers.
+Docker logging is disabled for both proxy and CLI containers. `factory-cli bundle`
+uses the same image and sealing limits with `--network none`, no login mount,
+a read-only copy mount, and hooks/fsmonitor/SSH disabled. It exports `HEAD` and the
+assigned branch into `/run/factory/branch.bundle`.
 
 An agent **can read and copy its own run's login**, change mounted data and use
 its provider account. GitHub HTTPS is **a way out**: this is a destination
@@ -183,3 +185,148 @@ and direct HTTPS to a public IP fails. CI builds both images, prints both CLI
 versions under sealing flags, and runs the network check. No real model call or
 login is tested. After merge the orchestrator repeats the fence check on the node
 and the owner logs in; neither step is performed by this slice.
+
+## Install the runner after review and merge
+
+The orchestrator installs this slice and performs the switch only with the owner's
+go. These are installation instructions, not commands for the implementation agent.
+The service follows Home Lab's [root task runner pattern](https://github.com/TelesforoAleix/homelab-v2/blob/main/node/etc/systemd/system/homelab-task-runner.service).
+Root is deliberate: Docker access already gives that authority.
+
+Install host dependencies first. Ubuntu's `python3` may be 3.14; explicitly install
+and use Python 3.13 for cplane. `psycopg` needs `libpq5` on the host. Use the
+[official gh package instructions](https://github.com/cli/cli/blob/trunk/docs/install_linux.md)
+if the distribution package lacks `gh pr merge --match-head-commit`.
+
+```sh
+sudo apt-get update
+sudo apt-get install -y git gh curl ca-certificates libpq5
+# Download and inspect the pinned official uv installer before executing it.
+curl -LsSf https://astral.sh/uv/0.11.18/install.sh -o /tmp/factory-uv-install.sh
+less /tmp/factory-uv-install.sh
+sudo env UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh /tmp/factory-uv-install.sh
+sudo uv python install 3.13
+```
+
+The uv installer and versioned URL are documented in [uv installation](https://docs.astral.sh/uv/getting-started/installation/).
+Install a reviewed checkout at `/opt/factory`, owned by root and unwritable by
+21000. It is separate from both agent copies and the orchestrator's briefs clone.
+Preserve an existing `/opt/factory/node` installation when placing the checkout.
+
+```sh
+sudo uv sync --project /opt/factory --python 3.13 --frozen --no-dev
+sudo install -d -o root -g root -m 0700 /etc/factory /srv/factory/clean
+sudo install -d -o root -g root -m 0711 /srv/factory/work /srv/factory/runs
+sudo install -o root -g root -m 0755 /opt/factory/node/bin/factory-cli /usr/local/bin/factory-cli
+sudo install -o root -g root -m 0755 /opt/factory/node/bin/factory-cplane /usr/local/bin/factory-cplane
+sudo install -o root -g root -m 0644 /opt/factory/node/systemd/factory-runner.service /etc/systemd/system/
+sudo install -o root -g root -m 0644 /opt/factory/node/systemd/factory-runner.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+```
+
+Provision `/etc/factory/github-token` and `/etc/factory/runner.env` privately, with
+owner root:root and mode 0600. Never put their contents in a command line, shell
+history, checkout, terminal recording, run folder or notice. The GitHub file is
+only the fine-grained token. Allow Contents read/write and Pull requests read/write
+on the intended repositories, plus read access to checks needed by `gh`.
+No `gh auth login`, credential store, authenticated remote URL or Git config
+contains this token. Each authenticated host call gets it in its environment;
+Git obtains it from a helper for that call. Git/gh failure diagnostics are
+suppressed before they can reach state, logs or notices, like database diagnostics.
+
+Use shell-compatible `KEY='value'` lines in `runner.env` (no shell expansions,
+commands or multiline values), so systemd and `factory-cplane` read the same file.
+Configure these keys using the actual private values:
+
+```ini
+CPLANE_FENCE='1'
+CPLANE_STATE='/srv/factory/briefs/slices.json'
+CPLANE_RUNS='/srv/factory/runs'
+CPLANE_DATABASE_URL='postgresql://REDACTED'
+PATH='/opt/factory/.venv/bin:/usr/local/bin:/usr/bin:/bin'
+```
+
+`CPLANE_STATE` remains the state-path anchor; its containing folder is the
+orchestrator-managed briefs clone. In Postgres mode each pass pulls that clone
+with `git pull --ff-only` before reading relative briefs. No state or notices are
+committed there. A failed pull stops the pass. Provision this clone separately;
+never use an agent's working copy as the anchor. Database provisioning/migration
+and import remain the orchestrator's existing process; do not import twice.
+
+The service is a root oneshot triggered every 300 seconds. Its detached turn
+supervisors survive the end of a pass (`KillMode=process`), as under launchd.
+Stopping the timer prevents new passes; it does **not** stop existing CLI
+containers or supervisors. Do not start a second scheduler during a handoff.
+
+Over SSH a planner can use the same environment without exposing it:
+
+```sh
+ssh NODE sudo factory-cplane pending
+ssh NODE sudo factory-cplane --actor planner show PROJECT/SLICE
+```
+
+In fenced mode a Frontline `orchestrator` order is acknowledged as failed with
+`orchestrator is not available on the node`. It starts no tmux window or host CLI.
+Interactive fenced planners are later work. SSH planner commands still work;
+with `CPLANE_FENCE` unset, the existing tmux behaviour is unchanged.
+
+On first launch, the runner allocates `slice/<id>` with `/` inside the slice ID
+replaced by `-` (for example `voice/W1` becomes `slice/voice-W1`). It pins the
+clean clone's fetched default-branch commit as the base. Both values are saved
+in root-owned job metadata before starting the tool, and resumes reuse them.
+Every turn's prompt says the assigned branch overrides any branch in the brief.
+The v1 slice schema is unchanged.
+
+Run metadata and supervisor stdout/stderr stay in root-owned turn folders under
+`/srv/factory/runs/<anchor-hash>/<turn-id>`. Only their `io` child is mounted in a
+CLI container. Turn folders are mode 0700 and job/request JSON files mode 0600;
+the Docker daemon mounts `io` directly, without granting the agent access to its
+host parents. Clean bare clones under
+`/srv/factory/clean/<owner>/<repo>.git` are root-only and are never mounted.
+Fresh work copies under `/srv/factory/work/<id>` have no hooks, credentialed
+remote or shared object hardlinks, and are owned by 21000:21000, mode 0700.
+Keep copies and the selected login until acceptance so resumes find both files
+and session. A missing session or copy raises attention; no fresh session is
+silently substituted. Normal cleanup after acceptance is an operator action.
+
+Both tools commit and end `waiting` with the existing JSON PR request. The runner
+exports the branch in the offline container, snapshots the bundle as a regular
+file, fetches it into the clean clone with `transfer.fsckObjects=true`, checks the
+pinned branch/default/base, then pushes and opens the PR. Host Git never reads
+config, hooks, branches, status or logs from an agent's copy. In fenced mode
+tidying is skipped. CI must include a successful `test` check on the delivered
+head. A stop-before-merge slice still awaits owner approval. The runner merges
+only that head and resumes the same session with `merged as <sha>`.
+
+Usage gates read Codex's `sessions/**/*.jsonl` under
+`/srv/factory/logins/codex` and Claude's `usage-now.json` under
+`/srv/factory/logins/claude`. Missing data stays unknown and defers execution;
+login success alone supplies no usage percentage. Provision/refresh Claude's
+existing usage snapshot through the owner's established mechanism; the runner
+does not invent capacity or widen the fence to obtain it.
+
+## Switch-over, by the orchestrator after the owner's go
+
+1. Leave the node timer disabled while installing and reviewing configuration.
+   Run the existing fence check, then verify a synthetic planner read with
+   `sudo factory-cplane pending`. Do not print environment files or login files.
+2. Stop new Mac passes with the existing `cplane uninstall-agent`. Let active
+   turns finish and obtain handovers. Existing Mac sessions/copies do not move
+   to the node; resolve them on the Mac before issuing fresh node slices.
+3. With exactly one scheduler active and owner approval, run one real, explicitly
+   selected slice using `sudo factory-cplane --actor runner run`, collecting
+   subsequent passes with the same command. Observe container execution, usage
+   data, delivery, green CI, any merge approval, and the resumed handover. This
+   smoke test belongs to the orchestrator, not this implementation slice.
+4. After acceptance, enable the timer:
+
+   ```sh
+   sudo systemctl enable --now factory-runner.timer
+   sudo systemctl list-timers factory-runner.timer
+   sudo journalctl -u factory-runner.service --since today
+   ```
+
+For rollback, stop/disable the timer, account for all live containers/supervisors
+and outstanding slices, and obtain the owner's go before restoring Mac scheduling
+with `CPLANE_FENCE` unset. Never let both schedulers issue concurrently, and never
+point the Mac runner at the node's agent-owned copies.

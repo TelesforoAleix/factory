@@ -10,7 +10,7 @@ from urllib.request import Request, urlopen
 
 from . import state
 from .cli import change_for
-from .executors import atomic_json
+from .executors import atomic_json, fenced
 from .times import now
 
 ACTIONS = {'start', 'slot', 'pause', 'resume', 'answer', 'approve', 'orchestrator'}
@@ -134,6 +134,8 @@ class Collector:
         data = state.load(runner.path)
         target, action = order['slice'], order['action']
         if action == 'orchestrator':
+            if fenced():
+                return {'outcome': 'failed', 'detail': 'orchestrator is not available on the node'}
             names = {item['repo'].split('/')[-1] for item in data['slices']}
             if target == 'development':
                 folder = runner.path.parent

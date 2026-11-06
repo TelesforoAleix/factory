@@ -169,6 +169,49 @@ def test_login_requires_terminal(launcher, monkeypatch):
     assert launcher.main(['login', 'claude']) == 2
 
 
+def test_bundle_is_offline_and_mounts_no_login(launcher, monkeypatch):
+    monkeypatch.setenv('GH_TOKEN', 'synthetic-secret-never-forward')
+    args = launcher.bundle_arguments(repo=launcher.WORK_ROOT / 'repo',
+                                     run=launcher.RUN_ROOT / 'turn', branch='slice/W1')
+    assert values(args, '--network') == ['none']
+    assert values(args, '--mount') == [
+        f'type=bind,src={launcher.WORK_ROOT / "repo"},dst=/work,readonly',
+        f'type=bind,src={launcher.RUN_ROOT / "turn"},dst=/run/factory']
+    assert '--read-only' in args and '--init' in args
+    assert values(args, '--cap-drop') == ['ALL']
+    assert values(args, '--security-opt') == ['no-new-privileges']
+    assert values(args, '--log-driver') == ['none']
+    assert not any('/login' in value or 'synthetic-secret' in value for value in args)
+    assert 'core.hooksPath=/dev/null' in args and 'core.fsmonitor=false' in args
+    assert 'core.sshCommand=/bin/false' in args and 'protocol.allow=never' in args
+    assert args[-5:] == ['bundle', 'create', '/run/factory/branch.bundle', 'HEAD', 'refs/heads/slice/W1']
+    calls = []
+    monkeypatch.setattr(launcher.subprocess, 'run', lambda cmd, **kw:
+                        calls.append((cmd, kw)) or subprocess.CompletedProcess(cmd, 0))
+    assert launcher.main(['bundle', '--repo', str(launcher.WORK_ROOT / 'repo'),
+                          '--run', str(launcher.RUN_ROOT / 'turn'), '--branch', 'slice/W1']) == 0
+    assert calls == [(args, {'stdin': subprocess.DEVNULL, 'check': False})]
+
+
+@pytest.mark.parametrize('branch', ['--all', '../main', 'x/../main', '/main', 'x..y',
+                                  'x.lock', 'x/.hidden', 'x//y', 'x\nmain', 'x;id'])
+def test_bundle_refuses_ambiguous_branch(launcher, branch):
+    with pytest.raises(ValueError):
+        launcher.bundle_arguments(repo=launcher.WORK_ROOT / 'repo',
+                                  run=launcher.RUN_ROOT / 'turn', branch=branch)
+
+
+@pytest.mark.parametrize('which', ['repo', 'run'])
+def test_bundle_refuses_linked_mount(launcher, which):
+    root = launcher.WORK_ROOT if which == 'repo' else launcher.RUN_ROOT
+    link = root / 'linked'
+    link.symlink_to(root / ('repo' if which == 'repo' else 'turn'), target_is_directory=True)
+    kwargs = dict(repo=launcher.WORK_ROOT / 'repo', run=launcher.RUN_ROOT / 'turn', branch='slice/W1')
+    kwargs[which] = link
+    with pytest.raises(ValueError):
+        launcher.bundle_arguments(**kwargs)
+
+
 def test_filter_exact_hosts_and_ports():
     root = Path(__file__).resolve().parents[1]
     rules = (root / 'node/proxy/allowed-hosts').read_text().splitlines()

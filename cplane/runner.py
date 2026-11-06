@@ -13,7 +13,8 @@ import uuid
 
 from . import state
 from .orders import Collector
-from .executors import Processes, atomic_json, CLAUDE_PARAGRAPH
+from .executors import Processes, atomic_json, CLAUDE_PARAGRAPH, FENCE_PARAGRAPH, fenced
+from . import fence
 from .text_bounds import ATTENTION_LIMIT, LOG_LIMIT, cut, cut_line
 from .times import now
 
@@ -36,7 +37,8 @@ def codex_usage(folder=None):
 
 def codex_limits(folder=None):
     """The non-null windows (5-hour primary, weekly secondary) of the newest report."""
-    paths = Path(folder or Path.home() / '.codex/sessions').rglob('*.jsonl')
+    root = fence.LOGIN_ROOT / 'codex/sessions' if fenced() else Path.home() / '.codex/sessions'
+    paths = Path(folder or root).rglob('*.jsonl')
     newest_first = sorted(paths, key=lambda p: p.stat().st_mtime_ns, reverse=True)
     for session in newest_first:
         # Walk backwards: the last non-null capacity report is the current one.
@@ -69,13 +71,16 @@ def usage_limit_message(tail):
 
 def claude_usage(path=None):
     try:
-        return json.loads(Path(path or Path.home() / '.claude/usage-now.json').read_text())
+        default = fence.LOGIN_ROOT / 'claude/usage-now.json' if fenced() else Path.home() / '.claude/usage-now.json'
+        return json.loads(Path(path or default).read_text())
     except (OSError, ValueError):
         return None
 
 
 class Git:
     def tidy(self, path, *, now=None):
+        if fenced():
+            return
         path = Path(path)
         name = path.name
         def call(*args):
@@ -115,6 +120,12 @@ class Git:
 
     def pull(self, path):
         if state.postgres():
+            if fenced() and (path.parent / '.git').exists():
+                result = subprocess.run(['git', '-C', str(path.parent), *fence.git_options(),
+                                         'pull', '--ff-only'], capture_output=True, text=True,
+                                        env=fence.github_environment())
+                if result.returncode:
+                    raise state.StateError('briefs fast-forward pull failed')
             return
         probe = subprocess.run(['git', '-C', str(path.parent), 'rev-parse', '--show-toplevel'],
                                capture_output=True, text=True)
@@ -125,6 +136,8 @@ class Git:
         state.commit_state(path, Path(str(path) + '.outbox.jsonl'), 'run', 'pass')
 
     def branch(self, path):
+        if fenced():
+            raise state.StateError('host branch read refused in fenced mode')
         result = subprocess.run(['git', '-C', str(path), 'branch', '--show-current'],
                                 capture_output=True, text=True)
         return result.stdout.strip() if result.returncode == 0 else ''
@@ -132,6 +145,8 @@ class Git:
 
 class GitHub:
     def repository(self, path):
+        if fenced():
+            raise state.StateError('host origin read refused in fenced mode')
         result = subprocess.run(['git', '-C', str(path), 'remote', 'get-url', 'origin'],
                                 text=True, capture_output=True)
         remote = result.stdout.strip()
@@ -143,8 +158,11 @@ class GitHub:
         return f'{match.group(1)}/{match.group(2)}'
 
     def call(self, repo, *args):
-        result = subprocess.run(['gh', *args, '-R', repo], text=True, capture_output=True)
+        options = {'env': fence.github_environment(), 'cwd': '/'} if fenced() else {}
+        result = subprocess.run(['gh', *args, '-R', repo], text=True, capture_output=True, **options)
         if result.returncode:
+            if fenced():
+                raise state.StateError('gh operation failed')
             raise state.StateError('gh: ' + (result.stderr.strip() or result.stdout.strip()))
         return result.stdout.strip()
 
@@ -166,8 +184,12 @@ class GitHub:
         newest = max(prs, key=lambda pr: pr.get('createdAt', ''))
         return newest['number']
 
-    def checks(self, repo, number):
-        info = json.loads(self.call(repo, 'pr', 'view', str(number), '--json', 'statusCheckRollup'))
+    def checks(self, repo, number, expected=None):
+        fields = 'statusCheckRollup,headRefOid' if expected else 'statusCheckRollup'
+        info = json.loads(self.call(repo, 'pr', 'view', str(number), '--json', fields))
+        if expected:
+            if info['headRefOid'] != expected:
+                raise state.StateError('PR head differs from delivered bundle')
         pending = False
         rollup = info['statusCheckRollup']
         # A stalled hosted runner is cancelled on one of two runs; the other run may pass.
@@ -181,16 +203,22 @@ class GitHub:
                 return 'red', check.get('name') or check.get('context', 'check')
             if conclusion not in ('SUCCESS', 'NEUTRAL', 'SKIPPED'):
                 pending = True
+        if expected and 'test' not in passed:
+            pending = True
         return ('pending' if pending else 'green'), ''
 
     def is_open(self, repo, number):
         info = json.loads(self.call(repo, 'pr', 'view', str(number), '--json', 'state'))
         return info['state'] == 'OPEN'
 
-    def merge(self, repo, number):
-        info = json.loads(self.call(repo, 'pr', 'view', str(number), '--json', 'state,mergeCommit'))
+    def merge(self, repo, number, expected=None):
+        fields = 'state,mergeCommit,headRefOid' if expected else 'state,mergeCommit'
+        info = json.loads(self.call(repo, 'pr', 'view', str(number), '--json', fields))
+        if expected and info['headRefOid'] != expected:
+            raise state.StateError('PR head differs from delivered bundle')
         if info['state'] != 'MERGED':
-            self.call(repo, 'pr', 'merge', str(number), '--squash')
+            self.call(repo, 'pr', 'merge', str(number), '--squash',
+                      *(['--match-head-commit', expected] if expected else []))
             info = json.loads(self.call(repo, 'pr', 'view', str(number), '--json', 'state,mergeCommit'))
         return info['mergeCommit']['oid']
 
@@ -199,13 +227,16 @@ class Runner:
     def __init__(self, path, *, processes=None, github=None, git=None, clock=now,
                  codex_reader=codex_usage, claude_reader=claude_usage, runs=None, repos=None, orders=None):
         self.path = Path(path).expanduser().resolve()
+        self.fenced = fenced()
+        self.fence = fence.Fence()
         self.orders = orders or Collector()
         self.processes = processes or Processes()
         self.github = github or GitHub()
         self.git = git or Git()
         self.clock = clock
         self.codex_reader, self.claude_reader = codex_reader, claude_reader
-        base = Path(runs or os.environ.get('CPLANE_RUNS', '~/Library/Application Support/cplane/runs')).expanduser().resolve()
+        default_runs = '/srv/factory/runs' if self.fenced else '~/Library/Application Support/cplane/runs'
+        base = Path(runs or os.environ.get('CPLANE_RUNS', default_runs)).expanduser().resolve()
         self.runs = base / hashlib.sha256(str(self.path).encode()).hexdigest()[:20]
         self.repos = Path(repos or os.environ.get('CPLANE_REPOS', '~/Code')).expanduser().resolve()
         self.notices = []
@@ -234,6 +265,8 @@ class Runner:
         self.attention(item, 'escalation', summary + ('\n' + '\n'.join(lines[-8:]) if lines else ''))
 
     def github_repo(self, item):
+        if self.fenced:
+            return item['repo']
         return self.github.repository(self.repo(item))
 
     def save_job(self, job):
@@ -281,10 +314,12 @@ class Runner:
         running = sorted([j['id'] for j in active] + [s['id'] for s in unknown])
         if len(running) >= 2:
             return f"deferred: executor limit (running: {', '.join(running)})"
-        repo = self.repo(item)
-        busy = next((j['id'] for j in active if j['repo'] == str(repo)), None)
+        repo = item['repo'].casefold() if self.fenced else self.repo(item)
+        busy = next((j['id'] for j in active
+                     if (j.get('repository', '').casefold() == repo if self.fenced else j['repo'] == str(repo))), None)
         if busy is None:
-            busy = next((s['id'] for s in unknown if self.repo(s) == repo), None)
+            busy = next((s['id'] for s in unknown
+                         if (s['repo'].casefold() == repo if self.fenced else self.repo(s) == repo)), None)
         return f'deferred: repository busy ({busy})' if busy else None
 
     def repo(self, item):
@@ -304,18 +339,34 @@ class Runner:
             return False
         tool, model = choice
         effort = item['executor'].get('effort', 'low' if 'luna' in model.lower() else 'medium')
-        folder = self.repo(item)
-        if not folder.is_dir():
-            raise state.StateError(f'missing repository: {folder}')
+        previous = self.jobs.get(item['id'])
+        if resume and previous and bool(previous.get('fence')) != self.fenced:
+            raise state.StateError('resume mode differs from saved job; needs attention')
+        metadata = {}
+        if self.fenced:
+            self.runs.mkdir(parents=True, mode=0o700, exist_ok=True)
+            fence.trusted_directory(self.runs)
+            metadata = (self.fence.resume(previous, item['session']['id']) if resume else
+                        self.fence.prepare(item['repo'], 'slice/' + item['id'].replace('/', '-'), uuid.uuid4().hex))
+            folder = Path(metadata['repo'])
+        else:
+            folder = self.repo(item)
+            if not folder.is_dir():
+                raise state.StateError(f'missing repository: {folder}')
         run = self.runs / uuid.uuid4().hex
         run.mkdir(parents=True, mode=0o700)
-        if tool == 'claude' and not resume:
+        if self.fenced:
+            prompt += (f'\n\nRunner assignment: use branch {metadata["branch"]}. '
+                       f'This assigned branch overrides any branch named in the brief. '
+                       f'The pinned base commit is {metadata["base"]}.' + FENCE_PARAGRAPH)
+        elif tool == 'claude' and not resume:
             prompt += CLAUDE_PARAGRAPH
-        previous = self.jobs.get(item['id'])
         job = {'id': item['id'], 'repo': str(folder), 'run': str(run), 'tool': tool,
                'model': model, 'effort': effort, 'prompt': prompt, 'started_ns': time.time_ns(),
                'session': item['session']['id'] if resume else '',
                'resume': item['session']['id'] if resume else None, 'phase': 'running'}
+        if self.fenced:
+            job.update(metadata, fence=True)
         # Persist intent before starting; an ambiguous handoff reserves a slot.
         if resume and previous and previous.get('noticed') is not None:
             job['noticed'] = previous['noticed']
@@ -337,6 +388,10 @@ class Runner:
         if job['phase'] != 'running':
             return
         done, session, final, tail = self.processes.poll(job)
+        if self.fenced and session and (not isinstance(session, str) or not re.fullmatch(r'[A-Za-z0-9-]+', session)):
+            raise state.StateError('fenced turn returned an invalid session; needs attention')
+        if self.fenced and job.get('resume') and session and session != job['resume']:
+            raise state.StateError('fenced resume returned a different session; needs attention')
         if session:
             job['session'] = session
         item['session'] = {'tool': job['tool'], 'id': job['session'], 'folder': job['repo']}
@@ -375,11 +430,13 @@ class Runner:
 
     def apply_final(self, item, job):
         final = job.get('final')
+        if self.fenced and final and not job.get('session'):
+            raise state.StateError('fenced turn has no session to resume; needs attention')
         cut_message = (usage_limit_message(job.get('tail', ''))
                        if job['tool'] == 'codex' and not final else None)
         if job['tool'] == 'codex' and job.get('pr'):
             item['pr'] = job['pr']
-        if job['tool'] == 'codex' and final and item['pr'] is None:
+        if not self.fenced and job['tool'] == 'codex' and final and item['pr'] is None:
             branch = self.git.branch(job['repo'])
             item['pr'] = self.github.find_pr(self.github_repo(item), branch)
             if item['pr'] is None:
@@ -420,13 +477,13 @@ class Runner:
             self.log(item, 'finished', True)
         elif final['kind'] in ('question', 'escalation'):
             self.attention(item, final['kind'], final['body'])
-        elif (job['tool'] == 'codex' and final['kind'] == 'waiting'
+        elif (not self.fenced and job['tool'] == 'codex' and final['kind'] == 'waiting'
               and (job.get('pr') or (item['pr'] is not None
                    and self.github.is_open(self.github_repo(item), item['pr'])))):
             # Keep the number with the collected reply so a failed state save can replay it.
             item['pr'] = job['pr'] = job.get('pr') or item['pr']
             job['phase'] = 'pr'
-        elif job['tool'] == 'claude' and re.match(r'\s*```', final['body']):
+        elif ((self.fenced and final['kind'] == 'waiting') or job['tool'] == 'claude') and re.match(r'\s*```', final['body']):
             match = re.match(r'\s*```(?:json)?\s*\n(.*?)\n```', final['body'], re.S)
             try:
                 request = json.loads(match[1]) if match else None
@@ -437,9 +494,13 @@ class Runner:
                 if request['node_steps'] is not None and not isinstance(request['node_steps'], str):
                     raise ValueError('invalid node_steps')
             except ValueError as error:
-                self.attention(item, 'escalation', 'invalid Claude PR request: ' + str(error))
+                self.attention(item, 'escalation', ('invalid fenced PR request: ' if self.fenced else 'invalid Claude PR request: ') + str(error))
             else:
+                if self.fenced:
+                    job['tip'] = self.fence.publish(job, request)
                 job['request'], job['phase'] = request, 'pr'
+                if self.fenced:
+                    self.save_job(job)
                 item['pr'] = self.github.open(self.github_repo(item), request)
                 self.log(item, f'opened PR: {item["pr"]}', True)
         else:
@@ -450,7 +511,8 @@ class Runner:
         self.save_job(job)
 
     def merge(self, item, job):
-        sha = self.github.merge(self.github_repo(item), item['pr'])
+        options = {'expected': job['tip']} if self.fenced else {}
+        sha = self.github.merge(self.github_repo(item), item['pr'], **options)
         job['phase'], job['sha'] = 'merged', sha
         self.save_job(job)
         self.log(item, f'merged: {sha}', True)
@@ -475,7 +537,7 @@ class Runner:
                 self.launch(item, attention['answer'], resume=True)
             return
         if attention and attention['kind'] == 'merge' and attention['approved']:
-            if item['session']['tool'] == 'codex':
+            if not self.fenced and item['session']['tool'] == 'codex':
                 if job and item['session']['id']:
                     self.launch(item, 'The owner approves the merge.', resume=True)
                 else:
@@ -484,7 +546,8 @@ class Runner:
             if not job or not item['pr']:
                 self.defer(item, 'deferred: PR metadata unavailable')
                 return
-            status, failing = self.github.checks(self.github_repo(item), item['pr'])
+            options = {'expected': job['tip']} if self.fenced else {}
+            status, failing = self.github.checks(self.github_repo(item), item['pr'], **options)
             self.log(item, 'approval checks: ' + status)
             if status == 'red':
                 self.attention(item, 'escalation', 'failing check: ' + failing)
@@ -500,16 +563,17 @@ class Runner:
             return
         # Recover PR number if creation succeeded but saving state did not.
         if item['pr'] is None:
-            item['pr'] = (job['pr'] if job['tool'] == 'codex'
+            item['pr'] = (job['pr'] if job['tool'] == 'codex' and not self.fenced
                           else self.github.open(self.github_repo(item), job['request']))
-        status, failing = self.github.checks(self.github_repo(item), item['pr'])
+        options = {'expected': job['tip']} if self.fenced else {}
+        status, failing = self.github.checks(self.github_repo(item), item['pr'], **options)
         self.log(item, 'checks: ' + status)
         if status == 'red':
             self.attention(item, 'escalation', 'failing check: ' + failing)
         elif status == 'green':
             if item['stop_before_merge']:
                 self.attention(item, 'merge', f'Approve PR #{item["pr"]}')
-            elif job['tool'] == 'codex':
+            elif job['tool'] == 'codex' and not self.fenced:
                 if item['session'] and item['session']['id']:
                     self.launch(item, f'CI is green on PR #{item["pr"]}; merge it and continue.', resume=True)
                 else:
@@ -548,6 +612,8 @@ class Runner:
                 try:
                     job = self.jobs.get(item['id'])
                     if job:
+                        if bool(job.get('fence')) != self.fenced:
+                            raise state.StateError('run mode differs from saved job; needs attention')
                         phase_before = job['phase']
                         if (phase_before in ('merged', 'node-step')
                                 and not any(e['event'] == 'merged: ' + job['sha'] for e in item['log'])):
@@ -609,7 +675,7 @@ class Runner:
                            or bool(item['attention'] and item['attention'].get('answer') is None))
                 if is_busy:
                     busy.add(self.repo(item))
-            for folder in sorted({self.repo(item) for item in self.data['slices']}):
+            for folder in ([] if self.fenced else sorted({self.repo(item) for item in self.data['slices']})):
                 if folder not in busy and folder.is_dir() and (folder / '.git').exists():
                     try:
                         self.git.tidy(folder, now=self.instant)
