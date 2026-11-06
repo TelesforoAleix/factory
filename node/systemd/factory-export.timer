@@ -1,0 +1,10 @@
+[Unit]
+Description=Export Factory state daily
+
+[Timer]
+OnCalendar=*-*-* 03:45:00
+Persistent=true
+Unit=factory-export.service
+
+[Install]
+WantedBy=timers.target
