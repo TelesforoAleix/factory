@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Factory: the cplane scheduler and runner"
 requires-python = ">=3.13"
 license = "MIT"
-dependencies = ["jsonschema>=4.23,<5"]
+dependencies = ["jsonschema>=4.23,<5", "psycopg>=3,<4"]
 
 [project.scripts]
 cplane = "cplane.cli:main"
@@ -21,6 +21,7 @@ packages = ["cplane", "schema"]
 
 [tool.setuptools.package-data]
 schema = ["*.json"]
+cplane = ["migrations/*.sql"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

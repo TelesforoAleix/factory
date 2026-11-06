@@ -1,7 +1,6 @@
 """Owner and planner commands for the scheduling state file."""
 import argparse
 from datetime import datetime
-import fcntl
 import hashlib
 import json
 import os
@@ -156,6 +155,11 @@ def parser():
         sub.add_argument("id")
         if command in ("slot", "answer"):
             sub.add_argument("value", metavar="when" if command == "slot" else "text")
+    commands.add_parser("migrate", parents=[common], help="apply Postgres migrations")
+    transfer = commands.add_parser("import", parents=[common], help="import state and its outbox into empty Postgres")
+    transfer.add_argument("path", help="source state JSON path")
+    transfer = commands.add_parser("export", parents=[common], help="export state and notices in file format")
+    transfer.add_argument("path", nargs="?", help="destination state JSON path (default: stdout)")
     commands.add_parser("compact", parents=[common], help="bound oversized runner text in state")
     for command in ("run", "install-agent", "uninstall-agent"):
         commands.add_parser(command, parents=[common])
@@ -184,11 +188,34 @@ def main(argv=None):
             from .agent import uninstall
             uninstall()
             return 0
+        if args.command in ("migrate", "import"):
+            if not state.postgres():
+                raise state.StateError("this command requires CPLANE_DATABASE_URL")
+            backend = state.store(None)
+            if args.command == "migrate":
+                backend.migrate()
+            else:
+                backend.import_file(args.path)
+            return 0
         path = getattr(args, "state", None) or os.environ.get("CPLANE_STATE")
-        if not path:
+        if not path and not state.postgres():
             raise state.StateError("provide --state or CPLANE_STATE")
-        path = Path(path).expanduser()
-        if args.command == "install-agent":
+        # In database mode this path remains the anchor for briefs/run metadata.
+        path = Path(path or "slices.json").expanduser()
+        if args.command == "export":
+            with state.locked(path) as backend:
+                payload = json.dumps(backend.load(), indent=2, ensure_ascii=False) + "\n"
+                outbox = "".join(json.dumps(notice, ensure_ascii=False) + "\n"
+                                 for _, notice in backend.notices())
+            if args.path:
+                destination = Path(args.path).expanduser()
+                destination.write_text(payload)
+                Path(str(destination) + ".outbox.jsonl").write_text(outbox)
+            else:
+                if outbox:
+                    raise state.StateError("provide an export path for state and notices")
+                print(payload, end="")
+        elif args.command == "install-agent":
             from .agent import install
             install(path.resolve(), commit=getattr(args, "commit", False))
         elif args.command == "run":
@@ -196,9 +223,8 @@ def main(argv=None):
             Runner(path).run()
         elif args.command == "compact":
             path = path.resolve()
-            with Path(str(path) + ".lock").open("a") as lock:
-                fcntl.flock(lock, fcntl.LOCK_EX)
-                before = path.stat().st_size
+            with state.locked(path):
+                before = state.size(path)
                 data = state.load(path)
                 logs = attentions = 0
                 for item in data["slices"]:
@@ -215,7 +241,7 @@ def main(argv=None):
                     state.save(path, data)
                     if getattr(args, "commit", False):
                         state.commit_state(path, Path(str(path) + ".outbox.jsonl"), "compact", "state")
-                after = path.stat().st_size
+                after = state.size(path)
             print(f"cut {logs} log entries and {attentions} attention bodies; size {before} -> {after} bytes")
         elif args.command == "pending":
             groups = pending(state.load(path))

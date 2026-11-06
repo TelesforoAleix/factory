@@ -32,3 +32,17 @@ def make_state(tmp_path, slice_data):
 
 def attention(kind):
     return {"kind": kind, "body": "Please respond", "since": "2026-10-15T12:00:00+02:00", "answer": None, "approved": False}
+
+
+_POSTGRES_RESULTS = []
+
+
+def pytest_runtest_logreport(report):
+    if report.when == 'call' and dict(report.user_properties).get('postgres17'):
+        _POSTGRES_RESULTS.append(report.outcome)
+
+
+def pytest_terminal_summary(terminalreporter):
+    if _POSTGRES_RESULTS:
+        passed = _POSTGRES_RESULTS.count('passed')
+        terminalreporter.write_line(f'Postgres 17: {passed} passed, {len(_POSTGRES_RESULTS) - passed} failed')

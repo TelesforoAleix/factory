@@ -2,7 +2,6 @@
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import subprocess
 import sys
@@ -154,10 +153,7 @@ class Collector:
         if detail:
             notice = {'at': now().isoformat(), 'id': target, 'event': 'dropped',
                       'text': f'Dropped order {action} {target}: {detail}'}
-            with Path(str(runner.path) + '.outbox.jsonl').open('a') as stream:
-                stream.write(json.dumps(notice) + '\n')
-                stream.flush()
-                os.fsync(stream.fileno())
+            state.append_notices(runner.path, [notice], ensure_ascii=True)
             return {'outcome': 'dropped', 'detail': detail}
 
         def change(item, data, at):
@@ -194,8 +190,7 @@ class Collector:
             return False
         folder = runner.runs / 'orders'
         folder.mkdir(parents=True, exist_ok=True)
-        outbox = Path(str(runner.path) + '.outbox.jsonl')
-        before = (runner.path.read_bytes(), outbox.read_bytes() if outbox.exists() else None)
+        before = state.snapshot(runner.path)
         for order in payload['orders']:
             order_id = order.get('id') if isinstance(order, dict) else None
             if order_id is None or order_id == '':
@@ -231,4 +226,4 @@ class Collector:
                 self.client.request(base.rstrip('/') + '/orders/' + quote(order_id, safe='') + '/ack', result)
             except (OSError, ValueError):
                 print(f'orders: {order_id!r} acknowledgement unavailable', file=sys.stderr)
-        return before != (runner.path.read_bytes(), outbox.read_bytes() if outbox.exists() else None)
+        return before != state.snapshot(runner.path)

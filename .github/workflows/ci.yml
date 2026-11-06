@@ -8,7 +8,22 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: factory_test
+          POSTGRES_PASSWORD: synthetic_test_password
+          POSTGRES_DB: factory_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U factory_test -d factory_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      CPLANE_TEST_DATABASE_URL: postgresql://factory_test:synthetic_test_password@localhost:5432/factory_test
     steps:
+      - run: sudo apt-get update && sudo apt-get install -y libpq5
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
         with:

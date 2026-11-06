@@ -10,7 +10,8 @@ Planning agents use `add`, `edit`, `state`, `attention`, `review`, and `show` to
 briefs, mark slices ready, review handovers, and accept completed work.
 
 Requires Python 3.13 or later and uv. Install the locked environment with `uv sync`.
-The only direct runtime dependency is the MIT-licensed `jsonschema` library.
+The direct runtime dependencies are `jsonschema` and `psycopg` 3. File mode needs
+no PostgreSQL installation; database mode also needs the system libpq library.
 
 ```sh
 uv run cplane --help
@@ -47,6 +48,9 @@ this repository contains only the schema and synthetic test fixtures.
 | `attention <id> --kind <kind> --body <text>` | Record attention and append a notice. |
 | `attention <id> --clear` | Clear attention. |
 | `review <id> "<verdict>"` | Record a planner review on merge attention. |
+| `migrate` | Apply ordered Postgres SQL migrations; safe to repeat. |
+| `import <state file>` | Load state and its outbox into an empty Postgres database. |
+| `export [path]` | Export state JSON and outbox JSONL in the file format. |
 | `compact` | Bound oversized runner log events and attention bodies in every slice. |
 | `slot <id> <when>` / `unslot <id>` | Record or clear a scheduled time. |
 | `start <id>` | Slot a ready slice now. |
@@ -209,6 +213,61 @@ normal git configuration and hooks. Use a trusted local state repository. Python
 Run `uv run pytest` for the synthetic fixture, concurrent writer, time, CLI, schema,
 and temporary bare-remote Git tests. CI runs the tests and gitleaks on every PR and
 on pushes to `main`. Main requires the `test` check and forbids force pushes.
+
+## Storage
+
+With `CPLANE_DATABASE_URL` unset, the file store preserves the existing behaviour:
+whole-file validation, a stable `.lock` sidecar, atomic state replacement,
+`.outbox.jsonl` notices, and git sync. Set `CPLANE_DATABASE_URL` to select Postgres
+17 instead. Use a dedicated database and role with access only to that database.
+The URL stays in the environment; cplane never includes it in state, logs, or
+error messages. An empty variable selects Postgres too and fails to connect rather
+than silently falling back to files. Do not put credentials in command arguments.
+
+Postgres keeps each complete slice document in one JSONB row. A position preserves
+slice array order. Notices have their own JSONB rows and increasing IDs; a reader
+can retain the last ID and query `WHERE id > <marker> ORDER BY id`. Rolled-back
+transactions may leave gaps in IDs. Every state write uses the same version 1
+validator. A transaction-scoped Postgres advisory lock excludes all writers for the
+whole runner pass, including orders and scheduling. Changes and notices commit or
+roll back together. Individual order mutations use savepoints. The git pull,
+commit and push steps do nothing, and database operation creates no lock or outbox
+sidecars. Executor metadata and external effects still live outside this
+transaction; Postgres is not a distributed transaction with processes or HTTP.
+
+The database URL does not replace the filesystem anchor: keep `--state` or
+`CPLANE_STATE` consistent for relative briefs, run metadata and order receipts.
+Without either, database mode uses `slices.json` in the current directory as that
+anchor; it does not read or create that file. Keep one runner host and consistent
+run directories, as with the file store. This slice does not switch any installed
+runner or capture database credentials in a launchd plist; configure the variable
+in the runner's environment when a later deployment switches stores.
+
+After setting the URL in the environment, prepare and transfer synthetic data:
+
+```sh
+uv run cplane migrate
+uv run cplane import /tmp/synthetic-state.json
+uv run cplane export /tmp/exported-state.json
+```
+
+`migrate` applies the ordered SQL files in `cplane/migrations/`, recording applied
+names in `cplane_migrations` in one locked transaction. It is safe to run twice.
+Ordinary commands require migration to have run; they never apply it implicitly.
+`import` reads the source file and its optional `<state file>.outbox.jsonl`,
+validates state, and inserts everything in one transaction. It refuses a database
+containing any slice or notice and never changes the source files. `export path`
+writes state JSON to the path and notices, in order, to `<path>.outbox.jsonl`,
+including an empty outbox when there are no notices. JSON formatting may differ;
+version, slice order, document values and notice order survive a round trip.
+Exports are private data, like the original state and outbox; keep them outside
+this repository. Both stores support export.
+
+Tests use synthetic files and temporary repositories. Set
+`CPLANE_TEST_DATABASE_URL` only to a disposable PostgreSQL 17 database to run the
+Postgres contract tests. Each test creates and drops its own randomly named schema.
+Without that variable they skip locally; in CI its absence fails the tests. CI's
+`test` job supplies a PostgreSQL 17 service and reports the count that used it.
 
 ## Runner
 
