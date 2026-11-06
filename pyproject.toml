@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Factory: the cplane scheduler and runner"
 requires-python = ">=3.13"
 license = "MIT"
-dependencies = ["jsonschema>=4.23,<5", "psycopg>=3,<4"]
+dependencies = ["jsonschema>=4.23,<5", "psycopg>=3,<4", "Flask>=3.1,<4", "waitress>=3,<4"]
 
 [project.scripts]
 cplane = "cplane.cli:main"
@@ -17,7 +17,7 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["cplane", "schema", "skills"]
+packages = ["cplane", "schema", "skills", "factory_ui"]
 
 [tool.setuptools.package-data]
 schema = ["*.json"]

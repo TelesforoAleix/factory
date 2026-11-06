@@ -425,3 +425,41 @@ For rollback, stop/disable the timer, account for all live containers/supervisor
 and outstanding slices, and obtain the owner's go before restoring Mac scheduling
 with `CPLANE_FENCE` unset. Never let both schedulers issue concurrently, and never
 point the Mac runner at the node's agent-owned copies.
+
+## Install the read-only UI after merge
+
+The orchestrator installs the reviewed revision on the node; this slice does not
+perform the installation. Node.js 20.19+ or 22.12+ and npm are needed to build
+Vite 7. With the reviewed source at `/opt/factory`, build its static files and
+sync its Python environment, then install the service:
+
+```sh
+sudo useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin factory-ui
+sudo npm --prefix /opt/factory/ui ci
+sudo npm --prefix /opt/factory/ui run build
+sudo uv sync --project /opt/factory --python 3.13 --frozen --no-dev
+sudo install -o root -g root -m 0644 /opt/factory/node/systemd/factory-ui.service /etc/systemd/system/
+```
+
+Keep the installation root-owned and unwritable by `factory-ui`. Provision
+`/etc/factory/ui.env` as root:root mode 0600 with **only** the existing
+`CPLANE_DATABASE_URL` assignment from `runner.env`, without printing its value.
+Systemd reads the file before dropping privileges. The account needs no login,
+Docker group, GitHub token, or access to the runner's login files. The database
+credential grants whatever database access it already has; use a read-only
+credential if one is provisioned separately.
+
+```sh
+sudo systemctl daemon-reload
+sudo systemctl enable --now factory-ui.service
+sudo tailscale serve --bg http://127.0.0.1:8300
+```
+
+The server listens only on loopback. Tailscale Serve publishes it to the
+configured tailnet; check the tailnet's access policy before enabling it. Serve
+uses the existing tailnet identity and the app has no separate login. Open the
+HTTPS address reported by `tailscale serve status` on the phone or Mac. To stop
+publishing, use `sudo tailscale serve reset`; stop the service with
+`sudo systemctl disable --now factory-ui.service`. Serve reset removes all Serve
+configuration on that node, so inspect its status first if it is used for other
+services.
