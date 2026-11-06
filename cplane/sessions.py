@@ -12,7 +12,7 @@ import subprocess
 import tarfile
 import time
 
-from .fence import trusted_directory, host_environment, WORK_ROOT, CLEAN_ROOT
+from .fence import Fence, trusted_directory, host_environment, WORK_ROOT
 from .state import StateError
 from .stores import PostgresStore, REPOSITORY
 
@@ -21,11 +21,11 @@ RUNS = Path('/srv/factory/runs')
 LOG = logging.getLogger(__name__)
 
 
-def export_tree(clone, destination):
+def export_tree(clone, destination, ref):
     """Only trusted clone Git; omit links and reject unsafe archive entries."""
     trusted_directory(clone)
     result = subprocess.run(['git', '-C', str(clone), '-c', 'core.hooksPath=/dev/null',
-                             '-c', 'core.fsmonitor=false', 'archive', '--format=tar', 'HEAD'],
+                             '-c', 'core.fsmonitor=false', 'archive', '--format=tar', ref],
                             capture_output=True, check=True, env=host_environment())
     with tarfile.open(fileobj=io.BytesIO(result.stdout)) as archive:
         members = []
@@ -59,13 +59,24 @@ def workspace(session):
     else:
         # mkdir is exclusive: an interrupted or planted workspace is never reused.
         folder.mkdir(mode=0o700)
-        export_tree(BRIEFS, folder / 'planning')
+        export_tree(BRIEFS, folder / 'planning', 'HEAD')
         repos = folder / 'repos'
         repos.mkdir(mode=0o755)
         repos.chmod(0o755)
+        fence = Fence()
         for repository in session['repositories']:
-            owner, name = repository.split('/')
-            export_tree(CLEAN_ROOT / owner / (name + '.git'), repos / name)
+            _, name = repository.split('/')
+            clean = fence.clean(repository)
+            if not clean.exists():
+                clean.mkdir(mode=0o700)
+                fence.git(clean, 'init', '--bare', '--template=')
+                fence.git(clean, 'remote', 'add', 'origin', f'https://github.com/{repository}.git')
+            fence.git(clean, 'fetch', '--prune', 'origin', '+refs/heads/*:refs/remotes/origin/*', auth=True)
+            head = fence.git(clean, 'ls-remote', '--symref', 'origin', 'HEAD', auth=True).stdout
+            match = re.search(r'^ref: refs/heads/([^\s]+)\s+HEAD$', head, re.M)
+            if not match:
+                raise StateError('GitHub default branch unavailable')
+            export_tree(clean, repos / name, f'refs/remotes/origin/{match[1]}')
             (repos / name).chmod(0o755)
         # Chown planning only, while workspace remains root-owned and inaccessible.
         for directory, folders, files in os.walk(folder / 'planning', followlinks=False):

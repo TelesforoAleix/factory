@@ -68,7 +68,7 @@ def test_plain_export_and_planted_link(tmp_path):
     subprocess.run(['git', '-C', str(source), 'add', '.'], check=True)
     subprocess.run(['git', '-C', str(source), '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'fixture'], check=True)
     destination = tmp_path / 'export'
-    sessions.export_tree(source, destination)
+    sessions.export_tree(source, destination, 'HEAD')
     assert (destination / 'brief.md').read_text() == 'synthetic'
     assert not list(destination.rglob('.git'))
     outside = tmp_path / 'outside'
@@ -76,13 +76,13 @@ def test_plain_export_and_planted_link(tmp_path):
     planted = tmp_path / 'planted'
     planted.symlink_to(outside, target_is_directory=True)
     with pytest.raises(FileExistsError):
-        sessions.export_tree(source, planted)
+        sessions.export_tree(source, planted, 'HEAD')
     assert list(outside.iterdir()) == []
     (source / 'link').symlink_to('/etc/passwd')
     subprocess.run(['git', '-C', str(source), 'add', '.'], check=True)
     subprocess.run(['git', '-C', str(source), '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'link'], check=True)
     linked_export = tmp_path / 'linked-export'
-    sessions.export_tree(source, linked_export)
+    sessions.export_tree(source, linked_export, 'HEAD')
     assert (linked_export / 'brief.md').read_text() == 'synthetic'
     assert not os.path.lexists(linked_export / 'link')
 
@@ -101,7 +101,7 @@ def test_export_omits_archive_links(tmp_path, monkeypatch, link_type):
     monkeypatch.setattr(sessions.subprocess, 'run', Mock(return_value=
                         subprocess.CompletedProcess([], 0, buffer.getvalue())))
     destination = tmp_path / 'export'
-    sessions.export_tree(tmp_path, destination)
+    sessions.export_tree(tmp_path, destination, 'HEAD')
     assert (destination / 'brief.md').read_text() == 'synthetic'
     assert not os.path.lexists(destination / '.claude/skills')
     assert not (destination / '.claude').exists()
@@ -124,7 +124,7 @@ def test_export_still_refuses_unsafe_entries(tmp_path, monkeypatch, name, kind):
                         subprocess.CompletedProcess([], 0, buffer.getvalue())))
     destination = tmp_path / 'export'
     with pytest.raises(sessions.StateError, match='unsafe entries'):
-        sessions.export_tree(tmp_path, destination)
+        sessions.export_tree(tmp_path, destination, 'HEAD')
     assert not destination.exists()
 
 
@@ -223,3 +223,59 @@ def test_concurrent_claims_respect_global_capacity(pg_store):
     claimed = [turn for turn in turns if turn]
     assert len(claimed) == 2
     assert len({turn['session']['id'] for turn in claimed}) == 2
+
+
+def test_session_exports_remote_default_and_resume_does_not_fetch(tmp_path, monkeypatch):
+    from cplane import fence
+
+    source = tmp_path / 'source'
+    source.mkdir(mode=0o700)
+    subprocess.run(['git', 'init', '-q', '-b', 'main', str(source)], check=True)
+    (source / 'content').write_text('default branch')
+    subprocess.run(['git', '-C', str(source), 'add', '.'], check=True)
+    subprocess.run(['git', '-C', str(source), '-c', 'user.name=Test', '-c',
+                    'user.email=test@example.test', 'commit', '-qm', 'fixture'], check=True)
+    work = tmp_path / 'work'
+    clean_root = tmp_path / 'clean'
+    work.mkdir(mode=0o700)
+    clean_root.mkdir(mode=0o700)
+    monkeypatch.setattr(sessions, 'WORK_ROOT', work)
+    monkeypatch.setattr(sessions, 'BRIEFS', source)
+    monkeypatch.setattr(fence, 'CLEAN_ROOT', clean_root)
+    # Exercise the real Fence Git operations against a local synthetic origin.
+    original_git = fence.Fence.git
+    calls = []
+
+    def local_git(self, clean, *args, **kwargs):
+        calls.append(args)
+        if args[:3] == ('remote', 'add', 'origin'):
+            args = (*args[:3], str(source))
+        kwargs.pop('auth', None)
+        return original_git(self, clean, *args, **kwargs)
+
+    monkeypatch.setattr(fence.Fence, 'git', local_git)
+    # Simulate root-owned read-only exports when tests run without root.
+    original_lstat = Path.lstat
+
+    def export_lstat(path):
+        info = original_lstat(path)
+        if path in (work / 'session-1/repos', work / 'session-1/repos/repo'):
+            fields = list(info)
+            fields[4] = 0
+            return os.stat_result(fields)
+        return info
+
+    monkeypatch.setattr(Path, 'lstat', export_lstat)
+    session = dict(id=1, cli_session_id=None, repositories=['owner/repo'])
+    folder, paths = sessions.workspace(session)
+    clean = clean_root / 'owner/repo.git'
+    assert clean.is_dir()
+    assert subprocess.run(['git', '-C', str(clean), 'rev-parse', '--verify', 'HEAD'],
+                          capture_output=True).returncode != 0
+    assert (paths[0] / 'content').read_text() == 'default branch'
+    assert (folder / 'planning/content').read_text() == 'default branch'
+    assert sum(args[0] == 'fetch' for args in calls) == 1
+    calls.clear()
+    session['cli_session_id'] = 'saved-id'
+    assert sessions.workspace(session) == (folder, paths)
+    assert calls == []
