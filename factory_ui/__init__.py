@@ -22,11 +22,15 @@ def clean(value):
 
 def view(item):
     attention = item['attention']
+    final = item.get('final')
     return {
         'id': item['id'], 'title': clean(item['title']), 'state': item['state'],
         'repo': clean(item['repo']), 'feature': clean(item['feature']),
         'paused': item['paused'], 'slot': item['slot'], 'depends_on': item['depends_on'],
         'executor': {key: clean(value) for key, value in item['executor'].items()}, 'pr': item['pr'],
+        'final': None if final is None else {
+            'kind': clean(final['kind']), 'body': clean(final['body']), 'at': final['at'],
+        },
         'attention': None if attention is None else {
             'kind': attention['kind'], 'body': clean(attention['body']),
             'since': attention['since'], 'answer': clean(attention['answer']),

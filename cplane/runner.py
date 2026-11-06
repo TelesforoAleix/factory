@@ -495,6 +495,9 @@ class Runner:
 
     def apply_final(self, item, job):
         final = job.get('final')
+        if (isinstance(final, dict) and isinstance(final.get('kind'), str)
+                and isinstance(final.get('body'), str)):
+            item['final'] = {'kind': final['kind'], 'body': cut(final['body'], ATTENTION_LIMIT), 'at': self.at}
         if self.fenced and final and not job.get('session'):
             raise state.StateError('fenced turn has no session to resume; needs attention')
         cut_message = (usage_limit_message(job.get('tail', ''))

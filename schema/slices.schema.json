@@ -43,6 +43,10 @@
           ]
         },
         "pr": {"type": ["integer", "null"]},
+        "final": {
+          "type": "object", "additionalProperties": false, "required": ["kind", "body", "at"],
+          "properties": {"kind": {"type": "string"}, "body": {"type": "string"}, "at": {"$ref": "#/$defs/timestamp"}}
+        },
         "attention": {
           "anyOf": [
             {"type": "null"},

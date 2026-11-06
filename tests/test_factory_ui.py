@@ -21,6 +21,7 @@ def test_slice_views_omit_private_fields_and_redact_paths():
     assert b'/private/' not in response.data
     item = response.get_json()[0]
     assert 'brief' not in item and 'session' not in item
+    assert item['final'] is None
     assert '<script>' in item['attention']['body']
     assert client.get('/api/slices/demo/one').get_json() == item
     assert client.get('/api/slices/demo/missing').status_code == 404
@@ -92,3 +93,17 @@ def test_answer_and_start_refusal(tmp_path):
     assert client.post('/api/actions/answer/demo/two', json={'value': 'Proceed'}, headers=headers).status_code == 200
     assert store.load()['slices'][0]['attention']['answer'] == 'Proceed'
     assert store.notices()[0][1]['event'] == 'answer'
+
+
+def test_final_message_is_cleaned_in_detail_api():
+    class FinalStore(Store):
+        def load(self):
+            data = super().load()
+            data['slices'][0]['final'] = {
+                'kind': 'handover', 'body': '<script>text</script> /private/file https://example.com/secret',
+                'at': '2026-01-01T00:00:00Z',
+            }
+            return data
+    final = create_app(FinalStore()).test_client().get('/api/slices/demo/one').get_json()['final']
+    assert final == {'kind': 'handover', 'body': '<script>text<[path]> [path] [redacted]',
+                     'at': '2026-01-01T00:00:00Z'}
