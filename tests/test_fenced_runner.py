@@ -474,6 +474,7 @@ def test_fenced_approval_stops_and_rechecks_before_merge(delivery, make_state):
     item = state.load(runner.path)['slices'][0]
     item.update(pr=12, session=dict(tool='codex', id='synthetic-session', folder=str(d['work'])))
     job = d['job']
+    d['adapter'].publish(job, request(job))
     job.update(phase='pr', tip=d['tip'], request=request(job))
     runner.jobs = {item['id']: job}
     runner.pr_checks(item, job)
@@ -660,6 +661,8 @@ def ticket_runner(delivery, make_state, monkeypatch):
     processes = SyntheticProcesses()
     runner = Runner(path, processes=processes, github=Mock(), git=Mock(),
                     runs=d['root'] / 'control', codex_reader=lambda: 5)
+    runner.github.open.return_value = 12
+    runner.github.checks.return_value = ('pending', '')
     metadata = {key: d['job'][key] for key in ('repo', 'repository', 'branch', 'base', 'default')}
     runner.fence.prepare = Mock(return_value=metadata)
     monkeypatch.setattr(cut, 'skills_version', Mock(return_value='synthetic-revision'))
@@ -757,7 +760,9 @@ def test_ticket_outcomes(ticket_runner, outcome):
     if outcome in ('queued', 'running'):
         assert attention is None
     elif outcome == 'done':
-        assert attention['body'] == 'tickets done'
+        assert attention is None
+        assert len(processes.started) == 2
+        assert processes.started[-1]['review'] is True
     else:
         assert attention['kind'] == 'escalation'
         assert 'id-1' in attention['body'] and 'synthetic reason' in attention['body']
@@ -866,3 +871,343 @@ def test_explicit_cli_flow_keeps_existing_delivery(delivery, make_state, monkeyp
     assert job['phase'] == 'pr' and job['tip'] == delivery['tip']
     runner.github.open.assert_called_once_with('example/repo', request(job))
     status.assert_not_called()
+
+
+def start_slice_review(ticket_runner):
+    runner, processes, plan, status, submit = ticket_runner
+    finish_cut(processes, plan)
+    runner.run()
+    status.return_value = [ticket(status='done')]
+    runner.run()
+    return ticket_runner
+
+
+def review_answer(processes, verdict='pass', plan=None):
+    answer = (dict(verdict='pass', title='Reviewed slice', body='Tests passed; whole brief checked.')
+              if verdict == 'pass' else dict(verdict='fix', **plan))
+    processes.finish('waiting', '```json\n' + json.dumps(answer) + '\n```')
+
+
+def test_slice_review_pass_opens_pr_from_fresh_copy(ticket_runner, delivery):
+    runner, processes, plan, status, submit = start_slice_review(ticket_runner)
+    original, review = processes.started
+    assert review['repo'] != original['repo']
+    assert review['resume'] is None
+    assert review['base'] == original['base']
+    assert review['tip'] == delivery['tip']
+    assert review['branch'] == original['branch']
+    assert review['skills'] == 'synthetic-revision'
+    assert 'Change nothing' in review['prompt']
+    assert 'Keep this rule.' in review['prompt'] and 'Never that.' in review['prompt']
+    assert not (Path(review['repo']) / '.git/hooks').exists()
+    assert not (Path(review['repo']) / '.git/objects/info/alternates').exists()
+    runner.fence.publish = Mock(side_effect=AssertionError('review must not publish'))
+    review_answer(processes)
+    runner.run()
+    assert runner.jobs['voice/W1']['phase'] == 'pr'
+    runner.github.open.assert_called_once_with('example/repo', dict(
+        branch=original['branch'], title='Reviewed slice',
+        body='Tests passed; whole brief checked.', node_steps=None))
+    assert submit.call_count == 1 and not delivery['marker'].exists()
+
+
+def begin_repair(ticket_runner):
+    runner, processes, plan, status, submit = start_slice_review(ticket_runner)
+    status.side_effect = lambda name: [] if name.endswith('/repair') else [ticket(status='done')]
+    review_answer(processes, 'fix', plan)
+    runner.run()
+    return ticket_runner
+
+
+def test_fix_submits_repair_once_and_reviews_once_more(ticket_runner, delivery):
+    runner, processes, plan, status, submit = begin_repair(ticket_runner)
+    assert submit.call_count == 2
+    repair = submit.call_args.args[0]
+    assert repair['slice'] == 'voice/W1/repair'
+    assert repair['base_commit'] == delivery['tip']
+    assert repair['branch'] == processes.started[0]['branch']
+    assert repair['tasks'][0]['check_command'] == plan['tickets'][0]['check']
+    assert repair['tasks'][0]['pinned_paths'] == plan['test_files']
+    status.side_effect = lambda name: [ticket(status='running')]
+    runner.run()
+    runner.run()
+    assert submit.call_count == 2 and len(processes.started) == 2
+    status.side_effect = lambda name: [ticket(status='done')]
+    runner.run()
+    assert len(processes.started) == 3
+    assert processes.started[-1]['repair'] is True
+    assert processes.started[-1]['repo'] != processes.started[-2]['repo']
+    review_answer(processes)
+    runner.run()
+    assert runner.jobs['voice/W1']['phase'] == 'pr'
+    assert submit.call_count == 2
+    assert status.call_args.args == ('voice/W1/repair',)
+
+
+def test_second_fix_raises_attention_with_remaining_work(ticket_runner):
+    runner, processes, plan, status, submit = begin_repair(ticket_runner)
+    status.side_effect = lambda name: [ticket(status='done')]
+    runner.run()
+    review_answer(processes, 'fix', plan)
+    runner.run()
+    attention = state.load(runner.path)['slices'][0]['attention']
+    assert attention['kind'] == 'escalation'
+    assert 'still needs fixes after repair' in attention['body']
+    assert 'Implement it' in attention['body']
+    runner.run()
+    assert submit.call_count == 2 and len(processes.started) == 3
+    runner.github.open.assert_not_called()
+
+
+@pytest.mark.parametrize('outcome', ['failed', 'escalated'])
+def test_failed_repair_raises_attention(ticket_runner, outcome):
+    runner, processes, plan, status, submit = begin_repair(ticket_runner)
+    status.side_effect = lambda name: [ticket(status=outcome, reason='remaining defect')]
+    runner.run()
+    attention = state.load(runner.path)['slices'][0]['attention']
+    assert attention['kind'] == 'escalation'
+    assert 'id-1' in attention['body'] and 'remaining defect' in attention['body']
+    assert submit.call_count == 2 and len(processes.started) == 2
+    runner.github.open.assert_not_called()
+
+
+@pytest.mark.parametrize('repair', [False, True])
+def test_review_pass_recovers_lost_state_save_without_resubmitting(ticket_runner, monkeypatch, repair):
+    if repair:
+        runner, processes, plan, status, submit = begin_repair(ticket_runner)
+        status.side_effect = lambda name: [ticket(status='done')]
+        runner.run()
+    else:
+        runner, processes, plan, status, submit = start_slice_review(ticket_runner)
+    runner.github.open.return_value = 12
+    runner.github.checks.return_value = ('pending', '')
+    review_answer(processes)
+    with monkeypatch.context() as context:
+        context.setattr(state, 'save', Mock(side_effect=OSError('interrupted state save')))
+        with pytest.raises(OSError):
+            runner.run()
+    runner.run()
+    runner.run()
+    assert state.load(runner.path)['slices'][0]['pr'] == 12
+    assert runner.jobs['voice/W1']['phase'] == 'pr'
+    assert submit.call_count == (2 if repair else 1)
+    assert len(processes.started) == (3 if repair else 2)
+
+
+@pytest.mark.parametrize('existing', [False, True])
+def test_repair_submission_interruption_uses_same_retry_safety(ticket_runner, existing):
+    runner, processes, plan, status, submit = begin_repair(ticket_runner)
+    job = runner.jobs['voice/W1']
+    job['phase'] = 'submitting'
+    runner.save_job(job)
+    status.side_effect = lambda name: [ticket(status='running')] if existing else []
+    runner.run()
+    if existing:
+        assert runner.jobs['voice/W1']['phase'] == 'tickets'
+    else:
+        assert 'will not retry' in state.load(runner.path)['slices'][0]['attention']['body']
+    assert submit.call_count == 2
+
+
+@pytest.mark.parametrize('answer', [None, {}, dict(verdict='pass', title='x'),
+                                    dict(verdict='fix', tickets=[], test_files=[]),
+                                    dict(verdict='pass', title='x', body='x', tickets=[])])
+def test_invalid_review_never_submits_or_opens_pr(ticket_runner, answer):
+    runner, processes, _, _, submit = start_slice_review(ticket_runner)
+    processes.finish('waiting', '```json\n' + json.dumps(answer) + '\n```')
+    runner.run()
+    assert 'invalid review' in state.load(runner.path)['slices'][0]['attention']['body']
+    assert submit.call_count == 1
+    runner.github.open.assert_not_called()
+
+
+@pytest.mark.parametrize('flow', ['cli', 'tickets'])
+@pytest.mark.parametrize('changed', [True, False])
+def test_workflow_changes_require_approval_in_both_flows(delivery, make_state, flow, changed):
+    d = delivery
+    # Build commits only in the synthetic seed, never in an agent copy.
+    seed = d['root'] / 'workflow-seed'
+    d['g'](d['root'], 'clone', d['remote'], seed)
+    path = seed / ('.github/workflows/test.yml' if changed else 'source.py')
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('synthetic\n')
+    d['g'](seed, 'add', '.')
+    d['g'](seed, 'commit', '-m', 'change')
+    tip = d['g'](seed, 'rev-parse', 'HEAD')
+    d['g'](seed, 'push', 'origin', 'HEAD:refs/heads/workflow-test')
+    d['adapter'].git(d['clean'], 'fetch', 'origin', 'refs/heads/workflow-test')
+    gh = Mock()
+    gh.checks.return_value = ('green', '')
+    gh.merge.return_value = 'merged-sha'
+    runner = Runner(make_state(), github=gh, git=Mock())
+    runner.at = datetime.now(timezone.utc).isoformat()
+    item = state.load(runner.path)['slices'][0]
+    item.update(flow=flow, pr=12, stop_before_merge=False,
+                session=dict(tool='codex', id='synthetic-session', folder=str(d['work'])))
+    job = {**d['job'], 'tip': tip, 'phase': 'pr', 'request': request(d['job'])}
+    runner.jobs = {item['id']: job}
+    runner.launch = Mock()
+    runner.pr_checks(item, job)
+    if changed:
+        assert item['attention']['kind'] == 'merge'
+        gh.merge.assert_not_called()
+        item['attention']['approved'] = True
+        runner.deliver(item)
+        gh.merge.assert_called_once_with('example/repo', 12, expected=tip)
+    else:
+        gh.merge.assert_called_once_with('example/repo', 12, expected=tip)
+    assert not d['marker'].exists()
+
+
+def test_repair_pins_workers_latest_tip_and_second_review_keeps_original_base(ticket_runner, delivery):
+    runner, processes, plan, status, submit = ticket_runner
+    finish_cut(processes, plan)
+    runner.run()
+    d = delivery
+    seed = d['root'] / 'worker-seed'
+    d['g'](d['root'], 'clone', '--branch', processes.started[0]['branch'], d['remote'], seed)
+    (seed / 'worker.py').write_text('first worker result\n')
+    d['g'](seed, 'add', '.')
+    d['g'](seed, 'commit', '-m', 'worker result')
+    d['g'](seed, 'push', 'origin', 'HEAD')
+    worker_tip = d['g'](seed, 'rev-parse', 'HEAD')
+    status.return_value = [ticket(status='done')]
+    runner.run()
+    assert processes.started[-1]['tip'] == worker_tip
+    status.side_effect = lambda name: [] if name.endswith('/repair') else [ticket(status='done')]
+    review_answer(processes, 'fix', plan)
+    runner.run()
+    assert submit.call_args.args[0]['base_commit'] == worker_tip
+    (seed / 'worker.py').write_text('repaired worker result\n')
+    d['g'](seed, 'commit', '-am', 'repair result')
+    d['g'](seed, 'push', 'origin', 'HEAD')
+    repaired_tip = d['g'](seed, 'rev-parse', 'HEAD')
+    status.side_effect = lambda name: [ticket(status='done')]
+    runner.run()
+    review = processes.started[-1]
+    assert review['tip'] == repaired_tip and review['base'] == d['base']
+    assert (Path(review['repo']) / 'worker.py').read_text() == 'repaired worker result\n'
+    assert not d['marker'].exists()
+
+
+def test_post_merge_review_session_does_not_resubmit_or_publish(ticket_runner):
+    runner, processes, plan, status, submit = start_slice_review(ticket_runner)
+    review_answer(processes)
+    runner.run()
+    data = state.load(runner.path)
+    data['slices'][0]['stop_before_merge'] = False
+    state.save(runner.path, data)
+    sessions = fence.LOGIN_ROOT / 'codex/sessions'
+    sessions.mkdir(parents=True)
+    (sessions / 'synthetic-session.jsonl').write_text('{}\n')
+    runner.github.checks.return_value = ('green', '')
+    runner.github.merge.return_value = 'merged-sha'
+    runner.run()
+    resumed = processes.started[-1]
+    assert resumed['prompt'].startswith('merged as merged-sha')
+    assert resumed['sha'] == 'merged-sha'
+    assert not resumed.get('review')
+    runner.fence.publish = Mock(side_effect=AssertionError('cannot publish after merge'))
+    processes.finish('waiting', '```json\n' + json.dumps(request(resumed)) + '\n```')
+    runner.run()
+    assert state.load(runner.path)['slices'][0]['attention']['kind'] == 'node-step'
+    data = state.load(runner.path)
+    data['slices'][0]['attention']['answer'] = 'Proceed to handover'
+    state.save(runner.path, data)
+    runner.run()
+    assert processes.started[-1]['sha'] == 'merged-sha'
+    processes.finish('handover', 'Handover')
+    runner.run()
+    assert state.load(runner.path)['slices'][0]['state'] == 'in review'
+    assert submit.call_count == 1
+    runner.github.open.assert_called_once()
+
+
+@pytest.mark.parametrize('operation', ['delete', 'rename_out', 'rename_in'])
+def test_workflow_path_listing_includes_deletions_and_both_rename_sides(delivery, operation):
+    from cplane import review
+    d = delivery
+    seed = d['root'] / 'rename-seed'
+    d['g'](d['root'], 'clone', d['remote'], seed)
+    workflow = seed / '.github/workflows/test.yml'
+    source = seed / 'test.yml'
+    workflow.parent.mkdir(parents=True)
+    original = source if operation == 'rename_in' else workflow
+    original.write_text('synthetic workflow\n')
+    d['g'](seed, 'add', '.')
+    d['g'](seed, 'commit', '-m', 'before')
+    base = d['g'](seed, 'rev-parse', 'HEAD')
+    if operation == 'delete':
+        workflow.unlink()
+    else:
+        original.rename(workflow if operation == 'rename_in' else source)
+    d['g'](seed, 'add', '-A')
+    d['g'](seed, 'commit', '-m', 'after')
+    tip = d['g'](seed, 'rev-parse', 'HEAD')
+    d['g'](seed, 'push', 'origin', 'HEAD:refs/heads/renames')
+    d['adapter'].git(d['clean'], 'fetch', 'origin', 'refs/heads/renames')
+    assert review.changes_workflows(d['adapter'], {**d['job'], 'base': base, 'tip': tip})
+
+
+@pytest.mark.parametrize('reason', ['paused', 'capacity'])
+def test_review_waits_for_pause_and_capacity(ticket_runner, reason):
+    runner, processes, plan, status, submit = ticket_runner
+    finish_cut(processes, plan)
+    runner.run()
+    status.return_value = [ticket(status='done')]
+    if reason == 'paused':
+        data = state.load(runner.path)
+        data['slices'][0]['paused'] = True
+        state.save(runner.path, data)
+    else:
+        runner.codex_reader = lambda: 100
+    runner.run()
+    assert runner.jobs['voice/W1']['phase'] == 'review-ready'
+    assert len(processes.started) == 1
+    data = state.load(runner.path)
+    data['slices'][0]['paused'] = False
+    state.save(runner.path, data)
+    runner.codex_reader = lambda: 5
+    runner.run()
+    runner.run()
+    assert len(processes.started) == 2 and submit.call_count == 1
+
+
+def test_existing_tickets_done_placeholder_continues_into_review(ticket_runner):
+    runner, processes, plan, status, submit = ticket_runner
+    finish_cut(processes, plan)
+    runner.run()
+    data = state.load(runner.path)
+    data['slices'][0]['attention'] = dict(kind='node-step', body='tickets done',
+                                         since=runner.at, answer=None, approved=False)
+    state.save(runner.path, data)
+    status.return_value = [ticket(status='done')]
+    runner.run()
+    assert len(processes.started) == 2
+    assert state.load(runner.path)['slices'][0]['attention'] is None
+    assert submit.call_count == 1
+
+
+def test_failed_repair_submission_is_not_retried(ticket_runner):
+    runner, processes, plan, status, submit = start_slice_review(ticket_runner)
+    status.side_effect = lambda name: []
+    submit.side_effect = state.StateError('repair submit refused')
+    review_answer(processes, 'fix', plan)
+    runner.run()
+    assert 'repair submit refused' in state.load(runner.path)['slices'][0]['attention']['body']
+    data = state.load(runner.path)
+    data['slices'][0]['attention'] = None
+    state.save(runner.path, data)
+    runner.run()
+    assert 'will not retry' in state.load(runner.path)['slices'][0]['attention']['body']
+    assert submit.call_count == 2
+
+
+def test_review_cannot_bypass_pr_flow_with_handover(ticket_runner):
+    runner, processes, _, _, submit = start_slice_review(ticket_runner)
+    processes.finish('handover', 'Premature handover')
+    runner.run()
+    item = state.load(runner.path)['slices'][0]
+    assert item['state'] == 'escalated' and 'invalid review' in item['attention']['body']
+    assert submit.call_count == 1
+    runner.github.open.assert_not_called()
