@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/TelesforoAleix/control-plane/schema/slices.schema.json",
+  "title": "Scheduling state, version 1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "slices"],
+  "properties": {
+    "version": {"const": 1},
+    "slices": {"type": "array", "items": {"$ref": "#/$defs/slice"}}
+  },
+  "$defs": {
+    "timestamp": {"type": "string", "format": "date-time"},
+    "id": {"type": "string", "pattern": "^[^/\\s]+/[^/\\s]+$"},
+    "tool": {"enum": ["codex", "claude"]},
+    "review": {
+      "type": "object", "additionalProperties": false, "required": ["verdict", "at", "actor"],
+      "properties": {"verdict": {"type": "string"}, "at": {"$ref": "#/$defs/timestamp"}, "actor": {"type": "string"}}
+    },
+    "slice": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "repo", "feature", "title", "state", "brief", "executor", "stop_before_merge", "depends_on", "slot", "paused", "session", "pr", "attention", "log"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "repo": {"type": "string"}, "feature": {"type": "string"}, "title": {"type": "string"},
+        "state": {"enum": ["planned", "researching", "ready", "issued", "awaiting handover", "in review", "accepted", "escalated"]},
+        "brief": {"type": ["string", "null"]},
+        "executor": {
+          "type": "object", "additionalProperties": false, "required": ["tool", "model"],
+          "properties": {"tool": {"$ref": "#/$defs/tool"}, "model": {"type": "string"},
+            "effort": {"enum": ["low", "medium", "high", "xhigh", "max", "ultra"]}}
+        },
+        "stop_before_merge": {"type": "boolean"},
+        "depends_on": {"type": "array", "items": {"$ref": "#/$defs/id"}, "uniqueItems": true},
+        "slot": {"anyOf": [{"$ref": "#/$defs/timestamp"}, {"type": "null"}]},
+        "paused": {"type": "boolean"},
+        "session": {
+          "anyOf": [
+            {"type": "null"},
+            {"type": "object", "additionalProperties": false, "required": ["tool", "id", "folder"],
+             "properties": {"tool": {"$ref": "#/$defs/tool"}, "id": {"type": "string"}, "folder": {"type": "string"}}}
+          ]
+        },
+        "pr": {"type": ["integer", "null"]},
+        "attention": {
+          "anyOf": [
+            {"type": "null"},
+            {"type": "object", "additionalProperties": false, "required": ["kind", "body", "since", "answer", "approved"],
+             "properties": {"kind": {"enum": ["question", "escalation", "merge", "node-step", "owner-check"]}, "body": {"type": "string"}, "since": {"$ref": "#/$defs/timestamp"}, "answer": {"type": ["string", "null"]}, "approved": {"type": "boolean"}, "review": {"$ref": "#/$defs/review"}}}
+          ]
+        },
+        "log": {"type": "array", "items": {
+          "type": "object", "additionalProperties": false, "required": ["at", "actor", "event"],
+          "properties": {"at": {"$ref": "#/$defs/timestamp"}, "actor": {"type": "string"}, "event": {"type": "string"}}
+        }}
+      }
+    }
+  }
+}
