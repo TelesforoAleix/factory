@@ -17,11 +17,12 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["cplane", "schema"]
+packages = ["cplane", "schema", "skills"]
 
 [tool.setuptools.package-data]
 schema = ["*.json"]
 cplane = ["migrations/*.sql"]
+skills = ["*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
