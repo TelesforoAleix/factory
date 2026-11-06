@@ -1,0 +1,34 @@
+# Documentation and Method Licence
+
+Copyright (c) 2026 The Factory contributors
+
+This work is licensed under the Creative Commons Attribution-ShareAlike 4.0
+International Licence (CC BY-SA 4.0).
+
+You are free to:
+
+  Share  — copy and redistribute the material in any medium or format
+  Adapt  — remix, transform, and build upon the material for any purpose,
+           including commercially
+
+Under the following terms:
+
+  Attribution — You must give appropriate credit, provide a link to the
+                licence, and indicate if changes were made.
+  ShareAlike  — If you remix, transform, or build upon the material, you must
+                distribute your contributions under the same licence.
+
+Full licence text: https://creativecommons.org/licenses/by-sa/4.0/legalcode
+
+## Why this licence
+
+This repository is method rather than software: role specifications, department
+contracts, skills, workflows and templates. CC BY-SA is the licence that fits
+that shape — it keeps the method reusable and adaptable while requiring that
+improvements stay available on the same terms.
+
+It matches the documentation licence used by the companion Home Lab repository,
+which applies MIT to code and CC BY-SA 4.0 to documentation.
+
+Any executable code added to this repository later should carry MIT alongside
+this, and that split should be recorded when it happens.

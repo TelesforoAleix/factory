@@ -1,0 +1,26 @@
+[project]
+name = "factory"
+version = "0.1.0"
+description = "Factory: the cplane scheduler and runner"
+requires-python = ">=3.13"
+license = "MIT"
+dependencies = ["jsonschema>=4.23,<5"]
+
+[project.scripts]
+cplane = "cplane.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8,<10"]
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["cplane", "schema"]
+
+[tool.setuptools.package-data]
+schema = ["*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
