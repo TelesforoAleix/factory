@@ -219,8 +219,11 @@ sudo install -d -o root -g root -m 0700 /etc/factory /srv/factory/clean
 sudo install -d -o root -g root -m 0711 /srv/factory/work /srv/factory/runs
 sudo install -o root -g root -m 0755 /opt/factory/node/bin/factory-cli /usr/local/bin/factory-cli
 sudo install -o root -g root -m 0755 /opt/factory/node/bin/factory-cplane /usr/local/bin/factory-cplane
+sudo install -o root -g root -m 0755 /opt/factory/node/bin/factory-export /usr/local/bin/factory-export
 sudo install -o root -g root -m 0644 /opt/factory/node/systemd/factory-runner.service /etc/systemd/system/
 sudo install -o root -g root -m 0644 /opt/factory/node/systemd/factory-runner.timer /etc/systemd/system/
+sudo install -o root -g root -m 0644 /opt/factory/node/systemd/factory-export.service /etc/systemd/system/
+sudo install -o root -g root -m 0644 /opt/factory/node/systemd/factory-export.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 ```
 
@@ -242,8 +245,19 @@ Configure these keys using the actual private values:
 CPLANE_FENCE='1'
 CPLANE_STATE='/srv/factory/briefs/slices.json'
 CPLANE_RUNS='/srv/factory/runs'
+CPLANE_EXPORT_DIR='/path/to/encrypted/root-only/export-directory'
 CPLANE_DATABASE_URL='postgresql://REDACTED'
 PATH='/opt/factory/.venv/bin:/usr/local/bin:/usr/bin:/bin'
+```
+
+Set `CPLANE_EXPORT_DIR` to an existing root-only directory on the mounted encrypted
+volume. The daily export runs at 03:45 and retains the newest seven dated state
+and outbox pairs; a missing directory fails without creating it. After merge,
+the orchestrator enables the timer and runs the service once:
+
+```sh
+sudo systemctl enable --now factory-export.timer
+sudo systemctl start factory-export.service
 ```
 
 `CPLANE_STATE` remains the state-path anchor; its containing folder is the
