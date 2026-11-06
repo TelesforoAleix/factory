@@ -116,10 +116,15 @@ sudo install -d -o 21000 -g 21000 -m 0700 /srv/factory/logins/claude
 Tinyproxy joins `factory-cli` (internal) and `factory-egress` (outbound). CLI
 containers join only `factory-cli`. No ports are published. Tinyproxy permits
 CONNECT to port 443 only. `node/proxy/allowed-hosts` contains anchored exact
-`host:443` regexes; ordinary HTTP is refused. There are no wildcard domains or
-package registry allowances. Claude auto-updates, nonessential traffic and
-claude.ai connectors are disabled. Prepare dependencies outside the fence;
-downloads inside a run may fail. Do not widen the list to work around a failure.
+`host:443` regexes; ordinary HTTP is refused. There are no wildcard domains.
+Package downloads are allowed through `pypi.org`, `files.pythonhosted.org` and
+`registry.npmjs.org`, each on port 443, so executors can install Python and Node
+dependencies and run repository tests. Claude auto-updates, nonessential traffic
+and claude.ai connectors are disabled. Downloads from other hosts may fail. Do
+not widen the list to work around a failure.
+
+Accepted risk: a package runs inside the container and can read that tool's
+login. It reaches neither the host nor the GitHub token.
 
 Sources used for the initial allowlist and configuration:
 
@@ -180,11 +185,12 @@ sudo python3 /opt/factory/node/check-fence.py
 ```
 
 The network check uses no credentials. Under sealing flags on the internal net,
-it checks that an allowed GitHub host answers, `example.com` returns a proxy 403,
-and direct HTTPS to a public IP fails. CI builds both images, prints both CLI
-versions under sealing flags, and runs the network check. No real model call or
-login is tested. After merge the orchestrator repeats the fence check on the node
-and the owner logs in; neither step is performed by this slice.
+it checks that an allowed GitHub host and `https://pypi.org` answer through the
+proxy, `example.com` returns a proxy 403, and direct HTTPS to a public IP fails.
+CI builds both images, prints both CLI versions under sealing flags, and runs
+the network check. No real model call or login is tested. After merge the
+orchestrator rebuilds the proxy and repeats the fence check on the node and the
+owner logs in; neither step is performed by this slice.
 
 ## Install the runner after review and merge
 

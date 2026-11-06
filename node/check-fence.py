@@ -25,6 +25,10 @@ for attempt in range(10):
 else:
     raise SystemExit('FAIL: allowed host did not answer through proxy')
 print('PASS: api.github.com:443 answers through proxy')
+packages = curl('--proxy', 'http://cli-proxy:8888', '--fail',
+                '--output', '/dev/null', 'https://pypi.org')
+assert packages.returncode == 0, 'PyPI did not answer through proxy'
+print('PASS: pypi.org:443 answers through proxy')
 denied = curl('--proxy', 'http://cli-proxy:8888', 'https://example.com')
 assert denied.returncode != 0 and '403' in denied.stderr, 'deny must be a proxy 403'
 print('PASS: example.com:443 refused with 403')

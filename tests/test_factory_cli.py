@@ -222,6 +222,9 @@ def test_filter_exact_hosts_and_ports():
         return any(pattern.search(value) for pattern in patterns)
     assert allowed('api.openai.com:443') and allowed('api.anthropic.com:443')
     assert allowed('github.com:443')
+    for host in ['pypi.org', 'files.pythonhosted.org', 'registry.npmjs.org']:
+        assert allowed(f'{host}:443')
     for value in ['example.com:443', 'github.com:80', 'evil.github.com:443',
-                  'api.openai.com.evil.test:443', 'http://github.com/', '127.0.0.1:443']:
+                  'api.openai.com.evil.test:443', 'http://github.com/', '127.0.0.1:443',
+                  'evil.pypi.org:443', 'pypi.org:80', 'pypi.org.evil.com:443']:
         assert not allowed(value)
