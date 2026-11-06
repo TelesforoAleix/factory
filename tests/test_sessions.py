@@ -254,6 +254,7 @@ def test_session_exports_remote_default_and_resume_does_not_fetch(tmp_path, monk
         return original_git(self, clean, *args, **kwargs)
 
     monkeypatch.setattr(fence.Fence, 'git', local_git)
+    monkeypatch.setattr(sessions.os, 'chown', Mock())
     # Simulate root-owned read-only exports when tests run without root.
     original_lstat = Path.lstat
 
