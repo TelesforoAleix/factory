@@ -326,3 +326,15 @@ def test_empty_url_selects_database_and_refuses_defaults(monkeypatch, capsys):
     assert state.postgres()
     assert main(['pending']) == 1
     assert capsys.readouterr().err == 'cplane: Postgres connection failed\n'
+
+
+def test_export_stdout_refuses_notices(backend, capsys):
+    path, store = backend
+    state.update(path, 'voice/W1', 'start', 'tester', change_for('start'))
+    before = store.snapshot()
+    assert main(['--state', str(path), 'export']) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ''
+    assert captured.err == ('cplane: export contains notices; provide PATH with '
+                            'cplane export PATH to write state and its outbox\n')
+    assert store.snapshot() == before

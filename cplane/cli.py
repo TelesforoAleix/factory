@@ -159,7 +159,7 @@ def parser():
     transfer = commands.add_parser("import", parents=[common], help="import state and its outbox into empty Postgres")
     transfer.add_argument("path", help="source state JSON path")
     transfer = commands.add_parser("export", parents=[common], help="export state and notices in file format")
-    transfer.add_argument("path", nargs="?", help="destination state JSON path (default: stdout)")
+    transfer.add_argument("path", nargs="?", help="destination state JSON path (required with notices; otherwise stdout)")
     commands.add_parser("compact", parents=[common], help="bound oversized runner text in state")
     for command in ("run", "install-agent", "uninstall-agent"):
         commands.add_parser(command, parents=[common])
@@ -213,7 +213,7 @@ def main(argv=None):
                 Path(str(destination) + ".outbox.jsonl").write_text(outbox)
             else:
                 if outbox:
-                    raise state.StateError("provide an export path for state and notices")
+                    raise state.StateError("export contains notices; provide PATH with cplane export PATH to write state and its outbox")
                 print(payload, end="")
         elif args.command == "install-agent":
             from .agent import install

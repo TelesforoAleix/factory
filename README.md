@@ -259,8 +259,11 @@ validates state, and inserts everything in one transaction. Use a stable offline
 copy of the source state and outbox during import. It refuses a database
 containing any slice or notice and never changes the source files. `export path`
 writes state JSON to the path and notices, in order, to `<path>.outbox.jsonl`,
-including an empty outbox when there are no notices. JSON formatting may differ;
-version, slice order, document values and notice order survive a round trip.
+including an empty outbox when there are no notices. Without a path, `cplane export`
+writes state JSON to stdout only when there are no notices. If notices exist, it
+refuses without exporting data and asks for `cplane export PATH`. State and notice
+data never go to stderr; stderr is reserved for diagnostic messages. JSON formatting
+may differ; version, slice order, document values and notice order survive a round trip.
 Exports are private data, like the original state and outbox; keep them outside
 this repository. Both stores support export.
 
