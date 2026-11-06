@@ -356,8 +356,24 @@ never resubmitted. It saves submission intent before calling the queue. Any fail
 or interrupted submission raises attention and is never automatically retried.
 Reconcile ambiguous submissions with the queue before any operator recovery.
 Each following pass reads status: queued/running keep waiting, failed/escalated
-raise attention naming the ticket and reason, and all done raises `tickets done`
-attention. Review after tickets is a later slice.
+raise attention naming the ticket and reason, and all done starts a fresh fenced
+review of the branch. Existing `tickets done` placeholder attention is cleared
+when the queue confirms completion.
+
+The reviewer receives `skills/slice-review.md` and the brief, changes nothing,
+runs the repository's tests and reads the whole diff from the original slice base,
+especially Fixed decisions and Do not. It ends `waiting` with a fenced JSON block
+matching `schema/review.schema.json`. Each cut and review run records its skills
+version in the private job metadata. Review copies are fresh clones of the branch
+from the clean clone; host Git never runs in a copy.
+
+A `pass` supplies the PR title and body and enters the existing PR/CI/merge flow.
+A `fix` supplies plan-form tickets (including a done check) and `test_files`.
+The runner submits these once as `<id>/repair` on the same branch, using the
+reviewed tip as `base_commit`. Repair uses the same status following and durable
+submission intent as the initial cut. When all repair tickets are done, a second
+fresh review runs. A failed repair ticket or second `fix` raises attention with
+what remains. A recovered pass follows the PR flow without resubmitting tickets.
 
 For `flow: cli`, both tools commit and end `waiting` with the existing JSON PR
 request. The runner exports the branch in the offline container, snapshots the bundle as a regular
@@ -365,7 +381,10 @@ file, fetches it into the clean clone with `transfer.fsckObjects=true`, checks t
 pinned branch/default/base, then pushes and opens the PR. Host Git never reads
 config, hooks, branches, status or logs from an agent's copy. In fenced mode
 tidying is skipped. CI must include a successful check on the delivered
-head. A stop-before-merge slice still awaits owner approval. The runner merges
+head. Before automatically merging either fenced flow, the runner lists changed
+paths in the clean clone. Any path under `.github/workflows/` requires merge
+approval, including deletions and renames, just like a stop-before-merge slice.
+Approval rechecks CI and the expected head before merging. The runner merges
 only that head and resumes the same session with `merged as <sha>`. The saved job
 retains the merge across resumed turns (including node-step answers); after a
 merge, replies only collect the handover or raise attention. A later `waiting`

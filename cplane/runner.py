@@ -17,6 +17,7 @@ from .orders import Collector
 from .executors import Processes, atomic_json, CLAUDE_PARAGRAPH, FENCE_PARAGRAPH, fenced
 from . import fence
 from . import cut as cutter
+from . import review as reviewer
 from .text_bounds import ATTENTION_LIMIT, LOG_LIMIT, cut, cut_line
 from .times import now
 
@@ -352,7 +353,7 @@ class Runner:
             raise state.StateError('invalid repository name')
         return (self.repos / name).resolve()
 
-    def launch(self, item, prompt, resume=False):
+    def launch(self, item, prompt, resume=False, review=False):
         if item.get("flow", "cli") == "tickets" and not self.fenced:
             raise state.StateError("tickets flow needs fenced mode; needs attention")
         reason = self.room(item)
@@ -373,6 +374,7 @@ class Runner:
             self.runs.mkdir(parents=True, mode=0o700, exist_ok=True)
             fence.trusted_directory(self.runs)
             metadata = (self.fence.resume(previous, item['session']['id']) if resume else
+                        reviewer.prepare(self.fence, previous, uuid.uuid4().hex) if review else
                         self.fence.prepare(item['repo'], 'slice/' + item['id'].replace('/', '-'), uuid.uuid4().hex))
             folder = Path(metadata['repo'])
         else:
@@ -381,12 +383,13 @@ class Runner:
                 raise state.StateError(f'missing repository: {folder}')
         run = self.runs / uuid.uuid4().hex
         run.mkdir(parents=True, mode=0o700)
-        cut_turn = item.get('flow', 'cli') == 'tickets'
-        brief = previous.get('brief', '') if resume and previous else prompt
+        review = review or bool(resume and previous and previous.get('review') and not previous.get('sha'))
+        cut_turn = item.get('flow', 'cli') == 'tickets' and not review and not (previous and previous.get('sha'))
+        brief = previous.get('brief', '') if (resume or review) and previous else prompt
         skills = previous.get('skills') if resume and previous else None
-        if cut_turn and not resume:
+        if (cut_turn or review) and not resume:
             skills = cutter.skills_version()
-            prompt = files('skills').joinpath('cut.md').read_text() + brief
+            prompt = files('skills').joinpath('slice-review.md' if review else 'cut.md').read_text() + brief
         if self.fenced:
             prompt += (f'\n\nRunner assignment: use branch {metadata["branch"]}. '
                        f'This assigned branch overrides any branch named in the brief. '
@@ -394,7 +397,8 @@ class Runner:
                            '\nCommit the tests on the assigned branch. End with kind "waiting", '
                            'with the plan in a fenced JSON block matching schema/plan.schema.json. '
                            'The runner delivers the commit and submits the tickets.'
-                           if cut_turn else FENCE_PARAGRAPH))
+                           if cut_turn else ('\nReview only; change nothing. End waiting with schema/review.schema.json.'
+                                             if review else FENCE_PARAGRAPH)))
         elif tool == 'claude' and not resume:
             prompt += CLAUDE_PARAGRAPH
         job = {'id': item['id'], 'repo': str(folder), 'run': str(run), 'tool': tool,
@@ -403,8 +407,14 @@ class Runner:
                'resume': item['session']['id'] if resume else None, 'phase': 'running'}
         if self.fenced:
             job.update(metadata, fence=True)
-        if cut_turn:
+        if item.get('flow', 'cli') == 'tickets':
             job.update(brief=brief, skills=skills)
+        if review:
+            job.update(review=True, repair=bool(previous.get('repair')))
+        if resume and previous:
+            for key in ('tip', 'repair', 'queue_slice'):
+                if key in previous:
+                    job[key] = previous[key]
         if resume and previous and previous.get('sha'):
             job['sha'] = previous['sha']
         # Persist intent before starting; an ambiguous handoff reserves a slot.
@@ -512,6 +522,8 @@ class Runner:
             summary = first if re.match(r'(?:codex|claude) exec exited \d+: ', first) else 'the run ended without a final message'
             detail = rest if summary == first else tail
             self.attention(item, 'escalation', summary + ('\n\n' + detail if detail else ''))
+        elif job.get('review') and not job.get('sha') and final['kind'] == 'handover':
+            self.attention(item, 'escalation', 'invalid review: expected waiting with review JSON')
         elif final['kind'] == 'handover':
             item['state'], item['attention'] = 'in review', None
             self.log(item, 'finished', True)
@@ -520,6 +532,8 @@ class Runner:
         elif self.fenced and job.get('sha'):
             # A post-merge turn only collects replies; it can never publish again.
             self.attention(item, 'node-step', final['body'])
+        elif job.get('review') and final['kind'] == 'waiting':
+            self.apply_review(item, job, final['body'])
         elif item.get('flow', 'cli') == 'tickets' and final['kind'] == 'waiting':
             match = re.match(r'\s*```(?:json)?[ \t]*\n(.*?)\n```', final['body'], re.S)
             try:
@@ -575,6 +589,33 @@ class Runner:
         self.log(item, 'collected turn: ' + Path(job['run']).name)
         self.save_job(job)
 
+    def apply_review(self, item, job, body):
+        match = re.match(r'\s*```(?:json)?[ \t]*\n(.*?)\n```', body, re.S)
+        try:
+            answer = json.loads(match[1]) if match else None
+        except ValueError:
+            raise state.StateError('invalid review: expected fenced JSON') from None
+        reviewer.validate(answer)
+        if answer['verdict'] == 'pass':
+            job['request'] = dict(branch=job['branch'], title=answer['title'],
+                                  body=answer['body'], node_steps=None)
+            job['phase'] = 'pr'
+            self.save_job(job)
+            item['pr'] = self.github.open(self.github_repo(item), job['request'])
+            self.log(item, f'opened PR: {item["pr"]}', True)
+        elif job.get('repair'):
+            self.ticket_attention(item, 'escalation', 'slice review still needs fixes after repair:\n' + json.dumps(answer))
+        else:
+            # Save the repair plan before any queue effect; subsequent passes use
+            # the same submission-intent protocol as the initial cut.
+            queue_slice = item['id'] + '/repair'
+            job.update(repair=True, queue_slice=queue_slice,
+                       task_file=cutter.build_task_file(queue_slice, item['repo'], job['branch'],
+                                                        job['tip'], {key: answer[key] for key in ('tickets', 'test_files')},
+                                                        job['brief']), phase='cut-ready')
+            self.save_job(job)
+            self.submit_tickets(item, job)
+
     def ticket_attention(self, item, kind, body):
         body = cut(body, ATTENTION_LIMIT)
         existing = item['attention']
@@ -588,12 +629,17 @@ class Runner:
         if failed:
             self.ticket_attention(item, 'escalation', f"ticket {failed['id']} ({failed['title']}): {failed['status']}: {failed['reason'] or ''}")
         elif tickets and all(t['status'] == 'done' for t in tickets):
-            self.ticket_attention(item, 'node-step', 'tickets done')
+            # Continue runs stopped by the former tickets-done placeholder.
+            attention = item['attention']
+            if attention and attention['kind'] == 'node-step' and attention['body'] == 'tickets done':
+                item['attention'] = None
+            job['phase'] = 'review-ready'
+            self.save_job(job)
         elif not tickets:
             self.ticket_attention(item, 'escalation', 'tickets missing from queue; needs attention')
 
     def submit_tickets(self, item, job):
-        tickets = cutter.status(item['id'])
+        tickets = cutter.status(job.get('queue_slice', item['id']))
         if tickets:
             self.follow_tickets(item, job, tickets)
             return
@@ -615,6 +661,11 @@ class Runner:
         self.log(item, f'Submitted {len(ids)} tickets: ' + json.dumps(ids), True)
 
     def merge(self, item, job):
+        if self.fenced and reviewer.changes_workflows(self.fence, job):
+            approval = item['attention']
+            if not (approval and approval['kind'] == 'merge' and approval['approved']):
+                self.attention(item, 'merge', f'Approve PR #{item["pr"]}: workflow changes')
+                return
         options = {'expected': job['tip']} if self.fenced else {}
         sha = self.github.merge(self.github_repo(item), item['pr'], **options)
         job['phase'], job['sha'] = 'merged', sha
@@ -629,6 +680,10 @@ class Runner:
     def deliver(self, item):
         job = self.jobs.get(item['id'])
         attention = item['attention']
+        if job and job['phase'] == 'review-ready':
+            if not attention and not item['paused']:
+                self.launch(item, job['brief'], review=True)
+            return
         if job and job['phase'] in ('cut-ready', 'submitting', 'submit-failed', 'tickets'):
             return
         if (job and job['phase'] == 'usage-limit-wait' and not attention
@@ -721,13 +776,13 @@ class Runner:
                         if bool(job.get('fence')) != self.fenced:
                             raise state.StateError('run mode differs from saved job; needs attention')
                         phase_before = job['phase']
-                        if phase_before in ('cut-ready', 'submitting', 'submit-failed', 'tickets'):
+                        if phase_before in ('cut-ready', 'submitting', 'submit-failed', 'tickets', 'review-ready'):
                             if item['state'] == 'ready':
                                 item['state'] = 'issued'
                             item['session'] = {'tool': job['tool'], 'id': job['session'], 'folder': job['repo']}
                             if phase_before == 'tickets':
-                                self.follow_tickets(item, job, cutter.status(item['id']))
-                            elif phase_before != 'cut-ready' or (not item['attention'] and not item['paused']):
+                                self.follow_tickets(item, job, cutter.status(job.get('queue_slice', item['id'])))
+                            elif phase_before != 'review-ready' and (phase_before != 'cut-ready' or (not item['attention'] and not item['paused'])):
                                 self.submit_tickets(item, job)
                             continue
                         if (phase_before in ('merged', 'node-step')
