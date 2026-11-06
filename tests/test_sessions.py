@@ -260,6 +260,10 @@ def test_session_exports_remote_default_and_resume_does_not_fetch(tmp_path, monk
 
     def export_lstat(path):
         info = original_lstat(path)
+        if path == work / 'session-1':
+            fields = list(info)
+            fields[4] = 21000
+            return os.stat_result(fields)
         if path in (work / 'session-1/repos', work / 'session-1/repos/repo'):
             fields = list(info)
             fields[4] = 0
