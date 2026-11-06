@@ -211,7 +211,7 @@ sudo apt-get install -y git gh curl ca-certificates libpq5
 curl -LsSf https://astral.sh/uv/0.11.18/install.sh -o /tmp/factory-uv-install.sh
 less /tmp/factory-uv-install.sh
 sudo env UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh /tmp/factory-uv-install.sh
-sudo uv python install 3.13
+sudo env UV_PYTHON_INSTALL_DIR=/opt/python uv python install 3.13
 ```
 
 The uv installer and versioned URL are documented in [uv installation](https://docs.astral.sh/uv/getting-started/installation/).
@@ -233,7 +233,7 @@ In a git checkout the skills must still be committed and clean; `REVISION`
 does not override that check.
 
 ```sh
-sudo uv sync --project /opt/factory --python 3.13 --frozen --no-dev
+sudo uv sync --project /opt/factory --python "$(env UV_PYTHON_INSTALL_DIR=/opt/python uv python find 3.13)" --frozen --no-dev
 sudo install -d -o root -g root -m 0700 /etc/factory /srv/factory/clean
 sudo install -d -o root -g root -m 0711 /srv/factory/work /srv/factory/runs
 sudo install -o root -g root -m 0755 /opt/factory/node/bin/factory-cli /usr/local/bin/factory-cli
@@ -426,18 +426,17 @@ and outstanding slices, and obtain the owner's go before restoring Mac schedulin
 with `CPLANE_FENCE` unset. Never let both schedulers issue concurrently, and never
 point the Mac runner at the node's agent-owned copies.
 
-## Install the read-only UI after merge
+## Install the owner UI after merge
 
 The orchestrator installs the reviewed revision on the node; this slice does not
-perform the installation. Node.js 20.19+ or 22.12+ and npm are needed to build
-Vite 7. With the reviewed source at `/opt/factory`, build its static files and
+perform the installation. Build Vite using the `node:22-slim` container; the node does not need Node.js
+installed. With the reviewed source at `/opt/factory`, build its static files and
 sync its Python environment, then install the service:
 
 ```sh
 sudo useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin factory-ui
-sudo npm --prefix /opt/factory/ui ci
-sudo npm --prefix /opt/factory/ui run build
-sudo uv sync --project /opt/factory --python 3.13 --frozen --no-dev
+sudo docker run --rm -v /opt/factory/ui:/app -w /app node:22-slim sh -c "npm ci && npm run build"
+sudo uv sync --project /opt/factory --python "$(env UV_PYTHON_INSTALL_DIR=/opt/python uv python find 3.13)" --frozen --no-dev
 sudo install -o root -g root -m 0644 /opt/factory/node/systemd/factory-ui.service /etc/systemd/system/
 ```
 
@@ -446,12 +445,12 @@ Keep the installation root-owned and unwritable by `factory-ui`. Provision
 `CPLANE_DATABASE_URL` assignment from `runner.env`, without printing its value.
 Systemd reads the file before dropping privileges. The account needs no login,
 Docker group, GitHub token, or access to the runner's login files. The database
-credential grants whatever database access it already has; use a read-only
-credential if one is provisioned separately.
+credential must allow state and notice writes for owner actions.
 
 ```sh
 sudo systemctl daemon-reload
 sudo systemctl enable --now factory-ui.service
+# Enable Serve once in the tailnet admin console and allow tcp:443 in the tailnet policy.
 sudo tailscale serve --bg http://127.0.0.1:8300
 ```
 
