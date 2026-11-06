@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from .executors import fenced
 
 from .agent import launchctl
 
@@ -74,6 +75,27 @@ def idle_seconds():
 
 
 def request(name, args):
+    if fenced():
+        from .fence import WORK_ROOT, CLI_UID, CLI_GID, host_environment
+        runs = Path(os.environ.get('CPLANE_RUNS', '/srv/factory/runs'))
+        with tempfile.TemporaryDirectory(prefix='prime-', dir=WORK_ROOT) as work, \
+                tempfile.TemporaryDirectory(prefix='prime-', dir=runs) as output:
+            for folder in (work, output):
+                os.chmod(folder, 0o700)
+                os.chown(folder, CLI_UID, CLI_GID)
+            # Keep the warm-up CLI inside exactly the same fence as slice turns.
+            command = ([name, '-p', '--model', 'haiku', '--', 'Reply with: ok'] if name == 'claude'
+                       else [name, 'exec', '-m', 'gpt-6-luna', '--skip-git-repo-check', '--', 'Reply with: ok'])
+            try:
+                result = subprocess.run(['factory-cli', 'run', '--tool', name, '--repo', work,
+                                         '--run', output, '--', *command], cwd='/',
+                                        stdin=subprocess.DEVNULL, capture_output=True, timeout=TIMEOUT,
+                                        env=host_environment())
+            except subprocess.TimeoutExpired:
+                return 'error timeout'
+            except OSError:
+                return 'error not runnable'
+        return 'ok' if result.returncode == 0 else f'error exit {result.returncode}'
     with tempfile.TemporaryDirectory() as folder:
         try:
             result = subprocess.run(args, cwd=folder, stdin=subprocess.DEVNULL, capture_output=True, timeout=TIMEOUT)
@@ -86,6 +108,8 @@ def request(name, args):
 
 def prime(*, home=None, sleep=None, clock=time.time):
     """Send one request to each tool; return True when both succeeded."""
+    if fenced():
+        return all([request(name, args) == 'ok' for name, args in REQUESTS])
     log = Path(home or Path.home()) / 'Library/Logs/cplane/primer.log'
     log.parent.mkdir(parents=True, exist_ok=True)
 

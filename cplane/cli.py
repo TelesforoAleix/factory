@@ -291,10 +291,12 @@ def main(argv=None):
             groups = pending(state.load(path))
             print(json.dumps(groups, indent=2, ensure_ascii=False) if args.json else render(groups))
         elif args.command == "show":
+            from .executors import fenced, read_output
             item = next((item for item in state.load(path)["slices"] if item["id"] == args.id), None)
             if item is None:
                 raise state.StateError(f"unknown slice: {args.id}")
-            base = Path(os.environ.get('CPLANE_RUNS', '~/Library/Application Support/cplane/runs')).expanduser().resolve()
+            default_runs = '/srv/factory/runs' if fenced() else '~/Library/Application Support/cplane/runs'
+            base = Path(os.environ.get('CPLANE_RUNS', default_runs)).expanduser().resolve()
             runs = base / hashlib.sha256(str(path.resolve()).encode()).hexdigest()[:20]
             latest = None
             for job_path in runs.glob('*/job.json'):
@@ -311,9 +313,11 @@ def main(argv=None):
                     job = latest[2]
                     final = job.get('final')
                     last = latest[1] / ('last.json' if job.get('tool') == 'codex' else 'claude.json')
+                    if job.get('fence') and job.get('tool') == 'codex':
+                        last = latest[1] / 'io/last.json'
                     if not final and last.exists():
                         try:
-                            reply = json.loads(last.read_text())
+                            reply = json.loads(read_output(last) if job.get('fence') else last.read_text())
                             final = reply if job.get('tool') == 'codex' else reply.get('structured_output')
                         except (OSError, ValueError, AttributeError):
                             final = None

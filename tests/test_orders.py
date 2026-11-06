@@ -185,6 +185,27 @@ def test_orchestrator(build, slice_data, target):
     assert r.git.commit.call_count == 0
 
 
+@pytest.mark.parametrize('target', ['repo', 'development'])
+def test_fenced_orchestrator_is_acknowledged_failed_without_launch(build, slice_data, monkeypatch, target):
+    monkeypatch.setenv('CPLANE_FENCE', '1')
+    queued = order(slice_data, 'orchestrator', 'Private task text')
+    queued.update(slice=target, expect=None)
+    r, client, tmux = build(slice_data, [queued])
+    r.processes = Mock()
+    before = r.path.read_bytes()
+    r.run()
+    expected = {'outcome': 'failed', 'detail': 'orchestrator is not available on the node'}
+    assert client.acks[0][1] == expected
+    tmux.open.assert_not_called()
+    r.processes.start.assert_not_called()
+    assert r.path.read_bytes() == before
+    # A lost acknowledgement retries the saved failure, never the host launch.
+    r.run()
+    assert client.acks[1][1] == expected
+    tmux.open.assert_not_called()
+    r.processes.start.assert_not_called()
+
+
 @pytest.mark.parametrize('target', ['unknown', '../repo', 'example/repo', '-option', 'repo'])
 def test_orchestrator_invalid_or_missing(build, slice_data, target):
     queued = order(slice_data, 'orchestrator', 'task')

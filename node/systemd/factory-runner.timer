@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the Factory scheduler every five minutes
+
+[Timer]
+OnBootSec=300s
+OnUnitActiveSec=300s
+AccuracySec=1s
+Unit=factory-runner.service
+
+[Install]
+WantedBy=timers.target

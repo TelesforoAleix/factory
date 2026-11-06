@@ -299,6 +299,11 @@ uv run cplane --state /path/to/state.json install-agent
 uv run cplane uninstall-agent
 ```
 
+The following describes the Mac runner with `CPLANE_FENCE` unset. The opt-in
+Ubuntu runner (`CPLANE_FENCE=1`) runs both CLIs through the container fence and
+delivers their commits from offline bundles. Its root service, SSH planner
+wrapper, installation and switch-over are in [docs/node.md](docs/node.md).
+
 Only `run` starts or resumes executors. It makes one pass under the state lock:
 pull the state repository, collect finished turns, deliver answers and approvals,
 start due slices, validate and save state, append notices, then commit and push.
@@ -488,4 +493,4 @@ sudo rm "$D"
 ```
 
 Factory's independent node CLI container stack, installation and security limits
-are documented in [docs/node.md](docs/node.md). Runner integration is a later slice.
+and opt-in runner are documented in [docs/node.md](docs/node.md).
