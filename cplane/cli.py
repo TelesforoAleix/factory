@@ -6,6 +6,8 @@ import json
 import os
 from pathlib import Path
 import sys
+import subprocess
+from importlib.resources import files
 
 from . import state
 from . import planner
@@ -120,6 +122,14 @@ def parser():
     show.add_argument("id")
     show.add_argument("--json", action="store_true", help="output slice JSON")
     show.add_argument("--final", action="store_true", help="show the latest final message")
+    cut_prompt = commands.add_parser("cut-prompt", parents=[common], help="print cutter instructions and brief")
+    cut_prompt.add_argument("id")
+    cut_submit = commands.add_parser("cut-submit", parents=[common], help="submit a plan to the task queue")
+    cut_submit.add_argument("id")
+    cut_submit.add_argument("plan")
+    cut_submit.add_argument("--repository", required=True)
+    cut_submit.add_argument("--branch", required=True)
+    cut_submit.add_argument("--base", required=True)
     for command in ("add", "edit"):
         sub = commands.add_parser(command, parents=[common], help=f"{command} a slice")
         if command == "edit":
@@ -243,6 +253,40 @@ def main(argv=None):
                         state.commit_state(path, Path(str(path) + ".outbox.jsonl"), "compact", "state")
                 after = state.size(path)
             print(f"cut {logs} log entries and {attentions} attention bodies; size {before} -> {after} bytes")
+        elif args.command in ("cut-prompt", "cut-submit"):
+            from . import cut as cutter
+            def brief_for(item):
+                if not item["brief"]:
+                    raise state.StateError(f"{args.id} needs a brief")
+                try:
+                    return (path.resolve().parent / item["brief"]).read_text()
+                except OSError:
+                    raise state.StateError(f"{args.id}: brief cannot be read") from None
+            if args.command == "cut-prompt":
+                item = next((item for item in state.load(path)["slices"] if item["id"] == args.id), None)
+                if item is None:
+                    raise state.StateError(f"unknown slice: {args.id}")
+                print(files("skills").joinpath("cut.md").read_text() + brief_for(item), end="")
+            else:
+                try:
+                    plan = json.loads(Path(args.plan).read_text())
+                except (OSError, ValueError):
+                    raise state.StateError("plan.json cannot be read as JSON") from None
+                cutter.validate_plan(plan)
+                root = Path(__file__).resolve().parent.parent
+                status = subprocess.run(["git", "-C", str(root), "status", "--porcelain", "--", "skills"], capture_output=True, text=True)
+                revision = subprocess.run(["git", "-C", str(root), "log", "-1", "--format=%H", "HEAD", "--", "skills"], capture_output=True, text=True)
+                if status.returncode or status.stdout or revision.returncode or not revision.stdout.strip():
+                    raise state.StateError("skills must be committed in a git checkout before submission")
+                event = "cut-submit: skills " + revision.stdout.strip()
+                def change(item, data, at):
+                    task_file = cutter.build_task_file(args.id, args.repository, args.branch, args.base, plan, brief_for(item))
+                    ids = cutter.submit(task_file)
+                    notice = f"Submitted {len(ids)} tickets for {args.id}: " + json.dumps(ids, ensure_ascii=False)
+                    return notice, None
+                with state.locked(path):
+                    state.update_locked(path, args.id, args.command, getattr(args, "actor", "owner"), change,
+                                        getattr(args, "commit", False), event=event)
         elif args.command == "pending":
             groups = pending(state.load(path))
             print(json.dumps(groups, indent=2, ensure_ascii=False) if args.json else render(groups))

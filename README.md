@@ -214,6 +214,20 @@ Run `uv run pytest` for the synthetic fixture, concurrent writer, time, CLI, sch
 and temporary bare-remote Git tests. CI runs the tests and gitleaks on every PR and
 on pushes to `main`. Main requires the `test` check and forbids force pushes.
 
+## Cutting a plan into queue tickets
+
+`cplane cut-prompt ID` prints the versioned cutter instructions followed by the slice's brief, resolved relative to the state file. The cutter writes tests and returns a JSON plan matching `schema/plan.schema.json`. This command does not run a model.
+
+```sh
+export CPLANE_TASK_SUBMIT='["/path/to/submit-command", "submit"]'
+uv run cplane --state /path/to/state.json cut-prompt project/W1
+uv run cplane --state /path/to/state.json --actor planner cut-submit project/W1 plan.json --repository owner/name --branch feature-branch --base 0123456789abcdef0123456789abcdef01234567
+```
+
+`cut-submit` validates the plan, copies the brief's Fixed decisions and Do not sections into each ticket, chains the tickets in order, and pins the plan's test files. The submit command receives the task file as JSON on stdin, without a shell, and must return a JSON list of task IDs. It enforces repository, branch and base requirements; in particular the branch must exist and not be the default branch. The instructions must be committed in the cplane Git checkout; the commit that last changed `skills/` is recorded in the slice log. A notice records the count and IDs. The normal `--commit` option also applies.
+
+Submission and state saving are separate operations. If the submit command succeeds but returns invalid output, or if saving state or syncing fails afterward, inspect the queue and state before retrying to avoid duplicate tickets. Submit command output and errors are not displayed, except validated task IDs in the notice.
+
 ## Storage
 
 With `CPLANE_DATABASE_URL` unset, the file store preserves the existing behaviour:
