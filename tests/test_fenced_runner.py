@@ -326,22 +326,58 @@ def test_gh_token_is_only_in_call_environment_and_error_is_redacted(delivery, mo
     assert options['cwd'] == '/'
 
 
-def test_fenced_checks_wait_for_registration_and_bind_to_delivered_head():
+def test_fenced_checks_bind_to_delivered_head():
     gh = GitHub()
-    gh.call = Mock(return_value='{"headRefOid":"tip","statusCheckRollup":[]}')
-    assert gh.checks('example/repo', 1, expected='tip') == ('pending', '')
     gh.call = Mock(return_value='{"headRefOid":"other"}')
     with pytest.raises(state.StateError, match='PR head differs'):
         gh.checks('example/repo', 1, expected='tip')
+    gh.call.assert_called_once_with('example/repo', 'pr', 'view', '1', '--json', 'headRefOid')
 
 
-@pytest.mark.parametrize('names', [['compose'], ['deployment'], ['frontend'], ['python'],
-                                 ['compose', 'deployment', 'frontend', 'python']])
-def test_fenced_checks_are_green_with_other_job_names(names):
+@pytest.mark.parametrize('runs,jobs,expected', [
+    ([], [], ('pending', '')),
+    ([{'id': 1, 'status': 'completed'}], [[]], ('pending', '')),
+    ([{'id': 1, 'status': 'completed'}], [[
+        {'name': 'test', 'status': 'completed', 'conclusion': 'success'},
+        {'name': 'lint', 'status': 'completed', 'conclusion': 'success'},
+    ]], ('green', '')),
+    ([{'id': 1, 'status': 'completed'}], [[
+        {'name': 'test', 'status': 'completed', 'conclusion': 'failure'},
+    ]], ('red', 'test')),
+    ([{'id': 1, 'status': 'completed'}, {'id': 2, 'status': 'completed'}], [
+        [{'name': 'test', 'status': 'completed', 'conclusion': 'cancelled'}],
+        [{'name': 'test', 'status': 'completed', 'conclusion': 'success'}],
+    ], ('green', '')),
+    ([{'id': 1, 'status': 'in_progress'}], [[
+        {'name': 'test', 'status': 'completed', 'conclusion': 'success'},
+    ]], ('pending', '')),
+    ([{'id': 1, 'status': 'completed'}], [[
+        {'name': 'test', 'status': 'in_progress', 'conclusion': None},
+        {'name': 'lint', 'status': 'completed', 'conclusion': 'success'},
+    ]], ('pending', '')),
+])
+def test_fenced_checks_actions_results(runs, jobs, expected):
     gh = GitHub()
-    gh.call = Mock(return_value=json.dumps(dict(
-        headRefOid='tip', statusCheckRollup=[dict(name=name, conclusion='SUCCESS') for name in names])))
-    assert gh.checks('example/repo', 1, expected='tip') == ('green', '')
+    responses = [json.dumps({'headRefOid': 'tip'}), json.dumps({'workflow_runs': runs})]
+    responses.extend(json.dumps({'jobs': run_jobs}) for run_jobs in jobs)
+    gh.call = Mock(side_effect=responses)
+    assert gh.checks('example/repo', 1, expected='tip') == expected
+    assert gh.call.call_args_list[1].args == (
+        'example/repo', 'api', 'repos/example/repo/actions/runs?head_sha=tip&per_page=100')
+    for index, run in enumerate(runs, start=2):
+        assert gh.call.call_args_list[index].args == (
+            'example/repo', 'api', f"repos/example/repo/actions/runs/{run['id']}/jobs?per_page=100")
+
+
+def test_gh_api_uses_per_call_token_without_repo_flag(delivery, monkeypatch):
+    calls = []
+    def run(args, **kwargs):
+        calls.append((args, kwargs))
+        return subprocess.CompletedProcess(args, 0, '{}', '')
+    monkeypatch.setattr(subprocess, 'run', run)
+    GitHub().call('example/repo', 'api', 'repos/example/repo/actions/runs')
+    assert calls[0][0] == ['gh', 'api', 'repos/example/repo/actions/runs']
+    assert calls[0][1]['env']['GH_TOKEN'] == delivery['secret']
 
 
 def test_fenced_merge_uses_match_head_and_rejects_replaced_head():

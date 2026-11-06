@@ -231,7 +231,8 @@ Provision `/etc/factory/github-token` and `/etc/factory/runner.env` privately, w
 owner root:root and mode 0600. Never put their contents in a command line, shell
 history, checkout, terminal recording, run folder or notice. The GitHub file is
 only the fine-grained token. Allow Contents read/write and Pull requests read/write
-on the intended repositories, plus read access to checks needed by `gh`.
+on the intended repositories, plus Actions read access for CI results. Fine-grained
+tokens do not offer a Checks permission.
 No `gh auth login`, credential store, authenticated remote URL or Git config
 contains this token. Each authenticated delivery call gets it in its environment;
 Git obtains it from a helper for that call. Git/gh failure diagnostics are

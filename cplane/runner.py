@@ -161,7 +161,8 @@ class GitHub:
 
     def call(self, repo, *args):
         options = {'env': fence.github_environment(), 'cwd': '/'} if fenced() else {}
-        result = subprocess.run(['gh', *args, '-R', repo], text=True, capture_output=True, **options)
+        command = ['gh', *args] if args and args[0] == 'api' else ['gh', *args, '-R', repo]
+        result = subprocess.run(command, text=True, capture_output=True, **options)
         if result.returncode:
             if fenced():
                 raise state.StateError('gh operation failed')
@@ -187,11 +188,32 @@ class GitHub:
         return newest['number']
 
     def checks(self, repo, number, expected=None):
-        fields = 'statusCheckRollup,headRefOid' if expected else 'statusCheckRollup'
-        info = json.loads(self.call(repo, 'pr', 'view', str(number), '--json', fields))
         if expected:
+            info = json.loads(self.call(repo, 'pr', 'view', str(number), '--json', 'headRefOid'))
             if info['headRefOid'] != expected:
                 raise state.StateError('PR head differs from delivered bundle')
+            info = json.loads(self.call(repo, 'api', f'repos/{repo}/actions/runs?head_sha={expected}&per_page=100'))
+            runs = info['workflow_runs']
+            jobs = []
+            for run in runs:
+                info = json.loads(self.call(repo, 'api', f"repos/{repo}/actions/runs/{run['id']}/jobs?per_page=100"))
+                jobs.extend(info['jobs'])
+            passed = {job['name'] for job in jobs
+                      if job['status'] == 'completed' and job['conclusion'] == 'success'}
+            pending = not runs or not passed or any(run['status'] != 'completed' for run in runs)
+            for job in jobs:
+                if job['status'] != 'completed':
+                    pending = True
+                    continue
+                conclusion = job['conclusion']
+                if conclusion == 'cancelled' and job['name'] in passed:
+                    continue
+                if conclusion in ('failure', 'cancelled', 'timed_out', 'action_required', 'startup_failure'):
+                    return 'red', job['name']
+                if conclusion not in ('success', 'neutral', 'skipped'):
+                    pending = True
+            return ('pending' if pending else 'green'), ''
+        info = json.loads(self.call(repo, 'pr', 'view', str(number), '--json', 'statusCheckRollup'))
         pending = False
         rollup = info['statusCheckRollup']
         # A stalled hosted runner is cancelled on one of two runs; the other run may pass.
@@ -205,8 +227,6 @@ class GitHub:
                 return 'red', check.get('name') or check.get('context', 'check')
             if conclusion not in ('SUCCESS', 'NEUTRAL', 'SKIPPED'):
                 pending = True
-        if expected and not passed:
-            pending = True
         return ('pending' if pending else 'green'), ''
 
     def is_open(self, repo, number):
