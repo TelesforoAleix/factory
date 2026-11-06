@@ -11,7 +11,7 @@ rebuild. No secret belongs in either build context or image layer.
 ## Install after merge
 
 The orchestrator runs these commands on Ubuntu from a reviewed Factory checkout.
-Docker Engine, Compose, git and Python 3.13 must already be installed. Reserve
+Docker Engine, Compose, git and Python 3 must already be installed. Reserve
 UID/GID **21000** exclusively for Factory data. Stop if either is already assigned
 to another account. The proxy uses numeric UID/GID 21001 internally, without host
 files or a host account.
@@ -36,7 +36,7 @@ sudo install -o root -g root -m 0755 node/check-fence.py /opt/factory/node/check
 sudo docker build -t factory-cli:1 /opt/factory/node/cli
 sudo docker compose -f /opt/factory/node/compose.yaml build
 sudo docker compose -f /opt/factory/node/compose.yaml up -d --no-build
-sudo python3.13 /opt/factory/node/check-fence.py
+sudo python3 /opt/factory/node/check-fence.py
 ```
 
 Keep the launcher, installed stack and parent folders root-owned and unwritable
@@ -174,7 +174,7 @@ Docker administrators remain trusted. Limits apply per run, not to total host us
 ```sh
 uv run pytest
 sudo docker compose -f /opt/factory/node/compose.yaml config --quiet
-sudo python3.13 /opt/factory/node/check-fence.py
+sudo python3 /opt/factory/node/check-fence.py
 ```
 
 The network check uses no credentials. Under sealing flags on the internal net,
