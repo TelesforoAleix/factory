@@ -230,7 +230,7 @@ history, checkout, terminal recording, run folder or notice. The GitHub file is
 only the fine-grained token. Allow Contents read/write and Pull requests read/write
 on the intended repositories, plus read access to checks needed by `gh`.
 No `gh auth login`, credential store, authenticated remote URL or Git config
-contains this token. Each authenticated host call gets it in its environment;
+contains this token. Each authenticated delivery call gets it in its environment;
 Git obtains it from a helper for that call. Git/gh failure diagnostics are
 suppressed before they can reach state, logs or notices, like database diagnostics.
 
@@ -252,6 +252,8 @@ with `git pull --ff-only` before reading relative briefs. No state or notices ar
 committed there. A failed pull stops the pass. Provision this clone separately;
 never use an agent's working copy as the anchor. Database provisioning/migration
 and import remain the orchestrator's existing process; do not import twice.
+In fenced mode a slice's `repo` must be `owner/name`; the root-owned briefs clone
+reads with its own deploy key set in its local `core.sshCommand`, never the GitHub token.
 
 The service is a root oneshot triggered every 300 seconds. Its detached turn
 supervisors survive the end of a pass (`KillMode=process`), as under launchd.
@@ -294,7 +296,7 @@ exports the branch in the offline container, snapshots the bundle as a regular
 file, fetches it into the clean clone with `transfer.fsckObjects=true`, checks the
 pinned branch/default/base, then pushes and opens the PR. Host Git never reads
 config, hooks, branches, status or logs from an agent's copy. In fenced mode
-tidying is skipped. CI must include a successful `test` check on the delivered
+tidying is skipped. CI must include a successful check on the delivered
 head. A stop-before-merge slice still awaits owner approval. The runner merges
 only that head and resumes the same session with `merged as <sha>`.
 Fenced capacity counts live jobs even when their slice is paused. An issued

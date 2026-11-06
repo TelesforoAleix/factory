@@ -326,13 +326,22 @@ def test_gh_token_is_only_in_call_environment_and_error_is_redacted(delivery, mo
     assert options['cwd'] == '/'
 
 
-def test_fenced_checks_wait_for_test_and_bind_to_delivered_head(monkeypatch):
+def test_fenced_checks_wait_for_registration_and_bind_to_delivered_head():
     gh = GitHub()
     gh.call = Mock(return_value='{"headRefOid":"tip","statusCheckRollup":[]}')
     assert gh.checks('example/repo', 1, expected='tip') == ('pending', '')
     gh.call = Mock(return_value='{"headRefOid":"other"}')
     with pytest.raises(state.StateError, match='PR head differs'):
         gh.checks('example/repo', 1, expected='tip')
+
+
+@pytest.mark.parametrize('names', [['compose'], ['deployment'], ['frontend'], ['python'],
+                                 ['compose', 'deployment', 'frontend', 'python']])
+def test_fenced_checks_are_green_with_other_job_names(names):
+    gh = GitHub()
+    gh.call = Mock(return_value=json.dumps(dict(
+        headRefOid='tip', statusCheckRollup=[dict(name=name, conclusion='SUCCESS') for name in names])))
+    assert gh.checks('example/repo', 1, expected='tip') == ('green', '')
 
 
 def test_fenced_merge_uses_match_head_and_rejects_replaced_head():
@@ -455,18 +464,36 @@ def test_fenced_tidy_never_invokes_git(monkeypatch, tmp_path):
     run.assert_not_called()
 
 
-def test_postgres_fenced_pass_pulls_briefs_ff_only(delivery, monkeypatch):
+@pytest.mark.parametrize('code', [0, 1])
+def test_postgres_fenced_pass_pulls_briefs_ff_only(delivery, monkeypatch, code):
     d = delivery
     folder = d['root'] / 'briefs'
     folder.mkdir()
     (folder / '.git').mkdir()
+    config = folder / '.git/config'
+    deploy_config = '[core]\n\tsshCommand = ssh -i /synthetic/briefs-deploy-key\n'
+    config.write_text(deploy_config)
     monkeypatch.setattr(state, 'postgres', lambda: True)
-    run = Mock(return_value=subprocess.CompletedProcess([], 0, '', ''))
+    monkeypatch.setenv('GH_TOKEN', d['secret'])
+    monkeypatch.setattr(fence, 'github_environment', Mock(side_effect=AssertionError('briefs must not use the token')))
+    trusted = Mock(wraps=fence.trusted_directory)
+    monkeypatch.setattr(fence, 'trusted_directory', trusted)
+    run = Mock(return_value=subprocess.CompletedProcess([], code, 'private diagnostics', 'private diagnostics'))
     monkeypatch.setattr(subprocess, 'run', run)
-    Git().pull(folder / 'slices.json')
+    if code:
+        with pytest.raises(state.StateError) as error:
+            Git().pull(folder / 'slices.json')
+        assert str(error.value) == 'briefs fast-forward pull failed'
+    else:
+        Git().pull(folder / 'slices.json')
+    trusted.assert_called_once_with(folder)
     args = run.call_args.args[0]
-    assert args[-2:] == ['pull', '--ff-only']
-    assert 'core.hooksPath=/dev/null' in args
+    assert args == ['git', '-C', str(folder), '-c', 'core.hooksPath=/dev/null',
+                    '-c', 'core.fsmonitor=false', 'pull', '--ff-only']
+    assert not any('credential.helper' in arg or 'core.sshCommand' in arg for arg in args)
+    assert run.call_args.kwargs['env'] == fence.host_environment()
+    assert 'GH_TOKEN' not in run.call_args.kwargs['env']
+    assert config.read_text() == deploy_config
     assert d['secret'] not in str(args)
     Git().pull(d['root'] / 'not-a-clone/slices.json')
     assert run.call_count == 1

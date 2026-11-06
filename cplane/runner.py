@@ -121,9 +121,11 @@ class Git:
     def pull(self, path):
         if state.postgres():
             if fenced() and (path.parent / '.git').exists():
-                result = subprocess.run(['git', '-C', str(path.parent), *fence.git_options(),
+                fence.trusted_directory(path.parent)
+                result = subprocess.run(['git', '-C', str(path.parent),
+                                         '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false',
                                          'pull', '--ff-only'], capture_output=True, text=True,
-                                        env=fence.github_environment())
+                                        env=fence.host_environment())
                 if result.returncode:
                     raise state.StateError('briefs fast-forward pull failed')
             return
@@ -203,7 +205,7 @@ class GitHub:
                 return 'red', check.get('name') or check.get('context', 'check')
             if conclusion not in ('SUCCESS', 'NEUTRAL', 'SKIPPED'):
                 pending = True
-        if expected and 'test' not in passed:
+        if expected and not passed:
             pending = True
         return ('pending' if pending else 'green'), ''
 
