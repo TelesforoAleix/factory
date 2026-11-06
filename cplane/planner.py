@@ -13,7 +13,7 @@ TRANSITIONS = {
     "accepted": set(),
 }
 KINDS = ("question", "escalation", "merge", "node-step", "owner-check")
-FIELDS = ("repo", "feature", "title", "brief", "stop_before_merge", "depends_on")
+FIELDS = ("flow", "repo", "feature", "title", "brief", "stop_before_merge", "depends_on")
 
 
 def new_slice(slice_id):

@@ -1,7 +1,7 @@
 """Build queue task files from a validated plan and unmodified brief rules."""
 import json
 import os
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 import re
 import subprocess
 from importlib.resources import files
@@ -18,17 +18,27 @@ TEST_LINE = "Failing tests are in the repository and must pass; do not edit test
 def sections(brief, slice_id):
     lines = brief.splitlines(keepends=True)
     starts = []
+    headings = []
+    fence = None
     heading = re.compile(r"^##[ \t]+(Fixed decisions|Do not)", re.IGNORECASE)
     for i, line in enumerate(lines):
+        marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line.rstrip("\r\n"))
+        if fence:
+            if marker and marker[1][0] == fence[0] and len(marker[1]) >= len(fence) and not marker[2].strip():
+                fence = None
+            continue
+        if marker:
+            fence = marker[1]
+            continue
+        if re.match(r"^#{1,2}[ \t]+", line):
+            headings.append(i)
         if heading.match(line.rstrip("\r\n")):
             starts.append(i)
     if not starts:
         raise StateError(f"{slice_id}: brief has neither Fixed decisions nor Do not section")
     result = []
     for start in starts:
-        end = start + 1
-        while end < len(lines) and not re.match(r"^#{1,2}[ \t]+", lines[end]):
-            end += 1
+        end = next((i for i in headings if i > start), len(lines))
         result.append("".join(lines[start:end]))
     return "\n\n".join(result)
 
@@ -100,3 +110,51 @@ def submit(task_file):
     if not isinstance(ids, list) or len(ids) != len(task_file["tasks"]) or any(not isinstance(x, (str, int)) or isinstance(x, bool) or str(x).strip() == "" for x in ids):
         raise StateError("submit command returned invalid task ids; submission may have succeeded")
     return ids
+
+
+def skills_version(root=None):
+    root = Path(root) if root is not None else Path(__file__).resolve().parent.parent
+    # Do not accidentally use an enclosing checkout for an archive installation.
+    if not (root / ".git").exists():
+        try:
+            revision = (root / "REVISION").read_text().strip()
+        except OSError:
+            raise StateError("skills version requires REVISION outside a git checkout") from None
+        if not revision or "\n" in revision or "\r" in revision:
+            raise StateError("invalid REVISION")
+        return revision
+    status = subprocess.run(["git", "-C", str(root), "status", "--porcelain", "--", "skills"], capture_output=True, text=True)
+    revision = subprocess.run(["git", "-C", str(root), "log", "-1", "--format=%H", "HEAD", "--", "skills"], capture_output=True, text=True)
+    if status.returncode or status.stdout or revision.returncode or not revision.stdout.strip():
+        raise StateError("skills must be committed in a git checkout before submission")
+    return revision.stdout.strip()
+
+
+def status(slice_id):
+    try:
+        argv = json.loads(os.environ.get("CPLANE_TASK_STATUS", ""))
+    except ValueError:
+        raise StateError("CPLANE_TASK_STATUS must be a JSON argument list") from None
+    if not isinstance(argv, list) or not argv or any(not isinstance(arg, str) or not arg for arg in argv):
+        raise StateError("CPLANE_TASK_STATUS must be a JSON argument list")
+    try:
+        result = subprocess.run([*argv, slice_id], text=True, capture_output=True)
+    except (OSError, ValueError):
+        raise StateError("status command could not run") from None
+    if result.returncode:
+        raise StateError("status command failed")
+    try:
+        tickets = json.loads(result.stdout)
+        if not isinstance(tickets, list):
+            raise ValueError
+        for position, ticket in enumerate(tickets, 1):
+            if (not isinstance(ticket, dict) or ticket.get("position") != position
+                    or isinstance(ticket.get("position"), bool)
+                    or ticket.get("status") not in ("queued", "running", "done", "failed", "escalated")
+                    or not isinstance(ticket.get("id"), (str, int)) or isinstance(ticket["id"], bool)
+                    or not str(ticket["id"]).strip() or not isinstance(ticket.get("title"), str)
+                    or "reason" not in ticket or not isinstance(ticket["reason"], (str, type(None)))):
+                raise ValueError
+    except (ValueError, TypeError):
+        raise StateError("status command returned invalid tickets") from None
+    return tickets

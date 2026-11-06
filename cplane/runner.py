@@ -1,5 +1,6 @@
 """One locked scheduling pass. Adapters keep external effects fakeable."""
 from datetime import datetime, timedelta
+from importlib.resources import files
 import hashlib
 import json
 import os
@@ -15,6 +16,7 @@ from . import state
 from .orders import Collector
 from .executors import Processes, atomic_json, CLAUDE_PARAGRAPH, FENCE_PARAGRAPH, fenced
 from . import fence
+from . import cut as cutter
 from .text_bounds import ATTENTION_LIMIT, LOG_LIMIT, cut, cut_line
 from .times import now
 
@@ -351,6 +353,8 @@ class Runner:
         return (self.repos / name).resolve()
 
     def launch(self, item, prompt, resume=False):
+        if item.get("flow", "cli") == "tickets" and not self.fenced:
+            raise state.StateError("tickets flow needs fenced mode; needs attention")
         reason = self.room(item)
         if reason:
             self.defer(item, reason)
@@ -377,10 +381,20 @@ class Runner:
                 raise state.StateError(f'missing repository: {folder}')
         run = self.runs / uuid.uuid4().hex
         run.mkdir(parents=True, mode=0o700)
+        cut_turn = item.get('flow', 'cli') == 'tickets'
+        brief = previous.get('brief', '') if resume and previous else prompt
+        skills = previous.get('skills') if resume and previous else None
+        if cut_turn and not resume:
+            skills = cutter.skills_version()
+            prompt = files('skills').joinpath('cut.md').read_text() + brief
         if self.fenced:
             prompt += (f'\n\nRunner assignment: use branch {metadata["branch"]}. '
                        f'This assigned branch overrides any branch named in the brief. '
-                       f'The pinned base commit is {metadata["base"]}.' + FENCE_PARAGRAPH)
+                       f'The pinned base commit is {metadata["base"]}.' + (
+                           '\nCommit the tests on the assigned branch. End with kind "waiting", '
+                           'with the plan in a fenced JSON block matching schema/plan.schema.json. '
+                           'The runner delivers the commit and submits the tickets.'
+                           if cut_turn else FENCE_PARAGRAPH))
         elif tool == 'claude' and not resume:
             prompt += CLAUDE_PARAGRAPH
         job = {'id': item['id'], 'repo': str(folder), 'run': str(run), 'tool': tool,
@@ -389,6 +403,10 @@ class Runner:
                'resume': item['session']['id'] if resume else None, 'phase': 'running'}
         if self.fenced:
             job.update(metadata, fence=True)
+        if cut_turn:
+            job.update(brief=brief, skills=skills)
+        if resume and previous and previous.get('sha'):
+            job['sha'] = previous['sha']
         # Persist intent before starting; an ambiguous handoff reserves a slot.
         if resume and previous and previous.get('noticed') is not None:
             job['noticed'] = previous['noticed']
@@ -499,6 +517,31 @@ class Runner:
             self.log(item, 'finished', True)
         elif final['kind'] in ('question', 'escalation'):
             self.attention(item, final['kind'], final['body'])
+        elif self.fenced and job.get('sha'):
+            # A post-merge turn only collects replies; it can never publish again.
+            self.attention(item, 'node-step', final['body'])
+        elif item.get('flow', 'cli') == 'tickets' and final['kind'] == 'waiting':
+            match = re.match(r'\s*```(?:json)?[ \t]*\n(.*?)\n```', final['body'], re.S)
+            try:
+                plan = json.loads(match[1]) if match else None
+            except ValueError:
+                raise state.StateError('invalid plan: expected fenced JSON') from None
+            cutter.validate_plan(plan)
+            if not self.fenced:
+                raise state.StateError('tickets flow needs fenced mode; needs attention')
+            # Validate brief rules before publishing anything.
+            cutter.sections(job['brief'], item['id'])
+            tickets = cutter.status(item['id'])
+            if tickets:
+                # Workers may already have advanced the branch; only follow it.
+                self.follow_tickets(item, job, tickets)
+            else:
+                job['tip'] = job.get('tip') or self.fence.publish(job, {'branch': job['branch']})
+                job['task_file'] = cutter.build_task_file(item['id'], item['repo'], job['branch'],
+                                                         job['tip'], plan, job['brief'])
+                job['phase'] = 'cut-ready'
+                self.save_job(job)
+                self.submit_tickets(item, job)
         elif (not self.fenced and job['tool'] == 'codex' and final['kind'] == 'waiting'
               and (job.get('pr') or (item['pr'] is not None
                    and self.github.is_open(self.github_repo(item), item['pr'])))):
@@ -532,6 +575,45 @@ class Runner:
         self.log(item, 'collected turn: ' + Path(job['run']).name)
         self.save_job(job)
 
+    def ticket_attention(self, item, kind, body):
+        body = cut(body, ATTENTION_LIMIT)
+        existing = item['attention']
+        if not existing or existing['kind'] != kind or existing['body'] != body:
+            self.attention(item, kind, body)
+
+    def follow_tickets(self, item, job, tickets):
+        job['phase'] = 'tickets'
+        self.save_job(job)
+        failed = next((t for t in tickets if t['status'] in ('failed', 'escalated')), None)
+        if failed:
+            self.ticket_attention(item, 'escalation', f"ticket {failed['id']} ({failed['title']}): {failed['status']}: {failed['reason'] or ''}")
+        elif tickets and all(t['status'] == 'done' for t in tickets):
+            self.ticket_attention(item, 'node-step', 'tickets done')
+        elif not tickets:
+            self.ticket_attention(item, 'escalation', 'tickets missing from queue; needs attention')
+
+    def submit_tickets(self, item, job):
+        tickets = cutter.status(item['id'])
+        if tickets:
+            self.follow_tickets(item, job, tickets)
+            return
+        if job['phase'] != 'cut-ready':
+            self.ticket_attention(item, 'escalation', 'ticket submission failed or interrupted; will not retry')
+            return
+        # Durable before the external call: even a crash or invalid reply cannot retry.
+        job['phase'] = 'submitting'
+        self.save_job(job)
+        try:
+            ids = cutter.submit(job['task_file'])
+        except Exception:
+            job['phase'] = 'submit-failed'
+            self.save_job(job)
+            raise
+        job['phase'], job['ticket_ids'] = 'tickets', ids
+        self.save_job(job)
+        self.log(item, f"cut-submit: skills {job['skills']}")
+        self.log(item, f'Submitted {len(ids)} tickets: ' + json.dumps(ids), True)
+
     def merge(self, item, job):
         options = {'expected': job['tip']} if self.fenced else {}
         sha = self.github.merge(self.github_repo(item), item['pr'], **options)
@@ -547,6 +629,8 @@ class Runner:
     def deliver(self, item):
         job = self.jobs.get(item['id'])
         attention = item['attention']
+        if job and job['phase'] in ('cut-ready', 'submitting', 'submit-failed', 'tickets'):
+            return
         if (job and job['phase'] == 'usage-limit-wait' and not attention
                 and not item['paused']
                 and self.instant.timestamp() >= job['reset_at']):
@@ -637,6 +721,15 @@ class Runner:
                         if bool(job.get('fence')) != self.fenced:
                             raise state.StateError('run mode differs from saved job; needs attention')
                         phase_before = job['phase']
+                        if phase_before in ('cut-ready', 'submitting', 'submit-failed', 'tickets'):
+                            if item['state'] == 'ready':
+                                item['state'] = 'issued'
+                            item['session'] = {'tool': job['tool'], 'id': job['session'], 'folder': job['repo']}
+                            if phase_before == 'tickets':
+                                self.follow_tickets(item, job, cutter.status(item['id']))
+                            elif phase_before != 'cut-ready' or (not item['attention'] and not item['paused']):
+                                self.submit_tickets(item, job)
+                            continue
                         if (phase_before in ('merged', 'node-step')
                                 and not any(e['event'] == 'merged: ' + job['sha'] for e in item['log'])):
                             self.log(item, 'merged: ' + job['sha'], True)
