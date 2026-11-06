@@ -1,0 +1,131 @@
+#!/usr/bin/env python3.13
+"""Host-side CLI fence. Argument construction is pure apart from path metadata checks."""
+import argparse
+import os
+from pathlib import Path
+import stat
+import subprocess
+import sys
+
+UID = GID = 21000
+WORK_ROOT = Path('/srv/factory/work')
+RUN_ROOT = Path('/srv/factory/runs')
+LOGIN_ROOT = Path('/srv/factory/logins')
+IMAGE = 'factory-cli:1'
+NETWORK = 'factory-cli'
+TOOLS = ('claude', 'codex')
+
+
+def real_directory(path):
+    """Check every component before resolution; never follow a symlink."""
+    path = Path(path)
+    if (not path.is_absolute() or '..' in path.parts
+            or any(c in str(path) for c in ',\n\r\x00')):
+        raise ValueError('expected an absolute, unambiguous directory path')
+    for component in [*reversed(path.parents), path]:
+        if not stat.S_ISDIR(component.lstat().st_mode):
+            raise ValueError('directory path contains a symlink or non-directory')
+    return path
+
+
+def within(path, root):
+    path = real_directory(path)
+    if path == root or not path.is_relative_to(root):
+        raise ValueError('directory is outside its allowed root')
+    return path
+
+
+def docker_arguments(tool, *, repo=None, run=None, command=(), login=False):
+    """Return docker run as plain data; no shell and no host environment forwarding."""
+    if tool not in TOOLS:
+        raise ValueError('unknown tool')
+    credentials = real_directory(LOGIN_ROOT / tool)
+    info = credentials.stat()
+    if (stat.S_IMODE(info.st_mode) != 0o700 or info.st_uid != UID or info.st_gid != GID):
+        raise ValueError('login directory must be owned by 21000:21000 with mode 0700')
+    args = ['docker', 'run', '--rm', '--pull', 'never', '--init',
+            '--user', f'{UID}:{GID}', '--cap-drop', 'ALL',
+            '--security-opt', 'no-new-privileges', '--read-only',
+            '--tmpfs', '/tmp:rw,exec,nosuid,nodev,size=512m,mode=1777',
+            '--tmpfs', f'/home/agent:rw,exec,nosuid,nodev,size=512m,uid={UID},gid={GID},mode=0700',
+            '--memory', '4g', '--memory-swap', '4g', '--cpus', '2',
+            '--pids-limit', '256', '--log-driver', 'none', '--network', NETWORK,
+            '--mount', f'type=bind,src={credentials},dst=/login']
+    environment = {
+        'HOME': '/home/agent', 'XDG_CONFIG_HOME': '/login/xdg',
+        'HTTP_PROXY': 'http://cli-proxy:8888', 'HTTPS_PROXY': 'http://cli-proxy:8888',
+        'http_proxy': 'http://cli-proxy:8888', 'https_proxy': 'http://cli-proxy:8888',
+        'NO_PROXY': '', 'no_proxy': '',
+    }
+    if tool == 'claude':
+        environment.update(CLAUDE_CONFIG_DIR='/login', DISABLE_AUTOUPDATER='1',
+                           CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC='1',
+                           ENABLE_CLAUDEAI_MCP_SERVERS='false')
+    else:
+        environment['CODEX_HOME'] = '/login'
+    for key, value in environment.items():
+        args += ['--env', f'{key}={value}']
+    if login:
+        if repo is not None or run is not None or command:
+            raise ValueError('login takes only a tool')
+        args += ['--interactive', '--tty', '--workdir', '/home/agent']
+        command = ([tool, 'auth', 'login'] if tool == 'claude' else
+                   [tool, '-c', 'cli_auth_credentials_store="file"', 'login', '--device-auth'])
+    else:
+        repo = within(repo, WORK_ROOT)
+        run = within(run, RUN_ROOT)
+        if not command:
+            raise ValueError('run requires a command after --')
+        args += ['--mount', f'type=bind,src={repo},dst=/work',
+                 '--mount', f'type=bind,src={run},dst=/run/factory', '--workdir', '/work']
+        command = list(command)
+        # Disable the CLI sandbox: this sealed container supplies the sandbox.
+        if command[0] != tool:
+            raise ValueError('command must start with the named tool')
+        if tool == 'codex':
+            if command[1:2] != ['exec']:
+                raise ValueError('non-interactive Codex runs require codex exec')
+            command[1:1] = ['--dangerously-bypass-approvals-and-sandbox',
+                            '-c', 'cli_auth_credentials_store="file"']
+        else:
+            options = command[1:command.index('--')] if '--' in command else command[1:]
+            if '-p' not in options and '--print' not in options:
+                raise ValueError('non-interactive Claude runs require -p or --print')
+            command[1:1] = ['--dangerously-skip-permissions', '--settings',
+                            '{"sandbox":{"enabled":false}}']
+    return [*args, IMAGE, *command]
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest='action', required=True)
+    execute = sub.add_parser('run')
+    execute.add_argument('--tool', choices=TOOLS, required=True)
+    execute.add_argument('--repo', required=True)
+    execute.add_argument('--run', required=True)
+    execute.add_argument('command', nargs=argparse.REMAINDER)
+    authenticate = sub.add_parser('login')
+    authenticate.add_argument('tool', choices=TOOLS)
+    options = parser.parse_args(argv)
+    try:
+        login = options.action == 'login'
+        if login:
+            if not sys.stdin.isatty() or not sys.stdout.isatty():
+                raise ValueError('login requires the owner terminal')
+            args = docker_arguments(options.tool, login=True)
+        else:
+            if options.command[:1] != ['--']:
+                raise ValueError('run requires -- before the command')
+            args = docker_arguments(options.tool, repo=options.repo, run=options.run,
+                                    command=options.command[1:])
+        return subprocess.run(args, stdin=None if login else subprocess.DEVNULL,
+                              check=False).returncode
+    except (ValueError, OSError):
+        # Do not echo arguments, environment, or potentially sensitive OS error text.
+        print('factory-cli: refused; check paths, login ownership/mode, command and Docker availability',
+              file=sys.stderr)
+        return 2
+
+
+if __name__ == '__main__':
+    sys.exit(main())
