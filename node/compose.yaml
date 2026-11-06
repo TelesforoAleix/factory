@@ -1,0 +1,24 @@
+name: factory
+services:
+  cli-proxy:
+    image: factory-proxy:1
+    build: ./proxy
+    networks:
+      cli:
+        aliases: [cli-proxy]
+      egress: {}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+    restart: unless-stopped
+    logging:
+      driver: none
+networks:
+  cli:
+    name: factory-cli
+    internal: true
+  egress:
+    name: factory-egress

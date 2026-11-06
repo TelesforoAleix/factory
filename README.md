@@ -486,3 +486,6 @@ D=/Library/LaunchDaemons/com.cplane.primer-wake.plist
 sudo launchctl bootout system "$D"
 sudo rm "$D"
 ```
+
+Factory's independent node CLI container stack, installation and security limits
+are documented in [docs/node.md](docs/node.md). Runner integration is a later slice.
