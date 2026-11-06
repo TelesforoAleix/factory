@@ -350,13 +350,14 @@ def test_fenced_merge_uses_match_head_and_rejects_replaced_head():
 
 
 @pytest.mark.parametrize('unknown', [False, True])
-def test_fenced_repository_capacity_uses_repository_identity(make_state, monkeypatch, unknown):
+@pytest.mark.parametrize('paused', [False, True])
+def test_fenced_repository_capacity_uses_repository_identity(make_state, monkeypatch, unknown, paused):
     monkeypatch.setenv('CPLANE_FENCE', '1')
     runner = Runner(make_state(), git=Mock())
     runner.data = state.load(runner.path)
     item = runner.data['slices'][0]
     other = copy.deepcopy(item)
-    other.update(id='voice/W0', state='issued', repo='EXAMPLE/REPO')
+    other.update(id='voice/W0', state='issued', repo='EXAMPLE/REPO', paused=paused)
     runner.data['slices'].append(other)
     runner.jobs = {} if unknown else {other['id']: dict(id=other['id'], phase='running',
                                                      repo='/srv/factory/work/unrelated-path', repository='EXAMPLE/REPO')}

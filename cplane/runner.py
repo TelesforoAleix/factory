@@ -306,11 +306,11 @@ class Runner:
     def room(self, item):
         paused = {s['id'] for s in self.data['slices'] if s['paused']}
         active = [j for j in self.jobs.values()
-                  if j['phase'] == 'running' and j['id'] not in paused]
+                  if j['phase'] == 'running' and (self.fenced or j['id'] not in paused)]
         # An issued session whose local run files are missing still occupies a slot.
         unknown = [s for s in self.data['slices'] if s['id'] not in self.jobs
-                   and s['state'] in ('issued', 'awaiting handover') and not s['attention']
-                   and not s['paused']]
+                   and s['state'] in ('issued', 'awaiting handover')
+                   and (self.fenced or (not s['attention'] and not s['paused']))]
         running = sorted([j['id'] for j in active] + [s['id'] for s in unknown])
         if len(running) >= 2:
             return f"deferred: executor limit (running: {', '.join(running)})"

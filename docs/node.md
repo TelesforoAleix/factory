@@ -297,6 +297,9 @@ config, hooks, branches, status or logs from an agent's copy. In fenced mode
 tidying is skipped. CI must include a successful `test` check on the delivered
 head. A stop-before-merge slice still awaits owner approval. The runner merges
 only that head and resumes the same session with `merged as <sha>`.
+Fenced capacity counts live jobs even when their slice is paused. An issued
+slice with missing local job metadata also reserves capacity until reconciled;
+pause/attention does not prove that its container has stopped.
 
 Usage gates read Codex's `sessions/**/*.jsonl` under
 `/srv/factory/logins/codex` and Claude's `usage-now.json` under
