@@ -129,3 +129,12 @@ def test_malformed_review_rejected(make_state, slice_data, review):
     slice_data['attention'] = dict(attention('merge'), review=review)
     with pytest.raises(state.StateError, match='invalid state'):
         state.load(make_state())
+
+
+def test_slice_final_is_optional_and_validated(make_state, slice_data):
+    from cplane import state
+    path = make_state()
+    assert 'final' not in state.load(path)['slices'][0]
+    slice_data['final'] = {'kind': 'handover', 'body': 'done', 'at': '2026-01-01T00:00:00Z'}
+    state.save(path, {'version': 1, 'slices': [slice_data]})
+    assert state.load(path)['slices'][0]['final'] == slice_data['final']

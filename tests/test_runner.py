@@ -13,7 +13,7 @@ from cplane import agent, state
 from cplane.cli import main
 from cplane.executors import CLAUDE_PARAGRAPH, Processes, command
 from cplane.runner import Runner, Git, GitHub
-from cplane.text_bounds import TAIL_LIMIT
+from cplane.text_bounds import ATTENTION_LIMIT, TAIL_LIMIT, cut as cut_text
 
 NOW = datetime(2026, 10, 16, 10, tzinfo=timezone.utc)
 
@@ -283,6 +283,7 @@ def test_collect(setup, kind, expected_state, attention):
     p.finish(kind, 'body')
     r.run()
     assert item(r)['state'] == expected_state
+    assert item(r).get('final') == (dict(kind=kind, body='body', at=NOW.isoformat()) if kind else None)
     a = item(r)['attention']
     assert (a['kind'] if a else None) == attention
     if kind is None:
@@ -290,6 +291,17 @@ def test_collect(setup, kind, expected_state, attention):
         assert a['body'].count('line') == 40
     elif a:
         assert a['body'] == 'body'
+
+
+def test_collected_final_replaces_previous_and_bounds_body(setup):
+    r, p, _ = setup
+    edit(r, lambda s: s.update(final={'kind': 'waiting', 'body': 'old', 'at': NOW.isoformat()}))
+    r.run()
+    body = 'x' * (ATTENTION_LIMIT + 100)
+    p.finish('question', body)
+    r.run()
+    assert item(r)['final'] == {'kind': 'question', 'body': cut_text(body, ATTENTION_LIMIT), 'at': NOW.isoformat()}
+    assert len(item(r)['final']['body']) <= ATTENTION_LIMIT
 
 
 @pytest.mark.parametrize('kind', ['question', 'escalation'])
