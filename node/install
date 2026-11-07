@@ -12,7 +12,8 @@ import tempfile
 TARGET = Path('/opt/factory')
 BIN = Path('/usr/local/bin')
 SYSTEMD = Path('/etc/systemd/system')
-PROTECTED = ('node/cli', 'node/proxy', 'node/compose.yaml', 'node/check-fence.py')
+PROTECTED = ('node/cli', 'node/proxy', 'node/compose.yaml', 'node/check-fence.py',
+             'node/bin/factory-cli')
 
 
 def run(*args, **kwargs):
@@ -75,6 +76,8 @@ def install(stage, commit):
         names = set(p.name for p in old.iterdir()) if old.exists() else set()
         names |= set(p.name for p in new.iterdir()) if new.exists() else set()
         for name in sorted(names):
+            if str(Path(source) / name) in PROTECTED:
+                continue
             a, b = old / name, new / name
             if files(a) != files(b):
                 if b.exists() and not b.is_file():
