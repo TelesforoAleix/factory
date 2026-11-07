@@ -1080,3 +1080,52 @@ automatically replayed. Inspect status with
 service health before resolving an escalation. Finished units and private result
 files may be cleaned up by the operator after their result has been consumed.
 Installations are never requested automatically after a merge.
+
+## Project skills
+
+Skills live only in reviewed `skills/<name>.md` files. Their first line is
+`--- {"name": "<name>", "description": "<short description>"}`; the remaining
+lines contain instructions. Names use lowercase letters, digits and hyphens.
+New skills arrive through a PR. Nothing writes to this directory at runtime.
+
+After merging, the orchestrator installs the reviewed revision with the existing
+node procedure, runs `sudo factory-cplane migrate`, and runs
+`sudo factory-cplane skill list`. Restart the runner and sessions service with
+the new installation. Migration 008 adds project switches and session snapshots.
+
+```sh
+sudo factory-cplane skill list
+sudo factory-cplane skill list --project FAC
+sudo factory-cplane skill on grilling FAC
+sudo factory-cplane skill off grilling FAC
+```
+
+The unfiltered list includes name, description, version and the enabled project
+keys. A project-filtered list contains only skills enabled for that project.
+Commands require Postgres. Unknown skills and project keys are refused.
+With no switch row, `cut`, `slice-review` and `grilling` are enabled; other
+skills are disabled. Explicit off rows override the defaults. New projects
+inherit the same defaults.
+
+A chat's project comes from a single repository with one matching project.
+No repository, multiple repositories, unknown repositories and ambiguous matches
+use only the defaults. The first claimed turn saves the enabled names and
+revision on the session. A fresh workspace gets those skills under
+`.claude/skills/<name>/SKILL.md`, with standard YAML frontmatter for Claude,
+and a short list with paths in `AGENTS.md` for Codex. Switch changes affect new
+sessions. Resumes never refresh, repair or walk an agent-owned workspace.
+Existing resumed sessions retain their workspace; their unknown skill revision
+remains null.
+
+Website grills use the grilling skill from this same catalog. They still name
+the planning document and repositories in the opening message. The skill asks
+one question at a time, records decisions, resolves contradictions and ends
+with the agreed design mark and slice cutting.
+
+New slice invocations record the installed repository revision in
+`skill_version`. Chats record their saved workspace revision, including resumed
+and interrupted turns. On the node, version comes from `/opt/factory/REVISION`;
+in a checkout it is HEAD, with uncommitted skill changes refused. Historical
+records are unchanged. State stays version 1. No fence, ownership, service,
+credential, UI screen or runtime dependency changes are required.
+`GET /api/skills` exposes only catalog metadata and enabled project keys.

@@ -15,7 +15,7 @@ import tarfile
 import time
 
 from .fence import Fence, trusted_directory, host_environment, WORK_ROOT
-from . import run_records
+from . import run_records, skills
 from .planning import Planning
 from .state import StateError
 from .stores import PostgresStore, REPOSITORY
@@ -150,6 +150,7 @@ def workspace(session):
             if len(repositories) == 1:
                 session['_starting_commit'] = commit
             (repos / name).chmod(0o755)
+        skills.install(folder, session.get('skill_names') if session.get('skill_names') is not None else sorted(skills.DEFAULTS))
         # Chown planning only, while workspace remains root-owned and inaccessible.
         if session.get('area') == 'homelab':
             for directory, folders, files in os.walk(folder / 'planning', followlinks=False):

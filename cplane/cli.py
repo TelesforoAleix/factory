@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 import sys
 import subprocess
-from importlib.resources import files
 
 from . import state
 from . import planner
@@ -159,6 +158,14 @@ def parser():
     importer = feature_commands.add_parser('import-backlog', parents=[common])
     importer.add_argument('file')
     importer.add_argument('--dry-run', action='store_true')
+    skill = commands.add_parser('skill', parents=[common])
+    skill_commands = skill.add_subparsers(dest='skill_command', required=True, parser_class=Parser)
+    skill_list = skill_commands.add_parser('list', parents=[common])
+    skill_list.add_argument('--project')
+    for action in ('on', 'off'):
+        switch = skill_commands.add_parser(action, parents=[common])
+        switch.add_argument('name')
+        switch.add_argument('project')
     limits = commands.add_parser('limit', parents=[common])
     limit_commands = limits.add_subparsers(dest='limit_command', required=True, parser_class=Parser)
     limit_commands.add_parser('show', parents=[common])
@@ -319,6 +326,14 @@ def main(argv=None):
                 return 0
             print(json.dumps(result, indent=2, ensure_ascii=False))
             return 0
+        if args.command == 'skill':
+            if not state.postgres():
+                raise state.StateError('skill commands require Postgres (CPLANE_DATABASE_URL)')
+            backend = state.store(None)
+            if args.skill_command != 'list':
+                backend.skill_set(args.name, args.project, args.skill_command == 'on')
+            print(json.dumps(backend.skill_list(args.project), ensure_ascii=False))
+            return 0
         if args.command == 'limit':
             if not state.postgres():
                 raise state.StateError('limit commands require Postgres (CPLANE_DATABASE_URL)')
@@ -418,7 +433,8 @@ def main(argv=None):
                 item = next((item for item in state.load(path)["slices"] if item["id"] == args.id), None)
                 if item is None:
                     raise state.StateError(f"unknown slice: {args.id}")
-                print(files("skills").joinpath("cut.md").read_text() + brief_for(item), end="")
+                from .skills import instructions
+                print(instructions("cut") + brief_for(item), end="")
             else:
                 try:
                     plan = json.loads(Path(args.plan).read_text())

@@ -1,6 +1,5 @@
 """One locked scheduling pass. Adapters keep external effects fakeable."""
 from datetime import datetime, timedelta
-from importlib.resources import files
 import hashlib
 import json
 import os
@@ -446,10 +445,10 @@ class Runner:
         review = review or bool(resume and previous and previous.get('review') and not previous.get('sha'))
         cut_turn = item.get('flow', 'cli') == 'tickets' and not review and not (previous and previous.get('sha'))
         brief = previous.get('brief', '') if (resume or review) and previous else prompt
-        skills = previous.get('skills') if resume and previous else None
+        skills = cutter.skills_version()
         if (cut_turn or review) and not resume:
-            skills = cutter.skills_version()
-            prompt = files('skills').joinpath('slice-review.md' if review else 'cut.md').read_text() + brief
+            from .skills import instructions
+            prompt = instructions('slice-review' if review else 'cut') + brief
         if self.fenced:
             prompt += (f'\n\nRunner assignment: use branch {metadata["branch"]}. '
                        f'This assigned branch overrides any branch named in the brief. '
@@ -465,6 +464,7 @@ class Runner:
                'model': model, 'effort': effort, 'prompt': prompt, 'started_ns': time.time_ns(),
                'session': item['session']['id'] if resume else '',
                'resume': item['session']['id'] if resume else None, 'phase': 'running'}
+        job['skills'] = skills
         job['starting_commit'] = (metadata.get('base') if self.fenced and not resume else
                                   None if self.fenced else run_records.starting_commit(folder))
         if self.fenced:

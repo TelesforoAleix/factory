@@ -11,6 +11,7 @@ from typing import Protocol, ContextManager
 from . import state
 from .features import FeatureStore
 from .run_records import RunRecordStore
+from .skills import SkillStore
 
 
 class Store(Protocol):
@@ -76,7 +77,7 @@ class FileStore:
 LOCK_KEY = 0x43504C414E45
 
 
-class PostgresStore(FeatureStore, RunRecordStore):
+class PostgresStore(FeatureStore, RunRecordStore, SkillStore):
     def __init__(self, url):
         if not url:
             raise state.StateError("Postgres connection failed")
@@ -183,10 +184,10 @@ class PostgresStore(FeatureStore, RunRecordStore):
     def sessions(self, area, session_id=None):
         with self.locked():
             rows = self.connection.execute(
-                'SELECT id, area, title, tool, model, state, cli_session_id, repositories '
-                'FROM cplane_sessions WHERE area = %s AND (%s::bigint IS NULL OR id = %s) ORDER BY id',
+                'SELECT id, area, title, tool, model, state, cli_session_id, repositories, '
+                'skill_names, skill_version FROM cplane_sessions WHERE area = %s AND (%s::bigint IS NULL OR id = %s) ORDER BY id',
                 (area, session_id, session_id))
-            keys = ('id', 'area', 'title', 'tool', 'model', 'state', 'cli_session_id', 'repositories')
+            keys = ('id', 'area', 'title', 'tool', 'model', 'state', 'cli_session_id', 'repositories', 'skill_names', 'skill_version')
             return [dict(zip(keys, row)) for row in rows]
 
     def create_session(self, area, title, tool, model, repositories):
@@ -252,6 +253,12 @@ class PostgresStore(FeatureStore, RunRecordStore):
             if not row:
                 return None
             session = self.sessions(row[3], row[1])[0]
+            if session['skill_names'] is None and not session['cli_session_id']:
+                names, version = self.session_skills(session['repositories'])
+                self.connection.execute(
+                    'UPDATE cplane_sessions SET skill_names = %s, skill_version = %s WHERE id = %s',
+                    (Jsonb(names), version, session['id']))
+                session.update(skill_names=names, skill_version=version)
             self.connection.execute("UPDATE cplane_session_messages SET status = 'running' WHERE id = %s", (row[0],))
             self.connection.execute("UPDATE cplane_sessions SET state = 'running' WHERE id = %s", (row[1],))
             return dict(id=row[0], session=session, text=row[2])

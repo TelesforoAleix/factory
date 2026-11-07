@@ -1,3 +1,4 @@
+--- {"name": "slice-review", "description": "Review a whole slice against its brief and tests."}
 Review the whole slice against the brief below. Change nothing: do not edit files,
 commit, push, merge or open a PR. Run the repository's tests and read the whole diff
 from the runner's pinned base commit to the assigned branch tip. Check every

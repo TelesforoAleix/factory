@@ -1,3 +1,4 @@
+--- {"name": "cut", "description": "Cut a brief into ordered tickets and executable tests."}
 You plan work for a much weaker coding model. It sees one ticket at a time and nothing else:
 not the task below, not the other tickets. It has about 40 steps, a shell, and no network.
 
