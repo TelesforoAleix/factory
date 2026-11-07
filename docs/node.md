@@ -280,6 +280,17 @@ sudo systemctl enable --now factory-export.timer
 sudo systemctl start factory-export.service
 ```
 
+For the phone bot, the orchestrator can create an existing absolute directory
+owned by root, group `homelab-bot`, mode `0750`, and set `CPLANE_BOT_EXPORT`
+to that path in `runner.env`. After each pass the runner atomically replaces
+`slices.json` and `slices.json.outbox.jsonl` there with mode `0640` and the
+directory's group. State includes every slice without its log; the outbox includes
+only question, escalation, merge, and owner-check notices in database order.
+Its existing contents must remain a prefix of the next export to preserve the
+bot's line-count position. An untrusted directory or export failure produces a
+generic stderr line and does not fail the pass. The bot needs no database access.
+When the variable is unset, no bot files are written.
+
 `CPLANE_STATE` remains the state-path anchor; its containing folder is the
 orchestrator-managed briefs clone. In Postgres mode each pass pulls that clone
 with `git pull --ff-only` before reading relative briefs. No state or notices are
