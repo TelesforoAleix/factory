@@ -148,7 +148,8 @@ def test_turn_rejects_invalid_stored_repository(tmp_path, monkeypatch, repositor
     assert list(tmp_path.iterdir()) == []
 
 
-def test_resume_rejects_link_without_host_write(tmp_path, monkeypatch):
+@pytest.mark.parametrize('resume_id', ['synthetic', None])
+def test_resume_rejects_link_without_host_write(tmp_path, monkeypatch, resume_id):
     root = tmp_path / 'work'
     root.mkdir()
     outside = tmp_path / 'outside'
@@ -156,7 +157,7 @@ def test_resume_rejects_link_without_host_write(tmp_path, monkeypatch):
     (root / 'session-1').symlink_to(outside, target_is_directory=True)
     monkeypatch.setattr(sessions, 'WORK_ROOT', root)
     with pytest.raises(Exception, match='Workspace unavailable'):
-        sessions.workspace(dict(id=1, cli_session_id='synthetic', repositories=[]))
+        sessions.workspace(dict(id=1, cli_session_id=resume_id, workspace_ready=True, repositories=[]))
     assert list(outside.iterdir()) == []
 
 
@@ -242,7 +243,8 @@ def test_concurrent_claims_respect_global_capacity(pg_store):
     assert len({turn['session']['id'] for turn in claimed}) == 2
 
 
-def test_session_exports_remote_default_and_resume_does_not_fetch(tmp_path, monkeypatch):
+@pytest.mark.parametrize('resume_id', ['saved-id', None])
+def test_session_exports_remote_default_and_resume_does_not_fetch(tmp_path, monkeypatch, resume_id):
     from cplane import fence
 
     source = tmp_path / 'source'
@@ -307,7 +309,8 @@ def test_session_exports_remote_default_and_resume_does_not_fetch(tmp_path, monk
     original_instructions = (folder / 'AGENTS.md').read_bytes()
     monkeypatch.setattr(skills, 'install', Mock(side_effect=AssertionError('resume wrote skills')))
     calls.clear()
-    session['cli_session_id'] = 'saved-id'
+    session['cli_session_id'] = resume_id
+    session['workspace_ready'] = True
     assert sessions.workspace(session) == (folder, paths)
     assert calls == []
     assert (folder / 'AGENTS.md').read_bytes() == original_instructions

@@ -113,7 +113,7 @@ def workspace(session):
         raise StateError('Invalid session repository')
     trusted_directory(WORK_ROOT)
     folder = WORK_ROOT / f'session-{session["id"]}'
-    if session['cli_session_id']:
+    if session['cli_session_id'] or session.get('workspace_ready'):
         # Never repair, refresh, walk or write an agent-owned workspace on resume.
         info = folder.lstat()
         if (not stat.S_ISDIR(info.st_mode) or info.st_uid != 21000
@@ -193,7 +193,7 @@ def turn_command(turn, folder, paths, run):
         command = ['claude', '-p', '--output-format', 'json', '--model', session['model']]
         if session['cli_session_id']:
             command += ['--resume', session['cli_session_id']]
-    prompt = turn['text']
+    prompt = ('Workshop event: ' if turn.get('role') == 'system' else '') + turn['text']
     if session.get('area') == 'homelab':
         prompt += '\n\n' + HOMELAB_INSTRUCTION
     return [*args, '--', *command, '--', prompt]

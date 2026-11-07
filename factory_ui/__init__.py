@@ -193,6 +193,65 @@ def create_app(store=None):
         except Exception:
             return jsonify(error='State unavailable'), 503
 
+    def chat_response(operation):
+        from cplane.chats import public_chat_result
+        try:
+            return jsonify(public_chat_result(operation()))
+        except (state.StateError, ValueError) as error:
+            return jsonify(error=str(error)), 400
+        except Exception:
+            return jsonify(error='Chats unavailable'), 503
+
+    @app.get('/api/chats')
+    def chats():
+        def operation():
+            archived = request.args.get('archived')
+            if archived is not None and archived not in ('true', 'false'):
+                raise ValueError('Archived must be true or false')
+            return backend().chats(kind=request.args.get('kind'), project=request.args.get('project'),
+                                   archived=None if archived is None else archived == 'true')
+        return chat_response(operation)
+
+    @app.post('/api/chats/project')
+    def project_chat():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict) or not isinstance(payload.get('project'), str):
+            return jsonify(error='Project key required'), 400
+        response = chat_response(lambda: backend().create_project_chat(payload['project']))
+        return response if isinstance(response, tuple) else (response, 201)
+
+    @app.route('/api/chats/defaults', methods=['GET'])
+    @app.route('/api/chats/defaults/<kind>', methods=['GET', 'PATCH'])
+    def chat_defaults(kind=None):
+        payload = request.get_json(silent=True) if request.method == 'PATCH' else {}
+        if not isinstance(payload, dict) or any(k not in ('chat_tool', 'chat_model') for k in payload):
+            return jsonify(error='Invalid chat defaults'), 400
+        if any(v is None for v in payload.values()):
+            return jsonify(error='Invalid chat defaults'), 400
+        return chat_response(lambda: backend().chat_defaults(kind, **payload))
+
+    @app.route('/api/chats/<int:chat_id>', methods=['GET', 'PATCH'])
+    def chat_detail(chat_id):
+        if request.method == 'GET':
+            return chat_response(lambda: backend().chat_show(chat_id))
+        payload = request.get_json(silent=True)
+        if (not isinstance(payload, dict) or any(k not in ('tool', 'model') for k in payload)
+                or any(v is None for v in payload.values())):
+            return jsonify(error='Invalid chat configuration'), 400
+        return chat_response(lambda: backend().chat_configure(chat_id, **payload))
+
+    @app.post('/api/chats/<int:chat_id>/open')
+    def open_chat(chat_id):
+        return chat_response(lambda: backend().chat_open(chat_id))
+
+    @app.post('/api/chats/<int:chat_id>/read')
+    def read_chat(chat_id):
+        return chat_response(lambda: backend().chat_read(chat_id))
+
+    @app.post('/api/chats/<int:chat_id>/unread')
+    def unread_chat(chat_id):
+        return chat_response(lambda: backend().chat_read(chat_id, unread=True))
+
     @app.route('/api/<area>/sessions', methods=['GET', 'POST'])
     def sessions(area):
         if area not in ('homelab', 'factory'):

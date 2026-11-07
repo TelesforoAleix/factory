@@ -86,6 +86,7 @@ class FeatureStore:
                 'INSERT INTO cplane_features (id, project, title, stage, position) VALUES (%s, %s, %s, %s, %s) RETURNING feature',
                 (identifier, project, title, stage, self._feature_position(stage))).fetchone()[0]
             self.connection.execute('INSERT INTO cplane_feature_ids VALUES (%s, %s)', (identifier, feature))
+            self._feature_chat_stage(self._feature(identifier), stage)
             self._feature_event(feature, f'add {identifier}', actor)
             return self.feature_show(identifier)
 
@@ -253,6 +254,7 @@ class FeatureStore:
                 (stage, self._feature_position(stage), source if stage == 'parked' else None, item['feature']))
             if stage == 'building' and source in ('testing', 'parked'):
                 self.feature_place(identifier, top=True, actor=actor)
+            self._feature_chat_stage(item, stage)
             self._feature_event(item['feature'], f'stage {source} to {stage}', actor)
             return self.feature_show(identifier)
 
@@ -359,6 +361,8 @@ class FeatureStore:
                 self.connection.execute(
                     'UPDATE cplane_features SET id = %s, project = %s WHERE feature = %s',
                     (new_id, project, item['feature']))
+                self.connection.execute('UPDATE cplane_sessions SET project = %s WHERE feature = %s',
+                                        (project, item['feature']))
                 self._feature_event(item['feature'], f'move {item["id"]} to {new_id}', actor)
             return self.feature_show(identifier)
 

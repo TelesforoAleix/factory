@@ -118,6 +118,23 @@ def parser():
     common.add_argument("--commit", action="store_true", default=argparse.SUPPRESS, help="commit and sync state repository")
     root = Parser(description="A scheduler's state file and its commands", parents=[common])
     commands = root.add_subparsers(dest="command", required=True, parser_class=Parser)
+    chat = commands.add_parser('chat', parents=[common], help='manage Postgres chats')
+    chats = chat.add_subparsers(dest='chat_command', required=True, parser_class=Parser)
+    for name in ('list', 'open', 'read', 'unread', 'project', 'configure', 'defaults'):
+        sub = chats.add_parser(name, parents=[common])
+        if name == 'list':
+            sub.add_argument('--kind', choices=('orchestrator', 'project', 'feature', 'legacy'))
+            sub.add_argument('--project')
+            sub.add_argument('--archived', action=argparse.BooleanOptionalAction, default=None)
+        elif name == 'project':
+            sub.add_argument('project')
+        elif name == 'defaults':
+            sub.add_argument('kind', nargs='?', choices=('orchestrator', 'project', 'feature', 'legacy'))
+        else:
+            sub.add_argument('id', type=int)
+        if name in ('configure', 'defaults'):
+            sub.add_argument('--tool', choices=('codex', 'claude'))
+            sub.add_argument('--model')
     from .features import STAGES
     feature = commands.add_parser('feature', parents=[common], help='manage Postgres features')
     feature_commands = feature.add_subparsers(dest='feature_command', required=True, parser_class=Parser)
@@ -325,6 +342,27 @@ def main(argv=None):
                 backend.run_record_mark(args.id, clear=args.clear)
                 return 0
             print(json.dumps(result, indent=2, ensure_ascii=False))
+            return 0
+        if args.command == 'chat':
+            if not state.postgres():
+                raise state.StateError('chat commands require Postgres (CPLANE_DATABASE_URL)')
+            backend = state.store(None)
+            command = args.chat_command
+            if command == 'list':
+                result = backend.chats(kind=args.kind, project=args.project, archived=args.archived)
+            elif command == 'open':
+                result = backend.chat_open(args.id)
+            elif command in ('read', 'unread'):
+                result = backend.chat_read(args.id, unread=command == 'unread')
+            elif command == 'project':
+                result = backend.create_project_chat(args.project)
+            elif command == 'configure':
+                result = backend.chat_configure(args.id, tool=args.tool, model=args.model)
+            else:
+                result = backend.chat_defaults(args.kind, chat_tool=args.tool, chat_model=args.model)
+            # Resume IDs belong only to the runner.
+            from .chats import public_chat_result
+            print(json.dumps(public_chat_result(result), indent=2, ensure_ascii=False, default=str))
             return 0
         if args.command == 'skill':
             if not state.postgres():

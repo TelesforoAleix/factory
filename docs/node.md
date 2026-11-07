@@ -1129,3 +1129,108 @@ in a checkout it is HEAD, with uncommitted skill changes refused. Historical
 records are unchanged. State stays version 1. No fence, ownership, service,
 credential, UI screen or runtime dependency changes are required.
 `GET /api/skills` exposes only catalog metadata and enabled project keys.
+
+## Chat records
+
+Project repositories may be plain names such as `factory`, fully qualified
+`owner/name` values, or absent. Absent repositories become an empty chat repository
+list. For a plain name, existing Factory sessions supply an exact repository
+match when unambiguous; otherwise a single shared owner supplies its namespace.
+Home Lab sessions do not supply this evidence. Unknown or ambiguous owners leave
+the plain name stored without blocking chat creation or entry into Grilling.
+The sessions service retries resolution when claiming a turn. Until it can name
+a fully qualified repository, that turn remains queued; unrelated chats can run.
+Once resolved, the full repository name is saved before workspace preparation.
+The fence continues to accept only validated `owner/name` repositories.
+
+Migration 009 keeps session and message IDs, queued turns, saved CLI resume IDs,
+repositories and per-chat tool/model choices. The oldest Home Lab session becomes
+the orchestrator; all other existing sessions become `legacy`. An empty database
+gets one idle Home Lab orchestrator. Partial unique indexes allow one orchestrator,
+one project chat per project key and one feature chat per stable feature identity.
+Old session creation and message routes remain available for plain legacy chats.
+
+A feature entering Grilling gets its feature chat and queued automatic `system`
+opening message in the same locked transaction. The opening contains its current
+ID, title, project and all sections, followed by the instruction to run the grill.
+Creation also applies to features added directly at Grilling. Re-entry reuses the
+existing chat. Failed chat creation rolls the stage and audit event back. A project
+move updates the linked project and displayed feature ID; the original workspace
+and repository snapshot remain unchanged. Entering Done archives the feature
+chat. Reading an archived chat leaves it archived; a new owner message unarchives
+it. Existing failed-session refusals still apply.
+
+The sessions service claims queued owner messages before queued system events,
+then uses message ID order within each role. It runs one message per invocation
+and resumes the saved CLI session. The CLI receives system text prefixed with
+`Workshop event: `. The original text, role and `automatic` flag remain in the
+database. System events and Workshop delivery notices have `automatic: true`;
+owner messages and normal model replies have `automatic: false`. Archived chats
+are excluded from claims. Two chat turns may run at once, with overlapping
+repository snapshots serialized. Commands and web handlers only write records;
+the existing sessions service performs execution through the existing fence.
+
+A chat is `waiting` if an assistant reply is newer than `last_read_at`, or if it
+has an assistant reply and no read time. `open` marks it read and returns the chat
+and its messages atomically. Marking it unread clears the read time. A chat with
+no assistant reply is never waiting. Listing, reading message history through the
+old polling route, and fetching chat metadata do not update read time.
+
+All chat commands require Postgres and print JSON:
+
+```sh
+sudo factory-cplane chat list
+sudo factory-cplane chat list --kind feature --project FAC --no-archived
+sudo factory-cplane chat project FAC
+sudo factory-cplane chat open 123
+sudo factory-cplane chat read 123
+sudo factory-cplane chat unread 123
+sudo factory-cplane chat configure 123 --model example-model
+sudo factory-cplane chat defaults
+sudo factory-cplane chat defaults feature --tool codex --model example-model
+```
+
+Defaults are stored per kind as `chat_tool` and `chat_model` and are copied when
+new chats are created. Changing a default leaves existing chats alone. Migration
+uses the oldest installed Home Lab tool/model for orchestrator defaults and the
+oldest Factory choice for other kinds; absent an installed choice it seeds
+`codex` and `gpt-5.3-codex`. Set reviewed provider/model choices before using
+new automatic feature chats. A running chat refuses configuration changes.
+Migration 010 keeps a separate CLI resume ID for each provider and marks existing
+resumed workspaces as prepared. Switching tool selects that provider's saved ID,
+or starts a new CLI conversation if it has not run in the chat before. Changing
+the model keeps the selected provider's resume ID. The original workspace and
+skill snapshot are reused: the host performs the same ownership and read-only
+export checks and never refreshes, repairs or writes the prepared workspace.
+Each provider keeps its own conversation history; messages are not replayed into
+the other provider. Resume IDs remain private runner metadata.
+
+The API preserves the existing mutation guard (`X-Factory-UI: 1`):
+
+- `GET /api/chats?kind=feature&project=FAC&archived=false` lists records with
+  kind, project, current feature ID, archive, waiting and read-time fields.
+- `GET /api/chats/123` fetches metadata without marking it read.
+- `POST /api/chats/123/open` marks read and returns metadata plus messages.
+- `POST /api/chats/123/read` and `/unread` change the read marker.
+- `POST /api/chats/project` with `{"project":"FAC"}` creates a project chat;
+  a duplicate is refused.
+- `PATCH /api/chats/123` accepts `tool` and/or `model` only.
+- `GET /api/chats/defaults` lists defaults; `GET` or `PATCH
+  /api/chats/defaults/feature` reads or changes that kind's `chat_tool` and/or
+  `chat_model`.
+
+Existing `/api/<area>/sessions` and message routes continue working and expose
+the additional record fields. CLI resume IDs remain excluded from chat API and
+chat command output. No chat tool for mutating Factory is introduced. The fence,
+workspace ownership, UI screens, credentials, runtime dependencies and scheduler
+state version remain unchanged.
+
+After merge, request the existing install command for `factory/CH1`:
+
+```sh
+sudo factory-cplane --actor owner install factory/CH1
+```
+
+The reviewed installer runs the additive migration and restarts UI and sessions.
+After it reports success, inspect `sudo factory-cplane chat list` and
+`sudo factory-cplane chat defaults`. No manual state edit or new service is needed.

@@ -139,7 +139,8 @@ def test_notes_and_grill_transaction(published, pg_store):
     assert client.post(route, json={'session': other}, headers=headers).status_code == 400
     assert pg_store.session_messages('factory', other) == []
     assert client.post('/api/homelab/grills', json={**payload, 'repositories': []}, headers=headers).status_code == 400
-    assert len(pg_store.sessions('homelab')) == 1
+    assert len(pg_store.chats(kind='legacy')) == 2  # Home Lab grill and the Factory session.
+    assert len(pg_store.chats(kind='orchestrator')) == 1
     assert published[2].read('folder/plan.md')['status'] == 'draft'
 
 
@@ -175,10 +176,11 @@ def test_swap_waits_for_readers_and_publishes_whole_tree(published, monkeypatch)
 
 def test_failed_grill_queue_rolls_back_session(pg_store, monkeypatch):
     from cplane.state import StateError
+    before = pg_store.sessions('homelab')
     monkeypatch.setattr(pg_store, 'session_messages', Mock(side_effect=StateError('synthetic queue failure')))
     with pytest.raises(StateError):
         pg_store.create_grill(('Grill', 'codex', 'synthetic', ['owner/repo']), 'First message')
-    assert pg_store.sessions('homelab') == []
+    assert pg_store.sessions('homelab') == before
 
 
 def test_large_document_starts_grill(published):
