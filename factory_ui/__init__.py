@@ -240,6 +240,29 @@ def create_app(store=None):
             return jsonify(error='Invalid chat configuration'), 400
         return chat_response(lambda: backend().chat_configure(chat_id, **payload))
 
+    @app.get('/api/chats/<int:chat_id>/usage')
+    def chat_usage(chat_id):
+        def operation():
+            from datetime import datetime
+            store = backend()
+            chat = store.chat_show(chat_id)
+            messages = store.session_messages(chat['area'], chat_id)
+            records = [r for r in store.run_record_list()
+                       if r['kind'] == 'chat' and r['session_id'] == str(chat_id) and r['started_at']]
+            records.sort(key=lambda r: r['started_at'])
+            result = {}
+            for index, record in enumerate(records):
+                start = datetime.fromisoformat(record['started_at'])
+                end = datetime.fromisoformat(records[index + 1]['started_at']) if index + 1 < len(records) else None
+                reply = next((m for m in messages if m['role'] == 'assistant'
+                              and (not m['automatic'] or m['status'] == 'failed')
+                              and datetime.fromisoformat(m['time']) >= start
+                              and (end is None or datetime.fromisoformat(m['time']) < end)), None)
+                if reply:
+                    result[str(reply['id'])] = dict(tokens=record['turn_tokens'], seconds=record['seconds'])
+            return result
+        return chat_response(operation)
+
     @app.post('/api/chats/<int:chat_id>/open')
     def open_chat(chat_id):
         return chat_response(lambda: backend().chat_open(chat_id))
