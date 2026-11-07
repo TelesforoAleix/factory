@@ -19,3 +19,21 @@ test('filters, previews and displays a move refusal', async () => {
   expect(await screen.findByText('No agreed design yet')).toBeTruthy();
   await waitFor(() => expect(fetchMock.mock.calls.some(([url, options]) => url === '/api/pipeline/FAC-F1/move' && options?.headers['X-Factory-UI'] === '1')).toBe(true));
 });
+
+test('shows all project buttons and collapsible stage counts', async () => {
+  const projects = Array.from({length: 11}, (_, i) => ({key:`P${i}`, name:`Project ${i}`}));
+  const features = [feature, {...feature, id:'FAC-F2', title:'Finished feature', stage:'done'}, {...feature, id:'FAC-F3', title:'Parked feature', stage:'parked'}];
+  vi.stubGlobal('fetch', vi.fn(async () => ({ok:true, json:async()=>({projects, features})})));
+  render(<MemoryRouter initialEntries={['/pipeline']}><App/></MemoryRouter>);
+  const filter = await screen.findByLabelText('Project filter');
+  expect(Array.from(filter.querySelectorAll('button')).map(button => button.textContent)).toEqual(['All', ...projects.map(p => p.name)]);
+  expect(filter.querySelector('select')).toBeNull();
+  const done = document.querySelector('.stage-done .stage-toggle');
+  const parked = document.querySelector('.stage-parked .stage-toggle');
+  expect(done.textContent).toContain('1');
+  expect(done.getAttribute('aria-expanded')).toBe('false');
+  expect(parked.getAttribute('aria-expanded')).toBe('false');
+  fireEvent.click(done);
+  expect(done.getAttribute('aria-expanded')).toBe('true');
+  expect(document.querySelector('.stage-done').classList.contains('expanded')).toBe(true);
+});
