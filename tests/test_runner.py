@@ -1770,6 +1770,30 @@ def test_bot_export_after_pass(setup, tmp_path, monkeypatch):
     assert outbox.read_text() == previous + json.dumps(notices[1], ensure_ascii=False) + '\n'
 
 
+def test_bot_export_projects_accepted_slices(tmp_path, make_state, slice_data, monkeypatch):
+    from cplane import fence, runner
+    accepted = dict(slice_data, id='voice/W0', state='accepted', paused=True,
+                    attention={'kind': 'question', 'body': 'Follow up',
+                               'since': '2026-01-01T00:00:00Z', 'answer': None, 'approved': False},
+                    pr=1, log=[{'at': '2026-01-01T00:00:00Z', 'actor': 'test', 'event': 'done'}])
+    active = dict(slice_data, state='planned',
+                  log=[{'at': '2026-01-01T00:00:00Z', 'actor': 'test', 'event': 'created'}])
+    path = make_state([accepted, active])
+    original = json.loads(path.read_text())
+    folder = tmp_path / 'bot'
+    folder.mkdir()
+    monkeypatch.setattr(fence, 'ROOT_UID', os.getuid())
+    monkeypatch.setenv('CPLANE_BOT_EXPORT', str(folder))
+
+    runner.export_bot(path)
+
+    exported = json.loads((folder / 'slices.json').read_text())
+    fields = {'id', 'repo', 'title', 'state', 'pr', 'feature', 'paused', 'attention'}
+    assert exported['slices'][0] == {key: accepted[key] for key in fields}
+    assert exported['slices'][1] == {key: value for key, value in active.items() if key != 'log'}
+    assert json.loads(path.read_text()) == original
+
+
 def test_bot_export_unset_and_empty_pass(tmp_path, make_state, monkeypatch):
     from cplane import fence
     path = make_state([])

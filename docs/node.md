@@ -284,8 +284,11 @@ For the phone bot, the orchestrator can create an existing absolute directory
 owned by root, group `homelab-bot`, mode `0750`, and set `CPLANE_BOT_EXPORT`
 to that path in `runner.env`. After each pass the runner atomically replaces
 `slices.json` and `slices.json.outbox.jsonl` there with mode `0640` and the
-directory's group. State includes every slice without its log; the outbox includes
-only question, escalation, merge, and owner-check notices in database order.
+directory's group. State includes every slice: accepted slices retain only `id`,
+`repo`, `title`, `state`, `pr`, `feature`, `paused`, and `attention`; other slices
+retain every field except `log`. The full state export and database are unchanged.
+The outbox includes only question, escalation, merge, and owner-check notices in
+database order.
 Its existing contents must remain a prefix of the next export to preserve the
 bot's line-count position. An untrusted directory or export failure produces a
 generic stderr line and does not fail the pass. The bot needs no database access.

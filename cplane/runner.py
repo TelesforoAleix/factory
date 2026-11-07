@@ -28,6 +28,7 @@ WORKTREE_MAX_AGE = 7 * 24 * 60 * 60
 
 
 BOT_EVENTS = frozenset({'question', 'escalation', 'merge', 'owner-check'})
+BOT_ACCEPTED_FIELDS = frozenset({'id', 'repo', 'title', 'state', 'pr', 'feature', 'paused', 'attention'})
 
 
 def export_bot(path):
@@ -41,7 +42,9 @@ def export_bot(path):
         fence.trusted_directory(folder)
         with state.locked(path) as backend:
             data, notices = backend.load(), backend.notices()
-            data['slices'] = [{key: value for key, value in item.items() if key != 'log'}
+            data['slices'] = [{key: value for key, value in item.items()
+                               if (key in BOT_ACCEPTED_FIELDS if item['state'] == 'accepted'
+                                   else key != 'log')}
                               for item in data['slices']]
             payload = json.dumps(data, indent=2, ensure_ascii=False) + '\n'
             outbox = ''.join(json.dumps(notice, ensure_ascii=False) + '\n'
