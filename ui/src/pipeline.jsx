@@ -1,3 +1,4 @@
+import {FeatureChatLink} from './chats';
 import React, {useEffect, useState} from 'react';
 import {Link, useParams, useSearchParams} from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
@@ -16,7 +17,7 @@ function Header({item}) { return <><small>{item.id} · {name(item.stage)} · {it
 function Panel({item, act, close}) {
   const totals = item.numbers || {};
   const tokenFields = [['input_tokens', 'Input'], ['cached_tokens', 'Cached'], ['cache_write_tokens', 'Cache write'], ['output_tokens', 'Output'], ['reasoning_tokens', 'Reasoning']];
-  return <aside className="pipeline-panel"><button className="panel-close" onClick={close} aria-label="Close preview">×</button><Header item={item}/>
+  return <aside className="pipeline-panel"><button className="panel-close" onClick={close} aria-label="Close preview">×</button><Header item={item}/><FeatureChatLink feature={item.id}/>
     {attention(item).map(s => <p className="pipeline-attention text" key={s.id}><strong>{s.id}: </strong>{s.attention.body}</p>)}
     <div className="actions">{item.moves.map(stage => <button key={stage} onClick={() => act(item.id, stage)}>Move to {name(stage)}</button>)}</div>
     {item.sections[0] && <section><h3>{item.sections[0].name}</h3><Markdown text={item.sections[0].text}/></section>}
@@ -65,4 +66,4 @@ export function Pipeline() {
     <div className={'pipeline-layout' + (current ? ' has-panel' : '')}><DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={dragEnd}><div className="pipeline-scroll"><div className="pipeline-grid">{stages.map(stage => <Column key={stage} stage={stage} items={visible.filter(f => f.stage === stage)} all={data.features} selected={selected} select={select} act={act} close={() => select(null)}/>)}</div></div></DndContext>{current && <div className="desktop-panel"><Panel item={current} act={act} close={() => select(null)}/></div>}</div>
   </div>;
 }
-export function FeaturePage() { const {id} = useParams(); const [item,setItem] = useState(null), [error,setError] = useState(''); useEffect(() => {fetch('/api/pipeline/' + encodeURIComponent(id)).then(r => {if (!r.ok) throw Error('Feature unavailable'); return r.json();}).then(setItem).catch(e => setError(e.message));}, [id]); return <><Link to={'/pipeline?feature=' + encodeURIComponent(id)}>← Pipeline</Link>{item ? <><Header item={item}/>{item.sections.map((s,i) => <details className="feature-section" key={s.name} open={i === 0 || undefined}><summary>{s.name}</summary><Markdown text={s.text}/></details>)}</> : <p>{error || 'Loading…'}</p>}</>; }
+export function FeaturePage() { const {id} = useParams(); const [item,setItem] = useState(null), [error,setError] = useState(''); useEffect(() => {fetch('/api/pipeline/' + encodeURIComponent(id)).then(r => {if (!r.ok) throw Error('Feature unavailable'); return r.json();}).then(setItem).catch(e => setError(e.message));}, [id]); return <><Link to={'/pipeline?feature=' + encodeURIComponent(id)}>← Pipeline</Link>{item ? <><Header item={item}/><FeatureChatLink feature={item.id}/>{item.sections.map((s,i) => <details className="feature-section" key={s.name} open={i === 0 || undefined}><summary>{s.name}</summary><Markdown text={s.text}/></details>)}</> : <p>{error || 'Loading…'}</p>}</>; }

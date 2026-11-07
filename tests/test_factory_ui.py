@@ -139,3 +139,31 @@ def test_pipeline_api_guard_reads_and_refusals():
     assert client.post(url + 'place', json={'before': 'FAC-F2'}, headers=headers).status_code == 200
     assert store.calls == [('FAC-F1', 'ready', 'owner'), ('FAC-F1', {'before': 'FAC-F2'}, 'owner')]
     assert client.post(url + 'place', json={'top': False}, headers=headers).status_code == 400
+
+
+def test_chat_usage_is_scoped_and_omits_private_fields():
+    class ChatStore:
+        def chat_show(self, chat_id):
+            return {'area': 'factory'}
+
+        def session_messages(self, area, chat_id):
+            return [dict(id=10, role='assistant', automatic=False, status='done',
+                         time='2026-01-01T12:01:00+00:00'),
+                    dict(id=11, role='assistant', automatic=True, status='done',
+                         time='2026-01-01T12:01:01+00:00'),
+                    dict(id=12, role='assistant', automatic=False, status='done',
+                         time='2026-01-01T12:03:00+00:00')]
+
+        def run_record_list(self):
+            def row(session, started, tokens):
+                return dict(kind='chat', session_id=session, started_at=started,
+                            turn_tokens={'input_tokens': tokens}, seconds=5, prompt='private')
+            return [row('7', '2026-01-01T12:00:00+00:00', 10),
+                    row('8', '2026-01-01T12:00:00+00:00', 99),
+                    row('7', '2026-01-01T12:02:00+00:00', 20)]
+
+    response = create_app(ChatStore()).test_client().get('/api/chats/7/usage')
+    assert response.status_code == 200
+    assert response.json == {'10': {'tokens': {'input_tokens': 10}, 'seconds': 5},
+                             '12': {'tokens': {'input_tokens': 20}, 'seconds': 5}}
+    assert b'private' not in response.data
