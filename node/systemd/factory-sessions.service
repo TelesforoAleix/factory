@@ -11,6 +11,7 @@ WorkingDirectory=/opt/factory
 EnvironmentFile=/etc/factory/runner.env
 ExecStart=/opt/factory/.venv/bin/python -m cplane.sessions
 UMask=0077
+ExecStartPre=/usr/bin/install -d -o root -g root -m 0755 /var/lib/factory
 KillMode=control-group
 Restart=on-failure
 RestartSec=3

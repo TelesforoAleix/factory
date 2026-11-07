@@ -492,7 +492,7 @@ remote-tracking default branch. Planning is exported from HEAD of the root-only
 publish changes.
 
 Each session gets a new 0700 workspace owned by 21000:21000. Archives exclude
-Git metadata; exports with links or special entries fail closed. `planning/` is
+Git metadata and omit links; exports with special entries fail closed. `planning/` is
 writable; each `repos/<name>` is overmounted read-only with the existing fence.
 No clean clone or briefs clone is mounted. Duplicate repository basenames are
 rejected. Exports are made once; resumed turns never refresh or repair paths in
@@ -510,3 +510,64 @@ turns; on restart it reconciles any containers left by an abrupt service stop.
 Workspaces/login histories and database messages are retained for operator cleanup.
 No planning changes are written back. After installation the orchestrator performs
 a real two-message session smoke test; this implementation does not run one.
+
+## Home Lab documents, notes and grills
+
+After merging this slice, the orchestrator rebuilds the UI, syncs the reviewed
+Python installation, runs `sudo factory-cplane migrate` (migration 003 adds
+`cplane_document_notes`), and reinstalls the sessions unit before restarting both
+services:
+
+```sh
+sudo install -o root -g root -m 0644 /opt/factory/node/systemd/factory-sessions.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl restart factory-sessions.service factory-ui.service
+```
+
+The sessions unit prepares root-owned `/var/lib/factory` mode 0755. Its supervisor
+compares the planning clone's `HEAD` every 60 seconds, without pulling. The runner
+continues to pull every 300 seconds. On a changed HEAD (and on supervisor startup),
+the sessions service exports only committed regular `*.md` files, omitting links,
+Git metadata and all other file types, into a temporary sibling directory. It
+normalizes directories to 0755 and files to 0644, then atomically exchanges the
+whole plain directory at `/var/lib/factory/ui-docs` using Linux `renameat2`.
+An export failure retains the preceding generation and is logged for retry.
+The sibling `.ui-docs.lock` is root-owned mode 0644; readers take a shared lock so
+an old generation cannot be removed during a document read or search. No deploy
+key, token, Git configuration or clone is exposed to the web account. The UI's
+existing `/srv/factory` exclusion remains in place. No new UI environment key or
+filesystem write permission is required.
+
+Home Lab lists documents by folder and searches paths, titles, status, dates and
+body text. Scalar `title`, `status`, `date` and `updated` frontmatter fields are
+used for display; complex YAML values are not evaluated. A missing date uses the
+Git archive's file timestamp (the commit date), and a missing status displays
+“Unspecified”. Documents render Markdown with raw HTML disabled and GFM tables
+inside a horizontally scrollable container. `/home-lab/backlog` reads the root
+`backlog.md` through the same renderer. Paths are relative to the export; absolute
+paths, traversal, non-Markdown files and symlink components are refused.
+
+Owner notes live only in Postgres, keyed by the document's relative path, and are
+shown beside the document (below it on a phone). They survive refreshes and
+sessions; a renamed document has a new path and its previous notes remain stored
+under the old path. Notes are retained for operator cleanup along with session
+messages. A note can be copied into a selected Home Lab session as one queued
+owner message. Writes use the existing required UI request header and database
+transaction path; Factory sessions cannot receive a Home Lab note through this
+route.
+
+“Start a grill” requires a document, tool/model and at least one named repository.
+It creates a Home Lab session and queues its first message atomically. The first
+message contains the displayed document body and states that the planner must ask
+one question at a time and wait for the owner's answer. The message size limit
+is 32,000 characters; an oversized document is refused before session creation.
+Grills use existing one-message/one-turn execution and repository exports.
+Conversation bubbles distinguish the owner from the planner; planner replies
+containing a question mark are highlighted as questions. This is a display cue,
+not a new agent response protocol. Nothing writes to the planning documents.
+
+After installation, check the sessions journal for export errors, confirm
+`/var/lib/factory/ui-docs` is a plain directory readable by `factory-ui`, and open
+Home Lab and Backlog. Verify a note can be saved and sent to a Home Lab session,
+and perform a grill smoke test with a deliberately chosen document/repository.
+The orchestrator performs these node checks; this slice uses synthetic fixtures.
