@@ -1,0 +1,8 @@
+#!/bin/sh
+# Keep all private diagnostics out of the timer journal.
+set -eu
+umask 077
+if ! factory-cplane feature export >/dev/null 2>&1; then
+    echo 'Factory feature export failed' >&2
+    exit 1
+fi
