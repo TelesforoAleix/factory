@@ -41,7 +41,11 @@ class Planning:
              '-c', 'user.email=factory@localhost', *map(str, args)],
             capture_output=True, text=True, env=env)
         if result.returncode and not allow_failure:
-            raise StateError('Planning Git operation failed; no delivery confirmed.')
+            message = {
+                'fetch': 'Planning fetch failed; no delivery confirmed.',
+                'push': 'Planning push failed; no delivery confirmed.',
+            }.get(network, 'Planning Git operation failed; no delivery confirmed.')
+            raise StateError(message)
         return result
 
     def prepare(self, destination):
@@ -112,7 +116,7 @@ class Planning:
         rebased = self.git('rebase', '--onto', latest, previous, allow_failure=True)
         if rebased.returncode:
             self.git('rebase', '--abort', allow_failure=True)
-            raise StateError('Planning conflict with main: nothing pushed. Resolve the conflicting changes in this session and try again.')
+            raise StateError('Planning rebase failed, possibly due to a conflict with main: nothing pushed. Resolve the conflicting changes in this session and try again.')
         head = self.git('rev-parse', 'HEAD').stdout.strip()
         if self.git('merge-base', '--is-ancestor', latest, head, allow_failure=True).returncode:
             raise StateError('Planning delivery refused: push would not fast-forward.')

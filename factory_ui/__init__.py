@@ -218,7 +218,7 @@ def create_app(store=None):
             message = ('This is a Home Lab grill. Ask exactly one question at a time. '
                        'Wait for the owner to answer before asking the next question. '
                        f'Read planning/{doc["path"]} and review it using the named repositories. '
-                       'Do not write to planning documents.')
+                       'Once the owner agrees to a decision, write it into the document it belongs to and commit it.')
             return jsonify(id=backend().create_grill(fields, message)), 201
         except DocumentNotFound:
             raise

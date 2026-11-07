@@ -131,7 +131,7 @@ def test_notes_and_grill_transaction(published, pg_store):
     assert 'A searchable document.' not in messages[0]['text']
     assert 'Wait for the owner to answer' in messages[0]['text']
     assert 'using the named repositories' in messages[0]['text']
-    assert 'Do not write to planning documents' in messages[0]['text']
+    assert 'write it into the document it belongs to and commit it' in messages[0]['text']
     route = f'/api/homelab/send-note/{note["id"]}/folder/plan.md'
     result = client.post(route, json={'session': sid}, headers=headers)
     assert result.status_code == 200

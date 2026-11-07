@@ -564,6 +564,8 @@ It creates a Home Lab session and queues its first message atomically. The first
 message tells the planner to read the document at `planning/<path>`, use the named
 repositories, ask one question at a time, and wait for the owner's answer. The
 document must exist, but its size does not limit grill creation.
+Once the owner agrees to a decision, the planner records it in the appropriate
+document and commits it.
 Grills use existing one-message/one-turn execution and repository exports.
 Conversation bubbles distinguish the owner from the planner; planner replies
 containing a question mark are highlighted as questions. This is a display cue,
@@ -603,6 +605,10 @@ It clones the session branch into `planning/` without hardlinks, hooks, credenti
 or private config before handing ownership to UID/GID 21000. The clone's local
 origin names the inaccessible clean clone, not an authenticated remote.
 Factory sessions keep a plain read-only export and never invoke this delivery.
+Every Home Lab turn instructs the planner to commit each agreed change in that
+turn with `git add` and `git commit`, using a short message. Only unprotected
+Markdown files may change. Uncommitted edits do not reach `main`; the owner's
+stored message remains unchanged. Factory turns do not receive this instruction.
 
 After each successful Home Lab turn, the host calls the existing offline
 `factory-cli bundle` and snapshots its regular single-link output. Host Git never
@@ -620,6 +626,7 @@ freshly fetched `main`. Conflicts abort the rebase and produce a session notice;
 nothing is pushed. The host verifies ancestry again and pushes normally to
 `main`, never with force. A concurrent remote advance rejects the push. Delivery
 failures retain the planner reply and resume ID so the session can address them.
+Notices identify a failed fetch, rebase, or push without exposing Git output.
 Each successfully pushed commit is recorded as a separate message with its full
 rebased SHA on the session page, suitable for an operator to revert. Session
 workspaces, clean clones, bundle snapshots and database messages are retained for
