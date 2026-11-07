@@ -97,7 +97,7 @@ def test_launch_then_result(tmp_path, slice_data, monkeypatch, result, kind):
     installation.process(runner)
     assert item['attention']['kind'] == kind
     if kind == 'node-step':
-        assert item['attention']['answer'] == 'Installed ' + SHA
+        assert item['attention']['answer'] == 'Installed ' + SHA + '. Node steps are done. End with kind handover.'
     assert not list(installation.pending(runner.data))
 
 
@@ -329,7 +329,7 @@ def test_pass_only_launches_after_explicit_request(tmp_path, slice_data, make_st
     runner.launch = Mock()
     runner.run()
     runner.launch.assert_called_once()
-    assert runner.launch.call_args.args[1] == 'Installed ' + SHA
+    assert runner.launch.call_args.args[1] == 'Installed ' + SHA + '. Node steps are done. End with kind handover.'
     assert not list(installation.pending(state.load(path)))
 
 
