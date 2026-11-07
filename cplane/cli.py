@@ -209,7 +209,21 @@ def parser():
     transfer = commands.add_parser("export", parents=[common], help="export state and notices in file format")
     transfer.add_argument("path", nargs="?", help="destination state JSON path (required with notices; otherwise stdout)")
     commands.add_parser("compact", parents=[common], help="bound oversized runner text in state")
-    for command in ("run", "install-agent", "uninstall-agent"):
+    run = commands.add_parser('run', parents=[common])
+    run_commands = run.add_subparsers(dest='run_command', parser_class=Parser)
+    for name in ('list', 'show', 'total', 'mark'):
+        sub = run_commands.add_parser(name, parents=[common])
+        if name == 'list':
+            sub.add_argument('--slice', dest='slice_id')
+            sub.add_argument('--project')
+            sub.add_argument('--json', action='store_true')
+        elif name == 'total':
+            sub.add_argument('--slice', dest='slice_id', required=True)
+        else:
+            sub.add_argument('id', type=int)
+        if name == 'mark':
+            sub.add_argument('--clear', action='store_true')
+    for command in ("install-agent", "uninstall-agent"):
         commands.add_parser(command, parents=[common])
     commands.add_parser("prime", parents=[common], help="send one minimal request to Claude and Codex to start their usage windows")
     commands.add_parser("install-primer", parents=[common], help="install the launchd job that runs prime at 06:00, 11:00, 16:00 and 21:00")
@@ -264,6 +278,24 @@ def feature_command(args):
 def main(argv=None):
     args = parser().parse_args(argv)
     try:
+        if args.command == 'run' and args.run_command:
+            if not state.postgres():
+                raise state.StateError('run record commands require Postgres (CPLANE_DATABASE_URL)')
+            backend = state.store(None)
+            if args.run_command == 'list':
+                result = backend.run_record_list(slice_id=args.slice_id, project=args.project)
+                if not args.json:
+                    print('\n'.join(f"{r['id']} {r['kind']} {r['slice_id'] or r['session_id']} {r['tool']} {r['outcome']}" for r in result) or '(none)')
+                    return 0
+            elif args.run_command == 'show':
+                result = backend.run_record_show(args.id)
+            elif args.run_command == 'total':
+                result = backend.run_record_total(args.slice_id)
+            else:
+                backend.run_record_mark(args.id, clear=args.clear)
+                return 0
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+            return 0
         if args.command == 'project':
             if not state.postgres():
                 raise state.StateError('project commands require Postgres (CPLANE_DATABASE_URL)')
