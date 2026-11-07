@@ -292,8 +292,7 @@ def create_app(store=None):
             if not fields[3]:
                 return jsonify(error='Name at least one repository'), 400
             message = ('Use the grilling skill for this Home Lab design. '
-                       f'Read planning/{doc["path"]} and review it using the named repositories. '
-                       'Once the owner agrees to a decision, write it into the document it belongs to and commit it.')
+                       f'Read planning/{doc["path"]} and review it using the named repositories.')
             return jsonify(id=backend().create_grill(fields, message)), 201
         except DocumentNotFound:
             raise

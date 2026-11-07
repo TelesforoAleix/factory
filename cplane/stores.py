@@ -184,8 +184,8 @@ class PostgresStore(FeatureStore, RunRecordStore, SkillStore):
     def sessions(self, area, session_id=None):
         with self.locked():
             rows = self.connection.execute(
-                'SELECT id, area, title, tool, model, state, cli_session_id, repositories '
-                ' , skill_names, skill_version FROM cplane_sessions WHERE area = %s AND (%s::bigint IS NULL OR id = %s) ORDER BY id',
+                'SELECT id, area, title, tool, model, state, cli_session_id, repositories, '
+                'skill_names, skill_version FROM cplane_sessions WHERE area = %s AND (%s::bigint IS NULL OR id = %s) ORDER BY id',
                 (area, session_id, session_id))
             keys = ('id', 'area', 'title', 'tool', 'model', 'state', 'cli_session_id', 'repositories', 'skill_names', 'skill_version')
             return [dict(zip(keys, row)) for row in rows]

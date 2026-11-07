@@ -18,6 +18,7 @@ from cplane.runner import Git, GitHub, Runner
 
 @pytest.fixture
 def delivery(tmp_path, monkeypatch):
+    monkeypatch.setattr('cplane.cut.skills_version', lambda: 'synthetic-installation-revision')
     tmp_path = tmp_path.resolve()
     monkeypatch.setenv('CPLANE_FENCE', '1')
     monkeypatch.setenv('GIT_CONFIG_GLOBAL', '/dev/null')

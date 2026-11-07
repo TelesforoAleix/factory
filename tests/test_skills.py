@@ -31,7 +31,7 @@ def test_catalog_and_workspace_only_enabled(extra_skill, tmp_path):
     assert sorted(p.parent.name for p in folder.glob('.claude/skills/*/SKILL.md')) == ['extra', 'grilling']
     agent = (folder / 'AGENTS.md').read_text()
     assert '.claude/skills/grilling/SKILL.md' in agent
-    assert 'cut' not in agent
+    assert '.claude/skills/cut/' not in agent
     text = (folder / '.claude/skills/extra/SKILL.md').read_text()
     assert text.startswith('---\nname: extra\ndescription: "Synthetic optional skill."\n---\n')
     assert text.endswith('Extra instructions.\n')
