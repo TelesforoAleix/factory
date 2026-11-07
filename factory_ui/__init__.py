@@ -8,6 +8,7 @@ from cplane import cli, planner, state
 
 from flask import Flask, jsonify, request, send_from_directory
 from cplane.stores import PostgresStore
+from .documents import Documents, DocumentNotFound
 
 DIST = Path(__file__).resolve().parent.parent / 'ui' / 'dist'
 
@@ -45,6 +46,7 @@ def view(item):
 def create_app(store=None):
     app = Flask(__name__, static_folder=None)
     app.config['STORE'] = store
+    app.config['DOCUMENT_ROOT'] = Path('/var/lib/factory/ui-docs')
 
     @app.before_request
     def guard_mutations():
@@ -148,6 +150,85 @@ def create_app(store=None):
             return jsonify(error=str(error)), 400
         except Exception:
             return jsonify(error='Messages unavailable'), 503
+
+    def documents():
+        return Documents(app.config['DOCUMENT_ROOT'])
+
+    @app.errorhandler(DocumentNotFound)
+    def missing_document(error):
+        return jsonify(error='Document not found'), 404
+
+    @app.get('/api/homelab/documents')
+    def document_list():
+        try:
+            return jsonify(documents().search(request.args.get('q', '')))
+        except OSError:
+            return jsonify(error='Documents unavailable'), 503
+
+    @app.get('/api/homelab/documents/<path:document>')
+    def document_detail(document):
+        try:
+            return jsonify(documents().read(document))
+        except OSError:
+            return jsonify(error='Documents unavailable'), 503
+
+    @app.route('/api/homelab/notes/<path:document>', methods=['GET', 'POST'])
+    def document_notes(document):
+        text = None
+        if request.method == 'POST':
+            payload = request.get_json(silent=True)
+            text = payload.get('text') if isinstance(payload, dict) else None
+            if not isinstance(text, str) or not text.strip() or len(text) > 16000:
+                return jsonify(error='Note must contain 1–16000 characters'), 400
+        try:
+            documents().read(document)
+            return jsonify(backend().document_notes(document, text))
+        except DocumentNotFound:
+            raise
+        except Exception:
+            return jsonify(error='Notes unavailable'), 503
+
+    @app.post('/api/homelab/send-note/<int:note_id>/<path:document>')
+    def send_note(note_id, document):
+        payload = request.get_json(silent=True)
+        sid = payload.get('session') if isinstance(payload, dict) else None
+        if not isinstance(sid, int) or isinstance(sid, bool) or sid < 1:
+            return jsonify(error='Choose a Home Lab session'), 400
+        try:
+            documents().read(document)
+            return jsonify(backend().send_document_note(document, note_id, sid))
+        except DocumentNotFound:
+            raise
+        except state.StateError as error:
+            return jsonify(error=str(error)), 400
+        except Exception:
+            return jsonify(error='Note unavailable'), 503
+
+    @app.post('/api/homelab/grills')
+    def create_grill():
+        from cplane.stores import validate_session
+        payload = request.get_json(silent=True)
+        try:
+            if not isinstance(payload, dict) or not isinstance(payload.get('document'), str) or not payload['document']:
+                raise ValueError()
+            doc = documents().read(payload.get('document'))
+            fields = validate_session({**payload, 'title': 'Grill: ' + doc['title'][:190]}, 'homelab')
+            if not fields[3]:
+                return jsonify(error='Name at least one repository'), 400
+            message = ('This is a Home Lab grill. Ask exactly one question at a time. '
+                       'Wait for the owner to answer before asking the next question. '
+                       'Review the chosen document using the named repositories. '
+                       'Do not write to planning documents.\n\n'
+                       f'Document: {doc["path"]}\nStatus: {doc["status"]}\n\n{doc["markdown"]}')
+            if len(message) > 32000:
+                return jsonify(error='Document is too large for a session message'), 400
+            return jsonify(id=backend().create_grill(fields, message)), 201
+        except DocumentNotFound:
+            raise
+        except ValueError:
+            return jsonify(error='Invalid grill fields'), 400
+        except Exception:
+            return jsonify(error='Grill unavailable'), 503
 
     @app.get('/')
     @app.get('/<path:path>')

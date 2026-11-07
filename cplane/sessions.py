@@ -1,5 +1,6 @@
 """Root-only, database-driven fenced conversation turns. No web execution path."""
 from concurrent.futures import ThreadPoolExecutor
+import ctypes
 import fcntl
 import io
 import json
@@ -9,6 +10,7 @@ from pathlib import Path
 import re
 import stat
 import subprocess
+import tempfile
 import tarfile
 import time
 
@@ -21,7 +23,7 @@ RUNS = Path('/srv/factory/runs')
 LOG = logging.getLogger(__name__)
 
 
-def export_tree(clone, destination, ref):
+def export_tree(clone, destination, ref, *, markdown_only=False):
     """Only trusted clone Git; omit links and reject unsafe archive entries."""
     trusted_directory(clone)
     result = subprocess.run(['git', '-C', str(clone), '-c', 'core.hooksPath=/dev/null',
@@ -37,9 +39,62 @@ def export_tree(clone, destination, ref):
                 continue
             if not (member.isfile() or member.isdir()):
                 raise StateError('Export contains unsafe entries')
+            if markdown_only and not (member.isfile() and path.suffix == '.md'):
+                continue
             members.append(member)
         destination.mkdir(mode=0o700)
         archive.extractall(destination, members=members, filter='data')
+
+
+UI_DOCS = Path('/var/lib/factory/ui-docs')
+
+
+class DocumentExporter:
+    """Publish committed Markdown only; no Git pull and no agent-owned inputs."""
+
+    def __init__(self, clone=BRIEFS, destination=UI_DOCS):
+        self.clone, self.destination = clone, destination
+        self.head = None
+
+    def refresh(self):
+        trusted_directory(self.clone)
+        head = subprocess.run(
+            ['git', '-C', str(self.clone), '-c', 'core.hooksPath=/dev/null',
+             '-c', 'core.fsmonitor=false', 'rev-parse', '--verify', 'HEAD^{commit}'],
+            capture_output=True, check=True, text=True, env=host_environment()).stdout.strip()
+        if head == self.head:
+            return False
+        parent = self.destination.parent
+        trusted_directory(parent)
+        # Shared reader lock prevents deleting an old generation during a read.
+        lock_fd = os.open(parent / '.ui-docs.lock', os.O_CREAT | os.O_RDONLY | os.O_NOFOLLOW, 0o644)
+        os.fchmod(lock_fd, 0o644)
+        try:
+            with tempfile.TemporaryDirectory(prefix='.ui-docs-', dir=parent) as staging:
+                tree = Path(staging) / 'tree'
+                export_tree(self.clone, tree, head, markdown_only=True)
+                for directory, _, filenames in os.walk(tree):
+                    Path(directory).chmod(0o755)
+                    for name in filenames:
+                        (Path(directory) / name).chmod(0o644)
+                fcntl.flock(lock_fd, fcntl.LOCK_EX)
+                if self.destination.is_symlink():
+                    raise StateError('Invalid document export destination')
+                if self.destination.exists():
+                    if not self.destination.is_dir():
+                        raise StateError('Invalid document export destination')
+                    # Linux rename exchange leaves the public path present even
+                    # across a process crash. Both trees are plain directories.
+                    libc = ctypes.CDLL(None, use_errno=True)
+                    if libc.renameat2(-100, os.fsencode(tree), -100,
+                                      os.fsencode(self.destination), 2) != 0:
+                        raise OSError(ctypes.get_errno(), 'Document exchange failed')
+                else:
+                    os.rename(tree, self.destination)
+                self.head = head
+                return True
+        finally:
+            os.close(lock_fd)
 
 
 def workspace(session):
@@ -179,7 +234,15 @@ def main():
             store.finish_session_turn(turn, 'Turn interrupted. Create a new session.', failed=True)
         with ThreadPoolExecutor(max_workers=2) as pool:
             active = []
+            exporter = DocumentExporter()
+            next_export = 0
             while True:
+                if time.monotonic() >= next_export:
+                    try:
+                        exporter.refresh()
+                    except Exception:
+                        LOG.exception('Document export failed; keeping previous export')
+                    next_export = time.monotonic() + 60
                 for future in list(active):
                     if future.done():
                         future.result()  # database failures stop service; restart reconciles

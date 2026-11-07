@@ -212,6 +212,33 @@ class PostgresStore:
                 (session_id,))
             return [dict(id=r[0], role=r[1], text=r[2], status=r[3], time=r[4].isoformat()) for r in rows]
 
+    def document_notes(self, document, text=None):
+        with self.mutation():
+            if text is not None:
+                self.connection.execute(
+                    'INSERT INTO cplane_document_notes (document, text) VALUES (%s, %s)',
+                    (document, text))
+            rows = self.connection.execute(
+                'SELECT id, text, time FROM cplane_document_notes WHERE document = %s ORDER BY id',
+                (document,))
+            return [dict(id=r[0], text=r[1], time=r[2].isoformat()) for r in rows]
+
+    def send_document_note(self, document, note_id, session_id):
+        with self.mutation():
+            row = self.connection.execute(
+                'SELECT text FROM cplane_document_notes WHERE document = %s AND id = %s',
+                (document, note_id)).fetchone()
+            if row is None:
+                raise state.StateError('Note not found')
+            return self.session_messages('homelab', session_id,
+                                         f'Owner note on {document}:\n\n{row[0]}')
+
+    def create_grill(self, fields, message):
+        with self.mutation():
+            sid = self.create_session('homelab', *fields)
+            self.session_messages('homelab', sid, message)
+            return sid
+
     def claim_session_turn(self):
         with self.mutation():
             if self.connection.execute("SELECT count(*) FROM cplane_session_messages WHERE status = 'running'").fetchone()[0] >= 2:
