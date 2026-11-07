@@ -1,0 +1,238 @@
+"""Per-turn host workshop boundary. Only this socket's chat may act."""
+from contextlib import AbstractContextManager
+import json
+import os
+from pathlib import Path
+import shutil
+import socketserver
+import threading
+
+from factory_ui.documents import DocumentNotFound
+from .features import bounded
+from .state import StateError
+from .times import now
+
+KINDS = ('orchestrator', 'project', 'feature')
+MAX_CALLS = 50
+MAX_REQUEST = 65_536
+FEATURE_FIELDS = ('id', 'project', 'title', 'stage', 'position', 'parked_from',
+                  'backlog', 'design_agreed', 'review_passed', 'aliases', 'sections')
+SLICE_FIELDS = ('id', 'repo', 'feature', 'feature_id', 'title', 'state', 'brief',
+                'depends_on', 'slot', 'paused', 'pr', 'stop_before_merge')
+
+
+def select(item, fields):
+    return {key: item[key] for key in fields if key in item}
+
+
+def tool(name, description, properties=None, required=()):
+    return dict(name=name, description=description, inputSchema=dict(
+        type='object', properties=properties or {}, required=list(required), additionalProperties=False))
+
+
+def string():
+    return dict(type='string')
+
+
+TOOLS = [
+    tool('board', 'Read the Workshop board.'),
+    tool('feature', 'Read one feature in full.', dict(feature=string()), ('feature',)),
+    tool('slices', 'Read the slices linked to a feature.', dict(feature=string()), ('feature',)),
+    tool('documents', 'List Library documents.', dict(query=string())),
+    tool('document', 'Read one Library document.', dict(path=string()), ('path',)),
+    tool('save_section', 'Save a feature section.',
+         dict(feature=string(), section=string(), text=string()), ('feature', 'section', 'text')),
+    tool('set_mark', 'Set or clear a design or review mark.',
+         dict(feature=string(), mark=dict(type='string', enum=['design', 'review']), clear=dict(type='boolean')),
+         ('feature', 'mark')),
+    tool('move_feature', 'Move to a stage, or transfer to a project. Choose exactly one destination.',
+         dict(feature=string(), stage=string(), project=string()), ('feature',)),
+    tool('place_feature', 'Place a feature within its stage. Choose exactly one placement.',
+         dict(feature=string(), top=dict(type='boolean'), bottom=dict(type='boolean'), before=string(), after=string()),
+         ('feature',)),
+    tool('add_feature', 'Add a feature to the shortlist (project chats and orchestrator only).',
+         dict(project=string(), title=string()), ('project', 'title')),
+    tool('raise_decision', 'Raise a short decision and recommendation to the owner.',
+         dict(text=string(), recommendation=string()), ('text', 'recommendation')),
+]
+SCHEMAS = {item['name']: item['inputSchema'] for item in TOOLS}
+READS = {'board', 'feature', 'slices', 'documents', 'document'}
+
+
+class Workshop:
+    def __init__(self, store, chat_id, documents):
+        self.store, self.chat_id, self.documents = store, chat_id, documents
+        self.calls = 0
+
+    def request(self, request):
+        identifier = request.get('id') if isinstance(request, dict) else None
+        response = dict(jsonrpc='2.0', id=identifier)
+        method = None
+        try:
+            if not isinstance(request, dict) or request.get('jsonrpc') != '2.0':
+                raise StateError('Invalid workshop request')
+            method = request.get('method')
+            if method == 'initialize':
+                response['result'] = dict(protocolVersion='2024-11-05', capabilities=dict(tools={}),
+                                          serverInfo=dict(name='workshop', version='1'))
+            elif method in ('notifications/initialized', 'notifications/cancelled', 'ping'):
+                response['result'] = {}
+            elif method == 'tools/list':
+                response['result'] = dict(tools=TOOLS)
+            elif method == 'tools/call':
+                self.calls += 1
+                if self.calls > MAX_CALLS:
+                    raise StateError('Workshop limit reached: 50 calls per turn')
+                params = request.get('params', {})
+                if not isinstance(params, dict) or set(params) - {'name', 'arguments', '_meta'}:
+                    raise StateError('Invalid workshop call')
+                result = self.call(params.get('name'), params.get('arguments', {}))
+                response['result'] = dict(content=[dict(type='text', text=json.dumps(result))], isError=False)
+            else:
+                raise StateError('Unknown workshop operation')
+        except (StateError, DocumentNotFound) as error:
+            if method == 'tools/call':
+                response['result'] = dict(content=[dict(type='text', text=str(error))], isError=True)
+            else:
+                response['error'] = dict(code=(-32601 if str(error) == 'Unknown workshop operation' else -32600),
+                                         message=str(error))
+        except Exception:
+            # Never relay database, filesystem, request or credential diagnostics.
+            if method == 'tools/call':
+                response['result'] = dict(content=[dict(type='text', text='Workshop unavailable')], isError=True)
+            else:
+                response['error'] = dict(code=-32603, message='Workshop unavailable')
+        return response
+
+    def call(self, name, args):
+        from jsonschema import validate, ValidationError
+        if not isinstance(name, str) or name not in SCHEMAS:
+            raise StateError('Unknown workshop operation')
+        try:
+            validate(args, SCHEMAS[name])
+        except ValidationError:
+            raise StateError('Invalid workshop arguments') from None
+        # Re-read links and authorize under the SAME lock as the mutation. In
+        # particular, aliases and owner project transfers cannot bypass scope.
+        with self.store.mutation():
+            chat = self.store.chat_show(self.chat_id)
+            if chat['kind'] not in KINDS:
+                raise StateError('This chat has no workshop access')
+            actor = f'chat:{self.chat_id}'
+
+            def scope(feature):
+                item = self.store._feature(feature)
+                if chat['kind'] == 'feature':
+                    own = self.store._feature(chat['feature'])
+                    if item['feature'] != own['feature']:
+                        raise StateError('This chat can only write its own feature')
+                if chat['kind'] == 'project' and item['project'] != chat['project']:
+                    raise StateError('This chat can only write inside its project')
+
+            def project_scope(project):
+                if chat['kind'] == 'project' and project != chat['project']:
+                    raise StateError('This chat can only write inside its project')
+
+            if name == 'board':
+                board = self.store.feature_board()
+                result = dict(projects=[select(p, ('key', 'name')) for p in board['projects']],
+                              features=[dict(**select(f, FEATURE_FIELDS),
+                                             slices=[select(s, SLICE_FIELDS) for s in f['slices']],
+                                             stage_since=f['stage_since']) for f in board['features']])
+            elif name == 'feature':
+                result = select(self.store.feature_show(args['feature']), FEATURE_FIELDS)
+            elif name == 'slices':
+                internal = self.store._feature(args['feature'])
+                result = [select(s, SLICE_FIELDS) for s in self.store._linked_slices(internal['feature'])]
+            elif name == 'documents':
+                result = self.documents.search(args.get('query', ''))
+            elif name == 'document':
+                result = self.documents.read(args['path'])
+            elif name == 'raise_decision':
+                bounded(args['text'], 'Decision text', 2000)
+                bounded(args['recommendation'], 'Recommendation', 2000)
+                at = now().isoformat()
+                self.store.append_notices([dict(at=at, id=actor, event='owner-check', kind='owner-check',
+                    chat=self.chat_id, actor=actor,
+                    text=f"{chat['title']}: {args['text']}\nRecommendation: {args['recommendation']}")])
+                result = dict(raised=True)
+            elif name == 'add_feature':
+                if chat['kind'] == 'feature':
+                    raise StateError('Feature chats cannot add features')
+                project_scope(args['project'])
+                result = self.store.feature_add(args['project'], args['title'], actor=actor)
+            else:
+                scope(args['feature'])
+                if name == 'save_section':
+                    result = self.store.feature_section(args['feature'], args['section'], args['text'], actor=actor)
+                elif name == 'set_mark':
+                    result = self.store.feature_mark(args['feature'], args['mark'], clear=args.get('clear', False), actor=actor)
+                elif name == 'move_feature':
+                    if ('stage' in args) == ('project' in args):
+                        raise StateError('Choose exactly one destination')
+                    if 'project' in args:
+                        project_scope(args['project'])
+                        result = self.store.feature_move(args['feature'], args['project'], actor=actor)
+                    else:
+                        result = self.store.feature_stage(args['feature'], args['stage'], actor=actor)
+                elif name == 'place_feature':
+                    # An anchor is read-only: ordering changes always affect the
+                    # stage's global positions, as in the existing board.
+                    result = self.store.feature_place(actor=actor, **{('identifier' if k == 'feature' else k): v for k, v in args.items()})
+            if name not in READS:
+                # Also audit no-op writes, without relying on section revisions.
+                self.store.connection.execute(
+                    'INSERT INTO cplane_workshop_writes (chat, operation) VALUES (%s, %s)',
+                    (self.chat_id, name))
+            return select(result, FEATURE_FIELDS) if isinstance(result, dict) and 'stage' in result else result
+
+
+class WorkshopServer(AbstractContextManager):
+    def __init__(self, run, store, chat_id, documents):
+        self.run = Path(run)
+        self.workshop = Workshop(store, chat_id, documents)
+        self.server = self.thread = None
+        self.path = self.run / 'workshop.sock'
+
+    def __enter__(self):
+        workshop = self.workshop
+
+        class Handler(socketserver.StreamRequestHandler):
+            def handle(self):
+                self.connection.settimeout(2)
+                try:
+                    line = self.rfile.readline(MAX_REQUEST + 1)
+                    if len(line) > MAX_REQUEST or not line.endswith(b'\n'):
+                        raise ValueError
+                    response = workshop.request(json.loads(line))
+                    self.wfile.write(json.dumps(response).encode() + b'\n')
+                except (OSError, ValueError):
+                    return
+
+        try:
+            # The host-created run folder stays unwritable by the agent. It must
+            # be traversable through the existing bind mount for client/socket.
+            self.run.chmod(0o755)
+            shutil.copyfile(Path(__file__).with_name('workshop_mcp.py'), self.run / 'workshop_mcp.py')
+            (self.run / 'workshop_mcp.py').chmod(0o444)
+            config = dict(mcpServers=dict(workshop=dict(command='python3', args=['/run/factory/workshop_mcp.py'])))
+            (self.run / 'workshop-mcp.json').write_text(json.dumps(config))
+            (self.run / 'workshop-mcp.json').chmod(0o444)
+            self.server = socketserver.UnixStreamServer(str(self.path), Handler)
+            os.chown(self.path, 21000, 21000)
+            self.path.chmod(0o600)
+            self.thread = threading.Thread(target=self.server.serve_forever,
+                                           kwargs=dict(poll_interval=0.05), daemon=True)
+            self.thread.start()
+            return self
+        except Exception:
+            self.__exit__(None, None, None)
+            raise
+
+    def __exit__(self, *exc):
+        if self.thread is not None:
+            self.server.shutdown()
+            self.thread.join()
+        if self.server is not None:
+            self.server.server_close()
+            self.path.unlink(missing_ok=True)

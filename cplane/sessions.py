@@ -1,5 +1,6 @@
 """Root-only, database-driven fenced conversation turns. No web execution path."""
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 import ctypes
 import fcntl
 import io
@@ -16,6 +17,8 @@ import time
 
 from .fence import Fence, trusted_directory, host_environment, WORK_ROOT
 from . import run_records, skills
+from .workshop import WorkshopServer, KINDS as WORKSHOP_KINDS
+from factory_ui.documents import Documents
 from .planning import Planning
 from .state import StateError
 from .stores import PostgresStore, REPOSITORY
@@ -187,10 +190,15 @@ def turn_command(turn, folder, paths, run):
     if tool == 'codex':
         command = ['codex', 'exec', '--skip-git-repo-check', '--json', '-m', session['model'],
                    '-c', 'model_reasoning_effort="medium"']
+        if session.get('kind') in WORKSHOP_KINDS:
+            command += ['-c', 'mcp_servers.workshop.command="python3"',
+                        '-c', 'mcp_servers.workshop.args=["/run/factory/workshop_mcp.py"]']
         if session['cli_session_id']:
             command += ['resume', session['cli_session_id']]
     else:
         command = ['claude', '-p', '--output-format', 'json', '--model', session['model']]
+        if session.get('kind') in WORKSHOP_KINDS:
+            command += ['--mcp-config', '/run/factory/workshop-mcp.json']
         if session['cli_session_id']:
             command += ['--resume', session['cli_session_id']]
     prompt = ('Workshop event: ' if turn.get('role') == 'system' else '') + turn['text']
@@ -240,9 +248,13 @@ def _execute_turn(turn, store, accounting):
         run.mkdir(mode=0o700)  # root-owned; no agent output files to follow
         command = turn_command(turn, folder, paths, run)
         accounting['started'] = time.time()
-        result = subprocess.run(command,
-                                stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                                env=host_environment())
+        workshop = (WorkshopServer(run, PostgresStore(store._url), turn['session']['id'],
+                                   Documents(UI_DOCS))
+                    if turn['session'].get('kind') in WORKSHOP_KINDS else nullcontext())
+        with workshop:
+            result = subprocess.run(command,
+                                    stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                                    env=host_environment())
         accounting['output'] = result.stdout
         accounting['ended'] = time.time()
         if result.returncode == 125:
@@ -282,6 +294,17 @@ def _execute_turn(turn, store, accounting):
         store.finish_session_turn(turn, reply, cli_id)
 
 
+def cleanup_interrupted_turn(turn):
+    subprocess.run(['factory-cli', 'session-cleanup', str(turn['id'])], check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    run = RUNS / f'session-turn-{turn["id"]}'
+    if run.exists():
+        # Service termination closes the listener but can leave its directory
+        # entry. Only traverse the host-owned run tree after container cleanup.
+        trusted_directory(run)
+        (run / 'workshop.sock').unlink(missing_ok=True)
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
     url = os.environ.get('CPLANE_DATABASE_URL')
@@ -290,8 +313,7 @@ def main():
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         store = PostgresStore(url)
         for turn in store.interrupted_session_turns():
-            subprocess.run(['factory-cli', 'session-cleanup', str(turn['id'])], check=True,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            cleanup_interrupted_turn(turn)
             run_records.chat_record(store, turn, {'outcome': 'interrupted'})
             store.finish_session_turn(turn, 'Turn interrupted. Create a new session.', failed=True)
         with ThreadPoolExecutor(max_workers=2) as pool:
