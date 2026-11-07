@@ -254,13 +254,19 @@ class PostgresStore:
             self.connection.execute("UPDATE cplane_sessions SET state = 'running' WHERE id = %s", (row[1],))
             return dict(id=row[0], session=session, text=row[2])
 
-    def finish_session_turn(self, turn, reply, cli_id=None, failed=False):
+    def finish_session_turn(self, turn, reply, cli_id=None, failed=False, *,
+                            planning_commits=(), delivery_notice=None):
         with self.mutation():
             status = 'failed' if failed else 'done'
             self.connection.execute('UPDATE cplane_session_messages SET status = %s WHERE id = %s', (status, turn['id']))
             self.connection.execute(
                 "INSERT INTO cplane_session_messages (session, role, text, status) VALUES (%s, 'assistant', %s, %s)",
                 (turn['session']['id'], reply, status))
+            for notice in ([delivery_notice] if delivery_notice else []) + [
+                    'Planning pushed commit ' + commit for commit in planning_commits]:
+                self.connection.execute(
+                    "INSERT INTO cplane_session_messages (session, role, text, status) VALUES (%s, 'assistant', %s, 'done')",
+                    (turn['session']['id'], notice))
             self.connection.execute(
                 'UPDATE cplane_sessions SET state = %s, cli_session_id = COALESCE(%s, cli_session_id) WHERE id = %s',
                 ('failed' if failed else 'idle', cli_id, turn['session']['id']))

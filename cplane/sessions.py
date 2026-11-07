@@ -15,6 +15,7 @@ import tarfile
 import time
 
 from .fence import Fence, trusted_directory, host_environment, WORK_ROOT
+from .planning import Planning
 from .state import StateError
 from .stores import PostgresStore, REPOSITORY
 
@@ -114,10 +115,17 @@ def workspace(session):
     else:
         # mkdir is exclusive: an interrupted or planted workspace is never reused.
         folder.mkdir(mode=0o700)
-        export_tree(BRIEFS, folder / 'planning', 'HEAD')
         repos = folder / 'repos'
         repos.mkdir(mode=0o755)
         repos.chmod(0o755)
+        if session.get('area') == 'homelab':
+            Planning(session).prepare(folder / 'planning')
+        else:
+            # Reuse the existing read-only repository mount contract. Repository
+            # names cannot start with '.', so this reserved export cannot collide.
+            export_tree(BRIEFS, repos / '.planning', 'HEAD')
+            (repos / '.planning').chmod(0o755)
+            (folder / 'planning').symlink_to('repos/.planning')
         fence = Fence()
         for repository in session['repositories']:
             _, name = repository.split('/')
@@ -134,10 +142,11 @@ def workspace(session):
             export_tree(clean, repos / name, f'refs/remotes/origin/{match[1]}')
             (repos / name).chmod(0o755)
         # Chown planning only, while workspace remains root-owned and inaccessible.
-        for directory, folders, files in os.walk(folder / 'planning', followlinks=False):
-            for name in [*folders, *files]:
-                os.chown(Path(directory) / name, 21000, 21000, follow_symlinks=False)
-        os.chown(folder / 'planning', 21000, 21000)
+        if session.get('area') == 'homelab':
+            for directory, folders, files in os.walk(folder / 'planning', followlinks=False):
+                for name in [*folders, *files]:
+                    os.chown(Path(directory) / name, 21000, 21000, follow_symlinks=False)
+            os.chown(folder / 'planning', 21000, 21000)
         os.chown(folder, 21000, 21000)
     paths = []
     for repository in session['repositories']:
@@ -148,6 +157,13 @@ def workspace(session):
             if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
                 raise StateError('Repository export replaced')
         paths.append(path)
+    if session.get('area') != 'homelab':
+        readonly = folder / 'repos/.planning'
+        for component in (folder / 'repos', readonly):
+            info = component.lstat()
+            if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+                raise StateError('Planning export replaced')
+        paths.append(readonly)
     return folder, paths
 
 
@@ -212,13 +228,31 @@ def execute_turn(turn, store):
             store.finish_session_turn(turn, reply, failed=True)
             return
         cli_id, reply = parse_reply(turn['session']['tool'], result.stdout)
+        commits = []
+        if turn['session'].get('area') == 'homelab':
+            io_folder = run / 'io'
+            io_folder.mkdir(mode=0o700)
+            os.chown(io_folder, 21000, 21000)
+            try:
+                commits = Planning(turn['session']).deliver(folder / 'planning', run)
+            except (StateError, OSError) as error:
+                # Only fixed messages from the delivery boundary reach the page;
+                # Git diagnostics, arguments and environments are never logged.
+                reply += '\n\nPlanning delivery stopped. See the delivery notice.'
+                store.finish_session_turn(turn, reply, cli_id,
+                                          delivery_notice=(str(error) if isinstance(error, StateError) else
+                                                           'Planning delivery failed; nothing confirmed pushed.'))
+                return
     except CleanupError:
         raise
     except Exception:
         LOG.exception('Session turn %s failed', turn['id'])
         store.finish_session_turn(turn, 'Turn failed. Create a new session.', failed=True)
         return
-    store.finish_session_turn(turn, reply, cli_id)
+    if commits:
+        store.finish_session_turn(turn, reply, cli_id, planning_commits=commits)
+    else:
+        store.finish_session_turn(turn, reply, cli_id)
 
 
 def main():
