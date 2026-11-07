@@ -59,6 +59,58 @@ def create_app(store=None):
     def slices():
         return backend().load()['slices']
 
+    def board_data():
+        data = backend().feature_board()
+        for item in data['features']:
+            item['title'] = clean(item['title'])
+            item['sections'] = [{**section, 'name': clean(section['name']), 'text': clean(section['text'])} for section in item['sections']]
+            item['slices'] = [view(s) for s in item['slices']]
+            item.pop('backlog', None)
+        for project in data['projects']:
+            project['name'] = clean(project['name'])
+        return data
+
+    @app.get('/api/pipeline')
+    def pipeline_board():
+        try:
+            return jsonify(board_data())
+        except Exception:
+            return jsonify(error='Pipeline unavailable'), 503
+
+    @app.get('/api/pipeline/<identifier>')
+    def pipeline_feature(identifier):
+        try:
+            item = next((f for f in board_data()['features'] if identifier == f['id'] or identifier in f['aliases']), None)
+            return jsonify(item) if item else (jsonify(error='Feature not found'), 404)
+        except Exception:
+            return jsonify(error='Pipeline unavailable'), 503
+
+    @app.post('/api/pipeline/<identifier>/<operation>')
+    def pipeline_change(identifier, operation):
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify(error='Invalid request'), 400
+        try:
+            if operation == 'move':
+                target = payload.get('stage')
+                if not isinstance(target, str):
+                    return jsonify(error='Choose a stage'), 400
+                backend().feature_stage(identifier, target, actor='owner')
+            elif operation == 'place':
+                if len(payload) != 1 or next(iter(payload), None) not in ('top', 'bottom', 'before', 'after'):
+                    return jsonify(error='Choose exactly one placement'), 400
+                key, value = next(iter(payload.items()))
+                if (key in ('top', 'bottom') and value is not True) or (key in ('before', 'after') and not isinstance(value, str)):
+                    return jsonify(error='Invalid placement'), 400
+                backend().feature_place(identifier, actor='owner', **{key: value})
+            else:
+                return jsonify(error='Not found'), 404
+            return jsonify(ok=True)
+        except state.StateError as error:
+            return jsonify(error=clean(' '.join(str(error).splitlines()))), 400
+        except Exception:
+            return jsonify(error='Pipeline unavailable'), 503
+
     @app.get('/api/slices')
     def list_slices():
         try:
