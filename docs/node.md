@@ -1135,11 +1135,13 @@ credential, UI screen or runtime dependency changes are required.
 Project repositories may be plain names such as `factory`, fully qualified
 `owner/name` values, or absent. Absent repositories become an empty chat repository
 list. For a plain name, existing Factory sessions supply an exact repository
-match when unambiguous; otherwise a single shared owner supplies its namespace.
-Home Lab sessions do not supply this evidence. Unknown or ambiguous owners leave
+match when unambiguous; otherwise a single shared owner from Factory sessions
+and slice repositories supplies its namespace. Home Lab sessions do not supply
+this evidence. Unknown or ambiguous owners leave
 the plain name stored without blocking chat creation or entry into Grilling.
-The sessions service retries resolution when claiming a turn. Until it can name
-a fully qualified repository, that turn remains queued; unrelated chats can run.
+The sessions service retries resolution when claiming a turn. If it cannot name a fully qualified repository, it marks the message failed and
+adds a system message explaining that the repository is unknown; unrelated chats
+can run.
 Once resolved, the full repository name is saved before workspace preparation.
 The fence continues to accept only validated `owner/name` repositories.
 

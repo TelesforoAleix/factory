@@ -269,9 +269,12 @@ class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore):
             for row in rows:
                 session = self.sessions(row[3], row[1])[0]
                 repositories = self.resolve_chat_repositories(session['repositories'])
-                # Keep an unresolved event queued; never pass a guessed name to
-                # the fence or fail a chat just because owner evidence is absent.
                 if any(not REPOSITORY.fullmatch(r) for r in repositories):
+                    self.connection.execute("UPDATE cplane_session_messages SET status = 'failed' WHERE id = %s", (row[0],))
+                    self.connection.execute(
+                        "INSERT INTO cplane_session_messages (session, role, text, status, automatic) "
+                        "VALUES (%s, 'system', 'Repository is unknown; cannot run this message.', 'done', true)",
+                        (row[1],))
                     continue
                 if any(r.lower() in active for r in repositories):
                     continue

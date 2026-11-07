@@ -228,7 +228,9 @@ def test_seeded_projects_accept_plain_or_absent_repositories(pg_store, project, 
         assert pg_store.claim_session_turn()['session']['id'] == feature['id']
     else:
         assert pg_store.claim_session_turn() is None
-        assert pg_store.session_messages('factory', feature['id'])[0]['status'] == 'queued'
+        messages = pg_store.session_messages('factory', feature['id'])
+        assert messages[0]['status'] == 'failed'
+        assert messages[1]['role'] == 'system' and 'Repository is unknown' in messages[1]['text']
 
 
 @pytest.mark.parametrize(('known', 'expected'), [
@@ -252,7 +254,6 @@ def test_project_repository_resolution_uses_unambiguous_factory_evidence(pg_stor
 def test_plain_name_resolves_before_claim_without_overlapping_running_repository(pg_store):
     _, feature = feature_chat(pg_store, project='FAC')
     assert feature['repositories'] == ['factory']
-    assert pg_store.claim_session_turn() is None
     legacy = pg_store.create_session('factory', 'Existing', 'codex', 'synthetic', ['owner/factory'])
     pg_store.session_messages('factory', legacy, 'Owner first')
     turn = pg_store.claim_session_turn()
@@ -263,6 +264,37 @@ def test_plain_name_resolves_before_claim_without_overlapping_running_repository
     assert turn['session']['id'] == feature['id']
     assert turn['session']['repositories'] == ['owner/factory']
     assert pg_store.chat_show(feature['id'])['repositories'] == ['owner/factory']
+
+
+@pytest.mark.parametrize(('slice_repos', 'expected'), [
+    (['owner/other'], 'owner/factory'),
+    (['Owner/one', 'owner/two'], 'Owner/factory'),
+    (['owner/one', 'other/two'], 'factory'),
+])
+def test_slice_repositories_supply_owner_evidence(pg_store, slice_repos, expected):
+    from psycopg.types.json import Jsonb
+    with pg_store.mutation():
+        for i, repo in enumerate(slice_repos):
+            pg_store.connection.execute(
+                'INSERT INTO cplane_slices (id, position, document) VALUES (%s, %s, %s)',
+                (str(i), i, Jsonb({'repo': repo})))
+    assert pg_store.create_project_chat('FAC')['repositories'] == [expected]
+
+
+def test_unresolved_message_fails_and_other_chat_runs(pg_store):
+    chat = pg_store.create_project_chat('FAC')
+    pg_store.session_messages('factory', chat['id'], 'Cannot resolve')
+    other = pg_store.create_session('homelab', 'Other', 'codex', 'synthetic', [])
+    pg_store.session_messages('homelab', other, 'Can run')
+    turn = pg_store.claim_session_turn()
+    assert turn['session']['id'] == other
+    messages = pg_store.session_messages('factory', chat['id'])
+    assert [(m['role'], m['status']) for m in messages] == [('owner', 'failed'), ('system', 'done')]
+    assert messages[1]['automatic'] and 'Repository is unknown' in messages[1]['text']
+    assert pg_store.chat_show(chat['id'])['state'] == 'idle'
+    pg_store.finish_session_turn(turn, 'Done')
+    assert pg_store.claim_session_turn() is None
+    assert len(pg_store.session_messages('factory', chat['id'])) == 2
 
 
 def test_invalid_project_repository_does_not_create_chat(pg_store):
