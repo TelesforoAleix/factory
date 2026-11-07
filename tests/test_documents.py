@@ -127,8 +127,11 @@ def test_notes_and_grill_transaction(published, pg_store):
     assert len(messages) == 1
     assert messages[0]['status'] == 'queued'
     assert 'Ask exactly one question at a time' in messages[0]['text']
-    assert 'Document: folder/plan.md' in messages[0]['text']
-    assert '# Plan' in messages[0]['text']
+    assert 'Read planning/folder/plan.md' in messages[0]['text']
+    assert 'A searchable document.' not in messages[0]['text']
+    assert 'Wait for the owner to answer' in messages[0]['text']
+    assert 'using the named repositories' in messages[0]['text']
+    assert 'Do not write to planning documents' in messages[0]['text']
     route = f'/api/homelab/send-note/{note["id"]}/folder/plan.md'
     result = client.post(route, json={'session': sid}, headers=headers)
     assert result.status_code == 200
@@ -180,12 +183,24 @@ def test_failed_grill_queue_rolls_back_session(pg_store, monkeypatch):
     assert pg_store.sessions('homelab') == []
 
 
-def test_oversized_grill_is_refused_before_creation(published):
+def test_large_document_starts_grill(published):
     root = published[1].destination
     (root / 'large.md').write_text('# Large\n' + 'x' * 32000)
     store = Mock()
+    store.create_grill.return_value = 1
     result = client_for(published, store).post('/api/homelab/grills', json=dict(
         document='large.md', tool='codex', model='synthetic', repositories=['owner/repo']),
         headers={'X-Factory-UI': '1'})
-    assert result.status_code == 400
+    assert result.status_code == 201
+    message = store.create_grill.call_args.args[1]
+    assert 'Read planning/large.md' in message
+    assert 'x' * 32000 not in message
+
+
+def test_missing_document_cannot_start_grill(published):
+    store = Mock()
+    result = client_for(published, store).post('/api/homelab/grills', json=dict(
+        document='missing.md', tool='codex', model='synthetic', repositories=['owner/repo']),
+        headers={'X-Factory-UI': '1'})
+    assert result.status_code == 404
     store.create_grill.assert_not_called()
