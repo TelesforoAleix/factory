@@ -10,7 +10,7 @@ body:has(.pipeline) main { max-width: none; }
 .project-filter button[aria-pressed=true] { background: #315f9b; border-color: #315f9b; color: white; }
 .pipeline-layout { display: flex; align-items: flex-start; gap: 1rem; min-width: 0; }
 .pipeline-scroll { overflow-x: auto; min-width: 0; flex: 1; padding-bottom: 1rem; }
-.pipeline-grid { display: grid; grid-template-columns: repeat(6, minmax(190px, 1fr)); grid-template-rows: minmax(12rem, 40vh) minmax(8rem, 16vh) auto; gap: .7rem; min-width: 1200px; align-items: start; }
+.pipeline-grid { display: grid; grid-template-columns: repeat(6, minmax(190px, 1fr)); grid-template-rows: minmax(16rem, 40vh) minmax(14rem, 20vh) auto; gap: .7rem; min-width: 1200px; align-items: stretch; }
 .pipeline-column { background: #dfe5ed80; border-radius: .7rem; padding: .65rem; min-height: 0; display: flex; flex-direction: column; grid-row: 1 / 3; }
 .pipeline-column.over { outline: 2px solid #648ee1; }
 .pipeline-column h2 { font-size: .95rem; margin: .1rem .2rem .8rem; }
@@ -22,11 +22,11 @@ body:has(.pipeline) main { max-width: none; }
 .stage-parked { grid-column: 1 / -1; grid-row: 3; }
 .stage-parked .pipeline-cards { display: flex; overflow-x: auto; overflow-y: hidden; }
 .stage-parked .pipeline-card-wrap { flex: 0 0 190px; }
-.pipeline-cards { display: grid; align-content: start; gap: .5rem; min-height: 3rem; overflow-y: auto; }
+.pipeline-cards { display: grid; align-content: start; gap: .5rem; flex: 1; min-height: 0; overflow-y: auto; }
 .pipeline-card { position: relative; background: #fff; border: 1px solid #c9d3df; border-radius: .6rem; box-shadow: 0 2px 5px #20283310; }
 .pipeline-card.selected { outline: 2px solid #315f9b; }
 .pipeline-card-open { display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: .45rem; width: 100%; padding: .8rem; border: 0; background: transparent; color: inherit; }
-.pipeline-card-open small { padding-right: 6rem; }
+.pipeline-card-open small { padding-right: 6rem; white-space: nowrap; }
 .feature-chip { position: absolute; right: 2rem; top: .55rem; color: #526b8d; background: #e7eef8; font-size: .68rem; border-radius: 1rem; padding: .2rem .45rem; }
 .feature-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .project-tag { background: #e0edf0; color: #28565c; border-radius: .3rem; padding: .15rem .4rem; font-size: .7rem; font-weight: 700; }
@@ -47,6 +47,7 @@ body:has(.pipeline) main { max-width: none; }
   header { flex-wrap: wrap; }
   .pipeline-grid { display: flex; flex-direction: column; min-width: 0; }
   .pipeline-column { width: 100%; min-height: 0; }
+  .pipeline-cards { flex: initial; min-height: 3rem; }
   .pipeline-column h2 { margin-bottom: 0; }
   .stage-heading { display: none; }
   .stage-toggle { display: block; cursor: pointer; }
