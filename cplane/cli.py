@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 import sys
 import subprocess
-from importlib.resources import files
 
 from . import state
 from . import planner
@@ -434,7 +433,8 @@ def main(argv=None):
                 item = next((item for item in state.load(path)["slices"] if item["id"] == args.id), None)
                 if item is None:
                     raise state.StateError(f"unknown slice: {args.id}")
-                print(files("skills").joinpath("cut.md").read_text() + brief_for(item), end="")
+                from .skills import instructions
+                print(instructions("cut") + brief_for(item), end="")
             else:
                 try:
                     plan = json.loads(Path(args.plan).read_text())

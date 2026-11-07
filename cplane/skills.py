@@ -16,7 +16,10 @@ def catalog():
             raise StateError('Invalid skill file')
         text = path.read_text()
         try:
-            metadata = json.loads(text.splitlines()[0].removeprefix('--- '))
+            first = text.splitlines()[0]
+            if not first.startswith('--- '):
+                raise ValueError()
+            metadata = json.loads(first[4:])
             if (metadata['name'] != path.stem or not isinstance(metadata['description'], str)
                     or not metadata['description'].strip()):
                 raise ValueError()

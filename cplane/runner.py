@@ -1,6 +1,5 @@
 """One locked scheduling pass. Adapters keep external effects fakeable."""
 from datetime import datetime, timedelta
-from importlib.resources import files
 import hashlib
 import json
 import os
