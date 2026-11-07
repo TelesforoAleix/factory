@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 import time
 import traceback
 import uuid
@@ -23,6 +24,46 @@ from .times import now
 
 CODEX_WORKTREES = Path.home() / '.codex/worktrees'
 WORKTREE_MAX_AGE = 7 * 24 * 60 * 60
+
+
+BOT_EVENTS = frozenset({'question', 'escalation', 'merge', 'owner-check'})
+
+
+def export_bot(path):
+    directory = os.environ.get('CPLANE_BOT_EXPORT')
+    if not directory:
+        return
+    try:
+        folder = Path(directory)
+        if not folder.is_absolute():
+            raise ValueError('export directory must be absolute')
+        fence.trusted_directory(folder)
+        with state.locked(path) as backend:
+            data, notices = backend.load(), backend.notices()
+            data['slices'] = [{key: value for key, value in item.items() if key != 'log'}
+                              for item in data['slices']]
+            payload = json.dumps(data, indent=2, ensure_ascii=False) + '\n'
+            outbox = ''.join(json.dumps(notice, ensure_ascii=False) + '\n'
+                             for _, notice in notices if notice.get('event') in BOT_EVENTS)
+            outbox_path = folder / 'slices.json.outbox.jsonl'
+            if outbox_path.exists() and not outbox.startswith(outbox_path.read_text(encoding='utf-8')):
+                raise ValueError('notice history changed')
+            gid = folder.stat().st_gid
+            for destination, content in ((outbox_path, outbox), (folder / 'slices.json', payload)):
+                name = None
+                try:
+                    with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=folder,
+                                                     prefix='.cplane-bot-', delete=False) as stream:
+                        name = stream.name
+                        os.fchown(stream.fileno(), -1, gid)
+                        os.fchmod(stream.fileno(), 0o640)
+                        stream.write(content)
+                    os.replace(name, destination)
+                finally:
+                    if name is not None and os.path.exists(name):
+                        os.unlink(name)
+    except Exception:
+        print('cplane: bot export failed', file=sys.stderr)
 
 
 def codex_usage(folder=None):
@@ -774,6 +815,10 @@ class Runner:
                 self.merge(item, job)
 
     def run(self):
+        self._run_pass()
+        export_bot(self.path)
+
+    def _run_pass(self):
         with state.locked(self.path):
             self.git.pull(self.path)
             orders_changed = self.orders.collect(self)

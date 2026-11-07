@@ -1741,3 +1741,69 @@ def test_claude_resume_model_unchanged(setup):
     edit(r, lambda s: s['attention'].update(answer='a'))
     r.run()
     assert p.started[-1]['model'] == 'sonnet'
+
+
+def test_bot_export_after_pass(setup, tmp_path, monkeypatch):
+    from cplane import fence
+    r, _, _ = setup
+    folder = tmp_path / 'bot'
+    folder.mkdir()
+    monkeypatch.setattr(fence, 'ROOT_UID', os.getuid())
+    monkeypatch.setenv('CPLANE_BOT_EXPORT', str(folder))
+    events = ['started', 'question', 'merge', 'submitted', 'escalation', 'owner-check']
+    notices = [{'at': '2026-01-01', 'id': 'voice/W1', 'event': event, 'text': event}
+               for event in events]
+    state.store(r.path).append_notices(notices)
+    r.run()
+    exported = json.loads((folder / 'slices.json').read_text())
+    assert len(exported['slices']) == 1
+    assert 'log' not in exported['slices'][0]
+    outbox = folder / 'slices.json.outbox.jsonl'
+    previous = outbox.read_text()
+    assert [json.loads(line)['event'] for line in previous.splitlines()] == [
+        'question', 'merge', 'escalation', 'owner-check']
+    for file in (folder / 'slices.json', outbox):
+        assert file.stat().st_mode & 0o777 == 0o640
+        assert file.stat().st_gid == folder.stat().st_gid
+    state.store(r.path).append_notices([notices[1]])
+    r.run()
+    assert outbox.read_text() == previous + json.dumps(notices[1], ensure_ascii=False) + '\n'
+
+
+def test_bot_export_unset_and_empty_pass(tmp_path, make_state, monkeypatch):
+    from cplane import fence
+    path = make_state([])
+    r = Runner(path, git=Mock(), runs=tmp_path / 'runs')
+    monkeypatch.delenv('CPLANE_BOT_EXPORT', raising=False)
+    r.run()
+    assert not (tmp_path / 'bot').exists()
+    folder = tmp_path / 'bot'
+    folder.mkdir()
+    monkeypatch.setattr(fence, 'ROOT_UID', os.getuid())
+    monkeypatch.setenv('CPLANE_BOT_EXPORT', str(folder))
+    r.run()
+    assert json.loads((folder / 'slices.json').read_text())['slices'] == []
+    assert (folder / 'slices.json.outbox.jsonl').read_text() == ''
+
+
+def test_bot_export_untrusted_and_write_failure(setup, tmp_path, monkeypatch, capsys):
+    from cplane import fence, runner
+    r, _, _ = setup
+    folder = tmp_path / 'bot'
+    folder.mkdir(mode=0o777)
+    folder.chmod(0o777)
+    monkeypatch.setattr(fence, 'ROOT_UID', os.getuid())
+    monkeypatch.setenv('CPLANE_BOT_EXPORT', str(folder))
+    r.run()
+    assert list(folder.iterdir()) == []
+    assert capsys.readouterr().err == 'cplane: bot export failed\n'
+    folder.chmod(0o750)
+    replace = os.replace
+    def fail(source, destination):
+        if Path(destination).parent == folder:
+            raise OSError('private text')
+        return replace(source, destination)
+    monkeypatch.setattr(runner.os, 'replace', fail)
+    r.run()
+    assert list(folder.iterdir()) == []
+    assert capsys.readouterr().err == 'cplane: bot export failed\n'
