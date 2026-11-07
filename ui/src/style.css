@@ -90,3 +90,16 @@ body:has(.chats) main { max-width: 1400px; }
 .message:hover .chat-usage, .chat-usage:focus-within { opacity: 1; }
 .chat-back { display: none; }
 @media(max-width: 700px) { .chats { display: block; } .chat-list { border: 0; padding: 0; } .chats:not(.chat-open) .chat-main, .chat-open .chat-list { display: none; } .chat-back { display: inline-block; margin-bottom: 1rem; } .chat-settings { flex-wrap: wrap; } }
+
+.home-board { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 12px; }
+.home-attention { border: 1px solid #d9dfe5; border-left: 4px solid #b87518; border-radius: 8px; padding: 16px; background: white; }
+.home-failure { border-left-color: #b32c2c; }
+.home-card-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
+.home-card-heading small, .home-row small { color: #66717c; }
+.home-attention h3 { margin: 12px 0 4px; }
+.home-attention p { margin: 10px 0; }
+.home-row { display: flex; align-items: center; gap: 8px; border: 1px solid #d9dfe5; border-radius: 8px; padding: 10px; background: white; }
+.home-row a { display: flex; flex: 1; flex-direction: column; gap: 4px; }
+.home-strip { display: flex; flex-wrap: wrap; gap: 8px; }
+.home-strip a { display: flex; gap: 10px; align-items: center; border: 1px solid #d9dfe5; border-radius: 8px; padding: 10px; }
+@media (max-width: 600px) { .home-board { grid-template-columns: 1fr; } }

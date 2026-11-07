@@ -1312,3 +1312,23 @@ it reports the store refusal, the feature remains unchanged, and that turn's
 `/srv/factory/runs/session-turn-<turn-id>/workshop.sock` no longer exists. Check
 both providers when switching the chat's tool. This host boundary requires owner
 merge approval; the implementation PR must remain open until that approval.
+
+## Home
+
+Workshop opens at Home. Its project buttons filter attention, waiting chats,
+issued slices, Next and pipeline counts. The attention board puts failures first,
+followed by reviewed approvals, node steps, chat decisions, questions, stuck
+slices and the waiting limit. Accept confirms the current PR; Install requests
+the existing fixed installer only for repositories in `CPLANE_INSTALL_REPOS`.
+The site must receive the same value as the runner. Other node steps show their
+text. Actions use the existing owner mutation guard and store checks.
+
+Stuck cards require a runner notice for the current stalled interval and disappear
+when the slice advances. Chat decisions remain until the chat is opened. Next
+uses the same global stage order and placement rules as Pipeline, including when
+filtered by project. Home polls every 30 seconds; actions refresh immediately.
+After merging this change, request the existing fixed install:
+
+```sh
+sudo factory-cplane --actor owner install factory/HM2
+```

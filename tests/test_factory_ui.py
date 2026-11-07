@@ -167,3 +167,35 @@ def test_chat_usage_is_scoped_and_omits_private_fields():
     assert response.json == {'10': {'tokens': {'input_tokens': 10}, 'seconds': 5},
                              '12': {'tokens': {'input_tokens': 20}, 'seconds': 5}}
     assert b'private' not in response.data
+
+
+def test_home_projection_orders_attention_and_discards_stale_stuck(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from cplane import planner
+    now = datetime.now(timezone.utc)
+    old = (now - timedelta(minutes=30)).isoformat()
+    item = planner.new_slice('demo/one')
+    item.update(title='One', repo='owner/repo', feature='Feature', state='issued', pr=7)
+    item['log'] = [dict(at=old, actor='runner', event='issued')]
+    item['attention'] = dict(kind='merge', body='Approve', since=old, answer=None, approved=False,
+                             review=dict(verdict='Looks good', actor='planner', at=old))
+    feature = dict(id='FAC-F1', aliases=[], title='Feature', project='FAC', stage='building',
+                   sections=[], slices=[item])
+    class HomeStore:
+        def load(self): return dict(slices=[item])
+        def feature_board(self): return dict(projects=[dict(key='FAC', name='Factory')], features=[feature])
+        def notices(self): return [(1, dict(event='stuck', id=item['id'], since=old, reason='no new log activity', at=old))]
+        def chats(self, **kwargs): return []
+        def limit_show(self): return dict(waiting_limit=1, building_limit=2)
+    client = create_app(HomeStore()).test_client()
+    result = client.get('/api/home').get_json()
+    assert [a['kind'] for a in result['attention']] == ['approval', 'stuck', 'limit']
+    assert result['attention'][0]['verdict'] == 'Looks good'
+    assert result['running'][0]['feature'] == 'FAC-F1'
+    item['log'].append(dict(at=now.isoformat(), actor='runner', event='progress'))
+    assert [a['kind'] for a in client.get('/api/home').get_json()['attention']] == ['approval', 'limit']
+    item['attention'] = dict(kind='node-step', body='Install', since=old, answer=None, approved=False)
+    monkeypatch.setenv('CPLANE_INSTALL_REPOS', 'owner/repo')
+    assert client.get('/api/home').get_json()['attention'][0]['installable'] is True
+    monkeypatch.setenv('CPLANE_INSTALL_REPOS', 'other/repo')
+    assert client.get('/api/home').get_json()['attention'][0]['installable'] is False
