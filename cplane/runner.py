@@ -553,19 +553,27 @@ class Runner:
         elif job.get('review') and final['kind'] == 'waiting':
             self.apply_review(item, job, final['body'])
         elif item.get('flow', 'cli') == 'tickets' and final['kind'] == 'waiting':
-            blocks = list(re.finditer(r'^```(?:json)?[ \t]*\r?\n(.*?)\r?\n```[ \t]*$',
-                                      final['body'], re.S | re.M))
-            if not blocks:
-                raise state.StateError('invalid plan: expected fenced JSON')
             try:
-                plan = json.loads(blocks[-1][1])
-            except ValueError:
-                raise state.StateError('invalid plan: expected fenced JSON') from None
-            cutter.validate_plan(plan)
-            if not self.fenced:
-                raise state.StateError('tickets flow needs fenced mode; needs attention')
-            # Validate brief rules before publishing anything.
-            cutter.sections(job['brief'], item['id'])
+                blocks = list(re.finditer(r'^```(?:json)?[ \t]*\r?\n(.*?)\r?\n```[ \t]*$',
+                                          final['body'], re.S | re.M))
+                if not blocks:
+                    raise state.StateError('invalid plan: expected fenced JSON')
+                try:
+                    plan = json.loads(blocks[-1][1])
+                except ValueError:
+                    raise state.StateError('invalid plan: expected fenced JSON') from None
+                cutter.validate_plan(plan)
+                if not self.fenced:
+                    raise state.StateError('tickets flow needs fenced mode; needs attention')
+                # Validate brief rules before publishing anything.
+                cutter.sections(job['brief'], item['id'])
+            except state.StateError:
+                # Record the rejected turn alongside its escalation in state, so
+                # an answer can resume it without replaying the same final.
+                self.log(item, 'collected turn: ' + Path(job['run']).name)
+                raise
+            if item['attention'] and item['attention']['answer'] is not None:
+                item['attention'] = None
             tickets = cutter.status(item['id'])
             if tickets:
                 # Workers may already have advanced the branch; only follow it.
@@ -702,6 +710,8 @@ class Runner:
         job = self.jobs.get(item['id'])
         attention = item['attention']
         if job and job['phase'] == 'review-ready':
+            if attention and attention['answer'] is not None:
+                item['attention'] = attention = None
             if not attention and not item['paused']:
                 self.launch(item, job['brief'], review=True)
             return
