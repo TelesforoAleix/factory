@@ -111,6 +111,50 @@ class FeatureStore:
                 'SELECT name, position, text FROM cplane_feature_sections WHERE feature = %s ORDER BY position', (feature,))]
             return item
 
+    def feature_board(self):
+        """Read board data together under the store lock; never expose run prompts."""
+        from .run_records import TOKEN_FIELDS
+        with self.locked():
+            items = self.feature_list()
+            slices = self.load()['slices']
+            records = self.run_record_list()
+            projects = [dict(key=r[0], name=r[1]) for r in self.connection.execute(
+                'SELECT key, name FROM cplane_projects ORDER BY name')]
+            for item in items:
+                internal = self._feature(item['id'])
+                ids = {item['id'], *item['aliases']}
+                linked = [s for s in slices if s.get('feature_id') in ids]
+                item['slices'] = linked
+                item['moves'] = []
+                for target in STAGES:
+                    if target == item['stage']:
+                        continue
+                    source = item['stage']
+                    allowed = (target == item['parked_from'] if source == 'parked' else
+                               target == 'parked' or 'owner' in MOVES.get((source, target), ()))
+                    if not allowed:
+                        continue
+                    if (target == 'parked' or source == 'building' and target in ('next', 'ready')) and any(
+                            s['state'] in ('issued', 'awaiting handover') and not s['paused'] for s in linked):
+                        continue
+                    try:
+                        if source in ('grilling', 'parked') or target == 'done':
+                            self._entry_conditions(internal, target, linked)
+                    except StateError:
+                        continue
+                    item['moves'].append(target)
+                event = self.connection.execute(
+                    "SELECT time FROM cplane_feature_events WHERE feature = %s AND (event LIKE 'stage %%' OR event LIKE 'add %%') ORDER BY id DESC LIMIT 1",
+                    (internal['feature'],)).fetchone()
+                item['stage_since'] = event[0].isoformat() if event else None
+                rows = [r for r in records if r.get('feature_id') in ids or r.get('slice_id') in {s['id'] for s in linked}]
+                item['numbers'] = {}
+                for field in (*TOKEN_FIELDS, 'seconds'):
+                    values = [(r['turn_tokens'][field] if field in TOKEN_FIELDS else r[field]) for r in rows]
+                    known = [v for v in values if v is not None]
+                    item['numbers'][field] = sum(known) if known else None
+            return dict(projects=projects, features=items)
+
     def _linked_slices(self, feature):
         return [r[0] for r in self.connection.execute(
             "SELECT s.document FROM cplane_slices s JOIN cplane_feature_ids a "

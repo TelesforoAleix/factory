@@ -953,3 +953,16 @@ failed write. Session restart reconciliation records interrupted turns with
 unknown usage and timing when they were lost. Full prompts are private database
 content; treat `run show`, database access and backups accordingly. No UI,
 launcher, credentials or additional network service is introduced.
+
+## Workshop pipeline
+
+The Workshop menu links to `/pipeline`, a feature board backed by Postgres. Select a
+project to filter the board; drag the handle to reorder or move a feature, or open a
+card and use its available move buttons. On touch screens, hold the handle before
+dragging. The preview links to the feature's full sections. The board uses the
+existing owner move rules and shows their refusal when a move cannot be made. Run
+usage totals contain known counters only and can be partial. Feature data appears
+when features are added or imported; an empty board is expected before import.
+
+After merging, install the updated Python package and UI dependencies on the node,
+rebuild the UI, and open `/pipeline` in Workshop.

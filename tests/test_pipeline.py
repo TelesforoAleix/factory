@@ -293,3 +293,19 @@ def test_optional_link_file_roundtrip(make_state, slice_data, monkeypatch, tmp_p
     exported = FileStore(destination).load()
     assert exported['version'] == 1
     assert exported['slices'][0]['feature_id'] == 'FAC-F1'
+
+
+def test_board_reads_alias_links_and_owner_moves(pg_store, slice_data):
+    from factory_ui import create_app
+    item = pg_store.feature_add('FAC', 'Synthetic', stage='building')
+    linked(pg_store, slice_data, item['id'], state='issued', paused=False)
+    moved = pg_store.feature_move(item['id'], 'LAB')
+    client = create_app(pg_store).test_client()
+    board = client.get('/api/pipeline')
+    assert board.status_code == 200
+    feature = board.json['features'][0]
+    assert feature['id'] == moved['id']
+    assert feature['slices'][0]['id'] == slice_data['id']
+    assert 'parked' not in feature['moves'] and 'ready' not in feature['moves']
+    assert feature['stage_since'] is not None
+    assert client.get('/api/pipeline/' + item['id']).json['id'] == moved['id']

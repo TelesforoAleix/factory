@@ -107,3 +107,35 @@ def test_final_message_is_cleaned_in_detail_api():
     final = create_app(FinalStore()).test_client().get('/api/slices/demo/one').get_json()['final']
     assert final == {'kind': 'handover', 'body': '<script>text<[path]> [path] [redacted]',
                      'at': '2026-01-01T00:00:00Z'}
+
+
+def test_pipeline_api_guard_reads_and_refusals():
+    from cplane.state import StateError
+
+    class BoardStore:
+        def __init__(self):
+            self.calls = []
+        def feature_board(self):
+            return {'projects': [{'key': 'FAC', 'name': 'Factory'}], 'features': [{
+                'id': 'FAC-F1', 'aliases': ['OLD-F1'], 'title': 'Title /private/path',
+                'sections': [{'name': 'Overview', 'text': 'Read /private/file'}],
+                'slices': [], 'backlog': {'private': 'secret'}}]}
+        def feature_stage(self, identifier, stage, *, actor):
+            self.calls.append((identifier, stage, actor))
+            raise StateError('No agreed design yet')
+        def feature_place(self, identifier, *, actor, **placement):
+            self.calls.append((identifier, placement, actor))
+    store = BoardStore()
+    client = create_app(store).test_client()
+    item = client.get('/api/pipeline/OLD-F1').get_json()
+    assert item['id'] == 'FAC-F1' and 'backlog' not in item
+    assert '/private/' not in str(item)
+    assert client.get('/api/pipeline/missing').status_code == 404
+    url = '/api/pipeline/FAC-F1/'
+    assert client.post(url + 'move', json={'stage': 'ready'}).status_code == 403
+    headers = {'X-Factory-UI': '1'}
+    response = client.post(url + 'move', json={'stage': 'ready'}, headers=headers)
+    assert response.status_code == 400 and response.json['error'] == 'No agreed design yet'
+    assert client.post(url + 'place', json={'before': 'FAC-F2'}, headers=headers).status_code == 200
+    assert store.calls == [('FAC-F1', 'ready', 'owner'), ('FAC-F1', {'before': 'FAC-F2'}, 'owner')]
+    assert client.post(url + 'place', json={'top': False}, headers=headers).status_code == 400
