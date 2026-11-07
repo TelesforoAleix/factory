@@ -683,3 +683,65 @@ To check an older dump, pass its path: `sudo factory-restore-check /path/to/fact
 Changes to live tables after the dump can cause count mismatches, including during
 a fresh check; investigate a mismatch before treating it as restore corruption.
 The temporary container is removed on completion or failure.
+
+## Feature storage and commands
+
+After merge, the orchestrator installs the reviewed Python revision using the
+existing installation procedure, then runs `sudo factory-cplane migrate`.
+Migration 004 adds feature tables independently of slices, notices and sessions.
+It seeds FAC (factory), LAB (homelab-v2), CTL (control-plane), STU (studio), MED
+(med-ask), and NEW (work with no project yet). Repository names are optional;
+NEW has no repository. Project keys are permanent.
+
+Feature commands require `CPLANE_DATABASE_URL`; the file store is refused. For
+example (use the node's `sudo factory-cplane` wrapper there):
+
+```sh
+cplane --actor planner feature add FAC 'Example functionality'
+cplane feature list --project FAC --stage shortlist --json
+cplane feature show FAC-F1 --json
+cplane --actor planner feature stage FAC-F1 grilling
+cplane --actor planner feature move FAC-F1 LAB
+cplane --actor planner feature section FAC-F1 Problem --file problem.md
+printf 'Some Markdown\n' | cplane --actor planner feature section FAC-F1 Solution
+cplane feature history FAC-F1 --section Problem
+cplane --actor planner feature revert FAC-F1 1
+```
+
+`add PROJECT TITLE` defaults to shortlist and accepts `--stage`. `stage ID STAGE`
+checks only the stage name: shortlist, grilling, ready, next, building, testing,
+done, or parked. New features and stage/project moves append to their destination
+stage, ordered by a stored zero-based position within the project. Positions can
+have gaps. Parking records the preceding stage; leaving parked clears it. A
+feature created directly as parked has no preceding stage. Repeating the current
+stage or project is a no-op. No stage gates or executor actions are added.
+
+Each project has a stored counter, advanced under the store's transaction lock.
+IDs are never reused after deletion or a project move. Moving assigns a new ID;
+all prior IDs resolve to the same feature for every read and mutation. Stage
+changes leave the ID unchanged. Features do not alter slices' free-text feature
+fields. `list` and `show` support JSON; mutations and `history` print JSON. The
+history revision ID, rather than a feature ID number, is passed to `revert`.
+
+Sections are named, ordered by their first save, and contain Markdown of at most
+16,000 characters (the existing document-note long-text bound). `section` reads
+UTF-8 from `--file PATH`, or stdin by default (`--file -`). Empty section text is
+allowed. Saving changed text appends a revision with full text, actor and time;
+saving identical text leaves history untouched. Reverting to a revision of the
+same feature saves its text as a new revision, even if already current.
+Revision history is never edited. Titles, section names and actors are nonempty
+and limited to 200 characters. Writes use validated locked transactions;
+add/stage/move also retain actor/time audit events. Database diagnostics continue
+to be sanitized by the store. No new network service, credential or permission is
+needed, and this slice adds no UI or import/export command.
+
+After installation and migration, the orchestrator smoke-tests storage:
+
+```sh
+sudo factory-cplane --actor orchestrator feature add NEW 'Feature storage smoke test'
+# Use the NEW-F<number> returned by add, rather than assuming a counter value.
+sudo factory-cplane feature show NEW-F<number> --json
+```
+
+Confirm the returned ID, project, title and shortlist stage agree. The smoke
+feature remains in Postgres; no delete command is introduced by this slice.

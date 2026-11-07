@@ -116,6 +116,33 @@ def parser():
     common.add_argument("--commit", action="store_true", default=argparse.SUPPRESS, help="commit and sync state repository")
     root = Parser(description="A scheduler's state file and its commands", parents=[common])
     commands = root.add_subparsers(dest="command", required=True, parser_class=Parser)
+    from .features import STAGES
+    feature = commands.add_parser('feature', parents=[common], help='manage Postgres features')
+    feature_commands = feature.add_subparsers(dest='feature_command', required=True, parser_class=Parser)
+    for name in ('add', 'list', 'show', 'stage', 'move', 'section', 'history', 'revert'):
+        sub = feature_commands.add_parser(name, parents=[common])
+        if name == 'add':
+            sub.add_argument('project')
+            sub.add_argument('title')
+            sub.add_argument('--stage', choices=STAGES, default='shortlist')
+        elif name == 'list':
+            sub.add_argument('--project')
+            sub.add_argument('--stage', choices=STAGES)
+        else:
+            sub.add_argument('id')
+        if name in ('list', 'show'):
+            sub.add_argument('--json', action='store_true')
+        if name == 'stage':
+            sub.add_argument('stage', choices=STAGES)
+        elif name == 'move':
+            sub.add_argument('project')
+        elif name == 'section':
+            sub.add_argument('section')
+            sub.add_argument('--file', default='-', help='UTF-8 text file, or - for stdin (default)')
+        elif name == 'history':
+            sub.add_argument('--section')
+        elif name == 'revert':
+            sub.add_argument('revision', type=int)
     view = commands.add_parser("pending", parents=[common], help="show pending slices")
     view.add_argument("--json", action="store_true", help="output grouped JSON")
     show = commands.add_parser("show", parents=[common], help="show one complete slice")
@@ -181,9 +208,47 @@ def parser():
     return root
 
 
+def feature_command(args):
+    if not state.postgres():
+        raise state.StateError('feature commands require Postgres (CPLANE_DATABASE_URL)')
+    backend = state.store(None)
+    command = args.feature_command
+    actor = getattr(args, 'actor', 'owner')
+    if command == 'add':
+        result = backend.feature_add(args.project, args.title, stage=args.stage, actor=actor)
+    elif command == 'list':
+        result = backend.feature_list(project=args.project, stage=args.stage)
+    elif command == 'show':
+        result = backend.feature_show(args.id)
+    elif command == 'stage':
+        result = backend.feature_stage(args.id, args.stage, actor=actor)
+    elif command == 'move':
+        result = backend.feature_move(args.id, args.project, actor=actor)
+    elif command == 'section':
+        text = sys.stdin.read() if args.file == '-' else Path(args.file).expanduser().read_text(encoding='utf-8')
+        result = backend.feature_section(args.id, args.section, text, actor=actor)
+    elif command == 'history':
+        result = backend.feature_history(args.id, args.section)
+    else:
+        result = backend.feature_revert(args.id, args.revision, actor=actor)
+    if command == 'list' and not args.json:
+        print('\n'.join(f"{item['id']} [{item['stage']}] {item['title']}" for item in result) or '(none)')
+    elif command == 'show' and not args.json:
+        print(f"{result['id']} [{result['stage']}] {result['title']}")
+        print(f"project: {result['project']}\nposition: {result['position']}\nparked from: {result['parked_from']}")
+        print('aliases: ' + ', '.join(result['aliases']))
+        for section in result['sections']:
+            print(f"\n## {section['name']}\n\n{section['text']}")
+    else:
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+    return 0
+
+
 def main(argv=None):
     args = parser().parse_args(argv)
     try:
+        if args.command == 'feature':
+            return feature_command(args)
         if args.command in ("prime", "install-primer", "uninstall-primer", "primer-wake-plist"):
             from . import primer
             if args.command == "prime":
