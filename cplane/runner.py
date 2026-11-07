@@ -26,8 +26,29 @@ CODEX_WORKTREES = Path.home() / '.codex/worktrees'
 WORKTREE_MAX_AGE = 7 * 24 * 60 * 60
 
 
-BOT_EVENTS = frozenset({'question', 'escalation', 'merge', 'owner-check'})
+BOT_EVENTS = frozenset({'question', 'escalation', 'merge', 'owner-check', 'stuck'})
 BOT_ACCEPTED_FIELDS = frozenset({'id', 'repo', 'title', 'state', 'pr', 'feature', 'paused', 'attention'})
+
+
+def stuck_since(item, instant):
+    """Return the start and reason of a current stalled interval, if any."""
+    if item['state'] != 'issued' or not item['log']:
+        return None
+    entries = item['log']
+    last = datetime.fromisoformat(entries[-1]['at'])
+    candidates = []
+    if instant - last >= timedelta(minutes=20):
+        candidates.append((last, 'no new log activity'))
+    pending = None
+    for entry in reversed(entries):
+        event = entry['event']
+        if event in ('checks: pending', 'approval checks: pending'):
+            pending = datetime.fromisoformat(entry['at'])
+        elif event.startswith(('checks: ', 'approval checks: ')):
+            break
+    if pending is not None and instant - pending > timedelta(minutes=10):
+        candidates.append((pending, 'checks pending'))
+    return min(candidates) if candidates else None
 
 
 def export_bot(path):
@@ -956,6 +977,17 @@ class Runner:
                         self.launch(item, prompt)
                     except Exception:
                         self.slice_failure(item, 'start')
+            previous_notices = state.store(self.path).notices()
+            seen = {(notice.get('id'), notice.get('since'), notice.get('reason'))
+                    for _, notice in previous_notices if notice.get('event') == 'stuck'}
+            for item in self.data['slices']:
+                stalled = stuck_since(item, self.instant)
+                if stalled:
+                    since, reason = stalled
+                    key = (item['id'], since.isoformat(), reason)
+                    if key not in seen:
+                        self.notices.append(dict(at=self.at, id=item['id'], event='stuck',
+                                                 text=f'Stuck: {reason}', since=key[1], reason=reason))
             changed = json.dumps(self.data, ensure_ascii=False, separators=(',', ':')) != state_before
             if changed or self.notices:
                 state.save(self.path, self.data, self.notices)
