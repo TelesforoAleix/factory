@@ -161,6 +161,23 @@ def create_app(store=None):
         except Exception:
             return 'State unavailable', 503
 
+    @app.post('/api/slices/<path:slice_id>/install')
+    def install_slice(slice_id):
+        from cplane.installation import request_change
+        try:
+            store = backend()
+            with store.locked():
+                token = state._ACTIVE.set(store)
+                try:
+                    state.update_locked(Path('.'), slice_id, 'install', 'owner', request_change('owner'))
+                finally:
+                    state._ACTIVE.reset(token)
+            return jsonify(status='requested'), 202
+        except state.StateError as error:
+            return jsonify(error=clean(str(error))), 400
+        except Exception:
+            return jsonify(error='State unavailable'), 503
+
     @app.get('/api/slices/<path:slice_id>')
     def slice_detail(slice_id):
         try:
