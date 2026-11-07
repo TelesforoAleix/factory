@@ -221,6 +221,29 @@ def test_factory_session_never_exports_or_pushes(delivery):
     assert d['git'](d['remote'], 'rev-parse', 'main') == d['base']
 
 
+@pytest.mark.parametrize(('step', 'notice'), [
+    ('fetch', 'Planning fetch failed; no delivery confirmed.'),
+    ('rebase', 'Planning rebase failed, possibly due to a conflict with main: nothing pushed. Resolve the conflicting changes in this session and try again.'),
+    ('push', 'Planning push failed; no delivery confirmed.'),
+])
+def test_failed_delivery_step_has_safe_notice(delivery, monkeypatch, caplog, step, notice):
+    d = delivery
+    commit(d)
+    execute = subprocess.run
+
+    def fail_step(args, **kwargs):
+        if args[0] == 'git' and step in args and (step != 'fetch' or 'origin' in args):
+            return subprocess.CompletedProcess(args, 1, 'secret git output', 'secret git error')
+        return execute(args, **kwargs)
+
+    monkeypatch.setattr(subprocess, 'run', fail_step)
+    with pytest.raises(StateError) as error:
+        publish(d)
+    assert str(error.value) == notice
+    assert 'secret git' not in str(error.value)
+    assert 'secret git' not in caplog.text
+
+
 def test_homelab_workspace_git_copy_and_resume(delivery, monkeypatch):
     from unittest.mock import Mock
     d = delivery

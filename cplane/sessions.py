@@ -22,6 +22,11 @@ from .stores import PostgresStore, REPOSITORY
 BRIEFS = Path('/srv/factory/briefs')
 RUNS = Path('/srv/factory/runs')
 LOG = logging.getLogger(__name__)
+HOMELAB_INSTRUCTION = (
+    'A change to planning/ reaches main only when it is committed there with '
+    'git add and git commit. Commit each agreed change in the turn that makes it, '
+    'with a short message. Only unprotected Markdown files may change.'
+)
 
 
 def export_tree(clone, destination, ref, *, markdown_only=False):
@@ -183,7 +188,10 @@ def turn_command(turn, folder, paths, run):
         command = ['claude', '-p', '--output-format', 'json', '--model', session['model']]
         if session['cli_session_id']:
             command += ['--resume', session['cli_session_id']]
-    return [*args, '--', *command, '--', turn['text']]
+    prompt = turn['text']
+    if session.get('area') == 'homelab':
+        prompt += '\n\n' + HOMELAB_INSTRUCTION
+    return [*args, '--', *command, '--', prompt]
 
 
 def parse_reply(tool, output):
