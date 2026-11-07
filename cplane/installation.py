@@ -83,7 +83,7 @@ def process(runner):
                     attention = item['attention']
                     if not attention or attention['kind'] != 'node-step' or attention['answer'] is not None:
                         raise ValueError()
-                    attention['answer'] = 'Installed ' + answer['commit']
+                    attention['answer'] = 'Installed ' + answer['commit'] + '. Node steps are done. End with kind handover.'
                     runner.log(item, attention['answer'], True)
                 else:
                     manual = answer.get('manual', [])
