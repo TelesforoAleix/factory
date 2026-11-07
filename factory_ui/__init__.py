@@ -217,11 +217,8 @@ def create_app(store=None):
                 return jsonify(error='Name at least one repository'), 400
             message = ('This is a Home Lab grill. Ask exactly one question at a time. '
                        'Wait for the owner to answer before asking the next question. '
-                       'Review the chosen document using the named repositories. '
-                       'Do not write to planning documents.\n\n'
-                       f'Document: {doc["path"]}\nStatus: {doc["status"]}\n\n{doc["markdown"]}')
-            if len(message) > 32000:
-                return jsonify(error='Document is too large for a session message'), 400
+                       f'Read planning/{doc["path"]} and review it using the named repositories. '
+                       'Do not write to planning documents.')
             return jsonify(id=backend().create_grill(fields, message)), 201
         except DocumentNotFound:
             raise

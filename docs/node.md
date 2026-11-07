@@ -558,9 +558,9 @@ route.
 
 “Start a grill” requires a document, tool/model and at least one named repository.
 It creates a Home Lab session and queues its first message atomically. The first
-message contains the displayed document body and states that the planner must ask
-one question at a time and wait for the owner's answer. The message size limit
-is 32,000 characters; an oversized document is refused before session creation.
+message tells the planner to read the document at `planning/<path>`, use the named
+repositories, ask one question at a time, and wait for the owner's answer. The
+document must exist, but its size does not limit grill creation.
 Grills use existing one-message/one-turn execution and repository exports.
 Conversation bubbles distinguish the owner from the planner; planner replies
 containing a question mark are highlighted as questions. This is a display cue,
