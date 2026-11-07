@@ -1221,7 +1221,7 @@ The API preserves the existing mutation guard (`X-Factory-UI: 1`):
 
 Existing `/api/<area>/sessions` and message routes continue working and expose
 the additional record fields. CLI resume IDs remain excluded from chat API and
-chat command output. No chat tool for mutating Factory is introduced. The fence,
+chat command output. The Workshop tool is described below. The fence,
 workspace ownership, UI screens, credentials, runtime dependencies and scheduler
 state version remain unchanged.
 
@@ -1234,3 +1234,79 @@ sudo factory-cplane --actor owner install factory/CH1
 The reviewed installer runs the additive migration and restarts UI and sessions.
 After it reports success, inspect `sudo factory-cplane chat list` and
 `sudo factory-cplane chat defaults`. No manual state edit or new service is needed.
+
+## Workshop tool for chats
+
+Migration 011 adds a compact successful-write audit (`chat`, operation and time).
+Before each orchestrator, project or feature chat turn, `factory-sessions` creates
+`workshop.sock` inside that turn's root-owned run folder. The socket is owned by
+21000:21000 with mode 0600. The folder is mode 0755 so the fenced UID can traverse
+its existing `/run/factory` bind mount, but cannot replace the socket or the
+root-owned, read-only MCP client and configuration files. The socket closes and
+is removed when the CLI returns or raises, including timeout and uncertain
+container-cleanup failures. Interrupted services lose the listener; startup reconciliation removes the old
+socket after container cleanup, and subsequent turns use fresh run folders. No separate daemon, port, token or credential is added.
+
+The copied `workshop_mcp.py` uses Python's standard library. It speaks newline
+JSON-RPC MCP over stdio and relays requests through the Unix socket. The host
+holds chat identity; supplied chat IDs, actors and other identity arguments
+cannot select another chat. Each socket has its own 50-tool-call allowance,
+including refused tool calls; all later tool calls are refused. Initialization,
+tool discovery and protocol notifications do not consume that allowance.
+Requests are limited to 64 KiB and stalled socket reads time out after two seconds.
+Unexpected host failures return a fixed message; store refusals retain their
+short sentence.
+
+The operations are `board`, `feature`, `slices`, `documents`, `document`,
+`save_section`, `set_mark`, `move_feature`, `place_feature`, `add_feature` and
+`raise_decision`. `move_feature` takes exactly one of `stage` or `project`;
+`add_feature` starts in Shortlist. A feature chat may change only its stable linked
+feature, including through aliases after project transfers. A project chat may
+change only features in its current project and cannot transfer one outside it.
+The orchestrator may write anywhere. Feature chats cannot add features.
+Placement uses the board's existing global stage order; an anchor is read-only.
+Reads may see the whole board and Library. Documents use the same committed
+Markdown export and reader as the Library. Explicit feature and slice field lists
+exclude executor/session metadata, attention bodies and logs. Settings, limits,
+roles, keys, chat transcripts and run-record prompts have no tool operation.
+Nothing deletes, and there is no slice-executor attachment.
+
+Every write uses the store's locked transaction path as `chat:<id>`, with current
+chat links and scope checked under the same lock. Existing feature transition,
+mark and placement rules apply. Feature revisions/events retain their usual
+audit, and the new audit records even successful no-op writes. `raise_decision`
+stores an `owner-check` phone notice with chat ID, actor, time, chat title, text
+and recommendation. The existing runner bot export delivers these notices;
+there is no new Home screen in this change.
+
+The image pins were checked with `codex --version` (0.162.1) and
+`claude --version` (2.1.318). Codex receives the server before `resume`, if any:
+
+```text
+-c mcp_servers.workshop.command="python3"
+-c mcp_servers.workshop.args=["/run/factory/workshop_mcp.py"]
+```
+
+Claude receives `--mcp-config /run/factory/workshop-mcp.json`. Its JSON contains
+`{"mcpServers":{"workshop":{"command":"python3","args":["/run/factory/workshop_mcp.py"]}}}`.
+The same configuration is passed on new turns and resumes. Local checks used
+`codex mcp get workshop --json`, Codex app-server `mcpServerStatus/list`, and a
+Claude print turn against a local mock model endpoint. Both CLIs initialized the
+stdio relay and discovered all 11 tools. Claude deferred tool discovery was
+disabled only in that isolated mock test to inspect the outgoing tool schemas. No changes to
+`factory-cli`, the image, proxy, fence network or version 1 scheduler state are
+needed. Legacy chats receive no workshop server.
+
+After the owner approves and merges CH2, use the existing install procedure:
+
+```sh
+sudo factory-cplane --actor owner install factory/CH2
+```
+
+After the reviewed installer reports success (including migration and service
+restarts), run a project or feature chat turn asking it to read the board and
+request one disallowed move, for example Shortlist directly to Building. Confirm
+it reports the store refusal, the feature remains unchanged, and that turn's
+`/srv/factory/runs/session-turn-<turn-id>/workshop.sock` no longer exists. Check
+both providers when switching the chat's tool. This host boundary requires owner
+merge approval; the implementation PR must remain open until that approval.
