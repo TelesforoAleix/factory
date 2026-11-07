@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Protocol, ContextManager
 
 from . import state
+from .features import FeatureStore
 
 
 class Store(Protocol):
@@ -74,7 +75,7 @@ class FileStore:
 LOCK_KEY = 0x43504C414E45
 
 
-class PostgresStore:
+class PostgresStore(FeatureStore):
     def __init__(self, url):
         if not url:
             raise state.StateError("Postgres connection failed")
