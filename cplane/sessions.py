@@ -193,7 +193,7 @@ def turn_command(turn, folder, paths, run):
         command = ['claude', '-p', '--output-format', 'json', '--model', session['model']]
         if session['cli_session_id']:
             command += ['--resume', session['cli_session_id']]
-    prompt = turn['text']
+    prompt = ('Workshop event: ' if turn.get('role') == 'system' else '') + turn['text']
     if session.get('area') == 'homelab':
         prompt += '\n\n' + HOMELAB_INSTRUCTION
     return [*args, '--', *command, '--', prompt]
