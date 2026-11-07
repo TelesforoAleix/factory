@@ -1132,13 +1132,16 @@ credential, UI screen or runtime dependency changes are required.
 
 ## Chat records
 
-This implementation checkpoint is blocked on two contract decisions before
-installation or merge: resolving short project repository names to `owner/repo`,
-and resuming a chat after switching providers. It currently refuses short names
-when creating a linked chat and refuses provider changes after a saved CLI
-session exists. The repository mapping refusal also rolls back entry into
-Grilling. These restrictions are incomplete behavior, pending the owner's
-answers; do not deploy this checkpoint.
+Project repositories may be plain names such as `factory`, fully qualified
+`owner/name` values, or absent. Absent repositories become an empty chat repository
+list. For a plain name, existing Factory sessions supply an exact repository
+match when unambiguous; otherwise a single shared owner supplies its namespace.
+Home Lab sessions do not supply this evidence. Unknown or ambiguous owners leave
+the plain name stored without blocking chat creation or entry into Grilling.
+The sessions service retries resolution when claiming a turn. Until it can name
+a fully qualified repository, that turn remains queued; unrelated chats can run.
+Once resolved, the full repository name is saved before workspace preparation.
+The fence continues to accept only validated `owner/name` repositories.
 
 Migration 009 keeps session and message IDs, queued turns, saved CLI resume IDs,
 repositories and per-chat tool/model choices. The oldest Home Lab session becomes
@@ -1193,6 +1196,14 @@ uses the oldest installed Home Lab tool/model for orchestrator defaults and the
 oldest Factory choice for other kinds; absent an installed choice it seeds
 `codex` and `gpt-5.3-codex`. Set reviewed provider/model choices before using
 new automatic feature chats. A running chat refuses configuration changes.
+Migration 010 keeps a separate CLI resume ID for each provider and marks existing
+resumed workspaces as prepared. Switching tool selects that provider's saved ID,
+or starts a new CLI conversation if it has not run in the chat before. Changing
+the model keeps the selected provider's resume ID. The original workspace and
+skill snapshot are reused: the host performs the same ownership and read-only
+export checks and never refreshes, repairs or writes the prepared workspace.
+Each provider keeps its own conversation history; messages are not replayed into
+the other provider. Resume IDs remain private runner metadata.
 
 The API preserves the existing mutation guard (`X-Factory-UI: 1`):
 

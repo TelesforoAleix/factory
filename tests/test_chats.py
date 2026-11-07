@@ -29,9 +29,10 @@ def test_migration_carries_sessions_and_bootstraps_empty_database(pg_store):
         store.connection.execute('DROP TABLE cplane_chat_settings')
         store.connection.execute('DROP INDEX cplane_chat_latest_reply')
         store.connection.execute('ALTER TABLE cplane_sessions DROP COLUMN kind, DROP COLUMN project, '
-                                 'DROP COLUMN feature, DROP COLUMN archived, DROP COLUMN last_read_at')
+                                 'DROP COLUMN feature, DROP COLUMN archived, DROP COLUMN last_read_at, '
+                                 'DROP COLUMN tool_sessions, DROP COLUMN workspace_ready')
         store.connection.execute('ALTER TABLE cplane_session_messages DROP COLUMN automatic')
-        store.connection.execute("DELETE FROM cplane_migrations WHERE name = '009_chats.sql'")
+        store.connection.execute("DELETE FROM cplane_migrations WHERE name IN ('009_chats.sql', '010_chat_tool_sessions.sql')")
         factory = store.connection.execute(
             "INSERT INTO cplane_sessions (area,title,tool,model,cli_session_id,repositories) "
             "VALUES ('factory','Old code','claude','synthetic','saved','[\"owner/repo\"]') RETURNING id").fetchone()[0]
@@ -50,6 +51,7 @@ def test_migration_carries_sessions_and_bootstraps_empty_database(pg_store):
     assert chats[lab]['kind'] == 'orchestrator'
     assert chats[other]['kind'] == chats[factory]['kind'] == 'legacy'
     assert chats[factory]['cli_session_id'] == 'saved'
+    assert chats[factory]['workspace_ready']
     assert chats[factory]['repositories'] == ['owner/repo']
     assert store.session_messages('factory', factory)[0]['text'] == 'old message'
     assert store.claim_session_turn()['session']['cli_session_id'] == 'saved'
@@ -213,3 +215,102 @@ def test_concurrent_feature_stage_creates_only_one_chat(pg_store):
     assert len(pg_store.chats(kind='feature')) == 1
     chat = pg_store.chats(kind='feature')[0]
     assert len(pg_store.session_messages('factory', chat['id'])) == 1
+
+
+@pytest.mark.parametrize(('project', 'repository'), [('FAC', 'factory'), ('LAB', 'homelab-v2'), ('NEW', None)])
+def test_seeded_projects_accept_plain_or_absent_repositories(pg_store, project, repository):
+    chat = pg_store.create_project_chat(project)
+    assert chat['repositories'] == ([] if repository is None else [repository])
+    identifier, feature = feature_chat(pg_store, project=project)
+    assert feature['repositories'] == chat['repositories']
+    assert feature['feature'] == identifier
+    if repository is None:
+        assert pg_store.claim_session_turn()['session']['id'] == feature['id']
+    else:
+        assert pg_store.claim_session_turn() is None
+        assert pg_store.session_messages('factory', feature['id'])[0]['status'] == 'queued'
+
+
+@pytest.mark.parametrize(('known', 'expected'), [
+    ([], 'factory'),
+    (['owner/factory'], 'owner/factory'),
+    (['owner/another-repository'], 'owner/factory'),
+    (['owner/factory', 'other/unrelated'], 'owner/factory'),
+    (['owner/factory', 'other/factory'], 'factory'),
+    (['owner/one', 'other/two'], 'factory'),
+])
+def test_project_repository_resolution_uses_unambiguous_factory_evidence(pg_store, known, expected):
+    for repository in known:
+        pg_store.create_session('factory', 'Existing', 'codex', 'synthetic', [repository])
+    # Planning chats do not provide Factory repository-owner evidence.
+    pg_store.create_session('homelab', 'Planning', 'codex', 'synthetic', ['planning/factory'])
+    assert pg_store.create_project_chat('FAC')['repositories'] == [expected]
+    _, feature = feature_chat(pg_store, project='FAC')
+    assert feature['repositories'] == [expected]
+
+
+def test_plain_name_resolves_before_claim_without_overlapping_running_repository(pg_store):
+    _, feature = feature_chat(pg_store, project='FAC')
+    assert feature['repositories'] == ['factory']
+    assert pg_store.claim_session_turn() is None
+    legacy = pg_store.create_session('factory', 'Existing', 'codex', 'synthetic', ['owner/factory'])
+    pg_store.session_messages('factory', legacy, 'Owner first')
+    turn = pg_store.claim_session_turn()
+    assert turn['session']['id'] == legacy
+    assert pg_store.claim_session_turn() is None
+    pg_store.finish_session_turn(turn, 'Reply', 'synthetic')
+    turn = pg_store.claim_session_turn()
+    assert turn['session']['id'] == feature['id']
+    assert turn['session']['repositories'] == ['owner/factory']
+    assert pg_store.chat_show(feature['id'])['repositories'] == ['owner/factory']
+
+
+def test_invalid_project_repository_does_not_create_chat(pg_store):
+    pg_store.project_add('XYZ', 'Invalid', repository='../outside')
+    with pytest.raises(StateError, match='Invalid project repository'):
+        pg_store.create_project_chat('XYZ')
+    assert not pg_store.chats(kind='project')
+
+
+def test_tool_switch_keeps_separate_resume_ids_and_original_skill_snapshot(pg_store, tmp_path):
+    sid = pg_store.create_session('factory', 'Switch providers', 'codex', 'synthetic', [])
+    pg_store.session_messages('factory', sid, 'First')
+    first = pg_store.claim_session_turn()
+    pg_store.finish_session_turn(first, 'Codex reply', 'codex-saved')
+    switched = pg_store.chat_configure(sid, tool='claude', model='synthetic-claude')
+    assert switched['cli_session_id'] is None and switched['workspace_ready']
+    assert switched['skill_names'] == first['session']['skill_names']
+    pg_store.session_messages('factory', sid, 'Claude turn')
+    second = pg_store.claim_session_turn()
+    assert '--resume' not in turn_command(second, tmp_path, [], tmp_path)
+    assert second['session']['skill_version'] == first['session']['skill_version']
+    pg_store.finish_session_turn(second, 'Claude reply', 'claude-saved')
+    # Another store instance must recover both provider IDs after a restart.
+    store = PostgresStore(pg_store._url)
+    assert store.chat_configure(sid, tool='codex', model='synthetic-codex')['cli_session_id'] == 'codex-saved'
+    store.session_messages('factory', sid, 'Codex again')
+    third = store.claim_session_turn()
+    args = turn_command(third, tmp_path, [], tmp_path)
+    assert args[args.index('resume') + 1] == 'codex-saved'
+    store.finish_session_turn(third, 'Reply', 'codex-saved')
+    assert store.chat_configure(sid, tool='claude', model='synthetic-claude')['cli_session_id'] == 'claude-saved'
+    response = create_app(store).test_client().get(f'/api/chats/{sid}')
+    for private in ('tool_sessions', 'cli_session_id', 'workspace_ready', 'codex-saved', 'claude-saved'):
+        assert private not in response.get_data(as_text=True)
+
+
+def test_existing_resumed_chat_upgrades_without_resnapshotting_skills(pg_store):
+    sid = pg_store.create_session('factory', 'Old session', 'codex', 'synthetic', [])
+    with pg_store.mutation():
+        pg_store.connection.execute('ALTER TABLE cplane_sessions DROP COLUMN tool_sessions, DROP COLUMN workspace_ready')
+        pg_store.connection.execute('UPDATE cplane_sessions SET cli_session_id = %s WHERE id = %s', ('old-codex', sid))
+        pg_store.connection.execute("DELETE FROM cplane_migrations WHERE name = '010_chat_tool_sessions.sql'")
+    pg_store.migrate()
+    assert pg_store.chat_show(sid)['workspace_ready']
+    assert pg_store.chat_configure(sid, tool='claude', model='synthetic')['cli_session_id'] is None
+    pg_store.session_messages('factory', sid, 'Switch')
+    turn = pg_store.claim_session_turn()
+    assert turn['session']['skill_names'] is None
+    assert turn['session']['skill_version'] is None
+    pg_store.finish_session_turn(turn, 'Reply', 'new-claude')
+    assert pg_store.chat_configure(sid, tool='codex')['cli_session_id'] == 'old-codex'

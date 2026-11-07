@@ -113,7 +113,7 @@ def workspace(session):
         raise StateError('Invalid session repository')
     trusted_directory(WORK_ROOT)
     folder = WORK_ROOT / f'session-{session["id"]}'
-    if session['cli_session_id']:
+    if session['cli_session_id'] or session.get('workspace_ready'):
         # Never repair, refresh, walk or write an agent-owned workspace on resume.
         info = folder.lstat()
         if (not stat.S_ISDIR(info.st_mode) or info.st_uid != 21000

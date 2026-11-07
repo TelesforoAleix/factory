@@ -55,7 +55,15 @@ def test_move_aliases_and_no_reuse(pg_store):
     store.feature_section('LAB-F1', 'Problem', 'Changed')
     store.feature_revert(original, revision, actor='reviewer')
     assert store.feature_show('LAB-F1')['sections'][0]['text'] == 'Some Markdown'
+    # A linked chat retains its feature. Explicitly remove this synthetic
+    # record before the fixture's SQL-only feature deletion; there is no delete CLI.
+    with pytest.raises(StateError):
+        with store.mutation():
+            store.connection.execute('DELETE FROM cplane_features WHERE id = %s', ('FAC-F2',))
+    chat = store.chats(kind='feature')[0]
     with store.mutation():
+        store.connection.execute('DELETE FROM cplane_session_messages WHERE session = %s', (chat['id'],))
+        store.connection.execute('DELETE FROM cplane_sessions WHERE id = %s', (chat['id'],))
         store.connection.execute('DELETE FROM cplane_features WHERE id = %s', ('FAC-F2',))
     assert store.feature_add('FAC', 'After deletion')['id'] == 'FAC-F3'
     with pytest.raises(StateError, match='not found'):

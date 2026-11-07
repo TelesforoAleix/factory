@@ -7,7 +7,7 @@ KINDS = ('orchestrator', 'project', 'feature', 'legacy')
 
 def public_chat_result(value):
     if isinstance(value, dict):
-        return {k: public_chat_result(v) for k, v in value.items() if k != 'cli_session_id'}
+        return {k: public_chat_result(v) for k, v in value.items() if k not in ('cli_session_id', 'workspace_ready')}
     if isinstance(value, list):
         return [public_chat_result(v) for v in value]
     return value
@@ -79,11 +79,14 @@ class ChatStore:
             self._chat_fields(tool, model)
             if chat['state'] == 'running':
                 raise StateError('Chat has a running turn')
-            # Provider switching after a first run needs an explicit resume rule.
-            if tool != chat['tool'] and chat['cli_session_id']:
-                raise StateError('Cannot switch a resumed chat tool')
-            self.connection.execute('UPDATE cplane_sessions SET tool = %s, model = %s WHERE id = %s',
-                                    (tool, model, chat_id))
+            cli_id = chat['cli_session_id']
+            if tool != chat['tool']:
+                saved = self.connection.execute(
+                    'SELECT tool_sessions FROM cplane_sessions WHERE id = %s', (chat_id,)).fetchone()[0]
+                cli_id = saved.get(tool)
+            self.connection.execute(
+                'UPDATE cplane_sessions SET tool = %s, model = %s, cli_session_id = %s WHERE id = %s',
+                (tool, model, cli_id, chat_id))
             return self.chat_show(chat_id)
 
     def _project_repositories(self, project):
@@ -93,9 +96,44 @@ class ChatStore:
             raise StateError('Unknown project')
         if row[0] is None:
             return []
-        if not REPOSITORY.fullmatch(row[0]):
-            raise StateError('Project requires a fully qualified repository')
-        return [row[0]]
+        repository = row[0]
+        if not REPOSITORY.fullmatch(repository) and not (
+                '/' not in repository and REPOSITORY.fullmatch('owner/' + repository)):
+            raise StateError('Invalid project repository')
+        return self.resolve_chat_repositories([repository])
+
+    def resolve_chat_repositories(self, repositories):
+        """Use existing Factory records as evidence, never invent an owner.
+
+        Plain names remain valid records when no unambiguous owner is known.
+        The turn claimer resolves them again before preparing a workspace.
+        """
+        from .stores import REPOSITORY
+        known = {}
+        for (values,) in self.connection.execute(
+                "SELECT repositories FROM cplane_sessions WHERE area = 'factory' ORDER BY id"):
+            if isinstance(values, list):
+                for value in values:
+                    if isinstance(value, str) and REPOSITORY.fullmatch(value):
+                        known.setdefault(value.lower(), value)
+        owners = {}
+        for value in known.values():
+            owner = value.split('/')[0]
+            owners.setdefault(owner.lower(), owner)
+        result = []
+        for repository in repositories:
+            if REPOSITORY.fullmatch(repository):
+                result.append(repository)
+                continue
+            matches = [value for value in known.values()
+                       if value.split('/')[1].lower() == repository.lower()]
+            if len(matches) == 1:
+                result.append(matches[0])
+            elif not matches and len(owners) == 1:
+                result.append(next(iter(owners.values())) + '/' + repository)
+            else:
+                result.append(repository)
+        return result
 
     def _create_chat(self, kind, title, *, project=None, feature=None):
         from psycopg.types.json import Jsonb

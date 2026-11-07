@@ -186,14 +186,14 @@ class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore):
         with self.locked():
             rows = self.connection.execute(
                 'SELECT id, area, title, tool, model, state, cli_session_id, repositories, '
-                'skill_names, skill_version, kind, project, (SELECT f.id FROM cplane_features f WHERE f.feature = s.feature) AS feature, archived, last_read_at, '
+                'skill_names, skill_version, kind, project, (SELECT f.id FROM cplane_features f WHERE f.feature = s.feature) AS feature, archived, last_read_at, workspace_ready, '
                 "EXISTS (SELECT 1 FROM cplane_session_messages m WHERE m.session = s.id AND m.role = 'assistant' "
                 'AND (s.last_read_at IS NULL OR m.time > s.last_read_at)) AS waiting '
                 'FROM cplane_sessions s WHERE (%s::text IS NULL OR area = %s) '
                 'AND (%s::bigint IS NULL OR s.id = %s) ORDER BY s.id',
                 (area, area, session_id, session_id))
             keys = ('id', 'area', 'title', 'tool', 'model', 'state', 'cli_session_id', 'repositories', 'skill_names', 'skill_version',
-                    'kind', 'project', 'feature', 'archived', 'last_read_at', 'waiting')
+                    'kind', 'project', 'feature', 'archived', 'last_read_at', 'workspace_ready', 'waiting')
             result = [dict(zip(keys, row)) for row in rows]
             for chat in result:
                 if chat['last_read_at'] is not None:
@@ -259,17 +259,30 @@ class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore):
         with self.mutation():
             if self.connection.execute("SELECT count(*) FROM cplane_session_messages WHERE status = 'running'").fetchone()[0] >= 2:
                 return None
-            row = self.connection.execute(
+            rows = self.connection.execute(
                 "SELECT m.id, m.session, m.text, s.area, m.role, m.automatic FROM cplane_session_messages m "
                 "JOIN cplane_sessions s ON s.id = m.session WHERE m.status = 'queued' AND m.role IN ('owner', 'system') "
                 "AND s.state = 'idle' AND NOT s.archived "
-                "AND NOT EXISTS (SELECT 1 FROM cplane_sessions active WHERE active.state = 'running' "
-                "AND active.repositories ?| ARRAY(SELECT jsonb_array_elements_text(s.repositories))) "
-                "ORDER BY (m.role = 'owner') DESC, m.id LIMIT 1").fetchone()
-            if not row:
+                "ORDER BY (m.role = 'owner') DESC, m.id").fetchall()
+            active = {repository.lower() for chat in self.sessions() if chat['state'] == 'running'
+                      for repository in chat['repositories']}
+            for row in rows:
+                session = self.sessions(row[3], row[1])[0]
+                repositories = self.resolve_chat_repositories(session['repositories'])
+                # Keep an unresolved event queued; never pass a guessed name to
+                # the fence or fail a chat just because owner evidence is absent.
+                if any(not REPOSITORY.fullmatch(r) for r in repositories):
+                    continue
+                if any(r.lower() in active for r in repositories):
+                    continue
+                if repositories != session['repositories']:
+                    self.connection.execute('UPDATE cplane_sessions SET repositories = %s WHERE id = %s',
+                                            (Jsonb(repositories), session['id']))
+                    session['repositories'] = repositories
+                break
+            else:
                 return None
-            session = self.sessions(row[3], row[1])[0]
-            if session['skill_names'] is None and not session['cli_session_id']:
+            if session['skill_names'] is None and not (session['cli_session_id'] or session['workspace_ready']):
                 names, version = self.session_skills(session['repositories'])
                 self.connection.execute(
                     'UPDATE cplane_sessions SET skill_names = %s, skill_version = %s WHERE id = %s',
@@ -293,8 +306,11 @@ class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore):
                     "INSERT INTO cplane_session_messages (session, role, text, status, automatic) VALUES (%s, 'assistant', %s, 'done', true)",
                     (turn['session']['id'], notice))
             self.connection.execute(
-                'UPDATE cplane_sessions SET state = %s, cli_session_id = COALESCE(%s, cli_session_id) WHERE id = %s',
-                ('failed' if failed else 'idle', cli_id, turn['session']['id']))
+                'UPDATE cplane_sessions SET state = %s, cli_session_id = COALESCE(%s, cli_session_id), '
+                'workspace_ready = workspace_ready OR %s::text IS NOT NULL, '
+                'tool_sessions = CASE WHEN %s::text IS NULL THEN tool_sessions '
+                'ELSE jsonb_set(tool_sessions, ARRAY[tool], to_jsonb(%s::text)) END WHERE id = %s',
+                ('failed' if failed else 'idle', cli_id, cli_id, cli_id, cli_id, turn['session']['id']))
             if failed:
                 self.connection.execute("UPDATE cplane_session_messages SET status = 'failed' WHERE session = %s AND status = 'queued'",
                                         (turn['session']['id'],))
