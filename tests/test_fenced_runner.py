@@ -1304,3 +1304,64 @@ def test_read_failure_counts_passes_and_success_resets(delivery, make_state, mon
         else:
             assert saved['attention']['kind'] == 'escalation'
             assert d['secret'] not in saved['attention']['body']
+
+
+def test_invalid_plan_is_collected_once_then_answer_resumes(ticket_runner):
+    runner, processes, plan, status, submit = ticket_runner
+    finish_cut(processes, {})
+    runner.run()
+    first = state.load(runner.path)['slices'][0]
+    assert first['attention']['kind'] == 'escalation'
+    runner.run()
+    second = state.load(runner.path)['slices'][0]
+    assert second['attention'] == first['attention']
+    assert sum(e['event'].startswith('escalation:') for e in second['log']) == 1
+    assert sum(e['event'].startswith('collected turn:') for e in second['log']) == 1
+    sessions = fence.LOGIN_ROOT / 'codex/sessions'
+    sessions.mkdir(parents=True, exist_ok=True)
+    (sessions / 'synthetic-session.jsonl').write_text('{}\n')
+    second['attention']['answer'] = 'Fix the plan'
+    data = state.load(runner.path)
+    data['slices'][0] = second
+    state.save(runner.path, data)
+    runner.run()
+    assert len(processes.started) == 2
+    assert processes.started[-1]['prompt'].startswith('Fix the plan')
+    finish_cut(processes, plan)
+    runner.run()
+    assert state.load(runner.path)['slices'][0]['attention'] is None
+    submit.assert_called_once()
+
+
+def test_accepted_plan_clears_answered_attention(ticket_runner):
+    runner, processes, plan, status, submit = ticket_runner
+    data = state.load(runner.path)
+    data['slices'][0]['attention'] = dict(kind='escalation', body='Earlier problem',
+                                          since=runner.at, answer='Resolved', approved=False)
+    state.save(runner.path, data)
+    finish_cut(processes, plan)
+    runner.run()
+    assert state.load(runner.path)['slices'][0]['attention'] is None
+    submit.assert_called_once()
+
+
+@pytest.mark.parametrize('answer,paused,starts', [
+    ('Resolved', False, True),
+    (None, False, False),
+    ('Resolved', True, False),
+])
+def test_review_ready_attention_and_pause(ticket_runner, answer, paused, starts):
+    runner, processes, plan, status, submit = ticket_runner
+    finish_cut(processes, plan)
+    runner.run()
+    data = state.load(runner.path)
+    data['slices'][0].update(paused=paused, attention=dict(
+        kind='escalation', body='Earlier problem', since=runner.at,
+        answer=answer, approved=False))
+    state.save(runner.path, data)
+    status.return_value = [ticket(status='done')]
+    runner.run()
+    assert (len(processes.started) == 2) is starts
+    attention = state.load(runner.path)['slices'][0]['attention']
+    assert (attention is None) is (answer is not None)
+    assert submit.call_count == 1
