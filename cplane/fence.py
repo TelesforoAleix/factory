@@ -62,6 +62,25 @@ def trusted_directory(path):
     return path
 
 
+def snapshot_bundle(folder):
+    """Snapshot offline export data without following agent-owned links."""
+    # Snapshot an untrusted regular file before giving it to Git. No symlink,
+    # FIFO, hardlink or later path replacement can redirect the host's read.
+    directory = os.open(folder / 'io', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        fd = os.open('branch.bundle', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+        with os.fdopen(fd, 'rb') as source, (folder / 'export.bundle').open('wb') as target:
+            info = os.fstat(source.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise StateError('bundle export must be a regular file with one link')
+            shutil.copyfileobj(source, target)
+    finally:
+        os.close(directory)
+    bundle = folder / 'export.bundle'
+    bundle.chmod(0o600)
+    return bundle
+
+
 class Fence:
     def resume(self, previous, session):
         if not previous or not previous.get('fence'):
@@ -156,20 +175,7 @@ class Fence:
                                 cwd=folder, capture_output=True, env=host_environment())
         if result.returncode:
             raise StateError('fenced bundle export failed')
-        # Snapshot an untrusted regular file before giving it to Git. No symlink,
-        # FIFO, hardlink or later path replacement can redirect the host's read.
-        directory = os.open(folder / 'io', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        try:
-            fd = os.open('branch.bundle', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
-            with os.fdopen(fd, 'rb') as source, (folder / 'export.bundle').open('wb') as target:
-                info = os.fstat(source.fileno())
-                if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
-                    raise StateError('bundle export must be a regular file with one link')
-                shutil.copyfileobj(source, target)
-        finally:
-            os.close(directory)
-        bundle = folder / 'export.bundle'
-        bundle.chmod(0o600)
+        bundle = snapshot_bundle(folder)
         heads = self.git(clean, 'bundle', 'list-heads', bundle).stdout.splitlines()
         refs = dict(line.split(' ', 1)[::-1] for line in heads)
         expected = 'refs/heads/' + job['branch']

@@ -26,3 +26,12 @@ test.each([['homelab', '/home-lab/sessions'], ['factory', '/factory/sessions']])
     url === `/api/${area}/sessions/7/messages` && options?.method === 'POST' &&
     options.headers['X-Factory-UI'] === '1' && JSON.parse(options.body).text === 'next turn')).toBe(true));
 });
+
+test('shows the full pushed planning commit in the session', async () => {
+  const commit = 'abcdef0123456789abcdef0123456789abcdef01';
+  vi.stubGlobal('fetch', vi.fn(async url => ({ok: true, json: async () =>
+    url.endsWith('/messages') ? [{id: 2, role: 'assistant', status: 'done', text: 'Planning pushed commit ' + commit}]
+      : [{id: 7, title: 'Example', state: 'idle'}]})));
+  render(<MemoryRouter initialEntries={['/home-lab/sessions?session=7']}><App/></MemoryRouter>);
+  expect((await screen.findByText(commit)).tagName).toBe('CODE');
+});

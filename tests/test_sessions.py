@@ -264,14 +264,15 @@ def test_session_exports_remote_default_and_resume_does_not_fetch(tmp_path, monk
             fields = list(info)
             fields[4] = 21000
             return os.stat_result(fields)
-        if path in (work / 'session-1/repos', work / 'session-1/repos/repo'):
+        if path in (work / 'session-1/repos', work / 'session-1/repos/repo',
+                    work / 'session-1/repos/.planning'):
             fields = list(info)
             fields[4] = 0
             return os.stat_result(fields)
         return info
 
     monkeypatch.setattr(Path, 'lstat', export_lstat)
-    session = dict(id=1, cli_session_id=None, repositories=['owner/repo'])
+    session = dict(id=1, area='factory', cli_session_id=None, repositories=['owner/repo'])
     folder, paths = sessions.workspace(session)
     clean = clean_root / 'owner/repo.git'
     assert clean.is_dir()
@@ -279,8 +280,23 @@ def test_session_exports_remote_default_and_resume_does_not_fetch(tmp_path, monk
                           capture_output=True).returncode != 0
     assert (paths[0] / 'content').read_text() == 'default branch'
     assert (folder / 'planning/content').read_text() == 'default branch'
+    assert paths[-1] == folder / 'repos/.planning'
+    assert paths[-1].stat().st_mode & 0o777 == 0o755
+    assert not (folder / 'planning/.git').exists()
     assert sum(args[0] == 'fetch' for args in calls) == 1
     calls.clear()
     session['cli_session_id'] = 'saved-id'
     assert sessions.workspace(session) == (folder, paths)
     assert calls == []
+
+
+def test_pushed_commits_are_session_messages(pg_store):
+    sid = create(pg_store, 'homelab')
+    pg_store.session_messages('homelab', sid, 'write the brief')
+    turn = pg_store.claim_session_turn()
+    commits = ['a' * 40, 'b' * 40]
+    pg_store.finish_session_turn(turn, 'Updated.', 'synthetic', planning_commits=commits)
+    rows = pg_store.session_messages('homelab', sid)
+    assert [row['text'] for row in rows][-3:] == [
+        'Updated.', *['Planning pushed commit ' + commit for commit in commits]]
+    assert all(row['role'] == 'assistant' and row['status'] == 'done' for row in rows[-3:])

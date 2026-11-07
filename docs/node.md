@@ -487,13 +487,15 @@ procedure, run daemon-reload, and restart factory-ui.
 Open Home Lab sessions or Factory sessions. Specify the tool, model, and optional
 comma-separated `owner/repo` names. On the first turn, the service creates any missing root-owned bare clone at
 `/srv/factory/clean/<owner>/<repo>.git`, fetches its branches, and exports the
-remote-tracking default branch. Planning is exported from HEAD of the root-only
-`/srv/factory/briefs` clone; uncommitted files are excluded. The service does not
-publish changes.
+remote-tracking default branch. Factory planning is exported from HEAD of the root-only
+`/srv/factory/briefs` clone; uncommitted files are excluded. Home Lab planning
+uses the git delivery path described below.
 
 Each session gets a new 0700 workspace owned by 21000:21000. Archives exclude
-Git metadata and omit links; exports with special entries fail closed. `planning/` is
-writable; each `repos/<name>` is overmounted read-only with the existing fence.
+Git metadata and omit links; exports with special entries fail closed. Home Lab
+`planning/` is a writable git copy. Factory `planning/` points to the reserved
+root-owned `repos/.planning` export, overmounted read-only using the existing
+repository mount contract. Each named `repos/<name>` is also overmounted read-only.
 No clean clone or briefs clone is mounted. Duplicate repository basenames are
 rejected. Exports are made once; resumed turns never refresh or repair paths in
 an agent-owned workspace. Host Git runs only in the root-owned source clones.
@@ -508,8 +510,9 @@ On service restart, interrupted turns have their named containers removed before
 being marked failed; they are never replayed. Stop the service to stop issuing
 turns; on restart it reconciles any containers left by an abrupt service stop.
 Workspaces/login histories and database messages are retained for operator cleanup.
-No planning changes are written back. After installation the orchestrator performs
-a real two-message session smoke test; this implementation does not run one.
+Only Home Lab commits are written back through the delivery checks below.
+After installation the orchestrator performs a real two-message session smoke
+test; this implementation does not run one.
 
 ## Home Lab documents, notes and grills
 
@@ -564,10 +567,66 @@ document must exist, but its size does not limit grill creation.
 Grills use existing one-message/one-turn execution and repository exports.
 Conversation bubbles distinguish the owner from the planner; planner replies
 containing a question mark are highlighted as questions. This is a display cue,
-not a new agent response protocol. Nothing writes to the planning documents.
+not a new agent response protocol. Committed Home Lab planning edits use the
+planning delivery path below.
 
 After installation, check the sessions journal for export errors, confirm
 `/var/lib/factory/ui-docs` is a plain directory readable by `factory-ui`, and open
 Home Lab and Backlog. Verify a note can be saved and sent to a Home Lab session,
 and perform a grill smoke test with a deliberately chosen document/repository.
 The orchestrator performs these node checks; this slice uses synthetic fixtures.
+
+
+## Home Lab planning write-back
+
+Stop before merging this change: it crosses the delivery security boundary and
+requires merge approval. After merge the orchestrator syncs the reviewed Python
+installation, rebuilds the UI, and restarts `factory-sessions` and `factory-ui`.
+No launcher change, image rebuild, migration, or additional container mount is
+needed. Existing Home Lab sessions with plain planning exports cannot deliver;
+create a fresh session. Existing Factory sessions without the read-only planning
+export also need a fresh session. Do not repair an agent-owned workspace.
+
+The sessions environment must contain the installer's `CPLANE_PLANNING_REMOTE`
+SSH address (`git@github.com:owner/repository.git`). The host reads current `main`
+with the existing read identity `/etc/factory/briefs-key/id_ed25519`. The separate
+root-only write identity `/etc/factory/planning-write-key/id_ed25519` is used only
+for the push, through that process's `GIT_SSH_COMMAND`. Both calls use strict host
+checking against `/etc/factory/briefs-key/known_hosts`, batch mode and explicit
+identities, without SSH config files. Neither key nor its contents enters a run,
+copy, Git config, argument, session message, or Git diagnostic log.
+
+A new Home Lab session gets its own root-owned clean clone at
+`/srv/factory/clean/planning-sessions/session-<id>`, created without templates.
+The service fetches planning `main` and pins the start commit in a host-only ref.
+It clones the session branch into `planning/` without hardlinks, hooks, credentials
+or private config before handing ownership to UID/GID 21000. The clone's local
+origin names the inaccessible clean clone, not an authenticated remote.
+Factory sessions keep a plain read-only export and never invoke this delivery.
+
+After each successful Home Lab turn, the host calls the existing offline
+`factory-cli bundle` and snapshots its regular single-link output. Host Git never
+runs in the session copy. The bundle must advertise exactly the session branch
+and matching HEAD, verify successfully, and import with
+`transfer.fsckObjects=true`. The tip must descend from both the pinned start and
+the last delivered source tip. Every commit since the start is checked, including
+merge-parent diffs and changes subsequently reverted: only `*.md` paths may
+change, with `.github`, `.claude`, `.agents`, and `AGENTS.md` protected at every
+depth. Markdown links and submodules are refused. One forbidden commit refuses
+the whole delivery before any push.
+
+Only new commits since the last delivery are rebased in the clean clone onto
+freshly fetched `main`. Conflicts abort the rebase and produce a session notice;
+nothing is pushed. The host verifies ancestry again and pushes normally to
+`main`, never with force. A concurrent remote advance rejects the push. Delivery
+failures retain the planner reply and resume ID so the session can address them.
+Each successfully pushed commit is recorded as a separate message with its full
+rebased SHA on the session page, suitable for an operator to revert. Session
+workspaces, clean clones, bundle snapshots and database messages are retained for
+operator cleanup. The document export refresh continues through the existing
+briefs clone refresh path.
+
+After installation, the orchestrator tests one deliberately chosen real Home Lab
+Markdown write, confirms its commit notice and remote `main`, and verifies a
+Factory session cannot write planning. This implementation uses temporary Git
+repositories and does not perform that real write.
