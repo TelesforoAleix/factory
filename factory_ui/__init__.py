@@ -77,6 +77,14 @@ def create_app(store=None):
         except Exception:
             return jsonify(error='Skills unavailable'), 503
 
+    @app.get('/api/home')
+    def home():
+        from .home import home_data
+        try:
+            return jsonify(home_data(backend(), board_data(), clean, view))
+        except Exception:
+            return jsonify(error='Home unavailable'), 503
+
     @app.get('/api/pipeline')
     def pipeline_board():
         try:
