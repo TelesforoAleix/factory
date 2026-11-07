@@ -1,0 +1,10 @@
+[Unit]
+Description=Dump Factory database daily
+
+[Timer]
+OnCalendar=*-*-* 03:50:00
+Persistent=true
+Unit=factory-dump.service
+
+[Install]
+WantedBy=timers.target
