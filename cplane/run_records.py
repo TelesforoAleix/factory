@@ -83,13 +83,32 @@ class RunRecordStore:
                 (turn_key, *(values.get(field) for field in FIELDS)))
 
     def run_record_list(self, *, slice_id=None, project=None):
-        # Exclude the prompt in SQL too: summary callers never receive private text.
+        # Calculate before filtering: a session's previous row may be outside
+        # the requested slice or project. Never select private prompt text.
         columns = ('id', *(field for field in FIELDS if field != 'prompt'))
         with self.locked():
             rows = self.connection.execute('SELECT ' + ', '.join(columns) +
-                ' FROM cplane_run_records WHERE (%s::text IS NULL OR slice_id = %s) '
-                'AND (%s::text IS NULL OR project = %s) ORDER BY id', (slice_id, slice_id, project, project))
-            return [self._run_record_dict(columns, row) for row in rows]
+                                           ' FROM cplane_run_records ORDER BY id')
+            previous = {}
+            result = []
+            for row in rows:
+                item = self._run_record_dict(columns, row)
+                key = (item['tool'], item['session_id'])
+                prior = previous.get(key) if item['session_id'] is not None else None
+                tokens = {}
+                for field in TOKEN_FIELDS:
+                    value = item[field]
+                    if item['tool'] == 'codex' and prior is not None:
+                        old = prior[field]
+                        value = (None if value is None or old is None else
+                                 value - old if value >= old else value)
+                    tokens[field] = value
+                item['turn_tokens'] = tokens
+                if item['session_id'] is not None:
+                    previous[key] = item
+                if (slice_id is None or item['slice_id'] == slice_id) and (project is None or item['project'] == project):
+                    result.append(item)
+            return result
 
     @staticmethod
     def _run_record_dict(columns, row):
@@ -110,15 +129,14 @@ class RunRecordStore:
                 raise StateError('Run record not found')
 
     def run_record_total(self, slice_id):
-        with self.locked():
-            columns = (*TOKEN_FIELDS, 'seconds')
-            row = self.connection.execute('SELECT count(*), ' + ', '.join(f'sum({field})' for field in columns) +
-                ' FROM cplane_run_records WHERE slice_id = %s', (slice_id,)).fetchone()
-            # PostgreSQL SUM(bigint) returns numeric/Decimal. Keep token sums
-            # as arbitrary-precision Python integers for JSON, preserving NULL.
-            totals = {field: int(value) if field in TOKEN_FIELDS and value is not None else value
-                      for field, value in zip(columns, row[1:])}
-            return dict(turns=row[0], **totals)
+        rows = self.run_record_list(slice_id=slice_id)
+        totals = {}
+        for field in (*TOKEN_FIELDS, 'seconds'):
+            values = [(row['turn_tokens'][field] if field in TOKEN_FIELDS else row[field]) for row in rows]
+            known = [value for value in values if value is not None]
+            totals[field] = sum(known) if known else None
+        return dict(turns=len(rows), **totals)
+
 
 
 def slice_record(store, item, job):

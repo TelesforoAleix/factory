@@ -77,6 +77,31 @@ def test_postgres_dedup_totals_nulls_and_prompt_bound(pg_store):
     assert len(pg_store.run_record_list(project='FAC')) == 1
 
 
+def test_session_turn_tokens_and_filtered_totals(pg_store, capsys):
+    def add(key, session, tool, slice_id, **tokens):
+        pg_store.run_record_add(key, kind='slice', session_id=session, tool=tool,
+                                slice_id=slice_id, **tokens)
+
+    add('a', 'one', 'codex', 'other', input_tokens=100, output_tokens=10, cached_tokens=5)
+    add('b', 'one', 'codex', 'target', input_tokens=150, output_tokens=12, cached_tokens=None)
+    add('c', 'two', 'codex', 'target', input_tokens=70, output_tokens=8)
+    add('d', 'one', 'codex', 'target', input_tokens=20, output_tokens=15, cached_tokens=9)
+    add('e', 'one', 'claude', 'target', input_tokens=30, output_tokens=4)
+    add('f', None, 'codex', 'target', input_tokens=11)
+    add('g', None, 'codex', 'target', input_tokens=13)
+
+    assert main(['run', 'list', '--slice', 'target', '--json']) == 0
+    rows = json.loads(capsys.readouterr().out)
+    assert [row['input_tokens'] for row in rows] == [150, 70, 20, 30, 11, 13]
+    assert [row['turn_tokens']['input_tokens'] for row in rows] == [50, 70, 20, 30, 11, 13]
+    assert [row['turn_tokens']['output_tokens'] for row in rows] == [2, 8, 3, 4, None, None]
+    assert rows[0]['turn_tokens']['cached_tokens'] is None
+    assert rows[2]['turn_tokens']['cached_tokens'] is None
+    assert pg_store.run_record_total('target') == dict(
+        turns=6, input_tokens=194, cached_tokens=None, cache_write_tokens=None,
+        output_tokens=17, reasoning_tokens=None, seconds=None)
+
+
 def test_failed_insert_does_not_abort_scheduler_transaction(pg_store, capsys):
     with state.locked(Path('synthetic.json')) as store:
         # Reuse the active connection, as production does. A second store would
