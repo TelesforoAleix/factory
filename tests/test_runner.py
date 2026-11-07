@@ -1831,3 +1831,21 @@ def test_bot_export_untrusted_and_write_failure(setup, tmp_path, monkeypatch, ca
     r.run()
     assert list(folder.iterdir()) == []
     assert capsys.readouterr().err == 'cplane: bot export failed\n'
+
+
+def test_stuck_since_detects_idle_and_pending_checks():
+    from datetime import datetime, timedelta, timezone
+    from cplane.runner import stuck_since
+
+    instant = datetime(2026, 1, 1, 12, tzinfo=timezone.utc)
+    def entry(minutes, event):
+        return {'at': (instant - timedelta(minutes=minutes)).isoformat(),
+                'actor': 'runner', 'event': event}
+    item = {'state': 'issued', 'log': [entry(20, 'started')]}
+    assert stuck_since(item, instant) == (instant - timedelta(minutes=20), 'no new log activity')
+    item['log'] = [entry(11, 'checks: pending'), entry(1, 'checks: pending')]
+    assert stuck_since(item, instant) == (instant - timedelta(minutes=11), 'checks pending')
+    item['log'].insert(1, entry(5, 'checks: green'))
+    assert stuck_since(item, instant) is None
+    item['state'] = 'accepted'
+    assert stuck_since(item, instant) is None
