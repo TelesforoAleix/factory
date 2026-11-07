@@ -120,6 +120,10 @@ class ChatStore:
         for value in known.values():
             owner = value.split('/')[0]
             owners.setdefault(owner.lower(), owner)
+        for (value,) in self.connection.execute("SELECT document->>'repo' FROM cplane_slices ORDER BY position"):
+            if isinstance(value, str) and REPOSITORY.fullmatch(value):
+                owner = value.split('/')[0]
+                owners.setdefault(owner.lower(), owner)
         result = []
         for repository in repositories:
             if REPOSITORY.fullmatch(repository):
