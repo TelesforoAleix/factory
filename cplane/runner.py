@@ -906,6 +906,8 @@ class Runner:
                 finally:
                     if isinstance(self.github, GitHub) and self.github.successful_reads > read_start:
                         read_successes.add(item['id'])
+            from . import installation
+            installation.process(self)
             for item in self.data['slices']:
                 read_start = self.github.successful_reads if isinstance(self.github, GitHub) else 0
                 if item['state'] != 'accepted' and item['id'] not in read_failures:

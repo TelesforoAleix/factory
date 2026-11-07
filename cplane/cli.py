@@ -16,7 +16,7 @@ from .text_bounds import ATTENTION_LIMIT, LOG_LIMIT, cut
 
 
 ANSWERABLE = ("question", "escalation", "node-step")
-COMMANDS = ("slot", "unslot", "start", "pause", "resume", "approve", "answer")
+COMMANDS = ("slot", "unslot", "start", "pause", "resume", "approve", "answer", "install")
 
 
 def change_for(command, argument=None):
@@ -43,6 +43,9 @@ def change_for(command, argument=None):
                 raise state.StateError(f"{item['id']} needs a recorded planner review before approval; use cplane review")
             item["attention"]["approved"] = True
             notice = f"Approved merge for {item['id']}"
+        elif command == "install":
+            from .installation import request_change
+            return request_change(argument or "owner")(item, data, at)
         elif command == "answer":
             if not item["attention"] or item["attention"]["kind"] not in ANSWERABLE:
                 raise state.StateError(f"{item['id']} has no question, escalation or node-step attention")
@@ -212,7 +215,7 @@ def parser():
     review = commands.add_parser("review", parents=[common], help="record a planner review of merge attention")
     review.add_argument("id")
     review.add_argument("verdict")
-    helps = {"slot": "schedule a ready slice", "unslot": "clear a slot", "start": "slot a ready slice now", "pause": "set paused", "resume": "clear paused", "approve": "approve merge attention", "answer": "answer a question, escalation or node step"}
+    helps = {"install": "request a node install", "slot": "schedule a ready slice", "unslot": "clear a slot", "start": "slot a ready slice now", "pause": "set paused", "resume": "clear paused", "approve": "approve merge attention", "answer": "answer a question, escalation or node step"}
     for command in COMMANDS:
         sub = commands.add_parser(command, parents=[common], help=helps[command])
         sub.add_argument("id")
@@ -498,7 +501,7 @@ def main(argv=None):
             if note:
                 print(note, file=sys.stderr)
         else:
-            warning = state.update(path, args.id, args.command, getattr(args, "actor", "owner"), change_for(args.command, getattr(args, "value", None)), getattr(args, "commit", False))
+            warning = state.update(path, args.id, args.command, getattr(args, "actor", "owner"), change_for(args.command, getattr(args, "actor", "owner") if args.command == "install" else getattr(args, "value", None)), getattr(args, "commit", False))
             if warning:
                 print(f"warning: {warning}", file=sys.stderr)
         return 0

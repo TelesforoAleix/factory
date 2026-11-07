@@ -1,0 +1,393 @@
+"""Synthetic state, archives and host commands; no host installation is changed."""
+import copy
+import importlib.machinery
+import importlib.util
+import io
+import json
+import os
+from pathlib import Path
+import subprocess
+import tarfile
+from types import SimpleNamespace
+from unittest.mock import Mock
+
+import pytest
+
+from cplane import installation, install_host, state
+from cplane.cli import main
+from cplane.runner import Runner
+from cplane.stores import FileStore
+from factory_ui import create_app
+from test_stores import pg_store
+
+SHA = 'a' * 40
+
+
+def node_step(item):
+    item['attention'] = {'kind': 'node-step', 'body': 'touch /NEVER-EXECUTE', 'since': '2026-11-01T00:00:00+00:00', 'answer': None, 'approved': False}
+    return item
+
+
+def test_request_validation_and_global_exclusion(make_state, slice_data):
+    other = copy.deepcopy(slice_data)
+    other['id'] = 'other/S1'
+    path = make_state([node_step(slice_data), node_step(other)])
+    assert main(['--state', str(path), '--actor', 'chat:12', 'install', slice_data['id']]) == 0
+    assert list(installation.pending(state.load(path)))[0][0]['log'][0]['actor'] == 'chat:12'
+    assert main(['--state', str(path), 'install', other['id']]) == 1
+    assert main(['--state', str(path), '--actor', 'runner', 'install', other['id']]) == 1
+    assert not Path('/NEVER-EXECUTE').exists()
+
+
+def test_requires_open_node_step(make_state, slice_data):
+    path = make_state()
+    assert main(['--state', str(path), 'install', slice_data['id']]) == 1
+    node_step(slice_data)['attention']['answer'] = 'done'
+    path = make_state([slice_data])
+    assert main(['--state', str(path), 'install', slice_data['id']]) == 1
+
+
+def test_site_guard_and_request(make_state, slice_data):
+    path = make_state([node_step(slice_data)])
+    client = create_app(FileStore(path)).test_client()
+    url = '/api/slices/' + slice_data['id'] + '/install'
+    assert client.post(url).status_code == 403
+    assert client.post(url, headers={'X-Factory-UI': '1'}).status_code == 202
+    assert client.post(url, headers={'X-Factory-UI': '1'}).status_code == 400
+    assert state.load(path)['slices'][0]['log'][0]['actor'] == 'owner'
+
+
+def prepared_runner(tmp_path, slice_data):
+    item = node_step(slice_data)
+    data = {'slices': [item]}
+    installation.request_change('owner')(item, data, 'now')
+    runner = Runner(tmp_path / 'slices.json', runs=tmp_path / 'runs')
+    runner.data = data
+    runner.at = 'now'
+    runner.jobs = {item['id']: {'phase': 'node-step', 'sha': SHA}}
+    request = list(installation.pending(data))[0][1]
+    return runner, item, request
+
+
+@pytest.mark.parametrize('result,kind', [({'ok': True, 'commit': SHA, 'manual': []}, 'node-step'),
+                                        ({'ok': True, 'commit': SHA, 'manual': ['node/proxy']}, 'escalation'),
+                                        ({'ok': False}, 'escalation')])
+def test_launch_then_result(tmp_path, slice_data, monkeypatch, result, kind):
+    runner, item, request = prepared_runner(tmp_path, slice_data)
+    calls = []
+    loaded = False
+    def command(args, **kwargs):
+        nonlocal loaded
+        calls.append(args)
+        if args[0] == 'systemctl':
+            return SimpleNamespace(stdout='LoadState=loaded\nActiveState=activating' if loaded else 'LoadState=not-found', returncode=0)
+        loaded = True
+        return SimpleNamespace(returncode=0)
+    monkeypatch.setattr(installation.subprocess, 'run', command)
+    installation.process(runner)
+    installation.process(runner)
+    assert sum(c[0] == 'systemd-run' for c in calls) == 1
+    assert all('touch /NEVER-EXECUTE' not in c for c in calls)
+    assert '--no-block' in calls[1]
+    assert calls[1][-3:] == [item['id'], '--request', request]
+    assert '--property=EnvironmentFile=/etc/factory/runner.env' in calls[1]
+    with pytest.raises(state.StateError, match='already'):
+        installation.request_change('owner')(item, runner.data, 'now')
+    (runner.runs / 'installs' / (request + '.json')).write_text(json.dumps(result))
+    installation.process(runner)
+    assert item['attention']['kind'] == kind
+    if kind == 'node-step':
+        assert item['attention']['answer'] == 'Installed ' + SHA
+    assert not list(installation.pending(runner.data))
+
+
+@pytest.mark.parametrize('status', ['LoadState=loaded\nActiveState=failed', 'LoadState=loaded\nActiveState=inactive'])
+def test_interrupted_unit_not_retried(tmp_path, slice_data, monkeypatch, status):
+    runner, item, _ = prepared_runner(tmp_path, slice_data)
+    command = Mock(return_value=SimpleNamespace(stdout=status, returncode=0))
+    monkeypatch.setattr(installation.subprocess, 'run', command)
+    installation.process(runner)
+    assert command.call_count == 1
+    assert item['attention']['kind'] == 'escalation'
+    assert not list(installation.pending(runner.data))
+
+
+def host_setup(tmp_path, make_state, slice_data, monkeypatch):
+    path = make_state([node_step(slice_data)])
+    monkeypatch.setenv('CPLANE_STATE', str(path))
+    monkeypatch.setenv('CPLANE_INSTALL_REPOS', slice_data['repo'])
+    runs = installation.runs_path(path)
+    folder = runs / 'job'
+    folder.mkdir(parents=True)
+    (folder / 'job.json').write_text(json.dumps({'id': slice_data['id'], 'phase': 'node-step', 'sha': SHA, 'started_ns': 1}))
+    monkeypatch.setattr(install_host, 'INSTALL_ROOT', tmp_path)
+    return path
+
+
+@pytest.mark.parametrize('allowed,comparison,message', [('', {}, 'allowlisted'),
+    ('example/repo', {'status': 'diverged', 'merge_base_commit': {'sha': SHA}}, 'not on main'),
+    ('example/repo', {'status': 'ahead', 'merge_base_commit': {'sha': 'b' * 40}}, 'not on main')])
+def test_refuses_unlisted_or_off_main(tmp_path, make_state, slice_data, monkeypatch, allowed, comparison, message):
+    host_setup(tmp_path, make_state, slice_data, monkeypatch)
+    monkeypatch.setenv('CPLANE_INSTALL_REPOS', allowed)
+    github = Mock(return_value=comparison)
+    monkeypatch.setattr(install_host, 'github', github)
+    with pytest.raises(state.StateError, match=message):
+        install_host.install(slice_data['id'])
+    assert github.call_count == (1 if allowed else 0)
+
+
+def test_exact_archive_and_clean_installer_environment(tmp_path, make_state, slice_data, monkeypatch):
+    host_setup(tmp_path, make_state, slice_data, monkeypatch)
+    archive = io.BytesIO()
+    with tarfile.open(fileobj=archive, mode='w:gz') as tar:
+        content = b'print("reviewed installer")'
+        info = tarfile.TarInfo('root/node/install')
+        info.size = len(content)
+        tar.addfile(info, io.BytesIO(content))
+    paths = []
+    def github(repo, path, output=None):
+        paths.append(path)
+        if output:
+            output.write(archive.getvalue())
+        else:
+            return {'status': 'ahead', 'merge_base_commit': {'sha': SHA}}
+    monkeypatch.setattr(install_host, 'github', github)
+    monkeypatch.setenv('GH_TOKEN', 'synthetic-never-forward')
+    command = Mock(return_value=SimpleNamespace(returncode=0, stdout='{"manual": []}'))
+    monkeypatch.setattr(install_host.subprocess, 'run', command)
+    assert install_host.install(slice_data['id']) == {'ok': True, 'commit': SHA, 'manual': []}
+    assert paths == [f'compare/{SHA}...main', f'tarball/{SHA}']
+    assert 'GH_TOKEN' not in command.call_args.kwargs['env']
+    assert command.call_args.args[0][-1] == SHA
+
+
+@pytest.mark.parametrize('name,link', [('../outside', False), ('/outside', False), ('root/link', True)])
+def test_archive_rejects_traversal_and_links(tmp_path, name, link):
+    archive = tmp_path / 'archive'
+    with tarfile.open(archive, 'w') as tar:
+        info = tarfile.TarInfo(name)
+        if link:
+            info.type = tarfile.SYMTYPE
+            info.linkname = '/etc/factory/github-token'
+        tar.addfile(info)
+    with pytest.raises(state.StateError):
+        install_host.unpack(archive, tmp_path / 'out')
+
+
+@pytest.fixture
+def installer(tmp_path, monkeypatch):
+    loader = importlib.machinery.SourceFileLoader('node_installer', 'node/install')
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    target = tmp_path / 'factory'
+    stage = tmp_path / 'stage'
+    for path in (target, stage):
+        (path / 'node/bin').mkdir(parents=True)
+        (path / 'node/systemd').mkdir()
+        (path / 'node/cli').mkdir()
+        (path / 'node/cli/Dockerfile').write_text('old fence')
+        (path / 'node/bin/launcher').write_text('old bin')
+        (path / 'code').write_text('old code')
+    (target / '.venv').mkdir()
+    (target / '.venv/python').write_text('old environment')
+    (stage / 'code').write_text('new code')
+    (stage / 'node/bin/launcher').write_text('new bin')
+    (stage / 'node/cli/Dockerfile').write_text('new fence')
+    bin_dir, units = tmp_path / 'bin', tmp_path / 'systemd'
+    bin_dir.mkdir()
+    units.mkdir()
+    (bin_dir / 'launcher').write_text('old bin')
+    monkeypatch.setattr(module, 'TARGET', target)
+    monkeypatch.setattr(module, 'BIN', bin_dir)
+    monkeypatch.setattr(module, 'SYSTEMD', units)
+    monkeypatch.setattr(module.os, 'chown', lambda *a: None)
+    # Executable fakes exercise argv, sync, UI build, restart and failing health check.
+    commands = tmp_path / 'commands'
+    commands.mkdir()
+    log = tmp_path / 'commands.log'
+    for name in ('uv', 'docker', 'systemctl', 'factory-cplane', 'chown', 'chmod', 'curl'):
+        script = commands / name
+        script.write_text('#!/bin/sh\nprintf "%s\\n" "' + name + ' $*" >> "$INSTALL_TEST_LOG"\n' +
+                          ('if [ "$1" = python ]; then echo /opt/python/3.13/bin/python; fi\n' if name == 'uv' else '') +
+                          ('if [ -f "$INSTALL_TEST_FAIL" ]; then rm "$INSTALL_TEST_FAIL"; exit 1; fi\n' if name == 'curl' else '') + 'exit 0\n')
+        script.chmod(0o755)
+    monkeypatch.setenv('PATH', str(commands) + ':' + os.environ['PATH'])
+    monkeypatch.setenv('INSTALL_TEST_LOG', str(log))
+    monkeypatch.setenv('INSTALL_TEST_FAIL', str(tmp_path / 'fail'))
+    return module, target, stage, log
+
+
+def test_install_manual_preserves_fence_and_backup(installer):
+    module, target, stage, log = installer
+    assert module.install(stage, SHA) == {'manual': ['node/cli/Dockerfile']}
+    assert (target / 'node/cli/Dockerfile').read_text() == 'old fence'
+    assert (target / 'REVISION').read_text() == SHA + '\n'
+    assert (target / 'code').read_text() == 'new code'
+    assert (target.with_name('factory.previous') / 'code').read_text() == 'old code'
+    assert not (target.with_name('factory.previous') / '.venv').exists()
+    assert (module.BIN / 'launcher').read_text() == 'new bin'
+    commands = log.read_text()
+    assert 'uv sync --project' in commands and '--frozen --no-dev' in commands
+    assert 'npm ci && npm run build' in commands
+    assert 'factory-cplane migrate' in commands
+    assert 'systemctl daemon-reload' in commands
+
+
+def test_failed_check_rolls_back_code_and_managed_files(installer):
+    module, target, stage, log = installer
+    Path(os.environ['INSTALL_TEST_FAIL']).touch()
+    with pytest.raises(subprocess.CalledProcessError):
+        module.install(stage, SHA)
+    assert (target / 'code').read_text() == 'old code'
+    assert (target / '.venv/python').exists()
+    assert (module.BIN / 'launcher').read_text() == 'old bin'
+    commands = log.read_text()
+    assert commands.count('uv sync ') == 2
+    assert commands.count('systemctl restart factory-ui factory-sessions') == 2
+    assert commands.count('factory-cplane migrate') == 1
+
+
+def test_postgres_request_route_and_transaction(pg_store, slice_data):
+    with pg_store.locked():
+        pg_store.save({'version': 1, 'slices': [node_step(slice_data)]})
+    client = create_app(pg_store).test_client()
+    url = '/api/slices/' + slice_data['id'] + '/install'
+    assert client.post(url, headers={'X-Factory-UI': '1'}).status_code == 202
+    assert client.post(url, headers={'X-Factory-UI': '1'}).status_code == 400
+    with pg_store.locked():
+        data = pg_store.load()
+        assert len(list(installation.pending(data))) == 1
+        assert data['slices'][0]['log'][0]['actor'] == 'owner'
+        assert len(pg_store.notices()) == 1
+
+
+def test_pass_only_launches_after_explicit_request(tmp_path, slice_data, make_state, monkeypatch):
+    from test_runner import FakeProcesses, FakeGitHub, NOW
+    monkeypatch.setenv('CPLANE_FENCE', '1')
+    item = node_step(slice_data)
+    item.update(state='issued', session={'tool': 'codex', 'id': 'session-1', 'folder': '/unused'})
+    item['log'].append({'at': NOW.isoformat(), 'actor': 'runner', 'event': 'merged: ' + SHA})
+    path = make_state([item])
+    runner = Runner(path, processes=FakeProcesses(), github=FakeGitHub(), git=Mock(), clock=lambda: NOW)
+    job_dir = runner.runs / 'turn-1'
+    job_dir.mkdir(parents=True)
+    (job_dir / 'job.json').write_text(json.dumps({'id': item['id'], 'phase': 'node-step', 'sha': SHA,
+        'started_ns': 1, 'run': str(job_dir), 'fence': True, 'tool': 'codex', 'request': {'node_steps': item['attention']['body']}}))
+    fake_bin = tmp_path / 'fake-systemd'
+    fake_bin.mkdir()
+    launches = tmp_path / 'launches'
+    for name, script in [('systemctl', '#!/bin/sh\nif [ -f "$INSTALL_LAUNCHES" ]; then echo LoadState=loaded; echo ActiveState=activating; else echo LoadState=not-found; fi\n'),
+                         ('systemd-run', '#!/bin/sh\nprintf "%s\\n" "$@" >> "$INSTALL_LAUNCHES"\n')]:
+        executable = fake_bin / name
+        executable.write_text(script)
+        executable.chmod(0o755)
+    monkeypatch.setenv('PATH', str(fake_bin) + ':' + os.environ['PATH'])
+    monkeypatch.setenv('INSTALL_LAUNCHES', str(launches))
+    runner.run()
+    assert not launches.exists()
+    assert main(['--state', str(path), '--actor', 'chat:21', 'install', item['id']]) == 0
+    runner.run()
+    runner.run()
+    assert launches.read_text().count('/usr/local/bin/factory-install') == 1
+    assert 'touch' not in launches.read_text()
+    assert not runner.processes.started
+    request = next(installation.pending(state.load(path)))[1]
+    (runner.runs / 'installs' / (request + '.json')).write_text(json.dumps({'ok': True, 'commit': SHA, 'manual': []}))
+    runner.launch = Mock()
+    runner.run()
+    runner.launch.assert_called_once()
+    assert runner.launch.call_args.args[1] == 'Installed ' + SHA
+    assert not list(installation.pending(state.load(path)))
+
+
+def test_root_lock_refuses_second_process_without_overwriting_result(tmp_path, monkeypatch, capsys):
+    import fcntl
+    from cplane import fence
+    monkeypatch.setattr(install_host, 'INSTALL_ROOT', tmp_path)
+    monkeypatch.setattr(fence, 'trusted_directory', lambda p: p)
+    monkeypatch.setattr(install_host.os, 'geteuid', lambda: 0)
+    monkeypatch.setattr('sys.argv', ['factory-install', 'example/one', '--request', 'b' * 32])
+    with (tmp_path / 'lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        assert install_host.main() == 1
+    assert 'already running' in capsys.readouterr().out
+    assert not list(tmp_path.glob('*.json'))
+
+
+def test_root_only_entry_point(monkeypatch):
+    monkeypatch.setattr(install_host.os, 'geteuid', lambda: 21000)
+    monkeypatch.setattr('sys.argv', ['factory-install', 'example/one'])
+    with pytest.raises(SystemExit) as error:
+        install_host.main()
+    assert error.value.code == 2
+
+
+def test_lost_unit_after_durable_intent_never_replayed(tmp_path, slice_data, monkeypatch):
+    runner, item, request = prepared_runner(tmp_path, slice_data)
+    directory = runner.runs / 'installs'
+    directory.mkdir(parents=True)
+    (directory / (request + '.started')).write_text('{}')
+    command = Mock(return_value=SimpleNamespace(stdout='LoadState=not-found', returncode=0))
+    monkeypatch.setattr(installation.subprocess, 'run', command)
+    installation.process(runner)
+    assert command.call_count == 1
+    assert 'disappeared' in item['attention']['body']
+    assert not list(installation.pending(runner.data))
+
+
+def test_launch_failure_diagnostics_never_enter_state(tmp_path, slice_data, monkeypatch):
+    runner, item, request = prepared_runner(tmp_path, slice_data)
+    command = Mock(side_effect=[SimpleNamespace(stdout='LoadState=not-found', returncode=0),
+                               SimpleNamespace(returncode=1, stderr='synthetic-sensitive-diagnostic')])
+    monkeypatch.setattr(installation.subprocess, 'run', command)
+    installation.process(runner)
+    assert 'could not start' in item['attention']['body']
+    assert 'sensitive' not in json.dumps(runner.data)
+    assert (runner.runs / 'installs' / (request + '.started')).exists()
+
+
+def test_direct_command_starts_separate_unit(tmp_path, make_state, slice_data, monkeypatch):
+    from cplane import fence
+    host_setup(tmp_path, make_state, slice_data, monkeypatch)
+    monkeypatch.setattr(fence, 'trusted_directory', lambda p: p)
+    monkeypatch.setattr(install_host.os, 'geteuid', lambda: 0)
+    monkeypatch.setattr('sys.argv', ['factory-install', slice_data['id']])
+    start = Mock(return_value=True)
+    monkeypatch.setattr(installation, 'start_unit', start)
+    monkeypatch.setattr(install_host, 'install', Mock(side_effect=AssertionError('must run in separate unit')))
+    assert install_host.main() == 0
+    start.assert_called_once()
+    assert start.call_args.args[0] == slice_data['id']
+    assert len(list(installation.pending(state.load(Path(os.environ['CPLANE_STATE']))))) == 1
+
+
+def test_all_manual_paths_and_removed_managed_files(installer):
+    module, target, stage, _ = installer
+    for name in ('node/proxy/policy', 'node/compose.yaml', 'node/check-fence.py'):
+        (target / name).parent.mkdir(exist_ok=True)
+        (stage / name).parent.mkdir(exist_ok=True)
+        (target / name).write_text('old fence')
+        (stage / name).write_text('new fence')
+    (target / 'node/systemd/removed.service').write_text('old service')
+    (module.SYSTEMD / 'removed.service').write_text('old service')
+    answer = module.install(stage, SHA)
+    assert set(answer['manual']) == {'node/cli/Dockerfile', 'node/proxy/policy', 'node/compose.yaml', 'node/check-fence.py'}
+    for name in answer['manual']:
+        assert (target / name).read_text() == 'old fence'
+    assert not (module.SYSTEMD / 'removed.service').exists()
+
+
+def test_running_unit_keeps_request_pending_if_attention_changes(tmp_path, slice_data, monkeypatch):
+    runner, item, _ = prepared_runner(tmp_path, slice_data)
+    item['attention'] = None
+    monkeypatch.setattr(installation.subprocess, 'run', Mock(return_value=SimpleNamespace(
+        stdout='LoadState=loaded\nActiveState=activating', returncode=0)))
+    installation.process(runner)
+    assert len(list(installation.pending(runner.data))) == 1
+    other = node_step(copy.deepcopy(slice_data))
+    other['id'] = 'other/one'
+    runner.data['slices'].append(other)
+    with pytest.raises(state.StateError, match='already'):
+        installation.request_change('owner')(other, runner.data, 'now')

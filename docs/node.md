@@ -996,3 +996,85 @@ when features are added or imported; an empty board is expected before import.
 
 After merging, install the updated Python package and UI dependencies on the node,
 rebuild the UI, and open `/pipeline` in Workshop.
+
+## Request a fixed host install
+
+`factory-cplane --actor owner install PROJECT/SLICE` records a request for an
+open, unanswered `node-step`. `--actor chat:<id>` is also accepted. It starts no
+executor and runs no node-step text. The next scheduler pass starts a separate
+root systemd unit; it survives the pass ending and the UI/sessions restarting.
+Only one request may be pending or running across all slices. Requests use the
+existing validated, locked, atomic state mutation path, logs and notices; state
+remains version 1. `POST /api/slices/PROJECT/SLICE/install` records the same request
+as `owner`, requiring the existing `X-Factory-UI: 1` guard. There is no UI button.
+
+One-time setup for this change, from the reviewed merged archive on the node:
+
+1. Bootstrap the new Python modules and reviewed `node/install` into the existing
+   `/opt/factory` installation using the manual archive procedure above. Preserve
+   the existing fence files. Write the merged revision to `REVISION`, sync Python
+   3.13 with `--frozen --no-dev`, and rebuild the UI. Install the launcher:
+
+   ```sh
+   sudo install -o root -g root -m 0755 /opt/factory/node/bin/factory-install /usr/local/bin/factory-install
+   sudo install -d -o root -g root -m 0700 /var/lib/factory/install
+   ```
+
+2. Add exactly this assignment to root-only `/etc/factory/runner.env`:
+
+   ```ini
+   CPLANE_INSTALL_REPOS='TelesforoAleix/factory'
+   ```
+
+   Entries are comma-separated exact GitHub `owner/repo` names. Leave every other
+   repository unlisted. Keep `CPLANE_STATE` and `CPLANE_RUNS` identical for the
+   runner and installer. The existing `PATH` must include `/usr/local/bin` and
+   `/opt/factory/.venv/bin`. Host requirements are `gh`, `uv`, Docker, `curl`,
+   systemd, and Python 3.13 installed under `/opt/python`. The token remains at
+   `/etc/factory/github-token`, root:root mode 0600. Never copy runner.env or the
+   token into UI configuration, archives, fenced workspaces, or chat sessions.
+
+3. Restart `factory-ui` to expose the route, then request installation of this
+   slice with `sudo factory-cplane --actor owner install factory/IN1`. Let the
+   timer run the next pass, or explicitly run `sudo factory-cplane --actor runner
+   run`. Do not invoke the installer from inside a runner pass or the site.
+
+The unit calls `/usr/local/bin/factory-install PROJECT/SLICE`. Root may also invoke
+that command directly for an open node step; it records a request and starts
+the same separate systemd unit. The
+launcher reads the runner's private merge metadata, checks the repository against
+`CPLANE_INSTALL_REPOS`, verifies the exact SHA is an ancestor of GitHub `main`,
+and downloads that SHA's archive using the host token. It rejects links and
+traversal in archives. It runs **that commit's** `node/install` with no GitHub
+token in its environment. Failed verification never runs an archive's code.
+The host-wide lock is `/var/lib/factory/install/lock`.
+
+The reviewed installer keeps the old code in `/opt/factory.previous`, without
+`.venv`; it reuses and syncs the environment, writes `REVISION`, fixes ownership
+and permissions, builds the UI using `node:22-slim`, removes `node_modules`, runs
+additive migrations, installs changed launchers and systemd files, reloads
+systemd, restarts `factory-ui` and `factory-sessions`, and checks
+`http://127.0.0.1:8300/`. Removed launchers/units are removed too. It preserves
+existing `node/cli/`, `node/proxy/`, `node/compose.yaml`, and
+`node/check-fence.py`, reporting changed paths as `manual: <paths>`. Updating or
+rebuilding the fence remains a human operation.
+
+A failed build, migration, restart or health check restores the previous code and
+managed host files, re-syncs Python, restarts and checks the services, then reports
+failure. **Migrations are not undone.** A failure during rollback needs operator
+repair; a failure result never claims the old installation is healthy. No raw
+command diagnostics, environment values or credentials go into scheduler state,
+notices or the unit journal. The node-step text is never evaluated as a command.
+
+Results are small atomic mode-0600 JSON files under
+`/srv/factory/runs/<anchor-hash>/installs/<request-id>.json`. The next pass answers
+the node step with `Installed <commit>` on success. Failure or any manual paths
+raises an escalation. Units use stable `factory-install-<request-id>` names,
+start without blocking the pass, and remain loaded after exit, so a pass restart
+can find them without starting a second installation. A completed unit with no
+result, or a lost unit after persisted launch intent, escalates; it is never
+automatically replayed. Inspect status with
+`sudo systemctl status factory-install-<request-id>` and verify `REVISION` and
+service health before resolving an escalation. Finished units and private result
+files may be cleaned up by the operator after their result has been consumed.
+Installations are never requested automatically after a merge.
