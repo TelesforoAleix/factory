@@ -70,6 +70,7 @@ def test_postgres_dedup_totals_nulls_and_prompt_bound(pg_store):
     assert detail['starting_commit'] is None and detail['skill_version'] is None
     assert pg_store.run_record_show(rows[1]['id'])['output_tokens'] is None
     total = pg_store.run_record_total('factory/B4b')
+    assert all(type(total[field]) is int for field in run_records.TOKEN_FIELDS)
     assert total == dict(turns=2, input_tokens=25, cached_tokens=8, cache_write_tokens=4,
                          output_tokens=12, reasoning_tokens=6, seconds=3.5)
     assert pg_store.run_record_total('unknown')['input_tokens'] is None
@@ -77,11 +78,14 @@ def test_postgres_dedup_totals_nulls_and_prompt_bound(pg_store):
 
 
 def test_failed_insert_does_not_abort_scheduler_transaction(pg_store, capsys):
-    with state.locked(Path('synthetic.json')):
+    with state.locked(Path('synthetic.json')) as store:
+        # Reuse the active connection, as production does. A second store would
+        # wait for the advisory lock held by this transaction.
+        assert state.store(None) is store
         # Force a real database CHECK error inside the recorder savepoint.
-        add_record(pg_store, kind='invalid')
-        assert pg_store.load() == dict(version=1, slices=[])
-        add_record(pg_store)
+        add_record(store, kind='invalid')
+        assert store.load() == dict(version=1, slices=[])
+        add_record(store)
     assert len(pg_store.run_record_list()) == 1
     assert capsys.readouterr().err == 'cplane: run recording failed\n'
 

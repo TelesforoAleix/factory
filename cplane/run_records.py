@@ -114,7 +114,11 @@ class RunRecordStore:
             columns = (*TOKEN_FIELDS, 'seconds')
             row = self.connection.execute('SELECT count(*), ' + ', '.join(f'sum({field})' for field in columns) +
                 ' FROM cplane_run_records WHERE slice_id = %s', (slice_id,)).fetchone()
-            return dict(turns=row[0], **dict(zip(columns, row[1:])))
+            # PostgreSQL SUM(bigint) returns numeric/Decimal. Keep token sums
+            # as arbitrary-precision Python integers for JSON, preserving NULL.
+            totals = {field: int(value) if field in TOKEN_FIELDS and value is not None else value
+                      for field, value in zip(columns, row[1:])}
+            return dict(turns=row[0], **totals)
 
 
 def slice_record(store, item, job):
