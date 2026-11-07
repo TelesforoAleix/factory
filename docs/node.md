@@ -649,3 +649,37 @@ After installation, the orchestrator tests one deliberately chosen real Home Lab
 Markdown write, confirms its commit notice and remote `main`, and verifies a
 Factory session cannot write planning. This implementation uses temporary Git
 repositories and does not perform that real write.
+
+## Database dump and restore check
+
+The root-run `factory-dump.timer` makes a custom-format PostgreSQL dump every
+night at 03:50, including a missed run after boot. It writes atomically to
+`/srv/homelab/factory-data/originals/db/factory-YYYY-MM-DD.dump` with mode 0640,
+and retains the seven newest dated dumps after a successful dump. A lock prevents
+concurrent dumps. The existing weekly encrypted copy includes this directory.
+The separate JSON export remains in place.
+
+After merge, the orchestrator verifies that `/srv/homelab` is the mounted encrypted
+volume **before** creating the directory. Stop if it is not mounted; never create
+this path on the root disk. Then install and exercise the reviewed scripts:
+
+```sh
+mountpoint -q /srv/homelab || { echo 'Encrypted volume is not mounted' >&2; exit 1; }
+sudo install -d -o root -g root -m 0750 /srv/homelab/factory-data/originals/db
+sudo install -o root -g root -m 0755 /opt/factory/node/bin/factory-dump /usr/local/bin/factory-dump
+sudo install -o root -g root -m 0755 /opt/factory/node/bin/factory-restore-check /usr/local/bin/factory-restore-check
+sudo install -o root -g root -m 0644 /opt/factory/node/systemd/factory-dump.service /etc/systemd/system/
+sudo install -o root -g root -m 0644 /opt/factory/node/systemd/factory-dump.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now factory-dump.timer
+sudo systemctl start factory-dump.service
+sudo factory-restore-check
+```
+
+The check without an argument first makes a fresh dump; it then restores the
+newest dated dump to a disposable `pgvector/pgvector:pg17` container with no
+network or published port and compares each table's row count to the live database.
+To check an older dump, pass its path: `sudo factory-restore-check /path/to/factory-YYYY-MM-DD.dump`.
+Changes to live tables after the dump can cause count mismatches, including during
+a fresh check; investigate a mismatch before treating it as restore corruption.
+The temporary container is removed on completion or failure.
