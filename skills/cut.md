@@ -18,8 +18,13 @@ Every rule in the task's Fixed decisions and Do not sections needs a test where 
 Ignore the task's instructions about branches, pull requests, merging, CI, deployment, remote
 machines and the handover. Spend as little reading as the cut needs.
 
-End with a JSON object matching schema/plan.schema.json: tickets with title, files, change and
-check, and test_files listing the test files you wrote.
+End your reply with one fenced `json` block containing a JSON object with exactly these fields:
+- `tickets`: an array of 1 to 10 objects. Each object has exactly `title`, `files`, `change`,
+  and `check`. `title`, `change`, and `check` are nonempty strings; `files` is a nonempty
+  array of nonempty repository-relative path strings.
+- `test_files`: a nonempty array of nonempty repository-relative path strings naming the test
+  files you wrote. Paths must not be absolute, contain `..` components, backslashes, or NULs,
+  or be `.`. The same path rules apply to `files`.
 
 # Task
 
