@@ -868,7 +868,13 @@ map `cache_read_input_tokens` to cached tokens and `cache_creation_input_tokens`
 to cache-write tokens. Cache-write tokens are retained separately alongside
 input, cached, output and reasoning tokens. Missing counters remain null; a
 counter missing from any Codex usage report makes that invocation's counter
-unknown. `run total` sums known counters and seconds across records, with a turn
+unknown. Stored counters remain as reported. `run list --json` also includes `turn_tokens`:
+for Codex, each counter is the difference from the previous record with the same
+session ID and tool, in record ID order. The first record, a record without a
+session ID, or a negative difference counts the current value in full. If either
+side of a subtraction is null, that turn's counter is null. Claude turn counters
+are the stored values. Previous records are considered before slice or project
+filters. `run total` sums known turn counters and seconds across records, with a turn
 count; a sum with no known values is null. Totals with unknown counters are
 therefore partial, not evidence that the missing work used zero tokens.
 
