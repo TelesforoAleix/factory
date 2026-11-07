@@ -15,6 +15,7 @@ import tarfile
 import time
 
 from .fence import Fence, trusted_directory, host_environment, WORK_ROOT
+from . import run_records
 from .planning import Planning
 from .state import StateError
 from .stores import PostgresStore, REPOSITORY
@@ -50,6 +51,7 @@ def export_tree(clone, destination, ref, *, markdown_only=False):
             members.append(member)
         destination.mkdir(mode=0o700)
         archive.extractall(destination, members=members, filter='data')
+        return archive.pax_headers.get('comment')
 
 
 UI_DOCS = Path('/var/lib/factory/ui-docs')
@@ -144,7 +146,9 @@ def workspace(session):
             match = re.search(r'^ref: refs/heads/([^\s]+)\s+HEAD$', head, re.M)
             if not match:
                 raise StateError('GitHub default branch unavailable')
-            export_tree(clean, repos / name, f'refs/remotes/origin/{match[1]}')
+            commit = export_tree(clean, repos / name, f'refs/remotes/origin/{match[1]}')
+            if len(repositories) == 1:
+                session['_starting_commit'] = commit
             (repos / name).chmod(0o755)
         # Chown planning only, while workspace remains root-owned and inaccessible.
         if session.get('area') == 'homelab':
@@ -219,23 +223,37 @@ class CleanupError(RuntimeError):
 
 
 def execute_turn(turn, store):
+    accounting = {}
+    try:
+        return _execute_turn(turn, store, accounting)
+    finally:
+        if 'started' in accounting:
+            run_records.chat_record(store, turn, accounting)
+
+
+def _execute_turn(turn, store, accounting):
     try:
         folder, paths = workspace(turn['session'])
         trusted_directory(RUNS)
         run = RUNS / f'session-turn-{turn["id"]}'
         run.mkdir(mode=0o700)  # root-owned; no agent output files to follow
-        result = subprocess.run(turn_command(turn, folder, paths, run),
+        command = turn_command(turn, folder, paths, run)
+        accounting['started'] = time.time()
+        result = subprocess.run(command,
                                 stdin=subprocess.DEVNULL, capture_output=True, text=True,
                                 env=host_environment())
+        accounting['output'] = result.stdout
+        accounting['ended'] = time.time()
         if result.returncode == 125:
             # Do not free capacity while Docker cleanup is uncertain.
             raise CleanupError('Container cleanup failed')
         if result.returncode:
-            LOG.error('Session turn %s exited %s: %s', turn['id'], result.returncode, result.stderr)
+            LOG.error('Session turn %s exited %s', turn['id'], result.returncode)
             reply = 'Turn timed out after 20 minutes.' if result.returncode == 124 else 'Turn failed. Create a new session.'
             store.finish_session_turn(turn, reply, failed=True)
             return
         cli_id, reply = parse_reply(turn['session']['tool'], result.stdout)
+        accounting['outcome'] = 'completed'
         commits = []
         if turn['session'].get('area') == 'homelab':
             io_folder = run / 'io'
@@ -254,7 +272,7 @@ def execute_turn(turn, store):
     except CleanupError:
         raise
     except Exception:
-        LOG.exception('Session turn %s failed', turn['id'])
+        LOG.error('Session turn %s failed', turn['id'])
         store.finish_session_turn(turn, 'Turn failed. Create a new session.', failed=True)
         return
     if commits:
@@ -273,6 +291,7 @@ def main():
         for turn in store.interrupted_session_turns():
             subprocess.run(['factory-cli', 'session-cleanup', str(turn['id'])], check=True,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            run_records.chat_record(store, turn, {'outcome': 'interrupted'})
             store.finish_session_turn(turn, 'Turn interrupted. Create a new session.', failed=True)
         with ThreadPoolExecutor(max_workers=2) as pool:
             active = []

@@ -10,6 +10,7 @@ from typing import Protocol, ContextManager
 
 from . import state
 from .features import FeatureStore
+from .run_records import RunRecordStore
 
 
 class Store(Protocol):
@@ -75,7 +76,7 @@ class FileStore:
 LOCK_KEY = 0x43504C414E45
 
 
-class PostgresStore(FeatureStore):
+class PostgresStore(FeatureStore, RunRecordStore):
     def __init__(self, url):
         if not url:
             raise state.StateError("Postgres connection failed")
@@ -278,8 +279,8 @@ class PostgresStore(FeatureStore):
     def interrupted_session_turns(self):
         with self.locked():
             rows = list(self.connection.execute(
-                "SELECT m.id, s.id, s.area FROM cplane_session_messages m JOIN cplane_sessions s ON s.id = m.session WHERE m.status = 'running'"))
-            return [dict(id=r[0], session=self.sessions(r[2], r[1])[0]) for r in rows]
+                "SELECT m.id, s.id, s.area, m.text FROM cplane_session_messages m JOIN cplane_sessions s ON s.id = m.session WHERE m.status = 'running'"))
+            return [dict(id=r[0], session=self.sessions(r[2], r[1])[0], text=r[3]) for r in rows]
 
 
 REPOSITORY = re.compile(r'[A-Za-z0-9_-][A-Za-z0-9_.-]*/[A-Za-z0-9_-][A-Za-z0-9_.-]*')

@@ -817,3 +817,67 @@ The separate hourly timer has `Persistent=true`, so a missed run executes after
 boot. The daily state/outbox export remains on its existing timer. No slices,
 sessions, runner, UI, new credentials or network services are involved. The
 owner reviews and decides whether to merge this cross-repository write slice.
+
+## Run records and replay
+
+After merge, install the reviewed Python revision using the existing node
+installation procedure and run `sudo factory-cplane migrate`. Migration 006 adds
+`cplane_run_records`; restart the runner and sessions service with the reviewed
+installation. After the next real run, the orchestrator checks its record:
+
+```sh
+sudo factory-cplane run list --slice <slice-id> --json
+sudo factory-cplane run show <record-id>
+sudo factory-cplane run total --slice <slice-id>
+```
+
+There is one row per slice CLI invocation or owner-message chat invocation.
+Resumed invocations are separate rows; collecting the same run again cannot
+insert a second row. A unique internal turn key enforces this in Postgres.
+Records survive run-folder cleanup. No ticket-attempt service is queried and no
+money is calculated. `cplane run` with no subcommand still runs the scheduler.
+File-store execution silently skips recording; record commands require Postgres.
+
+`run list` accepts `--slice ID`, `--project KEY`, and `--json`. Lists never return
+prompt text, including in JSON. `run show ID` prints the full record as JSON,
+including the prompt. `run mark ID` selects an eval candidate; `--clear` removes
+that flag. These operations do not start agents or change slice state.
+
+Each record includes provider, model, effort, start time, elapsed seconds,
+outcome, project key, feature ID when the slice field matches a stored feature
+ID, slice ID or chat session ID, and replay fields. Projects are resolved from
+repository names in `cplane_projects`; unknown or ambiguous matches are null.
+Chats with several repositories have no single project or starting commit, so
+those fields are null. Slice session IDs are CLI resume IDs; chat session IDs
+are the database session IDs. Outcomes are the slice reply kind (or `failed`),
+and `completed`, `failed`, or `interrupted` for chat.
+
+Replay fields are the starting commit, exact prompt, model, effort and skill
+version. Prompts retain up to 16,000 characters, using the existing truncation
+marker and an explicit `prompt_truncated` flag when cut. Chat prompts contain
+the owner's stored message. Starting commits come from the pinned base for a
+fresh fenced slice, local HEAD for an unfenced slice, or the trusted Git archive
+for a fresh single-repository chat. Fenced resumes and chat resumes use null
+when their exact starting commit is unknown; no host Git runs in an agent-owned
+workspace to discover it. Chats without a repository also use null. Ticket-flow
+jobs retain their existing skills revision; other unversioned skills use null.
+Null replay values mean unknown, rather than a guessed value.
+
+Codex per-turn usage events are summed across the CLI output. Claude fields
+map `cache_read_input_tokens` to cached tokens and `cache_creation_input_tokens`
+to cache-write tokens. Cache-write tokens are retained separately alongside
+input, cached, output and reasoning tokens. Missing counters remain null; a
+counter missing from any Codex usage report makes that invocation's counter
+unknown. `run total` sums known counters and seconds across records, with a turn
+count; a sum with no known values is null. Totals with unknown counters are
+therefore partial, not evidence that the missing work used zero tokens.
+
+Recording errors and unreadable usage produce only fixed, single-line stderr
+messages without prompts, provider output, database diagnostics or credentials.
+Unreadable usage still permits a record with null counters. Inserts use the
+store's locked transaction and a savepoint; a failed write cannot abort the
+scheduler's state update or a chat reply. There is no guaranteed retry after a
+failed write. Session restart reconciliation records interrupted turns with
+unknown usage and timing when they were lost. Full prompts are private database
+content; treat `run show`, database access and backups accordingly. No UI,
+launcher, credentials or additional network service is introduced.

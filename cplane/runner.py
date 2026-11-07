@@ -13,6 +13,7 @@ import time
 import traceback
 import uuid
 
+from . import run_records
 from . import state
 from .orders import Collector
 from .executors import Processes, atomic_json, CLAUDE_PARAGRAPH, FENCE_PARAGRAPH, fenced
@@ -461,6 +462,8 @@ class Runner:
                'model': model, 'effort': effort, 'prompt': prompt, 'started_ns': time.time_ns(),
                'session': item['session']['id'] if resume else '',
                'resume': item['session']['id'] if resume else None, 'phase': 'running'}
+        job['starting_commit'] = (metadata.get('base') if self.fenced and not resume else
+                                  None if self.fenced else run_records.starting_commit(folder))
         if self.fenced:
             job.update(metadata, fence=True)
         if item.get('flow', 'cli') == 'tickets':
@@ -509,6 +512,7 @@ class Runner:
         # Save the reply for replay if state persistence is interrupted.
         job['final'], job['tail'] = final, tail
         job['phase'] = 'ended'
+        job['ended_at'] = run_records.end_time(job)
         self.save_job(job)
         self.apply_final(item, job)
 
@@ -535,6 +539,11 @@ class Runner:
         return retry.timestamp() if retry > self.instant else None
 
     def apply_final(self, item, job):
+        if state.postgres():
+            try:
+                run_records.slice_record(state.store(self.path), item, job)
+            except Exception:
+                print('cplane: run recording failed', file=sys.stderr)
         final = job.get('final')
         if (isinstance(final, dict) and isinstance(final.get('kind'), str)
                 and isinstance(final.get('body'), str)):
