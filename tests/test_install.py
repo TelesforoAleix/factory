@@ -235,6 +235,37 @@ def test_install_manual_preserves_fence_and_backup(installer):
     assert 'systemctl daemon-reload' in commands
 
 
+@pytest.mark.parametrize('old,new', [('old fence', 'new fence'), ('old fence', None),
+                                     (None, 'new fence'), ('old fence', 'old fence')])
+@pytest.mark.parametrize('fail_check', [False, True])
+def test_install_leaves_fence_launcher_alone(installer, old, new, fail_check):
+    module, target, stage, _ = installer
+    launcher = 'node/bin/factory-cli'
+    for root, content in ((target, old), (stage, new)):
+        if content is not None:
+            (root / launcher).write_text(content)
+    host = module.BIN / 'factory-cli'
+    host.write_text('installed fence')
+    host.chmod(0o751)
+    before = host.stat()
+    if fail_check:
+        Path(os.environ['INSTALL_TEST_FAIL']).touch()
+        with pytest.raises(subprocess.CalledProcessError):
+            module.install(stage, SHA)
+    else:
+        result = module.install(stage, SHA)
+        assert (launcher in result['manual']) == (old != new)
+        assert (module.BIN / 'launcher').read_text() == 'new bin'
+    if old is None:
+        assert not (target / launcher).exists()
+    else:
+        assert (target / launcher).read_text() == old
+    assert host.read_text() == 'installed fence'
+    after = host.stat()
+    assert (after.st_ino, after.st_mode, after.st_mtime_ns, after.st_ctime_ns) == (
+        before.st_ino, before.st_mode, before.st_mtime_ns, before.st_ctime_ns)
+
+
 def test_failed_check_rolls_back_code_and_managed_files(installer):
     module, target, stage, log = installer
     Path(os.environ['INSTALL_TEST_FAIL']).touch()

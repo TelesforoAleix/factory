@@ -1055,9 +1055,11 @@ and permissions, builds the UI using `node:22-slim`, removes `node_modules`, run
 additive migrations, installs changed launchers and systemd files, reloads
 systemd, restarts `factory-ui` and `factory-sessions`, and checks
 `http://127.0.0.1:8300/`. Removed launchers/units are removed too. It preserves
-existing `node/cli/`, `node/proxy/`, `node/compose.yaml`, and
-`node/check-fence.py`, reporting changed paths as `manual: <paths>`. Updating or
-rebuilding the fence remains a human operation.
+existing `node/cli/`, `node/proxy/`, `node/compose.yaml`, `node/check-fence.py`,
+and `node/bin/factory-cli`, reporting changed paths as `manual: <paths>`. The
+fence launcher stays unchanged in `/opt/factory`, and `/usr/local/bin/factory-cli`
+is never touched by the installer. Updating or rebuilding the fence remains a
+human operation.
 
 A failed build, migration, restart or health check restores the previous code and
 managed host files, re-syncs Python, restarts and checks the services, then reports
