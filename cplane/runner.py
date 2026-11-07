@@ -768,6 +768,8 @@ class Runner:
             if not attention and not item['paused']:
                 self.launch(item, job['brief'], review=True)
             return
+        if item['paused']:
+            return
         if job and job['phase'] in ('cut-ready', 'submitting', 'submit-failed', 'tickets'):
             return
         if (job and job['phase'] == 'usage-limit-wait' and not attention
@@ -804,7 +806,7 @@ class Runner:
             self.launch(item, 'merged as ' + job['sha'], resume=True)
 
     def pr_checks(self, item, job):
-        if job['phase'] != 'pr' or item['attention']:
+        if job['phase'] != 'pr' or item['attention'] or item['paused']:
             return
         # Recover PR number if creation succeeded but saving state did not.
         if item['pr'] is None:
@@ -834,14 +836,20 @@ class Runner:
         with state.locked(self.path):
             self.git.pull(self.path)
             orders_changed = self.orders.collect(self)
+            pipeline_order = []
+            self.instant = self.clock()
+            self.at = self.instant.isoformat()
+            if state.postgres():
+                try:
+                    pipeline_order = state.store(self.path).pipeline_step(self.at)
+                except Exception:
+                    print('pipeline step failed', file=sys.stderr)
             self.data = state.load(self.path)
             if not self.data["slices"]:
                 if orders_changed:
                     self.git.commit(self.path)
                 return  # Nothing to mutate or commit in an empty scheduler.
             state_before = json.dumps(self.data, ensure_ascii=False, separators=(',', ':'))
-            self.instant = self.clock()
-            self.at = self.instant.isoformat()
             self.notices = []
             self.jobs = {}
             for path in sorted(self.runs.glob('*/job.json')):
@@ -921,7 +929,10 @@ class Runner:
                     job['github_read_failures'] = 0
                     self.save_job(job)
             accepted = {s['id'] for s in self.data['slices'] if s['state'] == 'accepted'}
-            for item in self.data['slices']:
+            by_id = {s['id']: s for s in self.data['slices']}
+            start_order = [by_id[key] for key in pipeline_order]
+            start_order.extend(s for s in self.data['slices'] if s['id'] not in pipeline_order)
+            for item in start_order:
                 if (item['state'] == 'ready' and not item['paused'] and item['slot']
                         and datetime.fromisoformat(item['slot']) <= self.instant
                         and all(dep in accepted for dep in item['depends_on'])):

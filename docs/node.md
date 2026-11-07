@@ -752,15 +752,21 @@ unsupported moves, and repeating the current stage are refused in one sentence.
 | next | ready | owner, chat | |
 | ready | grilling | owner, chat | |
 | grilling | shortlist | owner, chat | |
-| building | next or ready | owner, chat | no linked slice running unpaused |
-| any except parked | parked | owner, chat | no linked slice running unpaused |
+| building | next or ready | owner, chat | pause linked running slices |
+| any except parked | parked | owner, chat | from building, pause linked running slices; otherwise none running unpaused |
 | parked | stage it left | owner, chat | destination entry conditions again |
 
 Parking records the stage it left and only permits return to that stage; return
 clears the recorded stage. Direct creation in parked has no return stage.
 Ready entry from grilling or parked requires `design_agreed` and a linked slice;
 done entry requires `review_passed`. A linked slice runs when issued or awaiting handover and not
-paused. These rules read slice state without changing it. Backlog import still
+paused. Leaving Building for Next, Ready or Parked sets those running slices to
+paused in the same validated transaction. The pipeline logs its pause ownership;
+when the feature returns to Building, the runner clears only pauses it owns. An
+existing manual pause, or a later explicit pause command, remains in place. Pending
+automatic start slots are cleared on these moves and scheduled again on return.
+Pause uses the existing runner pause mechanism: it prevents subsequent delivery
+and launches and does not terminate an executor already running. Backlog import still
 writes its mapped stages directly, bypassing move gates.
 
 Slices retain their free-text `feature`. `add` and `edit` also accept optional
@@ -778,12 +784,33 @@ cplane limit set building_limit 4
 cplane limit set waiting_limit 2
 ```
 
-Values must be whole numbers of at least 1. These are stored settings only;
-no runner or board behavior consumes them yet. Limit commands require Postgres.
-After merge, install the reviewed revision using the existing node procedure,
-then run `sudo factory-cplane migrate` and `sudo factory-cplane limit show`.
-Confirm both defaults are 3 on first migration. No runner restart, slice action,
-session change, or UI change is needed for this slice.
+Values must be whole numbers of at least 1. Limit commands require Postgres.
+Once per runner pass, under the pass's existing database lock and active store,
+the pipeline step consumes these settings:
+
+- A Building feature is waiting if any linked slice has open, unanswered
+  attention. It is active if at least one linked slice is not accepted and it is
+  not waiting. Imported Building features with no slices count as neither.
+- While both the active count is below `building_limit` and the waiting count is
+  below `waiting_limit`, the first Next feature with linked slices enters
+  Building. Empty Next features stay where they are and are skipped.
+- Building features are considered in stage order. Their ready slices with all
+  dependencies accepted are slotted immediately, just as with `cplane start`.
+  An independent slice can start even if another slice of the feature is waiting.
+  Returning from Testing places a feature first, so its ready slices go first.
+- A Building feature with linked slices all accepted enters Testing. Features
+  with no linked slices stay in Building.
+
+The launch path still enforces two executors total and one per repository;
+capacity or repository conflicts defer slices. Feature moves and automatic starts
+are audited on both features and slices with actor `runner`. The step uses a
+savepoint: failure rolls it back, emits only `pipeline step failed` on stderr,
+and allows the rest of the pass to continue. File-store passes skip this step.
+No state schema, migration, session or UI changes are needed.
+
+After merge, the orchestrator installs the reviewed Python revision with the
+existing node procedure and runs one normal `sudo factory-cplane run` pass.
+Confirm that an empty board stays empty with no feature moves or slice starts.
 
 Each project has a stored counter, advanced under the store's transaction lock.
 IDs are never reused after deletion or a project move. Moving assigns a new ID;

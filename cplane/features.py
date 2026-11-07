@@ -1,7 +1,9 @@
 """Postgres feature operations, using the store's locked transaction path."""
 import re
+from datetime import datetime
 
 from .state import StateError
+from .times import now
 
 STAGES = ('shortlist', 'grilling', 'ready', 'next', 'building', 'testing', 'done', 'parked')
 TEXT_LIMIT = 16_000  # Same long-text bound as document notes.
@@ -134,7 +136,7 @@ class FeatureStore:
                                target == 'parked' or 'owner' in MOVES.get((source, target), ()))
                     if not allowed:
                         continue
-                    if (target == 'parked' or source == 'building' and target in ('next', 'ready')) and any(
+                    if target == 'parked' and source != 'building' and any(
                             s['state'] in ('issued', 'awaiting handover') and not s['paused'] for s in linked):
                         continue
                     try:
@@ -218,11 +220,34 @@ class FeatureStore:
             if kind not in allowed:
                 required = ' or '.join('chat:<id>' if role == 'chat' else role for role in allowed)
                 raise StateError(f'This move requires actor {required}')
-            if stage == 'parked' or source == 'building' and stage in ('next', 'ready'):
+            if stage == 'parked' and source != 'building':
                 if any(s['state'] in ('issued', 'awaiting handover') and not s['paused'] for s in linked):
                     raise StateError('A linked slice is still running unpaused')
             if source in ('grilling', 'parked') or stage == 'done':
                 self._entry_conditions(item, stage, linked)
+            if source == 'building' and stage in ('next', 'ready', 'parked'):
+                data = self.load()
+                linked_ids = {s['id'] for s in linked}
+                for slice_item in data['slices']:
+                    if (slice_item['id'] in linked_ids and not slice_item['paused']
+                            and slice_item['state'] in ('issued', 'awaiting handover')):
+                        slice_item['paused'] = True
+                        self._pipeline_log(item, slice_item, 'pipeline pause')
+                    if slice_item['id'] in linked_ids and slice_item['state'] == 'ready':
+                        start = next((e for e in reversed(slice_item['log'])
+                                      if e['event'] in ('start', 'slot', 'unslot')
+                                      or e['event'].startswith('start:')), None)
+                        if start and start['actor'] == 'runner' and start['event'].startswith('start:'):
+                            slice_item['slot'] = None
+                            self._pipeline_log(item, slice_item, 'pipeline unslot')
+                self.save(data)
+            if kind == 'runner':
+                data = self.load()
+                linked_ids = {s['id'] for s in linked}
+                for slice_item in data['slices']:
+                    if slice_item['id'] in linked_ids:
+                        self._pipeline_log(item, slice_item, f'stage {source} to {stage}')
+                self.save(data)
             self.connection.execute(
                 'UPDATE cplane_features SET stage = %s, position = %s, parked_from = %s WHERE feature = %s',
                 (stage, self._feature_position(stage), source if stage == 'parked' else None, item['feature']))
@@ -230,6 +255,73 @@ class FeatureStore:
                 self.feature_place(identifier, top=True, actor=actor)
             self._feature_event(item['feature'], f'stage {source} to {stage}', actor)
             return self.feature_show(identifier)
+
+    def _pipeline_log(self, feature, item, event, at=None):
+        event = f'{event}: {feature["id"]}'
+        item['log'].append(dict(at=at or now().isoformat(), actor='runner', event=event))
+        self._feature_event(feature['feature'], f'{event} slice {item["id"]}', 'runner')
+
+    def pipeline_step(self, at):
+        """Advance the board and slot work atomically; never launch an executor."""
+        with self.mutation():
+            def linked(feature, data):
+                aliases = {r[0] for r in self.connection.execute(
+                    'SELECT id FROM cplane_feature_ids WHERE feature = %s', (feature['feature'],))}
+                return [s for s in data['slices'] if s.get('feature_id') in aliases]
+
+            def waiting(slices):
+                return any(s['attention'] and s['attention']['answer'] is None for s in slices)
+
+            data = self.load()
+            building = [self._feature(f['id']) for f in self.feature_list(stage='building')]
+            groups = [linked(f, data) for f in building]
+            active = sum(any(s['state'] != 'accepted' for s in group) and not waiting(group)
+                         for group in groups)
+            stopped = sum(waiting(group) for group in groups)
+            limits = self.limit_show()
+            for feature in self.feature_list(stage='next'):
+                if active >= limits['building_limit'] or stopped >= limits['waiting_limit']:
+                    break
+                internal = self._feature(feature['id'])
+                group = linked(internal, data)
+                if not group:
+                    continue
+                self.feature_stage(feature['id'], 'building', actor='runner')
+                active += bool(any(s['state'] != 'accepted' for s in group) and not waiting(group))
+                stopped += bool(waiting(group))
+
+            # Reload to retain stage audit entries from feature_stage.
+            data = self.load()
+            accepted = {s['id'] for s in data['slices'] if s['state'] == 'accepted'}
+            ordered = []
+            for feature in self.feature_list(stage='building'):
+                internal = self._feature(feature['id'])
+                group = linked(internal, data)
+                if group and all(s['state'] == 'accepted' for s in group):
+                    # Save accumulated slots/logs before the nested move loads them.
+                    self.save(data)
+                    self.feature_stage(feature['id'], 'testing', actor='runner')
+                    data = self.load()
+                    continue
+                for item in group:
+                    ordered.append(item['id'])
+                    # The latest pause command owns the pause; manual commands win.
+                    pause = next((e for e in reversed(item['log'])
+                                  if e['event'] in ('pause', 'resume')
+                                  or e['event'].startswith(('pipeline pause:', 'pipeline resume:'))), None)
+                    if (item['paused'] and pause and pause['actor'] == 'runner'
+                            and pause['event'].startswith('pipeline pause:')):
+                        item['paused'] = False
+                        self._pipeline_log(internal, item, 'pipeline resume', at)
+                    if (item['state'] == 'ready' and not item['paused']
+                            and all(dep in accepted for dep in item['depends_on'])
+                            and (item['slot'] is None or datetime.fromisoformat(item['slot']) > datetime.fromisoformat(at))):
+                        item['slot'] = at
+                        self._pipeline_log(internal, item, 'start', at)
+                        self.append_notices([dict(at=at, id=item['id'], event='start',
+                                                  text=f"Started {item['id']} at {at}")])
+            self.save(data)
+            return ordered
 
     def feature_mark(self, identifier, mark, *, clear=False, actor='owner'):
         actor_kind(actor)
