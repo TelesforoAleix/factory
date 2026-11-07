@@ -833,6 +833,29 @@ def test_resume_after_merge_waiting_cannot_publish(delivery, make_state):
     assert item['state'] == 'in review'
 
 
+@pytest.mark.parametrize('prefix', [
+    'Summary of the tests.\n\n',
+    '```json\n{"not": "the plan"}\n```\n\nSummary.\n\n',
+])
+def test_ticket_plan_uses_last_fenced_block(ticket_runner, prefix):
+    runner, processes, plan, status, submit = ticket_runner
+    processes.finish('waiting', prefix + '```json\n' + json.dumps(plan) + '\n```')
+    runner.run()
+    submit.assert_called_once()
+    assert submit.call_args.args[0]['tasks'][0]['title'] == plan['tickets'][0]['title']
+
+
+@pytest.mark.parametrize('body', ['No plan here.', '```json\n{invalid}\n```'])
+def test_ticket_plan_missing_or_invalid_json_stops(ticket_runner, body):
+    runner, processes, plan, status, submit = ticket_runner
+    processes.finish('waiting', body)
+    runner.run()
+    attention = state.load(runner.path)['slices'][0]['attention']
+    assert attention['kind'] == 'escalation'
+    assert 'invalid plan: expected fenced JSON' in attention['body']
+    submit.assert_not_called()
+
+
 def test_status_failure_prevents_submit(ticket_runner):
     runner, processes, plan, status, submit = ticket_runner
     status.side_effect = state.StateError('status command failed')

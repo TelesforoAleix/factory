@@ -333,8 +333,9 @@ Only opt in repositories with a queue push key. A tickets slice requires fenced
 mode; an unfenced attempt raises attention without starting an executor.
 
 For `flow: tickets`, the first CLI turn receives `skills/cut.md` and the brief,
-commits tests on its assigned branch, and ends `waiting` with a fenced JSON plan
-matching `schema/plan.schema.json`. The runner validates it and delivers its
+commits tests on its assigned branch, and ends `waiting` with a fenced JSON plan.
+Text may precede the block; the runner uses the last fenced JSON block and validates it
+against `schema/plan.schema.json`. It delivers the
 commit through the same bundle path, without opening a PR. It builds the queue
 task file using the delivered tip as `base_commit` and the assigned branch.
 Queue workers push each finished ticket's commit to that branch.

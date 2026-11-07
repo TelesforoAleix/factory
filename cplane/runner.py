@@ -410,7 +410,7 @@ class Runner:
                        f'This assigned branch overrides any branch named in the brief. '
                        f'The pinned base commit is {metadata["base"]}.' + (
                            '\nCommit the tests on the assigned branch. End with kind "waiting", '
-                           'with the plan in a fenced JSON block matching schema/plan.schema.json. '
+                           'ending the reply with the fenced JSON plan described above. '
                            'The runner delivers the commit and submits the tickets.'
                            if cut_turn else ('\nReview only; change nothing. End waiting with schema/review.schema.json.'
                                              if review else FENCE_PARAGRAPH)))
@@ -553,9 +553,12 @@ class Runner:
         elif job.get('review') and final['kind'] == 'waiting':
             self.apply_review(item, job, final['body'])
         elif item.get('flow', 'cli') == 'tickets' and final['kind'] == 'waiting':
-            match = re.match(r'\s*```(?:json)?[ \t]*\n(.*?)\n```', final['body'], re.S)
+            blocks = list(re.finditer(r'^```(?:json)?[ \t]*\r?\n(.*?)\r?\n```[ \t]*$',
+                                      final['body'], re.S | re.M))
+            if not blocks:
+                raise state.StateError('invalid plan: expected fenced JSON')
             try:
-                plan = json.loads(match[1]) if match else None
+                plan = json.loads(blocks[-1][1])
             except ValueError:
                 raise state.StateError('invalid plan: expected fenced JSON') from None
             cutter.validate_plan(plan)
