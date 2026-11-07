@@ -8,6 +8,7 @@ from cplane.cli import main
 from cplane.features import STAGES
 from cplane.state import StateError
 from test_stores import pg_store
+from test_runner import setup as runner_setup, NOW
 
 
 # Independent specification: every pair, including forbidden jumps and no-ops.
@@ -110,11 +111,12 @@ def test_running_gate(pg_store, slice_data, slice_state, paused, target):
     # Old IDs remain links after a project move.
     pg_store.feature_move(identifier, 'LAB')
     linked(pg_store, slice_data, identifier, state=slice_state, paused=paused)
-    if slice_state in ('issued', 'awaiting handover') and not paused:
-        with pytest.raises(StateError, match='still running unpaused'):
-            pg_store.feature_stage(identifier, target, actor='chat:1')
-    else:
-        assert pg_store.feature_stage(identifier, target, actor='chat:1')['stage'] == target
+    assert pg_store.feature_stage(identifier, target, actor='chat:1')['stage'] == target
+    result = pg_store.load()['slices'][0]
+    assert result['paused'] == (paused or slice_state in ('issued', 'awaiting handover'))
+    if not paused and slice_state in ('issued', 'awaiting handover'):
+        assert result['log'][-1]['actor'] == 'runner'
+        assert result['log'][-1]['event'].startswith('pipeline pause:')
 
 
 def test_parked_return_and_ready_gate(pg_store, slice_data):
@@ -306,6 +308,246 @@ def test_board_reads_alias_links_and_owner_moves(pg_store, slice_data):
     feature = board.json['features'][0]
     assert feature['id'] == moved['id']
     assert feature['slices'][0]['id'] == slice_data['id']
-    assert 'parked' not in feature['moves'] and 'ready' not in feature['moves']
+    assert 'parked' in feature['moves'] and 'ready' in feature['moves']
     assert feature['stage_since'] is not None
     assert client.get('/api/pipeline/' + item['id']).json['id'] == moved['id']
+
+
+def runner_board(store, runner, slice_data, specs):
+    """Features and slices are synthetic; executors and Git are fakes."""
+    items = []
+    features = []
+    for index, (stage, fields) in enumerate(specs):
+        feature = store.feature_add('FAC', f'Feature {index}', stage=stage)['id']
+        features.append(feature)
+        if fields is None:
+            continue
+        item = copy.deepcopy(slice_data)
+        item.update(id=f'synthetic/{index}', feature_id=feature, state='ready', slot=None,
+                    repo=f'repo{index}')
+        item.update(fields)
+        items.append(item)
+        (runner.repos / item['repo']).mkdir(exist_ok=True)
+    store.save(dict(version=1, slices=items))
+    return features
+
+
+def waiting_attention(answer=None):
+    return dict(kind='question', body='Synthetic question', since=NOW.isoformat(),
+                answer=answer, approved=False)
+
+
+@pytest.mark.parametrize('waiting_limit,answer,expected', [(1, None, 'next'), (2, None, 'building'),
+                                                          (2, 'Answered', 'next')])
+def test_runner_pipeline_limits(pg_store, runner_setup, slice_data, waiting_limit, answer, expected):
+    r, p, _ = runner_setup
+    pg_store.limit_set('building_limit', 1)
+    pg_store.limit_set('waiting_limit', waiting_limit)
+    features = runner_board(pg_store, r, slice_data, [
+        ('building', None),  # Imported rows consume neither limit.
+        ('building', dict(state='planned', attention=waiting_attention(answer))),
+        ('next', None),  # Skip an empty Next row, preserving its stage.
+        ('next', {}), ('next', {})])
+    r.run()
+    assert pg_store.feature_show(features[2])['stage'] == 'next'
+    assert pg_store.feature_show(features[3])['stage'] == expected
+    assert pg_store.feature_show(features[4])['stage'] == 'next'
+    assert len(p.started) == (expected == 'building')
+
+
+def test_runner_pipeline_dependencies_waiting_and_order(pg_store, runner_setup, slice_data):
+    r, p, _ = runner_setup
+    features = runner_board(pg_store, r, slice_data, [('building', {}), ('testing', {}), ('next', {})])
+    pg_store.feature_stage(features[1], 'building', actor='chat:1')
+    data = pg_store.load()
+    # Store order differs from feature order; the returned feature starts first.
+    stopped = copy.deepcopy(data['slices'][1])
+    stopped.update(id='synthetic/stopped', state='planned', attention=waiting_attention())
+    data['slices'].append(stopped)
+    blocked = copy.deepcopy(data['slices'][0])
+    blocked.update(id='synthetic/blocked', depends_on=[stopped['id']])
+    data['slices'].append(blocked)
+    data['slices'][0]['depends_on'] = ['synthetic/accepted']
+    accepted = copy.deepcopy(data['slices'][0])
+    accepted.update(id='synthetic/accepted', state='accepted', feature_id=features[0], depends_on=[])
+    data['slices'].append(accepted)
+    pg_store.save(data)
+    r.run()
+    assert [job['id'] for job in p.started] == ['synthetic/1', 'synthetic/0']
+    results = {s['id']: s for s in pg_store.load()['slices']}
+    assert results['synthetic/blocked']['slot'] is None
+    assert results['synthetic/2']['state'] == 'ready'
+    assert 'executor limit' in results['synthetic/2']['log'][-1]['event']
+    with pg_store.locked():
+        assert pg_store.connection.execute(
+            "SELECT count(*) FROM cplane_feature_events WHERE actor = 'runner' AND event LIKE 'start:%%'").fetchone()[0] == 3
+
+
+def test_runner_pipeline_testing_and_empty_board(pg_store, runner_setup, slice_data):
+    r, p, _ = runner_setup
+    features = runner_board(pg_store, r, slice_data, [('building', dict(state='accepted')),
+                                                        ('building', None)])
+    r.run()
+    assert pg_store.feature_show(features[0])['stage'] == 'testing'
+    assert pg_store.feature_show(features[1])['stage'] == 'building'
+    assert pg_store.load()['slices'][0]['log'][-1]['actor'] == 'runner'
+    assert not p.started
+    pg_store.save(dict(version=1, slices=[]))
+    before = pg_store.feature_list()
+    r.run()
+    assert pg_store.feature_list() == before
+
+
+@pytest.mark.parametrize('target', ['parked', 'next', 'ready'])
+def test_runner_pipeline_pause_return(pg_store, runner_setup, slice_data, target):
+    r, p, _ = runner_setup
+    feature = runner_board(pg_store, r, slice_data, [('building', dict(state='issued'))])[0]
+    data = pg_store.load()
+    manual = copy.deepcopy(data['slices'][0])
+    manual.update(id='synthetic/manual', paused=True)
+    data['slices'].append(manual)
+    pg_store.save(data)
+    pg_store.feature_stage(feature, target, actor='owner')
+    assert all(s['paused'] for s in pg_store.load()['slices'])
+    if target == 'parked':
+        r.run()
+        assert all(s['paused'] for s in pg_store.load()['slices'])
+        pg_store.feature_stage(feature, 'building')
+    elif target == 'ready':
+        r.run()
+        assert all(s['paused'] for s in pg_store.load()['slices'])
+        pg_store.feature_stage(feature, 'next')
+    r.run()
+    assert [s['paused'] for s in pg_store.load()['slices']] == [False, True]
+    assert not p.started  # An existing issued session is not started afresh.
+    assert pg_store.load()['slices'][0]['log'][-1]['event'].startswith('pipeline resume:')
+
+
+def test_runner_pipeline_manual_pause_takes_ownership(pg_store, runner_setup, slice_data):
+    from cplane import state
+    from cplane.cli import change_for
+    r, _, _ = runner_setup
+    feature = runner_board(pg_store, r, slice_data, [('building', dict(state='issued'))])[0]
+    pg_store.feature_stage(feature, 'parked')
+    state.update(r.path, 'synthetic/0', 'pause', 'owner', change_for('pause'))
+    pg_store.feature_stage(feature, 'building')
+    r.run()
+    assert pg_store.load()['slices'][0]['paused']
+
+
+@pytest.mark.parametrize('sql_failure', [False, True])
+def test_runner_pipeline_failure_isolated(pg_store, runner_setup, slice_data, monkeypatch, capsys, sql_failure):
+    from cplane.features import FeatureStore
+    r, p, _ = runner_setup
+    feature = runner_board(pg_store, r, slice_data, [('next', {})])[0]
+    data = pg_store.load()
+    data['slices'][0]['slot'] = NOW.isoformat()
+    pg_store.save(data)
+    original = FeatureStore.pipeline_step
+
+    def broken(store, at):
+        with store.mutation():
+            original(store, at)
+            if sql_failure:
+                store.connection.execute('SELECT synthetic_missing_function()')
+            raise RuntimeError('private diagnostics\nsecond line')
+
+    monkeypatch.setattr(FeatureStore, 'pipeline_step', broken)
+    r.run()
+    assert capsys.readouterr().err == 'pipeline step failed\n'
+    assert pg_store.feature_show(feature)['stage'] == 'next'
+    assert len(p.started) == 1  # Existing slot still executes after rollback.
+
+
+def test_pipeline_deferred_slots_stop_on_park(pg_store, runner_setup, slice_data):
+    r, p, _ = runner_setup
+    features = runner_board(pg_store, r, slice_data, [('building', {}), ('building', {}), ('building', {})])
+    r.run()
+    assert len(p.started) == 2
+    deferred = pg_store.load()['slices'][2]
+    assert deferred['slot'] is not None and deferred['state'] == 'ready'
+    pg_store.feature_stage(features[2], 'parked')
+    assert pg_store.load()['slices'][2]['slot'] is None
+    # Release capacity without any real executor or external repository.
+    p.finish()
+    r.run()
+    assert len(p.started) == 2
+    pg_store.feature_stage(features[2], 'building')
+    r.run()
+    assert len(p.started) == 3 and p.started[-1]['id'] == 'synthetic/2'
+
+
+def test_pipeline_park_blocks_answer_delivery_until_return(pg_store, runner_setup, slice_data):
+    from cplane import state
+    from cplane.cli import change_for
+    r, p, _ = runner_setup
+    feature = runner_board(pg_store, r, slice_data, [('building', {})])[0]
+    r.run()
+    p.finish(kind='question', body='Synthetic question')
+    r.run()
+    pg_store.feature_stage(feature, 'parked')
+    state.update(r.path, 'synthetic/0', 'answer', 'owner', change_for('answer', 'Synthetic answer'))
+    r.run()
+    assert len(p.started) == 1
+    pg_store.feature_stage(feature, 'building')
+    r.run()
+    assert len(p.started) == 2
+    assert p.started[-1]['resume'] == 'session-1'
+
+
+def test_pipeline_keeps_repository_limit(pg_store, runner_setup, slice_data):
+    r, p, _ = runner_setup
+    runner_board(pg_store, r, slice_data, [('building', {}), ('building', {})])
+    data = pg_store.load()
+    data['slices'][1]['repo'] = data['slices'][0]['repo']
+    pg_store.save(data)
+    r.run()
+    assert len(p.started) == 1
+    assert 'repository busy' in pg_store.load()['slices'][1]['log'][-1]['event']
+
+
+def test_pipeline_once_with_active_store_under_lock(pg_store, runner_setup, slice_data, monkeypatch):
+    from cplane import state
+    from cplane.features import FeatureStore
+    r, _, _ = runner_setup
+    runner_board(pg_store, r, slice_data, [('building', None)])
+    calls = []
+    original = FeatureStore.pipeline_step
+
+    def checked(store, at):
+        assert state.store(r.path) is store
+        assert store.connection is not None
+        calls.append(at)
+        return original(store, at)
+
+    monkeypatch.setattr(FeatureStore, 'pipeline_step', checked)
+    r.run()
+    assert calls == [NOW.isoformat()]
+
+
+def test_other_parking_gates_unchanged(pg_store, slice_data):
+    identifier = pg_store.feature_add('FAC', 'Still gated', stage='testing')['id']
+    linked(pg_store, slice_data, identifier, state='issued')
+    with pytest.raises(StateError, match='still running unpaused'):
+        pg_store.feature_stage(identifier, 'parked')
+    assert not pg_store.load()['slices'][0]['paused']
+
+
+def test_pipeline_park_blocks_pr_progress_until_return(pg_store, runner_setup, slice_data):
+    r, p, github = runner_setup
+    feature = runner_board(pg_store, r, slice_data, [('building', {})])[0]
+    r.run()
+    p.finish(kind='waiting', body='Waiting on CI')
+    # An existing PR follows the normal unfenced Codex route.
+    data = pg_store.load()
+    data['slices'][0]['pr'] = 12
+    pg_store.save(data)
+    r.run()
+    pg_store.feature_stage(feature, 'parked')
+    github.checks.return_value = ('green', '')
+    r.run()
+    assert len(p.started) == 1
+    github.merge.assert_not_called()
+    pg_store.feature_stage(feature, 'building')
+    r.run()
+    assert pg_store.load()['slices'][0]['attention']['kind'] == 'merge'
