@@ -119,7 +119,7 @@ def parser():
     from .features import STAGES
     feature = commands.add_parser('feature', parents=[common], help='manage Postgres features')
     feature_commands = feature.add_subparsers(dest='feature_command', required=True, parser_class=Parser)
-    for name in ('add', 'list', 'show', 'stage', 'move', 'section', 'history', 'revert'):
+    for name in ('add', 'list', 'show', 'stage', 'move', 'section', 'history', 'revert', 'place', 'mark'):
         sub = feature_commands.add_parser(name, parents=[common])
         if name == 'add':
             sub.add_argument('project')
@@ -134,6 +134,15 @@ def parser():
             sub.add_argument('--json', action='store_true')
         if name == 'stage':
             sub.add_argument('stage', choices=STAGES)
+        elif name == 'place':
+            placement = sub.add_mutually_exclusive_group(required=True)
+            placement.add_argument('--top', action='store_true')
+            placement.add_argument('--bottom', action='store_true')
+            placement.add_argument('--before')
+            placement.add_argument('--after')
+        elif name == 'mark':
+            sub.add_argument('mark', choices=('design', 'review'))
+            sub.add_argument('--clear', action='store_true')
         elif name == 'move':
             sub.add_argument('project')
         elif name == 'section':
@@ -147,6 +156,12 @@ def parser():
     importer = feature_commands.add_parser('import-backlog', parents=[common])
     importer.add_argument('file')
     importer.add_argument('--dry-run', action='store_true')
+    limits = commands.add_parser('limit', parents=[common])
+    limit_commands = limits.add_subparsers(dest='limit_command', required=True, parser_class=Parser)
+    limit_commands.add_parser('show', parents=[common])
+    set_limit = limit_commands.add_parser('set', parents=[common])
+    set_limit.add_argument('name', choices=('building_limit', 'waiting_limit'))
+    set_limit.add_argument('value', type=int)
     project = commands.add_parser('project', parents=[common])
     projects = project.add_subparsers(dest='project_command', required=True, parser_class=Parser)
     add_project = projects.add_parser('add', parents=[common])
@@ -174,8 +189,8 @@ def parser():
             sub.add_argument("--id", dest="new_id", default=argparse.SUPPRESS)
         else:
             sub.add_argument("--id", required=True)
-        for field in ("repo", "feature", "title", "brief", "model"):
-            sub.add_argument(f"--{field}", required=command == "add" and field in ("repo", "feature", "title"), default=argparse.SUPPRESS)
+        for field in ("repo", "feature", "feature_id", "title", "brief", "model"):
+            sub.add_argument(f"--{field.replace('_', '-')}", required=command == "add" and field in ("repo", "feature", "title"), default=argparse.SUPPRESS)
         sub.add_argument("--effort", choices=("low", "medium", "high", "xhigh", "max", "ultra"), default=argparse.SUPPRESS)
         sub.add_argument("--flow", choices=("cli", "tickets"), default=argparse.SUPPRESS)
         sub.add_argument("--tool", choices=("codex", "claude"), default=argparse.SUPPRESS)
@@ -253,6 +268,10 @@ def feature_command(args):
         result = backend.feature_show(args.id)
     elif command == 'stage':
         result = backend.feature_stage(args.id, args.stage, actor=actor)
+    elif command == 'place':
+        result = backend.feature_place(args.id, top=args.top, bottom=args.bottom, before=args.before, after=args.after, actor=actor)
+    elif command == 'mark':
+        result = backend.feature_mark(args.id, args.mark, clear=args.clear, actor=actor)
     elif command == 'move':
         result = backend.feature_move(args.id, args.project, actor=actor)
     elif command == 'section':
@@ -267,6 +286,7 @@ def feature_command(args):
     elif command == 'show' and not args.json:
         print(f"{result['id']} [{result['stage']}] {result['title']}")
         print(f"project: {result['project']}\nposition: {result['position']}\nparked from: {result['parked_from']}")
+        print(f"design agreed: {result['design_agreed']}\nreview passed: {result['review_passed']}")
         print('aliases: ' + ', '.join(result['aliases']))
         for section in result['sections']:
             print(f"\n## {section['name']}\n\n{section['text']}")
@@ -295,6 +315,13 @@ def main(argv=None):
                 backend.run_record_mark(args.id, clear=args.clear)
                 return 0
             print(json.dumps(result, indent=2, ensure_ascii=False))
+            return 0
+        if args.command == 'limit':
+            if not state.postgres():
+                raise state.StateError('limit commands require Postgres (CPLANE_DATABASE_URL)')
+            backend = state.store(None)
+            result = backend.limit_show() if args.limit_command == 'show' else backend.limit_set(args.name, args.value)
+            print(json.dumps(result, ensure_ascii=False))
             return 0
         if args.command == 'project':
             if not state.postgres():

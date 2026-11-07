@@ -22,15 +22,40 @@ def stage_name(stage):
         raise StateError('Unknown feature stage; choose: ' + ', '.join(STAGES))
 
 
+MOVES = {
+    ('shortlist', 'grilling'): ('owner', 'chat'),
+    ('grilling', 'ready'): ('chat',),
+    ('ready', 'next'): ('owner', 'chat'),
+    ('next', 'building'): ('runner',),
+    ('building', 'testing'): ('runner',),
+    ('testing', 'done'): ('owner', 'chat'),
+    ('testing', 'building'): ('chat', 'runner'),
+    ('next', 'ready'): ('owner', 'chat'),
+    ('ready', 'grilling'): ('owner', 'chat'),
+    ('grilling', 'shortlist'): ('owner', 'chat'),
+    ('building', 'next'): ('owner', 'chat'),
+    ('building', 'ready'): ('owner', 'chat'),
+}
+
+
+def actor_kind(actor):
+    bounded(actor, 'Actor')
+    if actor in ('owner', 'runner'):
+        return actor
+    if actor.startswith('chat:') and actor[5:].strip():
+        return 'chat'
+    raise StateError('Actor must be owner, chat:<id>, or runner')
+
+
 class FeatureStore:
     def _feature(self, identifier):
         row = self.connection.execute(
-            'SELECT f.feature, f.id, f.project, f.title, f.stage, f.position, f.parked_from, f.backlog '
+            'SELECT f.feature, f.id, f.project, f.title, f.stage, f.position, f.parked_from, f.backlog, f.design_agreed, f.review_passed '
             'FROM cplane_feature_ids a JOIN cplane_features f ON f.feature = a.feature WHERE a.id = %s',
             (identifier,)).fetchone()
         if row is None:
             raise StateError(f'Feature not found: {identifier}')
-        return dict(zip(('feature', 'id', 'project', 'title', 'stage', 'position', 'parked_from', 'backlog'), row))
+        return dict(zip(('feature', 'id', 'project', 'title', 'stage', 'position', 'parked_from', 'backlog', 'design_agreed', 'review_passed'), row))
 
     def _feature_number(self, project):
         row = self.connection.execute(
@@ -40,10 +65,10 @@ class FeatureStore:
             raise StateError(f'Project not found: {project}')
         return f'{project}-F{row[0]}'
 
-    def _feature_position(self, project, stage):
+    def _feature_position(self, stage):
         return self.connection.execute(
-            'SELECT COALESCE(max(position) + 1, 0) FROM cplane_features WHERE project = %s AND stage = %s',
-            (project, stage)).fetchone()[0]
+            'SELECT COALESCE(max(position) + 1, 0) FROM cplane_features WHERE stage = %s',
+            (stage,)).fetchone()[0]
 
     def _feature_event(self, feature, event, actor):
         bounded(actor, 'Actor')
@@ -57,7 +82,7 @@ class FeatureStore:
             identifier = self._feature_number(project)
             feature = self.connection.execute(
                 'INSERT INTO cplane_features (id, project, title, stage, position) VALUES (%s, %s, %s, %s, %s) RETURNING feature',
-                (identifier, project, title, stage, self._feature_position(project, stage))).fetchone()[0]
+                (identifier, project, title, stage, self._feature_position(stage))).fetchone()[0]
             self.connection.execute('INSERT INTO cplane_feature_ids VALUES (%s, %s)', (identifier, feature))
             self._feature_event(feature, f'add {identifier}', actor)
             return self.feature_show(identifier)
@@ -68,7 +93,7 @@ class FeatureStore:
         with self.locked():
             rows = self.connection.execute(
                 'SELECT id FROM cplane_features WHERE (%s::text IS NULL OR project = %s) '
-                'AND (%s::text IS NULL OR stage = %s) ORDER BY project, '
+                'AND (%s::text IS NULL OR stage = %s) ORDER BY '
                 "array_position(ARRAY['shortlist','grilling','ready','next','building','testing','done','parked'], stage), position",
                 (project, project, stage, stage))
             return [self.feature_show(row[0]) for row in rows.fetchall()]
@@ -77,23 +102,117 @@ class FeatureStore:
         with self.locked():
             item = self._feature(identifier)
             feature = item.pop('feature')
+            for mark in ('design_agreed', 'review_passed'):
+                if item[mark] is not None:
+                    item[mark] = item[mark].isoformat()
             item['aliases'] = [r[0] for r in self.connection.execute(
                 'SELECT id FROM cplane_feature_ids WHERE feature = %s AND id <> %s ORDER BY id', (feature, item['id']))]
             item['sections'] = [dict(name=r[0], position=r[1], text=r[2]) for r in self.connection.execute(
                 'SELECT name, position, text FROM cplane_feature_sections WHERE feature = %s ORDER BY position', (feature,))]
             return item
 
-    def feature_stage(self, identifier, stage, *, actor='owner'):
-        stage_name(stage)
+    def _linked_slices(self, feature):
+        return [r[0] for r in self.connection.execute(
+            "SELECT s.document FROM cplane_slices s JOIN cplane_feature_ids a "
+            "ON a.id = s.document->>'feature_id' WHERE a.feature = %s", (feature,))]
+
+    def _entry_conditions(self, item, stage, linked):
+        if stage == 'ready':
+            if item['design_agreed'] is None:
+                raise StateError('No agreed design yet')
+            if not linked:
+                raise StateError('No linked slice yet')
+        if stage == 'done' and item['review_passed'] is None:
+            raise StateError('Review has not passed yet')
+
+    def _renumber_stage(self, stage, features):
+        # The stage/position constraint is deferred until this transaction ends.
+        for position, feature in enumerate(features):
+            self.connection.execute('UPDATE cplane_features SET position = %s WHERE feature = %s AND stage = %s',
+                                    (position, feature, stage))
+
+    def feature_place(self, identifier, *, top=False, bottom=False, before=None, after=None, actor='owner'):
+        if sum((bool(top), bool(bottom), before is not None, after is not None)) != 1:
+            raise StateError('Choose exactly one placement')
         with self.mutation():
             item = self._feature(identifier)
-            if stage != item['stage']:
-                self.connection.execute(
-                    'UPDATE cplane_features SET stage = %s, position = %s, parked_from = %s WHERE feature = %s',
-                    (stage, self._feature_position(item['project'], stage),
-                     item['stage'] if stage == 'parked' else None, item['feature']))
-                self._feature_event(item['feature'], f'stage {stage}', actor)
+            anchor = self._feature(before if before is not None else after) if before is not None or after is not None else None
+            if anchor is not None:
+                if anchor['stage'] != item['stage']:
+                    raise StateError('Placement target is in another stage')
+                if anchor['feature'] == item['feature']:
+                    raise StateError('Cannot place a feature relative to itself')
+            features = [r[0] for r in self.connection.execute(
+                'SELECT feature FROM cplane_features WHERE stage = %s AND feature <> %s ORDER BY position',
+                (item['stage'], item['feature']))]
+            index = 0 if top else len(features)
+            if anchor is not None:
+                index = features.index(anchor['feature']) + (after is not None)
+            features.insert(index, item['feature'])
+            self._renumber_stage(item['stage'], features)
+            self._feature_event(item['feature'], f'place {identifier} ' + (
+                'top' if top else 'bottom' if bottom else f'before {before}' if before is not None else f'after {after}'), actor)
             return self.feature_show(identifier)
+
+    def feature_stage(self, identifier, stage, *, actor='owner'):
+        stage_name(stage)
+        kind = actor_kind(actor)
+        with self.mutation():
+            item = self._feature(identifier)
+            source = item['stage']
+            linked = self._linked_slices(item['feature'])
+            if source == 'parked':
+                if stage != item['parked_from']:
+                    raise StateError('Return to the stage this feature left')
+                allowed = ('owner', 'chat')
+            elif stage == 'parked':
+                allowed = ('owner', 'chat')
+            else:
+                allowed = MOVES.get((source, stage), ())
+            if not allowed:
+                raise StateError(f'Cannot move from {source} to {stage}')
+            if kind not in allowed:
+                required = ' or '.join('chat:<id>' if role == 'chat' else role for role in allowed)
+                raise StateError(f'This move requires actor {required}')
+            if stage == 'parked' or source == 'building' and stage in ('next', 'ready'):
+                if any(s['state'] in ('issued', 'awaiting handover') and not s['paused'] for s in linked):
+                    raise StateError('A linked slice is still running unpaused')
+            if source in ('grilling', 'parked') or stage == 'done':
+                self._entry_conditions(item, stage, linked)
+            self.connection.execute(
+                'UPDATE cplane_features SET stage = %s, position = %s, parked_from = %s WHERE feature = %s',
+                (stage, self._feature_position(stage), source if stage == 'parked' else None, item['feature']))
+            if stage == 'building' and source in ('testing', 'parked'):
+                self.feature_place(identifier, top=True, actor=actor)
+            self._feature_event(item['feature'], f'stage {source} to {stage}', actor)
+            return self.feature_show(identifier)
+
+    def feature_mark(self, identifier, mark, *, clear=False, actor='owner'):
+        actor_kind(actor)
+        columns = {'design': 'design_agreed', 'review': 'review_passed'}
+        if mark not in columns:
+            raise StateError('Choose design or review')
+        with self.mutation():
+            item = self._feature(identifier)
+            self.connection.execute(
+                f"UPDATE cplane_features SET {columns[mark]} = {'NULL' if clear else 'now()'} WHERE feature = %s",
+                (item['feature'],))
+            self._feature_event(item['feature'], f'mark {mark}' + (' clear' if clear else ''), actor)
+            return self.feature_show(identifier)
+
+    def limit_show(self):
+        with self.locked():
+            return {name: int(value) for name, value in self.connection.execute(
+                'SELECT name, value FROM cplane_settings ORDER BY name')}
+
+    def limit_set(self, name, value):
+        if name not in ('building_limit', 'waiting_limit'):
+            raise StateError('Unknown limit; choose building_limit or waiting_limit')
+        if type(value) is not int or value < 1:
+            raise StateError('Limit must be a whole number of at least 1')
+        with self.mutation():
+            self.connection.execute('UPDATE cplane_settings SET value = %s WHERE name = %s', (value, name))
+            return self.limit_show()
 
     def feature_move(self, identifier, project, *, actor='owner'):
         with self.mutation():
@@ -102,8 +221,8 @@ class FeatureStore:
                 new_id = self._feature_number(project)
                 self.connection.execute('INSERT INTO cplane_feature_ids VALUES (%s, %s)', (new_id, item['feature']))
                 self.connection.execute(
-                    'UPDATE cplane_features SET id = %s, project = %s, position = %s WHERE feature = %s',
-                    (new_id, project, self._feature_position(project, item['stage']), item['feature']))
+                    'UPDATE cplane_features SET id = %s, project = %s WHERE feature = %s',
+                    (new_id, project, item['feature']))
                 self._feature_event(item['feature'], f'move {item["id"]} to {new_id}', actor)
             return self.feature_show(identifier)
 

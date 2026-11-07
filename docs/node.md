@@ -700,7 +700,7 @@ example (use the node's `sudo factory-cplane` wrapper there):
 cplane --actor planner feature add FAC 'Example functionality'
 cplane feature list --project FAC --stage shortlist --json
 cplane feature show FAC-F1 --json
-cplane --actor planner feature stage FAC-F1 grilling
+cplane --actor chat:example feature stage FAC-F1 grilling
 cplane --actor planner feature move FAC-F1 LAB
 cplane --actor planner feature section FAC-F1 Problem --file problem.md
 printf 'Some Markdown\n' | cplane --actor planner feature section FAC-F1 Solution
@@ -708,13 +708,79 @@ cplane feature history FAC-F1 --section Problem
 cplane --actor planner feature revert FAC-F1 1
 ```
 
-`add PROJECT TITLE` defaults to shortlist and accepts `--stage`. `stage ID STAGE`
-checks only the stage name: shortlist, grilling, ready, next, building, testing,
-done, or parked. New features and stage/project moves append to their destination
-stage, ordered by a stored zero-based position within the project. Positions can
-have gaps. Parking records the preceding stage; leaving parked clears it. A
-feature created directly as parked has no preceding stage. Repeating the current
-stage or project is a no-op. No stage gates or executor actions are added.
+`add PROJECT TITLE` defaults to shortlist and accepts `--stage` for direct
+creation. Migration 007 replaces per-project order with one order per stage,
+across every project. Existing rows are ordered by project, then their old
+position during migration. Project moves preserve their stage position.
+Stage entry appends to the bottom, except returning from testing or parked to
+building, which places the feature at the top. Positions may have gaps after
+stage moves; explicit placement renumbers the whole stage atomically:
+
+```sh
+cplane feature place FAC-F1 --top
+cplane feature place FAC-F1 --bottom
+cplane feature place FAC-F1 --before LAB-F2
+cplane feature place FAC-F1 --after LAB-F2
+cplane --actor chat:example feature mark FAC-F1 design
+cplane --actor owner feature mark FAC-F1 review
+cplane feature mark FAC-F1 review --clear
+```
+
+Placement accepts exactly one option; the anchor must be another feature in the
+same stage. IDs and aliases both work. Marks are nullable timestamps returned by
+`show` and JSON output; setting or clearing a mark records an actor/time event.
+Marks persist across stage changes until explicitly cleared. Marks accept owner,
+chat, and runner actors; the move table below controls stage authority.
+
+`feature stage ID STAGE` enforces these moves. Actors are `owner`, `chat:<id>`,
+and `runner`, passed with `--actor` (default owner). A chat is responsible for
+obtaining the owner's agreement; this code does not check it. Other actor names,
+unsupported moves, and repeating the current stage are refused in one sentence.
+
+| From | To | Actor | Condition |
+|---|---|---|---|
+| shortlist | grilling | owner, chat | |
+| grilling | ready | chat | agreed design and at least one linked slice |
+| ready | next | owner, chat | |
+| next | building | runner | |
+| building | testing | runner | |
+| testing | done | owner, chat | passed review |
+| testing | building | chat, runner | |
+| next | ready | owner, chat | |
+| ready | grilling | owner, chat | |
+| grilling | shortlist | owner, chat | |
+| building | next or ready | owner, chat | no linked slice running unpaused |
+| any except parked | parked | owner, chat | no linked slice running unpaused |
+| parked | stage it left | owner, chat | destination entry conditions again |
+
+Parking records the stage it left and only permits return to that stage; return
+clears the recorded stage. Direct creation in parked has no return stage.
+Ready entry from grilling or parked requires `design_agreed` and a linked slice;
+done entry requires `review_passed`. A linked slice runs when issued or awaiting handover and not
+paused. These rules read slice state without changing it. Backlog import still
+writes its mapped stages directly, bypassing move gates.
+
+Slices retain their free-text `feature`. `add` and `edit` also accept optional
+`--feature-id ID_OR_ALIAS`, checked against Postgres while holding the store's
+transaction lock. The supplied ID or alias is retained, and remains linked after
+a project move. Setting this field requires Postgres. Existing slices need no
+new field; issued and awaiting-handover slices still permit only title and
+dependency edits. There is no inference from the free-text field.
+
+Migration 007 also seeds `building_limit` and `waiting_limit` to 3:
+
+```sh
+cplane limit show
+cplane limit set building_limit 4
+cplane limit set waiting_limit 2
+```
+
+Values must be whole numbers of at least 1. These are stored settings only;
+no runner or board behavior consumes them yet. Limit commands require Postgres.
+After merge, install the reviewed revision using the existing node procedure,
+then run `sudo factory-cplane migrate` and `sudo factory-cplane limit show`.
+Confirm both defaults are 3 on first migration. No runner restart, slice action,
+session change, or UI change is needed for this slice.
 
 Each project has a stored counter, advanced under the store's transaction lock.
 IDs are never reused after deletion or a project move. Moving assigns a new ID;
