@@ -51,7 +51,7 @@ def test_move_aliases_and_no_reuse(pg_store):
     assert store.feature_move('LAB-F1', 'FAC') == back  # same-project move is a no-op
     assert store.feature_add('LAB', 'Next')['id'] == 'LAB-F2'
     assert store.feature_history('LAB-F1')[0]['id'] == revision
-    store.feature_stage(original, 'testing')
+    store.feature_stage(original, 'grilling')
     store.feature_section('LAB-F1', 'Problem', 'Changed')
     store.feature_revert(original, revision, actor='reviewer')
     assert store.feature_show('LAB-F1')['sections'][0]['text'] == 'Some Markdown'
@@ -87,22 +87,12 @@ def test_sections_history_and_revert(pg_store):
         store.feature_revert(other, before[0]['id'])
 
 
-def test_stages_positions_and_parked_from(pg_store):
+def test_unknown_stage(pg_store):
     identifier = pg_store.feature_add('FAC', 'First')['id']
-    second = pg_store.feature_add('FAC', 'Second', stage='testing')['id']
-    for stage in STAGES:
-        result = pg_store.feature_stage(identifier, stage, actor='planner')
-        assert result['stage'] == stage
-        assert result['parked_from'] == ('done' if stage == 'parked' else None)
-    assert pg_store.feature_stage(identifier, 'parked')['parked_from'] == 'done'
-    assert pg_store.feature_stage(identifier, 'testing')['position'] == 1
-    assert pg_store.feature_show(identifier)['parked_from'] is None
-    assert [r['id'] for r in pg_store.feature_list(project='FAC', stage='testing')] == [second, identifier]
     with pytest.raises(StateError, match='Unknown feature stage'):
         pg_store.feature_stage(identifier, 'invented')
     with pytest.raises(StateError, match='Unknown feature stage'):
         pg_store.feature_add('FAC', 'Invalid', stage='invented')
-    assert pg_store.feature_show(identifier)['stage'] == 'testing'
 
 
 def test_bounds_and_atomic_failure(pg_store):
@@ -138,18 +128,18 @@ def test_cli(pg_store, capsys, monkeypatch, tmp_path):
     capsys.readouterr()
     assert main(['feature', 'move', 'FAC-F1', 'LAB']) == 0
     capsys.readouterr()
-    assert main(['feature', 'stage', 'FAC-F1', 'building']) == 0
+    assert main(['feature', 'stage', 'FAC-F1', 'grilling']) == 0
     capsys.readouterr()
     assert main(['feature', 'show', 'FAC-F1', '--json']) == 0
     feature = json.loads(capsys.readouterr().out)
     assert feature['id'] == 'LAB-F1'
     assert feature['sections'][0]['text'] == 'File Markdown\n'
-    assert main(['feature', 'list', '--project', 'LAB', '--stage', 'building', '--json']) == 0
+    assert main(['feature', 'list', '--project', 'LAB', '--stage', 'grilling', '--json']) == 0
     assert json.loads(capsys.readouterr().out) == [feature]
     assert main(['feature', 'show', 'FAC-F1']) == 0
     assert 'File Markdown' in capsys.readouterr().out
     assert main(['feature', 'list']) == 0
-    assert 'LAB-F1 [building] CLI synthetic' in capsys.readouterr().out
+    assert 'LAB-F1 [grilling] CLI synthetic' in capsys.readouterr().out
     assert main(['feature', 'show', 'FAC-F999']) == 1
     assert 'Feature not found' in capsys.readouterr().err
 

@@ -52,7 +52,7 @@ def test_import_transaction_and_projects(pg_store):
     store.feature_import_backlog(TABLE, actor='planner')
     items = store.feature_export_snapshot()
     assert generated_table(TABLE, items) == TABLE
-    assert items[0]['parked_from'] == 'shortlist'
+    assert next(f for f in items if f['stage'] == 'parked')['parked_from'] == 'shortlist'
     with pytest.raises(StateError, match='already exist'):
         store.feature_import_backlog(TABLE)
     store.project_add('XYZ', 'Synthetic project', repository='synthetic', actor='planner')

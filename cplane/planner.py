@@ -1,4 +1,5 @@
 """Planner mutations; all persistence belongs to state.update."""
+from . import state
 from .state import StateError
 
 
@@ -13,7 +14,7 @@ TRANSITIONS = {
     "accepted": set(),
 }
 KINDS = ("question", "escalation", "merge", "node-step", "owner-check")
-FIELDS = ("flow", "repo", "feature", "title", "brief", "stop_before_merge", "depends_on")
+FIELDS = ("flow", "repo", "feature", "feature_id", "title", "brief", "stop_before_merge", "depends_on")
 
 
 def new_slice(slice_id):
@@ -33,6 +34,11 @@ def change_for(args):
             if (args.command == "edit" and item["state"] in ("issued", "awaiting handover")
                     and (set(values) - {"title", "depends_on"} or executor)):
                 raise StateError(f"{item['id']} is {item['state']}; only --title and --depends-on may be edited")
+            if 'feature_id' in values:
+                if not state.postgres():
+                    raise StateError('Setting feature_id requires Postgres (CPLANE_DATABASE_URL)')
+                # Runs inside state.update's locked transaction; keep the supplied alias.
+                state.store(None)._feature(values['feature_id'])
             item.update(values)
             item["executor"].update(executor)
         elif args.command == "state":
