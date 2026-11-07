@@ -1,0 +1,10 @@
+[Unit]
+Description=Publish Factory features hourly
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+Unit=factory-feature-export.service
+
+[Install]
+WantedBy=timers.target

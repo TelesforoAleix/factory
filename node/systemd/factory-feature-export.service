@@ -1,0 +1,9 @@
+[Unit]
+Description=Publish Factory features to planning git
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/bin/factory-feature-export
+UMask=0077
+NoNewPrivileges=yes

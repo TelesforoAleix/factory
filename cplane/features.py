@@ -1,4 +1,6 @@
 """Postgres feature operations, using the store's locked transaction path."""
+import re
+
 from .state import StateError
 
 STAGES = ('shortlist', 'grilling', 'ready', 'next', 'building', 'testing', 'done', 'parked')
@@ -23,12 +25,12 @@ def stage_name(stage):
 class FeatureStore:
     def _feature(self, identifier):
         row = self.connection.execute(
-            'SELECT f.feature, f.id, f.project, f.title, f.stage, f.position, f.parked_from '
+            'SELECT f.feature, f.id, f.project, f.title, f.stage, f.position, f.parked_from, f.backlog '
             'FROM cplane_feature_ids a JOIN cplane_features f ON f.feature = a.feature WHERE a.id = %s',
             (identifier,)).fetchone()
         if row is None:
             raise StateError(f'Feature not found: {identifier}')
-        return dict(zip(('feature', 'id', 'project', 'title', 'stage', 'position', 'parked_from'), row))
+        return dict(zip(('feature', 'id', 'project', 'title', 'stage', 'position', 'parked_from', 'backlog'), row))
 
     def _feature_number(self, project):
         row = self.connection.execute(
@@ -152,3 +154,46 @@ class FeatureStore:
                     (item['feature'], row[0], row[1], actor))
                 return self.feature_show(identifier)
             return self.feature_section(identifier, row[0], row[1], actor=actor)
+
+    def project_add(self, key, name, *, repository=None, actor='owner'):
+        if not re.fullmatch(r'[A-Z]{3}', key):
+            raise StateError('Project key must be three uppercase letters')
+        bounded(name, 'Project name')
+        bounded(actor, 'Actor')
+        if repository is not None:
+            bounded(repository, 'Repository')
+        with self.mutation():
+            if repository is not None and self.connection.execute(
+                    'SELECT 1 FROM cplane_projects WHERE repository = %s', (repository,)).fetchone():
+                raise StateError('Repository already has a project key')
+            self.connection.execute('INSERT INTO cplane_projects (key, name, repository) VALUES (%s, %s, %s)',
+                                    (key, name, repository))
+            self.connection.execute('INSERT INTO cplane_project_events (project, actor) VALUES (%s, %s)', (key, actor))
+        return dict(key=key, name=name, repository=repository)
+
+    def feature_import_backlog(self, text, *, dry_run=False, actor='owner'):
+        from psycopg.types.json import Jsonb
+        from .backlog import parse
+        with self.mutation():
+            projects = list(self.connection.execute('SELECT key, repository FROM cplane_projects'))
+            rows, report = parse(text, projects)
+            if dry_run:
+                return report
+            if report['unparsed_rows'] or report['repositories_with_no_key']:
+                raise StateError('Backlog import refused: unparsed rows or repositories without keys; run --dry-run')
+            if self.connection.execute('SELECT 1 FROM cplane_features WHERE backlog IS NOT NULL LIMIT 1').fetchone():
+                raise StateError('Backlog import refused: imported features already exist')
+            for row in rows:
+                item = self.feature_add(row['project'], row['title'], stage=row['stage'], actor=actor)
+                self.connection.execute(
+                    'UPDATE cplane_features SET backlog = %s, parked_from = %s WHERE id = %s',
+                    (Jsonb(row['backlog']), 'shortlist' if row['stage'] == 'parked' else None, item['id']))
+            return report
+
+    def feature_export_snapshot(self):
+        with self.locked():
+            features = self.feature_list()
+            repositories = dict(self.connection.execute('SELECT key, repository FROM cplane_projects'))
+            for feature in features:
+                feature['repository'] = repositories[feature['project']] or '—'
+            return features

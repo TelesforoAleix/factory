@@ -733,7 +733,7 @@ Revision history is never edited. Titles, section names and actors are nonempty
 and limited to 200 characters. Writes use validated locked transactions;
 add/stage/move also retain actor/time audit events. Database diagnostics continue
 to be sanitized by the store. No new network service, credential or permission is
-needed, and this slice adds no UI or import/export command.
+needed for feature storage; the export below uses the existing planning keys.
 
 After installation and migration, the orchestrator smoke-tests storage:
 
@@ -745,3 +745,75 @@ sudo factory-cplane feature show NEW-F<number> --json
 
 Confirm the returned ID, project, title and shortlist stage agree. The smoke
 feature remains in Postgres; no delete command is introduced by this slice.
+
+
+## Feature backlog import and git export
+
+Migration 005 adds the original backlog cells, row text/order and imported stage
+as JSON metadata, plus project creation audit events. Existing feature commands,
+IDs, sections and scheduler state retain their contracts. Additional projects use
+permanent three-letter uppercase keys:
+
+```sh
+sudo factory-cplane --actor orchestrator project add XYZ 'Example project' --repository example
+sudo factory-cplane feature import-backlog /path/to/backlog.md --dry-run
+```
+
+The nine-column table must have Feature, Kind, Area, Repo, Horizon, Order,
+Slices, Readiness, Depends on, in that order. Dry run reports row counts, counts
+per stage, unknown or ambiguous repositories, and unparsed row line numbers;
+it writes nothing. Repository matching is exact; `—` maps to NEW. Add missing
+project keys before importing. A real import uses the same command without
+`--dry-run`, runs atomically, and refuses any bad row, unknown repository or
+existing imported feature. Run it only when the owner authorizes it. Original
+cells retain whitespace, Markdown, escaped pipes and code spans. Feature titles
+still have the existing 200-character limit; overlong titles are unparsed rows.
+
+Mapping: now → building; next with Readiness starting `ready` → ready;
+other next → shortlist; later and parked → parked (from shortlist); done → done.
+The original later/parked spelling remains until the feature's stage differs
+from its imported stage. Export then derives Horizon: building/testing → now;
+shortlist/grilling/ready/next → next; parked → parked; done → done.
+
+`feature export` takes one locked database snapshot, then publishes
+`features/<ID>.md` with title, project, stage and sections in stored order. It
+removes obsolete generated feature IDs after project moves. Git uses a fresh
+root-managed directory beneath the fence clean root, host-only settings and
+no hooks. Fetch uses the existing read key; only push gets the existing write
+key. The SSH remote comes exclusively from `CPLANE_PLANNING_REMOTE` in the
+root-only runner environment. Export commits once when content changes and
+pushes main without force. A rejected push fetches and regenerates against the
+latest main once, preserving concurrent edits outside generated paths; another
+rejection fails. Other push failures fail immediately. Only generated feature
+Markdown paths, and optionally backlog.md, can be staged; links are refused.
+Clean export clones are removed on success or failure. Timer errors are a
+single generic stderr line, with no feature text, Git output or remote details.
+
+Keep `CPLANE_BACKLOG_GENERATED` unset while humans maintain the backlog. Export
+then never reads or changes backlog.md. Only an owner-run switch to
+`CPLANE_BACKLOG_GENERATED=1` enables replacement of its table rows, retaining the
+header, separator and all surrounding prose. Imported rows retain order and
+formatting byte for byte unless Horizon changes. New features follow imported
+rows, sorted by ID, with title, repository and derived Horizon; other cells are
+empty. Imported cells remain the original metadata even after a project move.
+No Git content is imported except through the explicit import-backlog command.
+
+After merge the orchestrator installs the reviewed revision, migrates, runs a
+dry-run import of the real file, then runs one export with no features. Do not
+perform a real import or enable the switch during this rollout:
+
+```sh
+sudo factory-cplane migrate
+sudo factory-cplane feature import-backlog /path/to/backlog.md --dry-run
+sudo factory-cplane feature export
+sudo install -o root -g root -m 0755 /opt/factory/node/bin/factory-feature-export /usr/local/bin/factory-feature-export
+sudo install -o root -g root -m 0644 /opt/factory/node/systemd/factory-feature-export.service /etc/systemd/system/
+sudo install -o root -g root -m 0644 /opt/factory/node/systemd/factory-feature-export.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now factory-feature-export.timer
+```
+
+The separate hourly timer has `Persistent=true`, so a missed run executes after
+boot. The daily state/outbox export remains on its existing timer. No slices,
+sessions, runner, UI, new credentials or network services are involved. The
+owner reviews and decides whether to merge this cross-repository write slice.

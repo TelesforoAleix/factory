@@ -143,6 +143,16 @@ def parser():
             sub.add_argument('--section')
         elif name == 'revert':
             sub.add_argument('revision', type=int)
+    feature_commands.add_parser('export', parents=[common])
+    importer = feature_commands.add_parser('import-backlog', parents=[common])
+    importer.add_argument('file')
+    importer.add_argument('--dry-run', action='store_true')
+    project = commands.add_parser('project', parents=[common])
+    projects = project.add_subparsers(dest='project_command', required=True, parser_class=Parser)
+    add_project = projects.add_parser('add', parents=[common])
+    add_project.add_argument('key')
+    add_project.add_argument('name')
+    add_project.add_argument('--repository')
     view = commands.add_parser("pending", parents=[common], help="show pending slices")
     view.add_argument("--json", action="store_true", help="output grouped JSON")
     show = commands.add_parser("show", parents=[common], help="show one complete slice")
@@ -214,7 +224,14 @@ def feature_command(args):
     backend = state.store(None)
     command = args.feature_command
     actor = getattr(args, 'actor', 'owner')
-    if command == 'add':
+    if command == 'export':
+        from .feature_export import export
+        export(backend.feature_export_snapshot())
+        return 0
+    elif command == 'import-backlog':
+        text = Path(args.file).read_bytes().decode('utf-8')
+        result = backend.feature_import_backlog(text, dry_run=args.dry_run, actor=actor)
+    elif command == 'add':
         result = backend.feature_add(args.project, args.title, stage=args.stage, actor=actor)
     elif command == 'list':
         result = backend.feature_list(project=args.project, stage=args.stage)
@@ -247,6 +264,13 @@ def feature_command(args):
 def main(argv=None):
     args = parser().parse_args(argv)
     try:
+        if args.command == 'project':
+            if not state.postgres():
+                raise state.StateError('project commands require Postgres (CPLANE_DATABASE_URL)')
+            result = state.store(None).project_add(args.key, args.name, repository=args.repository,
+                                                   actor=getattr(args, 'actor', 'owner'))
+            print(json.dumps(result, ensure_ascii=False))
+            return 0
         if args.command == 'feature':
             return feature_command(args)
         if args.command in ("prime", "install-primer", "uninstall-primer", "primer-wake-plist"):
@@ -420,7 +444,9 @@ def main(argv=None):
                 print(f"warning: {warning}", file=sys.stderr)
         return 0
     except (state.StateError, OSError, ValueError) as error:
-        print("cplane: " + " ".join(str(error).splitlines()), file=sys.stderr)
+        message = ('Feature export failed' if args.command == 'feature' and args.feature_command == 'export'
+                   else ' '.join(str(error).splitlines()))
+        print('cplane: ' + message, file=sys.stderr)
         return 1
 
 
