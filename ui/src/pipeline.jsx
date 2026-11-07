@@ -46,7 +46,8 @@ function Card({item, index, selected, select, act, close}) {
 }
 function Column({stage, items, selected, select, act, close, all}) {
   const {setNodeRef, isOver} = useDroppable({id: 'stage:' + stage});
-  return <div ref={setNodeRef} className={'pipeline-column stage-' + stage + (isOver ? ' over' : '')}><h2>{name(stage)} <small>{items.length}</small></h2><SortableContext items={items.map(i => i.id)} strategy={verticalListSortingStrategy}><div className="pipeline-cards">{items.map(item => <Card key={item.id} item={item} index={all.filter(f => f.stage === stage).findIndex(f => f.id === item.id)} selected={selected === item.id} select={() => select(item.id)} act={act} close={close}/>)}</div></SortableContext></div>;
+  const [expanded, setExpanded] = useState(!['done', 'parked'].includes(stage));
+  return <div ref={setNodeRef} className={'pipeline-column stage-' + stage + (isOver ? ' over' : '') + (expanded ? ' expanded' : '')}><h2><span className="stage-heading">{name(stage)} <small>{items.length}</small></span><button className="stage-toggle" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{name(stage)} <small>{items.length}</small></button></h2><SortableContext items={items.map(i => i.id)} strategy={verticalListSortingStrategy}><div className="pipeline-cards">{items.map(item => <Card key={item.id} item={item} index={all.filter(f => f.stage === stage).findIndex(f => f.id === item.id)} selected={selected === item.id} select={() => select(item.id)} act={act} close={close}/>)}</div></SortableContext></div>;
 }
 export function Pipeline() {
   const [data, setData] = useState(null), [error, setError] = useState(''), [project, setProject] = useState('');
@@ -60,7 +61,7 @@ export function Pipeline() {
   const select = id => setParams(id ? {feature:id} : {});
   if (!data) return <><h1>Pipeline</h1><p>{error || 'Loading…'}</p></>;
   const visible = data.features.filter(f => !project || f.project === project); const current = data.features.find(f => f.id === selected);
-  return <div className="pipeline"><h1>Pipeline</h1><div className="project-filter" aria-label="Project filter">{data.projects.length <= 8 ? <>{[{key:'',name:'All'}, ...data.projects].map(p => <button key={p.key} aria-pressed={project === p.key} onClick={() => setProject(p.key)}>{p.name}</button>)}</> : <label>Project<select value={project} onChange={e => setProject(e.target.value)}><option value="">All</option>{data.projects.map(p => <option key={p.key} value={p.key}>{p.name}</option>)}</select></label>}</div>{error && <p role="status" className="pipeline-error">{error}</p>}
+  return <div className="pipeline"><h1>Pipeline</h1><div className="project-filter" aria-label="Project filter">{[{key:'',name:'All'}, ...data.projects].map(p => <button key={p.key} aria-pressed={project === p.key} onClick={() => setProject(p.key)}>{p.name}</button>)}</div>{error && <p role="status" className="pipeline-error">{error}</p>}
     <div className={'pipeline-layout' + (current ? ' has-panel' : '')}><DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={dragEnd}><div className="pipeline-scroll"><div className="pipeline-grid">{stages.map(stage => <Column key={stage} stage={stage} items={visible.filter(f => f.stage === stage)} all={data.features} selected={selected} select={select} act={act} close={() => select(null)}/>)}</div></div></DndContext>{current && <div className="desktop-panel"><Panel item={current} act={act} close={() => select(null)}/></div>}</div>
   </div>;
 }
