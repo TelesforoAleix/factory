@@ -124,7 +124,7 @@ def skills_version(root=None):
             raise StateError("invalid REVISION")
         return revision
     status = subprocess.run(["git", "-C", str(root), "status", "--porcelain", "--", "skills"], capture_output=True, text=True)
-    revision = subprocess.run(["git", "-C", str(root), "log", "-1", "--format=%H", "HEAD", "--", "skills"], capture_output=True, text=True)
+    revision = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True)
     if status.returncode or status.stdout or revision.returncode or not revision.stdout.strip():
         raise StateError("skills must be committed in a git checkout before submission")
     return revision.stdout.strip()

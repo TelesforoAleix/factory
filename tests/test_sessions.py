@@ -301,10 +301,16 @@ def test_session_exports_remote_default_and_resume_does_not_fetch(tmp_path, monk
     assert paths[-1].stat().st_mode & 0o777 == 0o755
     assert not (folder / 'planning/.git').exists()
     assert sum(args[0] == 'fetch' for args in calls) == 1
+    from cplane import skills
+    installed = {p.parent.name for p in folder.glob('.claude/skills/*/SKILL.md')}
+    assert installed == skills.DEFAULTS
+    original_instructions = (folder / 'AGENTS.md').read_bytes()
+    monkeypatch.setattr(skills, 'install', Mock(side_effect=AssertionError('resume wrote skills')))
     calls.clear()
     session['cli_session_id'] = 'saved-id'
     assert sessions.workspace(session) == (folder, paths)
     assert calls == []
+    assert (folder / 'AGENTS.md').read_bytes() == original_instructions
 
 
 def test_pushed_commits_are_session_messages(pg_store):

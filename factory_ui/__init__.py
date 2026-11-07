@@ -70,6 +70,13 @@ def create_app(store=None):
             project['name'] = clean(project['name'])
         return data
 
+    @app.get('/api/skills')
+    def list_skills():
+        try:
+            return jsonify(backend().skill_list())
+        except Exception:
+            return jsonify(error='Skills unavailable'), 503
+
     @app.get('/api/pipeline')
     def pipeline_board():
         try:
@@ -284,8 +291,7 @@ def create_app(store=None):
             fields = validate_session({**payload, 'title': 'Grill: ' + doc['title'][:190]}, 'homelab')
             if not fields[3]:
                 return jsonify(error='Name at least one repository'), 400
-            message = ('This is a Home Lab grill. Ask exactly one question at a time. '
-                       'Wait for the owner to answer before asking the next question. '
+            message = ('Use the grilling skill for this Home Lab design. '
                        f'Read planning/{doc["path"]} and review it using the named repositories. '
                        'Once the owner agrees to a decision, write it into the document it belongs to and commit it.')
             return jsonify(id=backend().create_grill(fields, message)), 201

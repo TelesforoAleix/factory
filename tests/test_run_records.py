@@ -158,6 +158,7 @@ def test_runner_records_before_applying_final_and_failure_is_harmless(setup, mon
     assert item['state'] == 'in review'
     assert job['phase'] == 'collected'
     values = store.run_record_add.call_args.kwargs
+    assert values['skill_version'] == job['skills'] and job['skills']
     assert values['input_tokens'] == 20 and values['prompt'] == 'The exact prompt.\n'
     assert values['slice_id'] == item['id'] and values['seconds'] >= 0
     assert capsys.readouterr().err == 'cplane: run recording failed\n'

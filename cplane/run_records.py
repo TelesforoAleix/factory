@@ -161,7 +161,7 @@ def chat_record(store, turn, accounting):
                session_id=str(session['id']) if session.get('id') is not None else None,
                tool=session['tool'], model=session.get('model'),
                effort='medium' if session['tool'] == 'codex' else None,
-               prompt=turn.get('text'), starting_commit=session.get('_starting_commit'), skill_version=None,
+               prompt=turn.get('text'), starting_commit=session.get('_starting_commit'), skill_version=session.get('skill_version'),
                started_at=datetime.fromtimestamp(accounting['started'], timezone.utc) if accounting.get('started') else None,
                seconds=(max(0, accounting.get('ended', time.time()) - accounting['started'])
                         if accounting.get('started') else None),
