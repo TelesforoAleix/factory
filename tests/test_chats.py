@@ -451,3 +451,17 @@ def test_owner_message_during_review_turn_clears_wait(pg_store):
     pg_store.session_messages('factory', chat['id'], 'Already tested; the button fails.')
     pg_store.finish_session_turn(turn, 'Please test.')
     assert pg_store.testing_review_waits() == []
+
+
+def test_old_review_append_cannot_start_new_testing_wait(pg_store):
+    identifier, chat = feature_chat(pg_store)
+    pg_store.finish_session_turn(pg_store.claim_session_turn(), 'Grill completed.')
+    prepare_testing_turn(pg_store, identifier, chat, 1)
+    pg_store.feature_stage(identifier, 'building', actor=f"chat:{chat['id']}")
+    assert pg_store.testing_review_waits() == []
+    pg_store.feature_stage(identifier, 'testing', actor='runner')
+    pg_store.route_chat_events()
+    turn = pg_store.claim_session_turn()
+    pg_store.feature_section(identifier, 'Testing review 1', 'Old review\nIdeas from testing\nAnother idea')
+    pg_store.finish_session_turn(turn, 'Saved an idea.')
+    assert pg_store.testing_review_waits() == []

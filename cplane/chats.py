@@ -237,10 +237,11 @@ class ChatStore:
                 'SELECT id, feature, slice_id, kind, text, attention_since FROM cplane_chat_events '
                 'WHERE NOT delivered ORDER BY id').fetchall()
             from .text_bounds import cut
+            items = {s['id']: s for s in self.load()['slices']} if rows else {}
             for event_id, feature, slice_id, kind, text, since in rows:
                 if slice_id and kind in ('question', 'escalation', 'node-step'):
                     from .installation import installable, install_failure
-                    item = next((s for s in self.load()['slices'] if s['id'] == slice_id), None)
+                    item = items.get(slice_id)
                     attention = item['attention'] if item else None
                     if (not attention or attention['answer'] is not None or
                             (attention['kind'], attention['since'], attention['body']) != (kind, since, text) or
@@ -299,7 +300,9 @@ class ChatStore:
             "WHERE e.kind = 'testing' AND e.delivered AND e.chat = %s AND f.stage = 'testing' "
             "AND e.id = (SELECT max(x.id) FROM cplane_chat_events x WHERE x.feature = e.feature AND x.kind = 'testing') "
             "AND EXISTS (SELECT 1 FROM cplane_feature_revisions r WHERE r.feature = f.feature "
-            "AND r.section ~ '^Testing review [1-9][0-9]*$' AND r.time >= e.at) "
+            "AND r.section ~ '^Testing review [1-9][0-9]*$' AND r.time >= e.at "
+            "AND NOT EXISTS (SELECT 1 FROM cplane_feature_revisions prior WHERE prior.feature = r.feature "
+            "AND prior.section = r.section AND prior.time < e.at)) "
             "AND NOT EXISTS (SELECT 1 FROM cplane_notices n WHERE n.document->>'event' = 'testing-review' "
             "AND n.document->>'review_event' = e.id::text)", (chat_id,)).fetchall()
         from .times import now

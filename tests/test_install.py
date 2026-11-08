@@ -422,3 +422,17 @@ def test_running_unit_keeps_request_pending_if_attention_changes(tmp_path, slice
     runner.data['slices'].append(other)
     with pytest.raises(state.StateError, match='already'):
         installation.request_change('owner')(other, runner.data, 'now')
+
+
+def test_review_status_needs_latest_install_evidence(slice_data):
+    item = slice_data
+    at = '2026-11-08T00:00:00Z'
+    def log(event):
+        item['log'].append(dict(at=at, actor='runner', event=event))
+    assert installation.review_status(item)['status'] == 'not-required'
+    log('node-step: Install')
+    assert installation.review_status(item)['status'] == 'unconfirmed'
+    log('Installed ' + SHA)
+    assert installation.review_status(item)['status'] == 'finished'
+    log('node-step: Install a later merge')
+    assert installation.review_status(item)['status'] == 'unconfirmed'

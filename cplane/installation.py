@@ -43,6 +43,8 @@ def chat_requested(item):
 
 def review_status(item):
     events = [e['event'] for e in item['log']]
+    required = max((i for i, e in enumerate(events) if e.startswith((REQUEST, 'node-step:'))), default=-1)
+    installed = max((i for i, e in enumerate(events) if e.startswith('Installed ')), default=-1)
     if install_failure(item['attention']):
         status = 'failed'
     elif any(pending(dict(slices=[item]))):
@@ -50,9 +52,9 @@ def review_status(item):
     elif (item['attention'] and item['attention']['kind'] == 'node-step'
           and item['attention']['answer'] is None):
         status = 'required'
-    elif any(e.startswith('Installed ') for e in events):
+    elif installed > required:
         status = 'finished'
-    elif any(e.startswith((REQUEST, 'node-step:')) for e in events):
+    elif required >= 0:
         status = 'unconfirmed'
     else:
         status = 'not-required'

@@ -190,6 +190,9 @@ class Workshop:
                 if item is None or not item.get('feature_id'):
                     raise StateError('Slice must be linked to a feature')
                 scope(item['feature_id'])
+                from .installation import install_failure
+                if install_failure(item['attention']):
+                    raise StateError('Install failures belong to the owner')
                 at = now().isoformat()
                 if name == 'install_slice':
                     from .installation import installable, chat_requested, request_change
@@ -201,9 +204,6 @@ class Workshop:
                 elif name == 'answer_slice':
                     bounded(args['text'], 'Answer', 8000)
                     attention = item['attention']
-                    from .installation import install_failure
-                    if install_failure(attention):
-                        raise StateError('Install failures belong to the owner')
                     if not attention or attention['kind'] not in ('question', 'escalation') or attention['answer'] is not None:
                         raise StateError('Slice has no unanswered question or escalation')
                     attention['answer'] = args['text']
