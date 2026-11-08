@@ -8,8 +8,10 @@ test('navigation switches between persistent areas', async () => {
   vi.stubGlobal('fetch', vi.fn(async url => ({ok:true, json:async () => url.startsWith('/api/library') ? {documents:[],projects:[]} : []})));
   render(<MemoryRouter initialEntries={['/home-lab']}><App/></MemoryRouter>);
   expect(screen.getByRole('heading', {name: 'Library'})).toBeTruthy();
-  fireEvent.click(screen.getByRole('link', {name: 'Factory', exact: true}));
-  expect(await screen.findByText('No slices yet.')).toBeTruthy();
+  expect(screen.getByRole('link', {name: 'Home'})).toBeTruthy();
+  expect(screen.queryByRole('link', {name: 'Factory', exact: true})).toBeNull();
+  fireEvent.click(screen.getByRole('link', {name: 'Settings'}));
+  expect(screen.getByRole('heading', {name: 'Appearance'})).toBeTruthy();
   fireEvent.click(screen.getByRole('link', {name: 'Library'}));
   expect(screen.getByRole('heading', {name: 'Library'})).toBeTruthy();
 });
