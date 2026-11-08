@@ -21,6 +21,20 @@ SLICE_FIELDS = ('id', 'repo', 'feature', 'feature_id', 'title', 'state', 'brief'
                 'depends_on', 'slot', 'paused', 'pr', 'stop_before_merge')
 
 
+CHAT_INSTRUCTION = (
+    'Use workshop for linked slice events within your feature/project scope. '
+    'For question or escalation, read the brief and context, then answer_slice only within agreed limits. '
+    'For a failed check, inspect the failure and answer_slice with a bounded repair direction. '
+    'For in review, compare the handover and evidence with the brief; accept_slice when requirements '
+    'and validation are met, or return_slice with a concrete note. '
+    'For Testing, review feature acceptance criteria and recorded results; request owner testing or '
+    'decisions through raise_decision. Raise architecture, scope, contract, security, persistence, '
+    'topology and uncertain acceptance decisions to the owner with a recommendation. '
+    'Never approve merges or request installs through slice operations. '
+    'A refusal is a boundary; do not bypass it using shell commands.'
+)
+
+
 def select(item, fields):
     return {key: item[key] for key in fields if key in item}
 
@@ -52,6 +66,12 @@ TOOLS = [
          ('feature',)),
     tool('add_feature', 'Add a feature to the shortlist (project chats and orchestrator only).',
          dict(project=string(), title=string()), ('project', 'title')),
+    tool('answer_slice', 'Answer a linked slice question or escalation.',
+         dict(slice=string(), text=string()), ('slice', 'text')),
+    tool('accept_slice', 'Accept a linked slice in review after checking its handover against its brief.',
+         dict(slice=string()), ('slice',)),
+    tool('return_slice', 'Send a linked slice in review back to issued with a note.',
+         dict(slice=string(), note=string()), ('slice', 'note')),
     tool('raise_decision', 'Raise a short decision and recommendation to the owner.',
          dict(text=string(), recommendation=string()), ('text', 'recommendation')),
 ]
@@ -148,6 +168,35 @@ class Workshop:
                 result = self.documents.search(args.get('query', ''))
             elif name == 'document':
                 result = self.documents.read(args['path'])
+            elif name in ('answer_slice', 'accept_slice', 'return_slice'):
+                data = self.store.load()
+                item = next((s for s in data['slices'] if s['id'] == args['slice']), None)
+                if item is None or not item.get('feature_id'):
+                    raise StateError('Slice must be linked to a feature')
+                scope(item['feature_id'])
+                at = now().isoformat()
+                if name == 'answer_slice':
+                    bounded(args['text'], 'Answer', 8000)
+                    attention = item['attention']
+                    if not attention or attention['kind'] not in ('question', 'escalation') or attention['answer'] is not None:
+                        raise StateError('Slice has no unanswered question or escalation')
+                    attention['answer'] = args['text']
+                else:
+                    if item['attention'] and item['attention']['kind'] in ('merge', 'node-step'):
+                        raise StateError('Owner merge approvals and node steps cannot be changed by this operation')
+                    if item['state'] != 'in review':
+                        raise StateError('Slice is not in review')
+                    if name == 'return_slice':
+                        bounded(args['note'], 'Review note', 8000)
+                        item['state'] = 'issued'
+                        item['attention'] = dict(kind='question', body='Review changes requested', since=at,
+                                                 answer=args['note'], approved=False)
+                    else:
+                        item['state'] = 'accepted'
+                        item['attention'] = None
+                item['log'].append(dict(at=at, actor=actor, event=name))
+                self.store.save(data)
+                result = select(item, SLICE_FIELDS)
             elif name == 'raise_decision':
                 bounded(args['text'], 'Decision text', 2000)
                 bounded(args['recommendation'], 'Recommendation', 2000)

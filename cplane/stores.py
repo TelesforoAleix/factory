@@ -135,6 +135,7 @@ class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore):
     def save(self, data, notices=()):
         state.validate(data)
         with self.mutation():
+            self.capture_chat_events(data)
             self.connection.execute('DELETE FROM cplane_slices')
             with self.connection.cursor() as cursor:
                 cursor.executemany('INSERT INTO cplane_slices (id, position, document) VALUES (%s, %s, %s)',
@@ -143,6 +144,17 @@ class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore):
 
     def append_notices(self, notices, *, ensure_ascii=False):
         with self.mutation():
+            # Suppress only notices for an event actually taken in this transaction.
+            # Previously exported notices remain append-only.
+            retained = []
+            for notice in notices:
+                taken = notice.get('event') in ('question', 'escalation') and self.connection.execute(
+                    'SELECT 1 FROM cplane_chat_events WHERE slice_id = %s AND attention_since = %s '
+                    'AND kind = %s AND delivered LIMIT 1',
+                    (notice.get('id'), notice.get('at'), notice.get('event'))).fetchone()
+                if not taken:
+                    retained.append(notice)
+            notices = retained
             with self.connection.cursor() as cursor:
                 cursor.executemany('INSERT INTO cplane_notices (document) VALUES (%s)',
                                    [(Jsonb(notice),) for notice in notices])
@@ -186,14 +198,14 @@ class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore):
         with self.locked():
             rows = self.connection.execute(
                 'SELECT id, area, title, tool, model, state, cli_session_id, repositories, '
-                'skill_names, skill_version, kind, project, (SELECT f.id FROM cplane_features f WHERE f.feature = s.feature) AS feature, archived, last_read_at, workspace_ready, '
+                'skill_names, skill_version, kind, project, (SELECT f.id FROM cplane_features f WHERE f.feature = s.feature) AS feature, archived, last_read_at, workspace_ready, auto_turns, auto_paused, '
                 "EXISTS (SELECT 1 FROM cplane_session_messages m WHERE m.session = s.id AND m.role = 'assistant' "
                 'AND (s.last_read_at IS NULL OR m.time > s.last_read_at)) AS waiting '
                 'FROM cplane_sessions s WHERE (%s::text IS NULL OR area = %s) '
                 'AND (%s::bigint IS NULL OR s.id = %s) ORDER BY s.id',
                 (area, area, session_id, session_id))
             keys = ('id', 'area', 'title', 'tool', 'model', 'state', 'cli_session_id', 'repositories', 'skill_names', 'skill_version',
-                    'kind', 'project', 'feature', 'archived', 'last_read_at', 'workspace_ready', 'waiting')
+                    'kind', 'project', 'feature', 'archived', 'last_read_at', 'workspace_ready', 'auto_turns', 'auto_paused', 'waiting')
             result = [dict(zip(keys, row)) for row in rows]
             for chat in result:
                 if chat['last_read_at'] is not None:
@@ -222,7 +234,7 @@ class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore):
                 self.connection.execute(
                     "INSERT INTO cplane_session_messages (session, role, text, status) VALUES (%s, 'owner', %s, 'queued')",
                     (session_id, text))
-                self.connection.execute('UPDATE cplane_sessions SET archived = false WHERE id = %s', (session_id,))
+                self.connection.execute('UPDATE cplane_sessions SET archived = false, auto_turns = 0, auto_paused = false WHERE id = %s', (session_id,))
             rows = self.connection.execute(
                 'SELECT id, role, text, status, time, automatic FROM cplane_session_messages WHERE session = %s ORDER BY id',
                 (session_id,))
@@ -268,6 +280,8 @@ class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore):
                       for repository in chat['repositories']}
             for row in rows:
                 session = self.sessions(row[3], row[1])[0]
+                if row[5] and not self.chat_can_take(session['id']):
+                    continue
                 repositories = self.resolve_chat_repositories(session['repositories'])
                 if any(not REPOSITORY.fullmatch(r) for r in repositories):
                     self.connection.execute("UPDATE cplane_session_messages SET status = 'failed' WHERE id = %s", (row[0],))
@@ -291,6 +305,10 @@ class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore):
                     'UPDATE cplane_sessions SET skill_names = %s, skill_version = %s WHERE id = %s',
                     (Jsonb(names), version, session['id']))
                 session.update(skill_names=names, skill_version=version)
+            if row[5]:
+                self.connection.execute('UPDATE cplane_sessions SET auto_turns = auto_turns + 1 WHERE id = %s', (row[1],))
+            else:
+                self.connection.execute('UPDATE cplane_sessions SET auto_turns = 0, auto_paused = false WHERE id = %s', (row[1],))
             self.connection.execute("UPDATE cplane_session_messages SET status = 'running' WHERE id = %s", (row[0],))
             self.connection.execute("UPDATE cplane_sessions SET state = 'running' WHERE id = %s", (row[1],))
             return dict(id=row[0], session=session, text=row[2], role=row[4], automatic=row[5])
@@ -314,6 +332,7 @@ class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore):
                 'tool_sessions = CASE WHEN %s::text IS NULL THEN tool_sessions '
                 'ELSE jsonb_set(tool_sessions, ARRAY[tool], to_jsonb(%s::text)) END WHERE id = %s',
                 ('failed' if failed else 'idle', cli_id, cli_id, cli_id, cli_id, turn['session']['id']))
+            self.chat_can_take(turn['session']['id'])
             if failed:
                 self.connection.execute("UPDATE cplane_session_messages SET status = 'failed' WHERE session = %s AND status = 'queued'",
                                         (turn['session']['id'],))

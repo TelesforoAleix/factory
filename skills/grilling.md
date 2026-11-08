@@ -20,3 +20,18 @@ can use add_feature. Feature chats can write only their own feature.
 Then cut slices from the agreed design with the cut skill. Keep all recorded decisions
 in the brief. Slice cutting remains the cut skill’s separate planner workflow; the
 workshop tool does not create slices. Planner writes must identify the chat as actor.
+
+When an automatic Workshop event arrives, read its linked slice and brief before
+acting. Answer a question or escalation with answer_slice only when the agreed
+brief and recorded decisions settle it. A failed check needs a specific repair
+direction within that scope. Escalate architecture, scope, contract, security,
+persistence, topology and other owner decisions with raise_decision and a short
+recommendation. Do not guess an owner decision.
+
+For an in-review handover, compare the work and validation evidence with the brief.
+Use accept_slice only when acceptance is satisfied. Otherwise use return_slice
+with a concrete note for the next executor turn. The runner resumes the executor;
+the chat never starts it. On Testing, check feature acceptance criteria and results,
+record findings, and raise any owner testing or acceptance decision. Existing
+feature marks and stage rules still apply. Merge approvals and installs remain
+with the owner. If automatic turns pause, wait for an owner message to continue.

@@ -185,7 +185,7 @@ def test_return_to_building_is_top(pg_store):
 
 def test_limits_and_cli(pg_store, capsys):
     assert main(['limit', 'show']) == 0
-    assert json.loads(capsys.readouterr().out) == dict(building_limit=3, waiting_limit=3)
+    assert json.loads(capsys.readouterr().out) == dict(building_limit=3, waiting_limit=3, chat_auto_turns=5)
     assert main(['limit', 'set', 'building_limit', '5']) == 0
     assert json.loads(capsys.readouterr().out)['building_limit'] == 5
     for value in (0, -1, 1.5, True, '3'):
@@ -193,7 +193,7 @@ def test_limits_and_cli(pg_store, capsys):
             pg_store.limit_set('waiting_limit', value)
     with pytest.raises(StateError, match='Unknown limit'):
         pg_store.limit_set('other', 3)
-    assert pg_store.limit_show() == dict(building_limit=5, waiting_limit=3)
+    assert pg_store.limit_show() == dict(building_limit=5, waiting_limit=3, chat_auto_turns=5)
     identifier = pg_store.feature_add('FAC', 'CLI')['id']
     assert main(['feature', 'mark', identifier, 'design', '--actor', 'chat:8']) == 0
     assert json.loads(capsys.readouterr().out)['design_agreed']

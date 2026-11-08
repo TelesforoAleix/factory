@@ -187,7 +187,7 @@ def parser():
     limit_commands = limits.add_subparsers(dest='limit_command', required=True, parser_class=Parser)
     limit_commands.add_parser('show', parents=[common])
     set_limit = limit_commands.add_parser('set', parents=[common])
-    set_limit.add_argument('name', choices=('building_limit', 'waiting_limit'))
+    set_limit.add_argument('name', choices=('building_limit', 'waiting_limit', 'chat_auto_turns'))
     set_limit.add_argument('value', type=int)
     project = commands.add_parser('project', parents=[common])
     projects = project.add_subparsers(dest='project_command', required=True, parser_class=Parser)

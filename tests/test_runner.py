@@ -1750,7 +1750,7 @@ def test_bot_export_after_pass(setup, tmp_path, monkeypatch):
     folder.mkdir()
     monkeypatch.setattr(fence, 'ROOT_UID', os.getuid())
     monkeypatch.setenv('CPLANE_BOT_EXPORT', str(folder))
-    events = ['started', 'question', 'merge', 'submitted', 'escalation', 'owner-check']
+    events = ['started', 'question', 'merge', 'submitted', 'escalation', 'owner-check', 'chat-paused']
     notices = [{'at': '2026-01-01', 'id': 'voice/W1', 'event': event, 'text': event}
                for event in events]
     state.store(r.path).append_notices(notices)
@@ -1761,7 +1761,7 @@ def test_bot_export_after_pass(setup, tmp_path, monkeypatch):
     outbox = folder / 'slices.json.outbox.jsonl'
     previous = outbox.read_text()
     assert [json.loads(line)['event'] for line in previous.splitlines()] == [
-        'question', 'merge', 'escalation', 'owner-check']
+        'question', 'merge', 'escalation', 'owner-check', 'chat-paused']
     for file in (folder / 'slices.json', outbox):
         assert file.stat().st_mode & 0o777 == 0o640
         assert file.stat().st_gid == folder.stat().st_gid

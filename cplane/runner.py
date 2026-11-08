@@ -26,7 +26,7 @@ CODEX_WORKTREES = Path.home() / '.codex/worktrees'
 WORKTREE_MAX_AGE = 7 * 24 * 60 * 60
 
 
-BOT_EVENTS = frozenset({'question', 'escalation', 'merge', 'owner-check', 'stuck'})
+BOT_EVENTS = frozenset({'question', 'escalation', 'merge', 'owner-check', 'stuck', 'chat-paused'})
 BOT_ACCEPTED_FIELDS = frozenset({'id', 'repo', 'title', 'state', 'pr', 'feature', 'paused', 'attention'})
 
 
@@ -691,6 +691,8 @@ class Runner:
             job['phase'] = 'collected'
         self.log(item, 'collected turn: ' + Path(job['run']).name)
         self.save_job(job)
+        if item['state'] == 'in review' and final['kind'] == 'handover' and state.postgres():
+            state.store(self.path).chat_handover(item, final['body'])
 
     def apply_review(self, item, job, body):
         match = re.match(r'\s*```(?:json)?[ \t]*\n(.*?)\n```', body, re.S)
@@ -866,6 +868,9 @@ class Runner:
                 except Exception:
                     print('pipeline step failed', file=sys.stderr)
             self.data = state.load(self.path)
+            if state.postgres():
+                state.store(self.path).route_chat_events()
+                self.data = state.load(self.path)
             if not self.data["slices"]:
                 if orders_changed:
                     self.git.commit(self.path)
@@ -990,7 +995,13 @@ class Runner:
                                                  text=f'Stuck: {reason}', since=key[1], reason=reason))
             changed = json.dumps(self.data, ensure_ascii=False, separators=(',', ':')) != state_before
             if changed or self.notices:
-                state.save(self.path, self.data, self.notices)
+                if state.postgres():
+                    backend = state.store(self.path)
+                    backend.save(self.data)
+                    backend.route_chat_events()
+                    backend.append_notices(self.notices)
+                else:
+                    state.save(self.path, self.data, self.notices)
             if orders_changed or changed or self.notices:
                 self.git.commit(self.path)
             busy = set()
