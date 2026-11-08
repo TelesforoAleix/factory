@@ -11,7 +11,7 @@
   },
   "$defs": {
     "timestamp": {"type": "string", "format": "date-time"},
-    "id": {"type": "string", "pattern": "^[^/\\s]+/[^/\\s]+$"},
+    "id": {"type": "string", "pattern": "^(?:[^/\\s]+/[^/\\s]+|[A-Z]{3}-F[1-9][0-9]*-S[1-9][0-9]*)$"},
     "tool": {"enum": ["codex", "claude"]},
     "review": {
       "type": "object", "additionalProperties": false, "required": ["verdict", "at", "actor"],
@@ -27,6 +27,7 @@
         "state": {"enum": ["planned", "researching", "ready", "issued", "awaiting handover", "in review", "accepted", "escalated"]},
         "flow": {"enum": ["cli", "tickets"], "default": "cli"},
         "brief": {"type": ["string", "null"]},
+        "brief_id": {"type": "string", "minLength": 1},
         "executor": {
           "type": "object", "additionalProperties": false, "required": ["tool", "model"],
           "properties": {"tool": {"$ref": "#/$defs/tool"}, "model": {"type": "string"},

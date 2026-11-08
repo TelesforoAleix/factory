@@ -39,6 +39,8 @@ def change_for(args):
                     raise StateError('Setting feature_id requires Postgres (CPLANE_DATABASE_URL)')
                 # Runs inside state.update's locked transaction; keep the supplied alias.
                 state.store(None)._feature(values['feature_id'])
+            if item.get('brief_id') and set(values) & {'brief', 'id', 'repo', 'feature_id'}:
+                raise StateError('Stored brief identity and repository are immutable; create a new slice')
             item.update(values)
             item["executor"].update(executor)
         elif args.command == "state":
@@ -51,7 +53,7 @@ def change_for(args):
                     raise StateError("--reason requires --force")
                 if target not in TRANSITIONS[item["state"]]:
                     raise StateError(f"cannot move {item['id']} from {item['state']} to {target}: transition is not allowed")
-            if target == "ready" and item["brief"] is None:
+            if target == "ready" and item["brief"] is None and not item.get("brief_id"):
                 raise StateError(f"{item['id']} needs a brief before ready")
             if args.session is not None:
                 if item["state"] != "ready" or target != "issued" or args.force:

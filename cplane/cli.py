@@ -461,6 +461,8 @@ def main(argv=None):
         elif args.command in ("cut-prompt", "cut-submit"):
             from . import cut as cutter
             def brief_for(item):
+                if item.get("brief_id"):
+                    return state.store(path).stored_brief(item["brief_id"])
                 if not item["brief"]:
                     raise state.StateError(f"{args.id} needs a brief")
                 try:

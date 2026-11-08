@@ -14,14 +14,15 @@ from .times import now
 
 KINDS = ('orchestrator', 'project', 'feature')
 MAX_CALLS = 50
-MAX_REQUEST = 65_536
+MAX_REQUEST = 512_000  # A 64 KiB brief can expand sixfold when JSON escaped.
 FEATURE_FIELDS = ('id', 'project', 'title', 'stage', 'position', 'parked_from',
                   'backlog', 'design_agreed', 'review_passed', 'aliases', 'sections')
 SLICE_FIELDS = ('id', 'repo', 'feature', 'feature_id', 'title', 'state', 'brief',
-                'depends_on', 'slot', 'paused', 'pr', 'stop_before_merge')
+                'brief_id', 'brief_text', 'depends_on', 'slot', 'paused', 'pr', 'stop_before_merge')
 
 
 CHAT_INSTRUCTION = (
+    'Read the brief skill before add_slice; write a self-contained brief within agreed scope. '
     'Use workshop for linked slice events within your feature/project scope. '
     'For question or escalation, read the brief and context, then answer_slice only within agreed limits. '
     'For a failed check, inspect the failure and answer_slice with a bounded repair direction. '
@@ -66,6 +67,11 @@ TOOLS = [
          ('feature',)),
     tool('add_feature', 'Add a feature to the shortlist (project chats and orchestrator only).',
          dict(project=string(), title=string()), ('project', 'title')),
+    tool('add_slice', 'Add a ready Codex slice with an immutable stored brief. Read the brief skill first.',
+         dict(feature=string(), title=string(), brief=string(), model=string(),
+              effort=dict(type='string', enum=['low', 'medium', 'high', 'xhigh', 'max', 'ultra']),
+              depends_on=dict(type='array', items=string(), uniqueItems=True),
+              stop_before_merge=dict(type='boolean')), ('feature', 'title', 'brief', 'model', 'effort')),
     tool('answer_slice', 'Answer a linked slice question or escalation.',
          dict(slice=string(), text=string()), ('slice', 'text')),
     tool('accept_slice', 'Accept a linked slice in review after checking its handover against its brief.',
@@ -163,7 +169,9 @@ class Workshop:
                 result = select(self.store.feature_show(args['feature']), FEATURE_FIELDS)
             elif name == 'slices':
                 internal = self.store._feature(args['feature'])
-                result = [select(s, SLICE_FIELDS) for s in self.store._linked_slices(internal['feature'])]
+                result = [dict(select(s, SLICE_FIELDS), **(
+                    dict(brief_text=self.store.stored_brief(s['brief_id'])) if s.get('brief_id') else {}))
+                    for s in self.store._linked_slices(internal['feature'])]
             elif name == 'documents':
                 result = self.documents.search(args.get('query', ''))
             elif name == 'document':
@@ -212,7 +220,12 @@ class Workshop:
                 result = self.store.feature_add(args['project'], args['title'], actor=actor)
             else:
                 scope(args['feature'])
-                if name == 'save_section':
+                if name == 'add_slice':
+                    result = select(self.store.feature_add_slice(
+                        args['feature'], args['title'], args['brief'], args['model'], args['effort'],
+                        depends_on=args.get('depends_on', ()),
+                        stop_before_merge=args.get('stop_before_merge', False), actor=actor), SLICE_FIELDS)
+                elif name == 'save_section':
                     result = self.store.feature_section(args['feature'], args['section'], args['text'], actor=actor)
                 elif name == 'set_mark':
                     result = self.store.feature_mark(args['feature'], args['mark'], clear=args.get('clear', False), actor=actor)

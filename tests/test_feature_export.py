@@ -248,3 +248,44 @@ def test_timer_wrapper_sanitizes_errors(tmp_path):
     assert result.returncode == 1
     assert result.stdout == ''
     assert result.stderr == 'Factory feature export failed\n'
+
+
+def test_publish_stored_briefs_exact_and_move(publication):
+    adapter, git, remote, _, _ = publication
+    items = features()
+    text = '# Synthetic\r\n\r\n## Do not\r\nKeep æ and trailing spaces.  \r\n'
+    items[0]['briefs'] = [dict(id='FAC-F1-S1', text=text)]
+    adapter.publish(items, False)
+    def read(name):
+        return subprocess.run(['git', '-C', str(remote), 'show', f'main:{name}'],
+                              capture_output=True, check=True).stdout
+    assert read('features/FAC-F1/FAC-F1-S1.md') == text.encode()
+    FeatureExport().publish(items, False)
+    assert git(remote, 'rev-list', '--count', 'main') == '2'
+    items[0]['id'] = 'LAB-F2'
+    FeatureExport().publish(items, False)
+    assert read('features/LAB-F2/FAC-F1-S1.md') == text.encode()
+    assert 'features/FAC-F1/' not in git(remote, 'ls-tree', '-r', '--name-only', 'main')
+
+
+@pytest.mark.parametrize('level', ['directory', 'brief'])
+def test_stored_brief_export_symlinks_refused(publication, tmp_path, level):
+    adapter, git, remote, seed, calls = publication
+    folder = seed / 'features' / 'FAC-F1'
+    folder.parent.mkdir()
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    if level == 'directory':
+        folder.symlink_to(outside, target_is_directory=True)
+    else:
+        folder.mkdir()
+        (folder / 'FAC-F1-S1.md').symlink_to(outside / 'target.md')
+    git(seed, 'add', '.')
+    git(seed, 'commit', '-m', 'synthetic symlink')
+    git(seed, 'push', remote, 'main')
+    items = features()
+    items[0]['briefs'] = [dict(id='FAC-F1-S1', text='## Do not\nEscape')]
+    with pytest.raises(StateError, match='refused'):
+        adapter.publish(items, False)
+    assert not (outside / 'target.md').exists()
+    assert not any('push' in args for args, _ in calls)

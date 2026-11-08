@@ -37,6 +37,9 @@ def validate(data):
     if error:
         location = ".".join(map(str, error.absolute_path)) or "state"
         raise StateError(f"invalid state at {location}: {error.message}")
+    for item in data["slices"]:
+        if item.get('brief_id') and (item['brief_id'] != item['id'] or item['brief'] is not None):
+            raise StateError('invalid state: stored brief must match the slice ID and have no file path')
     ids = [item["id"] for item in data["slices"]]
     if len(ids) != len(set(ids)):
         raise StateError("invalid state: slice ids must be unique")

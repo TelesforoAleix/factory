@@ -338,3 +338,38 @@ def test_export_stdout_refuses_notices(backend, capsys):
     assert captured.err == ('cplane: export contains notices; provide PATH with '
                             'cplane export PATH to write state and its outbox\n')
     assert store.snapshot() == before
+
+
+def test_runner_uses_stored_brief_and_keeps_resume_copy(pg_store, tmp_path, monkeypatch):
+    from datetime import datetime, timezone
+    from test_runner import FakeProcesses, FakeGitHub
+    from cplane.workshop import Workshop
+    store = pg_store
+    with store.mutation():
+        store.connection.execute("UPDATE cplane_projects SET repository = 'example/repo' WHERE key = 'FAC'")
+    feature = store.feature_add('FAC', 'Synthetic', stage='grilling')['id']
+    chat = store.chats(kind='feature')[0]
+    brief = '---\nkeep: stored frontmatter\n---\n## Do not\r\nChange this.  \r\n'
+    created = Workshop(store, chat['id'], Mock()).call('add_slice', dict(
+        feature=feature, title='Task', brief=brief, model='example-model', effort='high'))
+    store.feature_mark(feature, 'design', actor=f"chat:{chat['id']}")
+    store.feature_stage(feature, 'ready', actor=f"chat:{chat['id']}")
+    store.feature_stage(feature, 'next', actor=f"chat:{chat['id']}")
+    repo = tmp_path / 'repos' / 'repo'
+    (repo / '.git').mkdir(parents=True)
+    processes = FakeProcesses()
+    runner = Runner(tmp_path / 'missing-briefs-clone' / 'slices.json',
+                    processes=processes, github=FakeGitHub(), git=Mock(),
+                    clock=lambda: datetime(2026, 11, 8, tzinfo=timezone.utc),
+                    codex_reader=lambda: 10, claude_reader=lambda: None,
+                    runs=tmp_path / 'runs', repos=tmp_path / 'repos')
+    runner.run()
+    assert len(processes.started) == 1
+    assert processes.started[0]['prompt'] == brief
+    assert store.load()['slices'][0]['state'] == 'issued'
+    job = runner.jobs[created['id']]
+    assert job['brief'] == brief
+    assert 'workshop' not in processes.started[0].get('command', [])
+    runner.run()
+    assert len(processes.started) == 1
+    assert store.stored_brief(created['brief_id']) == brief
