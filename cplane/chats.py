@@ -308,7 +308,7 @@ class ChatStore:
         from .times import now
         for event_id, feature_id, title in rows:
             self.append_notices([dict(at=now().isoformat(), id=feature_id, event='testing-review',
-                review_event=event_id, chat=chat_id, message=turn['id'],
+                review_event=event_id, chat=chat_id, message=max(turn['id'], turn.get('owner_message') or 0),
                 text=f'{feature_id}: {title}: Testing review ready. Test and reply in the chat.')])
 
     def testing_review_waits(self):

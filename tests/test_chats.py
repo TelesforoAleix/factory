@@ -483,3 +483,21 @@ def test_preexisting_install_failure_ownership_cannot_hide_owner_notice(pg_store
     pg_store.append_notices([notice])
     assert notice in [n for _, n in pg_store.notices()]
     assert 'chat_id' not in pg_store.chat_attention(slice_data)
+
+
+def test_owner_message_processed_before_testing_event_does_not_clear_new_wait(pg_store):
+    identifier, chat = feature_chat(pg_store)
+    pg_store.finish_session_turn(pg_store.claim_session_turn(), 'Grill completed.')
+    with pg_store.mutation():
+        pg_store.connection.execute("UPDATE cplane_features SET stage = 'building' WHERE id = %s", (identifier,))
+    pg_store.feature_stage(identifier, 'testing', actor='runner')
+    pg_store.route_chat_events()
+    pg_store.session_messages('factory', chat['id'], 'What is the current status?')
+    owner = pg_store.claim_session_turn()
+    assert owner['role'] == 'owner'
+    pg_store.finish_session_turn(owner, 'Preparing the review.')
+    turn = pg_store.claim_session_turn()
+    assert turn['role'] == 'system' and turn['id'] < owner['id']
+    pg_store.feature_section(identifier, 'Testing review 1', 'Review')
+    pg_store.finish_session_turn(turn, 'Please test.')
+    assert len(pg_store.testing_review_waits()) == 1

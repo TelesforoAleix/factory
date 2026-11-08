@@ -314,7 +314,11 @@ class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore, Library
                 self.connection.execute('UPDATE cplane_sessions SET auto_turns = 0, auto_paused = false WHERE id = %s', (row[1],))
             self.connection.execute("UPDATE cplane_session_messages SET status = 'running' WHERE id = %s", (row[0],))
             self.connection.execute("UPDATE cplane_sessions SET state = 'running' WHERE id = %s", (row[1],))
-            return dict(id=row[0], session=session, text=row[2], role=row[4], automatic=row[5])
+            owner_message = self.connection.execute(
+                "SELECT max(id) FROM cplane_session_messages WHERE session = %s AND role = 'owner'",
+                (row[1],)).fetchone()[0]
+            return dict(id=row[0], session=session, text=row[2], role=row[4], automatic=row[5],
+                        owner_message=owner_message)
 
     def finish_session_turn(self, turn, reply, cli_id=None, failed=False, *,
                             planning_commits=(), delivery_notice=None):
