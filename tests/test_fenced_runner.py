@@ -1,6 +1,6 @@
 """Synthetic credentials, local remotes and hostile copies; no node or real login."""
 import copy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
@@ -1265,7 +1265,7 @@ def test_unfenced_gh_failure_is_not_retried(monkeypatch):
     assert 'env' not in run.call_args.kwargs
 
 
-def test_read_failure_counts_passes_and_success_resets(delivery, make_state, monkeypatch):
+def test_read_failure_duration_and_success_resets(delivery, make_state, monkeypatch):
     d = delivery
     path = make_state()
     data = state.load(path)
@@ -1278,7 +1278,7 @@ def test_read_failure_counts_passes_and_success_resets(delivery, make_state, mon
     folder = runner.runs / 'turn-1'
     folder.mkdir(parents=True)
     job = d['job']
-    job.update(run=str(folder), phase='pr', tip=d['tip'], request=request(job))
+    job.update(run=str(folder), phase='pr', tip=d['tip'], request=request(job), github_read_failures=3)
     runner.save_job(job)
     monkeypatch.setattr(time, 'sleep', lambda _: None)
     failing = [True]
@@ -1288,23 +1288,29 @@ def test_read_failure_counts_passes_and_success_resets(delivery, make_state, mon
         response = {'headRefOid': d['tip']} if args[1:3] == ['pr', 'view'] else {'workflow_runs': []}
         return subprocess.CompletedProcess(args, 0, json.dumps(response), '')
     monkeypatch.setattr(subprocess, 'run', run)
-    for count in range(1, 4):
+    start = datetime.now(timezone.utc)
+    current = [start]
+    runner.clock = lambda: current[0]
+    for minute in (0, 1, 24):
+        current[0] = start + timedelta(minutes=minute)
         runner.run()
-        assert json.loads((folder / 'job.json').read_text())['github_read_failures'] == count
+        assert json.loads((folder / 'job.json').read_text())['github_read_failure_since'] == start.isoformat()
+        assert 'github_read_failures' not in json.loads((folder / 'job.json').read_text())
         assert state.load(path)['slices'][0]['attention'] is None
     failing[0] = False
     runner.run()
-    assert json.loads((folder / 'job.json').read_text())['github_read_failures'] == 0
+    assert 'github_read_failure_since' not in json.loads((folder / 'job.json').read_text())
     failing[0] = True
-    for count in range(1, 7):
-        runner.run()
-        saved = state.load(path)['slices'][0]
-        assert json.loads((folder / 'job.json').read_text())['github_read_failures'] == count
-        if count < 6:
-            assert saved['attention'] is None
-        else:
-            assert saved['attention']['kind'] == 'escalation'
-            assert d['secret'] not in saved['attention']['body']
+    current[0] = start + timedelta(minutes=25)
+    runner.run()
+    current[0] = start + timedelta(minutes=49, seconds=59)
+    runner.run()
+    assert state.load(path)['slices'][0]['attention'] is None
+    current[0] = start + timedelta(minutes=50)
+    runner.run()
+    saved = state.load(path)['slices'][0]
+    assert saved['attention']['kind'] == 'escalation'
+    assert d['secret'] not in saved['attention']['body']
 
 
 def test_invalid_plan_is_collected_once_then_answer_resumes(ticket_runner):

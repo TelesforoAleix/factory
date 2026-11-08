@@ -948,13 +948,16 @@ class Runner:
                             read_successes.add(item['id'])
                 job = self.jobs.get(item['id'])
                 if job and item['id'] in read_failures:
-                    job['github_read_failures'] = job.get('github_read_failures', 0) + 1
+                    job.setdefault('github_read_failure_since', self.at)
+                    job.pop('github_read_failures', None)
                     self.save_job(job)
                     self.log(item, 'checks: pending')
-                    if job['github_read_failures'] >= 6:
-                        self.attention(item, 'escalation', 'GitHub reads failed for 6 consecutive passes')
-                elif job and item['id'] in read_successes and job.get('github_read_failures'):
-                    job['github_read_failures'] = 0
+                    if self.instant - datetime.fromisoformat(job['github_read_failure_since']) >= timedelta(seconds=1500):
+                        self.attention(item, 'escalation', 'GitHub reads failed continuously for 25 minutes')
+                elif job and item['id'] in read_successes and (job.get('github_read_failure_since')
+                                                              or job.get('github_read_failures')):
+                    job.pop('github_read_failure_since', None)
+                    job.pop('github_read_failures', None)
                     self.save_job(job)
             accepted = {s['id'] for s in self.data['slices'] if s['state'] == 'accepted'}
             by_id = {s['id']: s for s in self.data['slices']}
