@@ -183,7 +183,7 @@ def test_home_projection_orders_attention_and_discards_stale_stuck(monkeypatch):
                    sections=[], slices=[item])
     class HomeStore:
         def load(self): return dict(slices=[item])
-        def feature_board(self): return dict(projects=[dict(key='FAC', name='Factory')], features=[feature])
+        def feature_board(self): return dict(projects=[dict(key='FAC', name='Factory', active=False)], features=[feature])
         def notices(self): return [(1, dict(event='stuck', id=item['id'], since=old, reason='no new log activity', at=old))]
         def chats(self, **kwargs): return []
         def limit_show(self): return dict(waiting_limit=1, building_limit=2)

@@ -27,6 +27,8 @@ def register_library(app, backend, documents):
                 raise StateError('Unknown project')
             repository = (chosen['repository'] or '').split('/')[-1] if chosen else None
             rows = documents().search(request.args.get('q', ''))
+            hidden = {(p['repository'] or '').split('/')[-1] for p in projects if not p.get('active', True) and p['key'] != 'NEW'}
+            rows = [d for d in rows if '/' not in d['path'] or d['path'].split('/')[0] not in hidden]
             if chosen:
                 rows = [d for d in rows if '/' not in d['path'] or d['path'].split('/')[0] == repository]
             return dict(documents=rows, projects=projects)

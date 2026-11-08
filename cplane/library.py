@@ -11,8 +11,8 @@ def batch_message(document, drafts):
 class LibraryStore:
     def library_projects(self):
         with self.locked():
-            return [dict(key=k, name=n, repository=r) for k, n, r in self.connection.execute(
-                'SELECT key, name, repository FROM cplane_projects ORDER BY key')]
+            return [dict(key=k, name=n, repository=r, active=a) for k, n, r, a in self.connection.execute(
+                'SELECT key, name, repository, active FROM cplane_projects ORDER BY key')]
 
     def document_receiver(self, document, chat_id=None):
         if chat_id is not None and (type(chat_id) is not int or chat_id < 1):

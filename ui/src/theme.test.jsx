@@ -5,6 +5,8 @@ import {afterEach, expect, test, vi} from 'vitest';
 import {Settings} from './settings';
 import {readFileSync} from 'node:fs';
 
+vi.stubGlobal('fetch', vi.fn(async () => ({ok:true, json:async () => []})));
+
 afterEach(() => { cleanup(); vi.restoreAllMocks(); localStorage.clear(); delete document.documentElement.dataset.theme; });
 
 test('appearance persists and applies each choice', () => {

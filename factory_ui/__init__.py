@@ -223,6 +223,17 @@ def create_app(store=None):
         except Exception:
             return jsonify(error='Chats unavailable'), 503
 
+    @app.get('/api/projects')
+    def projects():
+        return chat_response(lambda: backend().library_projects())
+
+    @app.patch('/api/projects/<key>')
+    def project_active(key):
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict) or set(payload) != {'active'} or type(payload['active']) is not bool:
+            return jsonify(error='Provide an active boolean'), 400
+        return chat_response(lambda: backend().project_active(key, payload['active'], actor='owner'))
+
     @app.get('/api/chats')
     def chats():
         def operation():

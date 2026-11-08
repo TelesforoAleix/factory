@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import React from 'react';
-import {render, screen, fireEvent} from '@testing-library/react';
+import {render, screen, fireEvent, cleanup} from '@testing-library/react';
 import {MemoryRouter} from 'react-router-dom';
-import {test, expect, vi} from 'vitest';
+import {afterEach, test, expect, vi} from 'vitest';
 import {App} from './main';
+afterEach(() => {cleanup(); vi.unstubAllGlobals();});
 test('navigation switches between persistent areas', async () => {
   vi.stubGlobal('fetch', vi.fn(async url => ({ok:true, json:async () => url.startsWith('/api/library') ? {documents:[],projects:[]} : []})));
   render(<MemoryRouter initialEntries={['/home-lab']}><App/></MemoryRouter>);
