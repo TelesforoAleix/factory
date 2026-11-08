@@ -8,7 +8,6 @@ import pytest
 from cplane.sessions import DocumentExporter
 from factory_ui import create_app
 from factory_ui.documents import Documents
-from test_stores import pg_store
 
 
 @pytest.fixture
@@ -104,46 +103,6 @@ def test_planted_symlink_components_refused(published, tmp_path):
     assert len(published[2].search()) == 2
 
 
-def test_mutation_guards_and_invalid_payloads(published):
-    client = client_for(published)
-    for path in ('/api/homelab/notes/folder/plan.md', '/api/homelab/send-note/1/folder/plan.md', '/api/homelab/grills'):
-        assert client.post(path, json={}).status_code == 403
-        assert client.post(path, json={}, headers={'X-Factory-UI': '1'}).status_code == 400
-
-
-def test_notes_and_grill_transaction(published, pg_store):
-    client = client_for(published, pg_store)
-    headers = {'X-Factory-UI': '1'}
-    path = '/api/homelab/notes/folder/plan.md'
-    result = client.post(path, json={'text': 'Why this design?'}, headers=headers)
-    assert result.status_code == 200
-    note = result.json[0]
-    assert client.get(path).json == result.json
-    payload = dict(document='folder/plan.md', tool='codex', model='synthetic', repositories=['owner/repo'])
-    result = client.post('/api/homelab/grills', json=payload, headers=headers)
-    assert result.status_code == 201
-    sid = result.json['id']
-    messages = pg_store.session_messages('homelab', sid)
-    assert len(messages) == 1
-    assert messages[0]['status'] == 'queued'
-    assert 'Use the grilling skill' in messages[0]['text']
-    assert 'Read planning/folder/plan.md' in messages[0]['text']
-    assert 'A searchable document.' not in messages[0]['text']
-    assert 'using the named repositories' in messages[0]['text']
-    route = f'/api/homelab/send-note/{note["id"]}/folder/plan.md'
-    result = client.post(route, json={'session': sid}, headers=headers)
-    assert result.status_code == 200
-    assert len(result.json) == 2
-    assert 'Why this design?' in result.json[-1]['text']
-    other = pg_store.create_session('factory', 'Other', 'codex', 'synthetic', [])
-    assert client.post(route, json={'session': other}, headers=headers).status_code == 400
-    assert pg_store.session_messages('factory', other) == []
-    assert client.post('/api/homelab/grills', json={**payload, 'repositories': []}, headers=headers).status_code == 400
-    assert len(pg_store.chats(kind='legacy')) == 2  # Home Lab grill and the Factory session.
-    assert len(pg_store.chats(kind='orchestrator')) == 1
-    assert published[2].read('folder/plan.md')['status'] == 'draft'
-
-
 def test_swap_waits_for_readers_and_publishes_whole_tree(published, monkeypatch):
     from concurrent.futures import ThreadPoolExecutor
     from threading import Event
@@ -172,35 +131,3 @@ def test_swap_waits_for_readers_and_publishes_whole_tree(published, monkeypatch)
             assert not (exporter.destination / 'new.md').exists()
         assert future.result(timeout=5)
     assert {d['path'] for d in docs.search()} == {'folder/plan.md', 'new.md'}
-
-
-def test_failed_grill_queue_rolls_back_session(pg_store, monkeypatch):
-    from cplane.state import StateError
-    before = pg_store.sessions('homelab')
-    monkeypatch.setattr(pg_store, 'session_messages', Mock(side_effect=StateError('synthetic queue failure')))
-    with pytest.raises(StateError):
-        pg_store.create_grill(('Grill', 'codex', 'synthetic', ['owner/repo']), 'First message')
-    assert pg_store.sessions('homelab') == before
-
-
-def test_large_document_starts_grill(published):
-    root = published[1].destination
-    (root / 'large.md').write_text('# Large\n' + 'x' * 32000)
-    store = Mock()
-    store.create_grill.return_value = 1
-    result = client_for(published, store).post('/api/homelab/grills', json=dict(
-        document='large.md', tool='codex', model='synthetic', repositories=['owner/repo']),
-        headers={'X-Factory-UI': '1'})
-    assert result.status_code == 201
-    message = store.create_grill.call_args.args[1]
-    assert 'Read planning/large.md' in message
-    assert 'x' * 32000 not in message
-
-
-def test_missing_document_cannot_start_grill(published):
-    store = Mock()
-    result = client_for(published, store).post('/api/homelab/grills', json=dict(
-        document='missing.md', tool='codex', model='synthetic', repositories=['owner/repo']),
-        headers={'X-Factory-UI': '1'})
-    assert result.status_code == 404
-    store.create_grill.assert_not_called()

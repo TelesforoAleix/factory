@@ -529,18 +529,14 @@ Only Home Lab commits are written back through the delivery checks below.
 After installation the orchestrator performs a real two-message session smoke
 test; this implementation does not run one.
 
-## Home Lab documents, notes and grills
+## Library
 
-After merging this slice, the orchestrator rebuilds the UI, syncs the reviewed
-Python installation, runs `sudo factory-cplane migrate` (migration 003 adds
-`cplane_document_notes`), and reinstalls the sessions unit before restarting both
-services:
-
-```sh
-sudo install -o root -g root -m 0644 /opt/factory/node/systemd/factory-sessions.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl restart factory-sessions.service factory-ui.service
-```
+`/library` replaces the old Home Lab document, backlog and grill pages. The
+menu has one Library entry beside Factory, Pipeline and Chats. Each document
+has `/library/documents/<path>` and each skill `/library/skills/<name>`.
+Old document links redirect to their corresponding Library address; backlog
+redirects to `backlog.md`, grills to Library, and Home Lab sessions to Chats
+(preserving a selected session ID). Factory routes remain unchanged.
 
 The sessions unit prepares root-owned `/var/lib/factory` mode 0755. Its supervisor
 compares the planning clone's `HEAD` every 60 seconds, without pulling. The runner
@@ -556,43 +552,83 @@ key, token, Git configuration or clone is exposed to the web account. The UI's
 existing `/srv/factory` exclusion remains in place. No new UI environment key or
 filesystem write permission is required.
 
-Home Lab lists documents by folder and searches paths, titles, status, dates and
-body text. Scalar `title`, `status`, `date` and `updated` frontmatter fields are
-used for display; complex YAML values are not evaluated. A missing date uses the
-Git archive's file timestamp (the commit date), and a missing status displays
-“Unspecified”. Documents render Markdown with raw HTML disabled and GFM tables
-inside a horizontally scrollable container. `/home-lab/backlog` reads the root
-`backlog.md` through the same renderer. Paths are relative to the export; absolute
-paths, traversal, non-Markdown files and symlink components are refused.
+The Documents tree reads the same committed Markdown export. Search includes
+paths, titles, status, dates and body text. Project selection maps the document's
+top folder through `cplane_projects.repository` (the repository basename also
+works for owner/name values); root documents appear under every project.
+Markdown disables raw HTML and unsafe links, with horizontally scrolling GFM
+tables. Absolute paths, traversal, non-Markdown files and symlinks are refused.
+The viewer and tree are separate screens below 700px, with a back link.
 
-Owner notes live only in Postgres, keyed by the document's relative path, and are
-shown beside the document (below it on a phone). They survive refreshes and
-sessions; a renamed document has a new path and its previous notes remain stored
-under the old path. Notes are retained for operator cleanup along with session
-messages. A note can be copied into a selected Home Lab session as one queued
-owner message. Writes use the existing required UI request header and database
-transaction path; Factory sessions cannot receive a Home Lab note through this
-route.
+Skills & guides lists repository-owned skills, their git version and selected
+project's on/off state. Opening a skill shows its text and project switch, using
+the existing `skill_set` transaction path. Select a project before switching.
+Switches affect future workspace snapshots under the existing skill contract;
+Library never edits a skill or document, runs a CLI, or writes a git repository.
 
-“Start a grill” requires a document, tool/model and at least one named repository.
-It creates a Home Lab session and queues its first message atomically. The first
-message tells the planner to read the document at `planning/<path>`, use the named
-repositories, ask one question at a time, and wait for the owner's answer. The
-document must exist, but its size does not limit grill creation.
-Once the owner agrees to a decision, the planner records it in the appropriate
-document and commits it.
-Grills use existing one-message/one-turn execution and repository exports.
-Conversation bubbles distinguish the owner from the planner; planner replies
-containing a question mark are highlighted as questions. This is a display cue,
-not a new agent response protocol. Committed Home Lab planning edits use the
-planning delivery path below.
+Passage comments store a W3C `TextQuoteSelector` (`exact`, `prefix`, `suffix`),
+relative document path, text and creation time. Select text with mouse, touch or
+keyboard and save a draft. Exact matches are highlighted; context distinguishes
+repeated quotes. Missing or ambiguous passages display “passage changed” and
+keep their quote and comment. A unique exact quote can still anchor after its
+surroundings move. Comments remain keyed to the original path after a rename.
 
-After installation, check the sessions journal for export errors, confirm
-`/var/lib/factory/ui-docs` is a plain directory readable by `factory-ui`, and open
-Home Lab and Backlog. Verify a note can be saved and sent to a Home Lab session,
-and perform a grill smoke test with a deliberately chosen document/repository.
-The orchestrator performs these node checks; this slice uses synthetic fixtures.
+“Send N comments” queues all drafts for that document as one owner message in
+one existing chat. The message includes the document path and each quote/text.
+Queue insertion and comment delivery markers commit together under the store
+lock; concurrent or repeated sends cannot redeliver a sent draft. Saved history
+shows chat and delivery time (queue time, not model completion). The receiver
+chip offers non-archived chats. Default routing uses the folder's project chat,
+otherwise the orchestrator; archived project chats fall back to the orchestrator.
+Failed/archived explicit receivers are refused. Saving a new draft refuses a
+batch exceeding the existing 32,000-character chat message limit: send existing
+drafts first. Quote and comment limits are 16,000 characters each; contexts are
+at most 256 characters. Nothing is silently truncated.
 
+“Grill this document” queues a message naming `planning/<path>` and requesting
+the grilling skill, then opens the chosen chat. It neither creates a session nor
+changes tools, repositories or skill snapshots. Existing chat execution and
+scope restrictions remain authoritative. No chat tool operation is added.
+
+Migration 013 adds `cplane_document_comments` and copies every whole-document
+note once as a sent, passage-free imported comment, preserving text and time.
+The old notes contain no delivery links, so imported comments show “Imported
+note” without inventing a receiver or message. Source notes are retained.
+Existing Home Lab `legacy` chats are archived, keeping IDs, messages and queued
+history; the orchestrator established by migration 009 remains current.
+Archived transcripts remain readable in Chats. Reading does not unarchive them.
+Old note/send-note/grill HTTP mutation routes are removed. Existing session API
+compatibility and read-only document API aliases remain available.
+
+Library API:
+
+- `GET /api/library?project=FAC&q=words`: filtered flat tree entries and projects.
+- `GET /api/library/documents/<path>`: document and default receiver.
+- `GET /api/library/comments/<path>`: draft/sent history (also when source is gone).
+- `POST /api/library/comments/<path>`: `{text, selector}` creates a draft.
+- `POST /api/library/send/<path>`: `{chat: 123}` sends all drafts atomically;
+  `{}` selects the default receiver.
+- `POST /api/library/grill/<path>`: same receiver payload, queues grill request.
+- `GET /api/skills` and `GET /api/skills/<name>`: catalog and text respectively.
+- `POST /api/skills/<name>`: `{project: "FAC", enabled: true}` switches a project.
+
+All mutations retain `X-Factory-UI: 1` and the existing owner boundary. Unexpected
+backend failures return fixed errors; receiver data excludes CLI resume IDs and
+workspace preparation metadata. Library uses `@recogito/text-annotator` 4.3.7
+(BSD-3-Clause) for selection and highlights. `react-arborist` 4.0.1 (MIT) was
+reviewed; its editable/virtualized tree machinery is unnecessary for this small
+read-only tree, which uses semantic folder lists and native disclosure controls.
+
+After merge, use the existing reviewed installer:
+
+```sh
+sudo factory-cplane --actor owner install factory/LB1
+```
+
+The installer applies migration 013 and restarts the existing services. Check
+Library at desktop and phone widths, save a passage draft, send a batch, inspect
+the single queued chat message, open a grill, and verify imported note history.
+No new service, credential or manual state edit is required.
 
 ## Home Lab planning write-back
 
@@ -1381,3 +1417,17 @@ sudo factory-cplane --actor owner install factory/CH3
 
 The installer applies migration 012 and restarts the existing services. No new
 service, credential, fence, runtime dependency or manual state edit is required.
+
+Library LB1 validation used Python 3.13 and an isolated temporary Postgres 17.6:
+`CPLANE_TEST_DATABASE_URL=<temporary-url> uv run pytest` passed 1,205 tests,
+including 186 Postgres tests; one optional Docker test was skipped because Docker
+is unavailable in the implementation container. `cd ui && npm test` passed all
+18 UI tests, and `npm run build` passed (Vite reports its advisory bundle-size
+warning). Synthetic Chromium checks exercised passage selection, draft saving,
+persistent highlights, phone back navigation, the project skill switch, batch
+sending and grill navigation. The database contained exactly one batch message
+and one grill message; no executor ran. There were no page errors or horizontal
+overflow. The two committed screenshots are `ui/evidence/library-desktop.png`
+(1440px, folder tree, highlighted quote and draft alongside the viewer) and
+`ui/evidence/library-phone.png` (390px, viewer/back link, highlighted quote and
+the draft below the document). They contain synthetic content only.

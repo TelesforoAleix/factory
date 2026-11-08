@@ -6,7 +6,7 @@ from argparse import Namespace
 
 from cplane import cli, planner, state
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, redirect
 from cplane.stores import PostgresStore
 from .documents import Documents, DocumentNotFound
 
@@ -338,58 +338,19 @@ def create_app(store=None):
         except OSError:
             return jsonify(error='Documents unavailable'), 503
 
-    @app.route('/api/homelab/notes/<path:document>', methods=['GET', 'POST'])
-    def document_notes(document):
-        text = None
-        if request.method == 'POST':
-            payload = request.get_json(silent=True)
-            text = payload.get('text') if isinstance(payload, dict) else None
-            if not isinstance(text, str) or not text.strip() or len(text) > 16000:
-                return jsonify(error='Note must contain 1–16000 characters'), 400
-        try:
-            documents().read(document)
-            return jsonify(backend().document_notes(document, text))
-        except DocumentNotFound:
-            raise
-        except Exception:
-            return jsonify(error='Notes unavailable'), 503
+    from .library import register_library
+    register_library(app, backend, documents)
 
-    @app.post('/api/homelab/send-note/<int:note_id>/<path:document>')
-    def send_note(note_id, document):
-        payload = request.get_json(silent=True)
-        sid = payload.get('session') if isinstance(payload, dict) else None
-        if not isinstance(sid, int) or isinstance(sid, bool) or sid < 1:
-            return jsonify(error='Choose a Home Lab session'), 400
-        try:
-            documents().read(document)
-            return jsonify(backend().send_document_note(document, note_id, sid))
-        except DocumentNotFound:
-            raise
-        except state.StateError as error:
-            return jsonify(error=str(error)), 400
-        except Exception:
-            return jsonify(error='Note unavailable'), 503
-
-    @app.post('/api/homelab/grills')
-    def create_grill():
-        from cplane.stores import validate_session
-        payload = request.get_json(silent=True)
-        try:
-            if not isinstance(payload, dict) or not isinstance(payload.get('document'), str) or not payload['document']:
-                raise ValueError()
-            doc = documents().read(payload.get('document'))
-            fields = validate_session({**payload, 'title': 'Grill: ' + doc['title'][:190]}, 'homelab')
-            if not fields[3]:
-                return jsonify(error='Name at least one repository'), 400
-            message = ('Use the grilling skill for this Home Lab design. '
-                       f'Read planning/{doc["path"]} and review it using the named repositories.')
-            return jsonify(id=backend().create_grill(fields, message)), 201
-        except DocumentNotFound:
-            raise
-        except ValueError:
-            return jsonify(error='Invalid grill fields'), 400
-        except Exception:
-            return jsonify(error='Grill unavailable'), 503
+    @app.get('/home-lab')
+    @app.get('/home-lab/<path:old>')
+    def old_home_lab(old=''):
+        if old == 'sessions':
+            sid = request.args.get('session', '')
+            return redirect('/chats/' + sid if sid.isdigit() else '/chats', code=302)
+        if old.startswith('documents/'):
+            from urllib.parse import quote
+            return redirect('/library/documents/' + quote(old[10:], safe='/'), code=302)
+        return redirect('/library/documents/backlog.md' if old == 'backlog' else '/library', code=302)
 
     @app.get('/')
     @app.get('/<path:path>')

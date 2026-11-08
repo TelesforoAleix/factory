@@ -5,7 +5,7 @@ import {MemoryRouter} from 'react-router-dom';
 import {afterEach, test, expect, vi} from 'vitest';
 import {App} from './main';
 afterEach(() => {cleanup(); vi.unstubAllGlobals();});
-test.each([['homelab', '/home-lab/sessions'], ['factory', '/factory/sessions']])('sends one guarded message in %s and displays replies as text', async (area, path) => {
+test.each([['factory', '/factory/sessions']])('sends one guarded message in %s and displays replies as text', async (area, path) => {
   const rows = [{id: 1, role: 'assistant', status: 'done', text: '<script>reply</script>'}];
   const fetchMock = vi.fn(async (url, options) => ({ok: true, json: async () => {
     if (url.endsWith('/messages')) return rows;
@@ -32,6 +32,6 @@ test('shows the full pushed planning commit in the session', async () => {
   vi.stubGlobal('fetch', vi.fn(async url => ({ok: true, json: async () =>
     url.endsWith('/messages') ? [{id: 2, role: 'assistant', status: 'done', text: 'Planning pushed commit ' + commit}]
       : [{id: 7, title: 'Example', state: 'idle'}]})));
-  render(<MemoryRouter initialEntries={['/home-lab/sessions?session=7']}><App/></MemoryRouter>);
+  render(<MemoryRouter initialEntries={['/factory/sessions?session=7']}><App/></MemoryRouter>);
   expect((await screen.findByText(commit)).tagName).toBe('CODE');
 });

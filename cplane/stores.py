@@ -13,6 +13,7 @@ from .features import FeatureStore
 from .run_records import RunRecordStore
 from .skills import SkillStore
 from .chats import ChatStore
+from .library import LibraryStore
 
 
 class Store(Protocol):
@@ -78,7 +79,7 @@ class FileStore:
 LOCK_KEY = 0x43504C414E45
 
 
-class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore):
+class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore, LibraryStore):
     def __init__(self, url):
         if not url:
             raise state.StateError("Postgres connection failed")
