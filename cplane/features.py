@@ -120,6 +120,8 @@ class FeatureStore:
         with self.locked():
             items = self.feature_list()
             slices = self.load()['slices']
+            for slice_item in slices:
+                slice_item['attention'] = self.chat_attention(slice_item)
             records = self.run_record_list()
             projects = [dict(key=r[0], name=r[1]) for r in self.connection.execute(
                 'SELECT key, name FROM cplane_projects ORDER BY name')]
@@ -344,8 +346,8 @@ class FeatureStore:
                 'SELECT name, value FROM cplane_settings ORDER BY name')}
 
     def limit_set(self, name, value):
-        if name not in ('building_limit', 'waiting_limit'):
-            raise StateError('Unknown limit; choose building_limit or waiting_limit')
+        if name not in ('building_limit', 'waiting_limit', 'chat_auto_turns'):
+            raise StateError('Unknown limit; choose building_limit, waiting_limit or chat_auto_turns')
         if type(value) is not int or value < 1:
             raise StateError('Limit must be a whole number of at least 1')
         with self.mutation():

@@ -74,7 +74,7 @@ def test_feature_event_atomic_creation_order_and_reentry(pg_store, tmp_path):
     pg_store.finish_session_turn(turn, 'reply', 'synthetic-resume')
     turn = pg_store.claim_session_turn()
     assert turn['role'] == 'system'
-    assert turn_command(turn, tmp_path, [], tmp_path)[-1] == 'Workshop event: ' + message['text']
+    assert turn_command(turn, tmp_path, [], tmp_path)[-1].startswith('Workshop event: ' + message['text'])
     assert turn['session']['cli_session_id'] == 'synthetic-resume'
     pg_store.finish_session_turn(turn, 'grill reply', 'synthetic-resume')
     pg_store.feature_stage(identifier, 'shortlist')

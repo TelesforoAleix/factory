@@ -1332,3 +1332,52 @@ After merging this change, request the existing fixed install:
 ```sh
 sudo factory-cplane --actor owner install factory/HM2
 ```
+
+## Chat event wakes
+
+Migration 012 adds durable chat events, automatic-turn counters and the
+`chat_auto_turns` setting (default 5). Source mutations capture linked slice
+questions/escalations (including failed checks), transitions to In Review, and
+features entering Testing. The runner delivers each event once as an automatic
+system message to the feature chat, else its project chat, else the orchestrator.
+Handover events include the brief path, PR and handover text. Wake text uses the
+existing 32,000-character system-message bound, with truncation marked. Testing events name
+the linked slices. Merge approvals and node steps continue through the owner.
+
+Delivery and attention ownership commit together under the scheduler lock.
+Ownership is stored on the delivery record and joined onto the attention
+projection as `chat_id`; the version 1 state document and its schema stay unchanged.
+Home omits questions/escalations taken by a chat. Runner question/escalation
+phone notices are suppressed when the event is taken; owner decisions raised by
+`raise_decision` continue to reach Home and the phone. Previously exported phone
+history is never rewritten. Pending events survive restarts and remain queued
+when their responsible chat is paused, failed or archived.
+
+The Workshop operations `answer_slice` (`slice`, `text`), `accept_slice` (`slice`)
+and `return_slice` (`slice`, `note`) resolve questions/escalations, accept an
+In Review slice, or send it back as Issued with a note for the runner to resume.
+Each requires a feature link and checks stable feature/project scope under the
+same transaction as the mutation. They cannot approve merges, answer node steps
+or run installs. No executor receives Workshop. Broad board/slice reads continue
+to exclude attention bodies and executor metadata; routed events carry their
+responsible chat's context. All successful writes retain `chat:<id>` audit.
+
+Automatic turns count when claimed, including interrupted turns. An owner
+message resets the consecutive count; owner turns retain priority. At the limit,
+the chat stops claiming automatic turns and taking events, with one `chat-paused`
+notice to Home and the phone. Opening the chat does not resume automation; writing
+an owner message does. Already queued events retain their order behind owner
+messages. Change the limit with:
+
+```sh
+sudo factory-cplane limit set chat_auto_turns 5
+```
+
+After merging CH3, request the existing fixed installation:
+
+```sh
+sudo factory-cplane --actor owner install factory/CH3
+```
+
+The installer applies migration 012 and restarts the existing services. No new
+service, credential, fence, runtime dependency or manual state edit is required.

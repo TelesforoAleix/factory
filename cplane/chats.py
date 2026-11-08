@@ -183,5 +183,92 @@ class ChatStore:
             self.connection.execute(
                 "INSERT INTO cplane_session_messages (session, role, text, status, automatic) "
                 "VALUES (%s, 'system', %s, 'queued', true)", (chat_id, text))
+        elif stage == 'testing':
+            linked = ', '.join(s['id'] for s in self._linked_slices(item['feature']))
+            self._chat_event(item['feature'], None, 'testing', f"Feature {item['id']} entered Testing.\nSlices: {linked}\nReview the acceptance criteria and raise any owner decision.")
         elif stage == 'done':
             self.connection.execute('UPDATE cplane_sessions SET archived = true WHERE feature = %s', (item['feature'],))
+
+    def _chat_event(self, feature, slice_id, kind, text, since=None, source=None):
+        self.connection.execute(
+            'INSERT INTO cplane_chat_events (feature, slice_id, kind, text, attention_since, source) '
+            'VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (source) DO NOTHING',
+            (feature, slice_id, kind, text, since, source))
+
+    def capture_chat_events(self, data):
+        """Capture transitions atomically, including planner-originated changes."""
+        old = {r[0]: r[1] for r in self.connection.execute('SELECT id, document FROM cplane_slices')}
+        for item in data['slices']:
+            link = self.connection.execute('SELECT feature FROM cplane_feature_ids WHERE id = %s',
+                                           (item.get('feature_id'),)).fetchone()
+            if not link or link[0] is None:
+                continue
+            before = old.get(item['id'], {})
+            attention = item['attention']
+            previous = before.get('attention')
+            if (attention and attention['kind'] in ('question', 'escalation')
+                    and attention['answer'] is None
+                    and (not previous or any(attention[k] != previous[k] for k in ('kind', 'since', 'body')))):
+                self._chat_event(link[0], item['id'], attention['kind'], attention['body'], attention['since'])
+            if item['state'] == 'in review' and before.get('state') != 'in review':
+                self.chat_handover(item, f"Handover ready for review against brief {item['brief']}.\nPR: {item['pr']}")
+
+    def chat_can_take(self, chat_id):
+        """Called under the store lock both at routing and at turn claim."""
+        from .times import now
+        count, paused, title = self.connection.execute(
+            'SELECT auto_turns, auto_paused, title FROM cplane_sessions WHERE id = %s', (chat_id,)).fetchone()
+        if paused:
+            return False
+        if count < self.limit_show()['chat_auto_turns']:
+            return True
+        self.connection.execute('UPDATE cplane_sessions SET auto_paused = true WHERE id = %s', (chat_id,))
+        self.append_notices([dict(at=now().isoformat(), id=f'chat:{chat_id}', chat=chat_id,
+                                 event='chat-paused', text=f'{title}: Chat paused after automatic turns; write a message to continue.')])
+        return False
+
+    def route_chat_events(self):
+        """Runner delivery, serialized with slice writes and owner messages."""
+        with self.mutation():
+            rows = self.connection.execute(
+                'SELECT id, feature, slice_id, kind, text, attention_since FROM cplane_chat_events '
+                'WHERE NOT delivered ORDER BY id').fetchall()
+            from .text_bounds import cut
+            for event_id, feature, slice_id, kind, text, since in rows:
+                row = self.connection.execute(
+                    "SELECT s.id, s.state, s.archived FROM cplane_sessions s JOIN cplane_features f ON f.feature = %s "
+                    "WHERE (s.kind = 'feature' AND s.feature = f.feature) "
+                    "OR (s.kind = 'project' AND s.project = f.project) OR s.kind = 'orchestrator' "
+                    "ORDER BY CASE s.kind WHEN 'feature' THEN 0 WHEN 'project' THEN 1 ELSE 2 END LIMIT 1",
+                    (feature,)).fetchone()
+                if not row or row[1] == 'failed' or row[2] or not self.chat_can_take(row[0]):
+                    continue
+                chat_id = row[0]
+                message = f'Event: {kind}\nSlice: {slice_id or "(feature event)"}\n\n{text}'
+                self.system_message(chat_id, cut(message, 32000))
+                self.connection.execute('UPDATE cplane_chat_events SET delivered = true, chat = %s WHERE id = %s',
+                                        (chat_id, event_id))
+
+    def chat_attention(self, item):
+        """Attention projection with durable chat ownership; state v1 stays intact."""
+        attention = item['attention']
+        if not attention or attention['kind'] not in ('question', 'escalation'):
+            return attention
+        with self.locked():
+            row = self.connection.execute(
+                'SELECT chat FROM cplane_chat_events WHERE feature = '
+                '(SELECT feature FROM cplane_feature_ids WHERE id = %s) AND slice_id = %s AND kind = %s '
+                'AND attention_since = %s AND text = %s AND delivered ORDER BY id DESC LIMIT 1',
+                (item.get('feature_id'), item['id'], attention['kind'], attention['since'], attention['body'])).fetchone()
+            return dict(attention, chat_id=row[0]) if row else attention
+
+    def chat_handover(self, item, text):
+        import hashlib
+        import json
+        link = self.connection.execute('SELECT feature FROM cplane_feature_ids WHERE id = %s',
+                                       (item.get('feature_id'),)).fetchone()
+        if link and link[0] is not None:
+            from .text_bounds import cut
+            text = f"Brief: {item['brief']}\nPR: {item['pr']}\n\n" + cut(text, 28000)
+            source = hashlib.sha256(json.dumps([item['id'], item['log']]).encode()).hexdigest()
+            self._chat_event(link[0], item['id'], 'in review', text, source=source)

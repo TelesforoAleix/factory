@@ -202,6 +202,9 @@ def turn_command(turn, folder, paths, run):
         if session['cli_session_id']:
             command += ['--resume', session['cli_session_id']]
     prompt = ('Workshop event: ' if turn.get('role') == 'system' else '') + turn['text']
+    if session.get('kind') in WORKSHOP_KINDS:
+        from .workshop import CHAT_INSTRUCTION
+        prompt += '\n\n' + CHAT_INSTRUCTION
     if session.get('area') == 'homelab':
         prompt += '\n\n' + HOMELAB_INSTRUCTION
     return [*args, '--', *command, '--', prompt]
