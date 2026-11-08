@@ -47,11 +47,12 @@ def review_status(item):
         status = 'failed'
     elif any(pending(dict(slices=[item]))):
         status = 'pending'
+    elif (item['attention'] and item['attention']['kind'] == 'node-step'
+          and item['attention']['answer'] is None):
+        status = 'required'
     elif any(e.startswith('Installed ') for e in events):
         status = 'finished'
-    elif item['attention'] and item['attention']['kind'] == 'node-step':
-        status = 'required'
-    elif any(e.startswith(REQUEST) for e in events):
+    elif any(e.startswith((REQUEST, 'node-step:')) for e in events):
         status = 'unconfirmed'
     else:
         status = 'not-required'

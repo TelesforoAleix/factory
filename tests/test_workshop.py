@@ -587,3 +587,64 @@ def test_review_sections_keep_original_text_and_numbering(context):
     value(call(w, 'save_section', feature=own, section='Testing review 1', text='Review\n\nIdeas from testing\nAn idea'))
     value(call(w, 'save_section', feature=own, section='Testing review 2', text='Only the correction changed.'))
     assert len(store.feature_show(own)['sections']) == 2
+
+
+def test_install_requests_serialize_and_roll_back(context, slice_data, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from cplane.installation import pending
+    store, _, chats, own, _, _, documents = context
+    monkeypatch.setenv('CPLANE_INSTALL_REPOS', 'example/repo')
+    slice_data.update(feature_id=own, attention=dict(kind='node-step', body='Install',
+        since='2026-01-01T00:00:00Z', answer=None, approved=False))
+    store.save(dict(version=1, slices=[slice_data]))
+    failing = Workshop(store, chats['feature']['id'], documents)
+    original = store.save
+    monkeypatch.setattr(store, 'save', Mock(side_effect=RuntimeError('synthetic write failure')))
+    refused(call(failing, 'install_slice', slice=slice_data['id']), 'Workshop unavailable')
+    monkeypatch.setattr(store, 'save', original)
+    assert not list(pending(store.load()))
+    barrier = Barrier(2)
+    def request():
+        backend = PostgresStore(store._url)
+        workshop = Workshop(backend, chats['feature']['id'], documents)
+        barrier.wait(timeout=5)
+        return call(workshop, 'install_slice', slice=slice_data['id'])
+    with ThreadPoolExecutor(2) as pool:
+        results = [f.result(timeout=10) for f in [pool.submit(request), pool.submit(request)]]
+    assert sum(not r['isError'] for r in results) == 1
+    assert len(list(pending(store.load()))) == 1
+    with store.locked():
+        assert store.connection.execute("SELECT count(*) FROM cplane_workshop_writes WHERE operation = 'install_slice'").fetchone()[0] == 1
+
+
+def test_install_refuses_when_another_request_is_pending(context, slice_data, monkeypatch):
+    from copy import deepcopy
+    from cplane.installation import request_change
+    store, workshops, _, own, _, _, _ = context
+    monkeypatch.setenv('CPLANE_INSTALL_REPOS', 'example/repo')
+    slice_data.update(feature_id=own, attention=dict(kind='node-step', body='Install',
+        since='2026-01-01T00:00:00Z', answer=None, approved=False))
+    other = deepcopy(slice_data)
+    other['id'] = 'example/other'
+    data = dict(version=1, slices=[slice_data, other])
+    request_change('owner')(other, data, '2026-11-08T00:00:00Z')
+    store.save(data)
+    refused(call(workshops['feature'], 'install_slice', slice=slice_data['id']), 'already requested or running')
+
+
+def test_review_read_has_install_evidence_and_handovers(context, slice_data, monkeypatch):
+    from cplane.installation import REQUEST, FINISHED
+    store, workshops, _, own, _, _, _ = context
+    monkeypatch.setenv('CPLANE_INSTALL_REPOS', 'example/repo')
+    slice_data.update(feature_id=own, state='in review', log=[
+        dict(at='2026-11-08T00:00:00Z', actor='chat:1', event=REQUEST + 'a'*32),
+        dict(at='2026-11-08T00:01:00Z', actor='runner', event='Installed ' + 'b'*40),
+        dict(at='2026-11-08T00:01:00Z', actor='runner', event=FINISHED + 'a'*32)])
+    with store.mutation():
+        store.chat_handover(slice_data, 'Synthetic handover with checks and results')
+        store.save(dict(version=1, slices=[slice_data]))
+    read = value(call(workshops['feature'], 'slices', feature=own))[0]
+    assert read['installation'] == dict(installable=True, status='finished')
+    assert any('Synthetic handover' in text for text in read['handovers'])
+    assert 'log' not in read and 'attention' not in read

@@ -31,7 +31,8 @@ recommendation. Do not guess an owner decision.
 For an in-review handover, compare the work and validation evidence with the brief.
 Use accept_slice only when acceptance is satisfied. Otherwise use return_slice
 with a concrete note for the next executor turn. The runner resumes the executor;
-the chat never starts it. On Testing, check feature acceptance criteria and results,
-record findings, and raise any owner testing or acceptance decision. Existing
-feature marks and stage rules still apply. Merge approvals and installs remain
-with the owner. If automatic turns pause, wait for an owner message to continue.
+the chat never starts it. On Testing and owner testing replies, follow the
+testing-review skill. Existing feature marks and stage rules still apply. Merge
+approvals remain with the owner. For an installable node step use install_slice
+once; install failures and other node steps remain with the owner. If automatic
+turns pause, wait for an owner message to continue.

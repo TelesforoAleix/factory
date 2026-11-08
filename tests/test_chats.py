@@ -378,7 +378,7 @@ def test_install_failure_remains_on_home_and_phone(pg_store, slice_data):
     assert any(a['kind'] == 'failure' and a['id'] == slice_data['id'] for a in cards)
 
 
-def testing_turn(store, identifier, chat, number):
+def prepare_testing_turn(store, identifier, chat, number):
     # Synthetic stage setup, then the real transition and event delivery.
     with store.mutation():
         store.connection.execute("UPDATE cplane_features SET stage = 'building' WHERE id = %s", (identifier,))
@@ -395,7 +395,7 @@ def test_testing_review_wait_lifecycle_and_once_only_phone(pg_store):
     from cplane.runner import BOT_EVENTS
     identifier, chat = feature_chat(pg_store)
     pg_store.finish_session_turn(pg_store.claim_session_turn(), 'Grill completed.')
-    turn = testing_turn(pg_store, identifier, chat, 1)
+    turn = prepare_testing_turn(pg_store, identifier, chat, 1)
     client = create_app(pg_store).test_client()
     def reviews():
         return [a for a in client.get('/api/home').get_json()['attention'] if a['kind'] == 'testing-review']
@@ -404,7 +404,8 @@ def test_testing_review_wait_lifecycle_and_once_only_phone(pg_store):
     assert reviews()[0]['since']
     pg_store.chat_open(chat['id'])
     assert len(reviews()) == 1
-    pg_store.finish_testing_review(turn)
+    with pg_store.mutation():
+        pg_store.finish_testing_review(turn)
     assert len([n for _, n in pg_store.notices() if n['event'] == 'testing-review']) == 1
     assert 'testing-review' in BOT_EVENTS
     pg_store.session_messages('factory', chat['id'], 'The button is broken; also an idea.')
@@ -413,7 +414,7 @@ def test_testing_review_wait_lifecycle_and_once_only_phone(pg_store):
     pg_store.finish_session_turn(owner_turn, 'defect: button\nidea: later')
     assert reviews() == []
     pg_store.feature_stage(identifier, 'building', actor=f"chat:{chat['id']}")
-    testing_turn(pg_store, identifier, chat, 2)
+    prepare_testing_turn(pg_store, identifier, chat, 2)
     assert len(reviews()) == 1
     assert len([n for _, n in pg_store.notices() if n['event'] == 'testing-review']) == 2
     pg_store.feature_mark(identifier, 'review', actor=f"chat:{chat['id']}")
@@ -435,4 +436,18 @@ def test_testing_reply_without_review_or_failed_turn_does_not_request_testing(pg
     turn = pg_store.claim_session_turn()
     pg_store.feature_section(identifier, 'Testing review 1', 'Review text')
     pg_store.finish_session_turn(turn, 'Turn failed', failed=True)
+    assert pg_store.testing_review_waits() == []
+
+
+def test_owner_message_during_review_turn_clears_wait(pg_store):
+    identifier, chat = feature_chat(pg_store)
+    pg_store.finish_session_turn(pg_store.claim_session_turn(), 'Grill completed.')
+    with pg_store.mutation():
+        pg_store.connection.execute("UPDATE cplane_features SET stage = 'building' WHERE id = %s", (identifier,))
+    pg_store.feature_stage(identifier, 'testing', actor='runner')
+    pg_store.route_chat_events()
+    turn = pg_store.claim_session_turn()
+    pg_store.feature_section(identifier, 'Testing review 1', 'Review')
+    pg_store.session_messages('factory', chat['id'], 'Already tested; the button fails.')
+    pg_store.finish_session_turn(turn, 'Please test.')
     assert pg_store.testing_review_waits() == []
