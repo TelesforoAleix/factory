@@ -1086,6 +1086,11 @@ def test_workflow_changes_require_approval_in_both_flows(delivery, make_state, f
 
 def test_repair_pins_workers_latest_tip_and_second_review_keeps_original_base(ticket_runner, delivery):
     runner, processes, plan, status, submit = ticket_runner
+    def diagnostics():
+        item = state.load(runner.path)['slices'][0]
+        review_count = sum(bool(job.get('review')) for job in processes.started)
+        return f"attention={item['attention']!r}, job={runner.jobs.get(item['id'])!r}, review_count={review_count}"
+
     finish_cut(processes, plan)
     runner.run()
     d = delivery
@@ -1098,21 +1103,23 @@ def test_repair_pins_workers_latest_tip_and_second_review_keeps_original_base(ti
     worker_tip = d['g'](seed, 'rev-parse', 'HEAD')
     status.return_value = [ticket(status='done')]
     runner.run()
-    assert processes.started[-1]['tip'] == worker_tip
+    assert sum(bool(job.get('review')) for job in processes.started) == 1, diagnostics()
+    assert processes.started[-1]['tip'] == worker_tip, diagnostics()
     status.side_effect = lambda name: [] if name.endswith('/repair') else [ticket(status='done')]
     review_answer(processes, 'fix', plan)
     runner.run()
-    assert submit.call_args.args[0]['base_commit'] == worker_tip
+    assert submit.call_args.args[0]['base_commit'] == worker_tip, diagnostics()
     (seed / 'worker.py').write_text('repaired worker result\n')
     d['g'](seed, 'commit', '-am', 'repair result')
     d['g'](seed, 'push', 'origin', 'HEAD')
     repaired_tip = d['g'](seed, 'rev-parse', 'HEAD')
     status.side_effect = lambda name: [ticket(status='done')]
     runner.run()
+    assert sum(bool(job.get('review')) for job in processes.started) == 2, diagnostics()
     review = processes.started[-1]
-    assert review['tip'] == repaired_tip and review['base'] == d['base']
-    assert (Path(review['repo']) / 'worker.py').read_text() == 'repaired worker result\n'
-    assert not d['marker'].exists()
+    assert review['tip'] == repaired_tip and review['base'] == d['base'], diagnostics()
+    assert (Path(review['repo']) / 'worker.py').read_text() == 'repaired worker result\n', diagnostics()
+    assert not d['marker'].exists(), diagnostics()
 
 
 def test_post_merge_review_session_does_not_resubmit_or_publish(ticket_runner):
