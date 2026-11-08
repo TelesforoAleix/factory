@@ -341,3 +341,171 @@ def test_restart_cleans_interrupted_socket(tmp_path, monkeypatch):
     with pytest.raises(sessions.StateError, match='link or non-directory'):
         sessions.cleanup_interrupted_turn(dict(id=9))
     assert (outside / 'workshop.sock').exists()
+
+
+BRIEF = '# Synthetic task\n\n## Fixed decisions\nKeep the contract.\n'
+
+
+def slice_args(feature, **overrides):
+    return dict(feature=feature, title='Synthetic slice', brief=BRIEF,
+                model='example-model', effort='high', **overrides)
+
+
+def repository(store):
+    with store.mutation():
+        store.connection.execute("UPDATE cplane_projects SET repository = 'example/repo' WHERE key = 'FAC'")
+        store.connection.execute("UPDATE cplane_projects SET repository = 'example/outside' WHERE key = 'LAB'")
+
+
+@pytest.mark.parametrize('kind', ['feature', 'project', 'orchestrator'])
+def test_add_slice_scope_and_audit(context, kind):
+    store, workshops, chats, own, other, outside, _ = context
+    repository(store)
+    store.feature_stage(other, 'grilling')
+    store.feature_stage(outside, 'grilling')
+    for target, allowed in [(own, True), (other, kind != 'feature'), (outside, kind == 'orchestrator')]:
+        result = call(workshops[kind], 'add_slice', **slice_args(target))
+        if not allowed:
+            refused(result, 'can only write')
+            continue
+        created = value(result)
+        assert created['id'] == f'{target}-S1'
+        item = next(s for s in store.load()['slices'] if s['id'] == created['id'])
+        assert item['state'] == 'ready' and item['flow'] == 'cli'
+        assert item['brief'] is None and item['brief_id'] == item['id']
+        assert item['slot'] is None and item['session'] is None
+        assert item['repo'] == ('example/outside' if target == outside else 'example/repo')
+        assert item['executor'] == dict(tool='codex', model='example-model', effort='high')
+        assert not item['stop_before_merge']
+        assert item['log'][-1]['actor'] == f"chat:{chats[kind]['id']}"
+        assert store.stored_brief(item['brief_id']) == BRIEF
+    with store.locked():
+        rows = list(store.connection.execute('SELECT chat, operation, time FROM cplane_workshop_writes'))
+        assert len(rows) == (1 if kind == 'feature' else 2 if kind == 'project' else 3)
+        assert all(r[0] == chats[kind]['id'] and r[1] == 'add_slice' and r[2] for r in rows)
+        rows = list(store.connection.execute('SELECT actor, time FROM cplane_slice_briefs'))
+        assert all(r[0] == f"chat:{chats[kind]['id']}" and r[1] for r in rows)
+
+
+@pytest.mark.parametrize('stage', ['shortlist', 'grilling', 'ready', 'next', 'building', 'testing', 'done', 'parked'])
+def test_add_slice_stages(context, stage):
+    store, workshops, _, own, _, _, _ = context
+    repository(store)
+    with store.mutation():
+        store.connection.execute('UPDATE cplane_features SET stage = %s, position = 99 WHERE id = %s', (stage, own))
+    result = call(workshops['feature'], 'add_slice', **slice_args(own))
+    if stage in ('grilling', 'ready', 'building', 'testing'):
+        value(result)
+        assert store.feature_show(own)['stage'] == stage
+    else:
+        refused(result, 'only be added')
+        assert not store.load()['slices']
+
+
+@pytest.mark.parametrize('brief, error', [
+    ('x' * 65537, 'exceeds'), ('## Do not\n' + 'é' * 32764, 'bytes'),
+    ('', 'empty'), ('## Do not\n\x00', 'NUL'), ('# Task\nNo sections', 'neither'),
+    ('```markdown\n## Do not\n```', 'neither'),
+], ids=['characters', 'utf8-bytes', 'empty', 'nul', 'missing-section', 'fenced-section'])
+def test_add_slice_brief_refusals(context, brief, error):
+    store, workshops, _, own, _, _, _ = context
+    repository(store)
+    args = slice_args(own)
+    args['brief'] = brief
+    refused(call(workshops['feature'], 'add_slice', **args), error)
+    assert not store.load()['slices']
+    with store.locked():
+        assert store.connection.execute('SELECT slice_counter FROM cplane_features WHERE id = %s', (own,)).fetchone()[0] == 0
+        assert not list(store.connection.execute('SELECT * FROM cplane_slice_briefs'))
+        assert not list(store.connection.execute('SELECT * FROM cplane_workshop_writes'))
+
+
+def test_add_slice_repository_and_arguments(context):
+    store, workshops, _, own, _, _, _ = context
+    refused(call(workshops['feature'], 'add_slice', **slice_args(own)), 'no repository')
+    repository(store)
+    for key, val in [('effort', 'invalid'), ('tool', 'claude'), ('flow', 'tickets'),
+                     ('repo', 'evil/repo'), ('actor', 'owner'), ('stop_before_merge', 'yes')]:
+        args = slice_args(own)
+        args[key] = val
+        refused(call(workshops['feature'], 'add_slice', **args), 'Invalid workshop arguments')
+    with store.mutation():
+        store.connection.execute("UPDATE cplane_projects SET repository = 'unresolved' WHERE key = 'FAC'")
+    refused(call(workshops['feature'], 'add_slice', **slice_args(own)), 'unresolved')
+    assert not store.load()['slices']
+
+
+def test_add_slice_dependencies_identity_and_immutable_brief(context):
+    from cplane import state
+    from cplane.cli import main
+    store, workshops, _, own, other, _, _ = context
+    repository(store)
+    first = value(call(workshops['feature'], 'add_slice', **slice_args(own)))
+    second = value(call(workshops['feature'], 'add_slice', **slice_args(
+        own, depends_on=[first['id']], stop_before_merge=True)))
+    assert second['depends_on'] == [first['id']] and second['stop_before_merge']
+    for deps in [['missing'], [first['id'], first['id']]]:
+        assert call(workshops['feature'], 'add_slice', **slice_args(own, depends_on=deps))['isError']
+    store.feature_stage(other, 'grilling')
+    refused(call(workshops['project'], 'add_slice', **slice_args(other, depends_on=[first['id']])), 'same feature')
+    assert main(['edit', first['id'], '--brief', 'replacement.md']) == 1
+    assert store.stored_brief(first['id']) == BRIEF
+    read = value(call(workshops['feature'], 'slices', feature=own))
+    assert read[0]['brief_text'] == BRIEF
+    with pytest.raises(state.StateError):
+        with store.mutation():
+            store.connection.execute('UPDATE cplane_slice_briefs SET text = %s WHERE slice_id = %s', ('changed', first['id']))
+    data = store.load()
+    data['slices'] = []
+    store.save(data)
+    third = value(call(workshops['feature'], 'add_slice', **slice_args(own)))
+    assert third['id'] == f'{own}-S3'
+    moved = store.feature_move(own, 'LAB')
+    fourth = value(call(workshops['feature'], 'add_slice', **slice_args(own)))
+    assert fourth['id'] == f"{moved['id']}-S4" and fourth['repo'] == 'example/outside'
+    exported = next(f for f in store.feature_export_snapshot() if f['id'] == moved['id'])
+    assert {b['id'] for b in exported['briefs']} == {first['id'], second['id'], third['id'], fourth['id']}
+
+
+def test_add_slice_full_byte_bound_over_socket(context, tmp_path, socket_owner):
+    store, _, chats, own, _, _, documents = context
+    repository(store)
+    # Maximal JSON expansion of ASCII controls still fits the transport.
+    brief = '## Do not\n' + '\x01' * (65536 - len('## Do not\n'))
+    run = tmp_path / 'max-brief'
+    run.mkdir()
+    with WorkshopServer(run, store, chats['feature']['id'], documents) as server:
+        request = dict(jsonrpc='2.0', id=1, method='tools/call',
+                       params=dict(name='add_slice', arguments={**slice_args(own), 'brief': brief}))
+        result = subprocess.run(['python3', str(run / 'workshop_mcp.py')],
+                                input=json.dumps(request) + '\n', capture_output=True,
+                                text=True, check=True, timeout=10)
+        response = json.loads(result.stdout)
+        created = value(response['result'])
+    assert store.stored_brief(created['brief_id']) == brief
+
+
+def test_add_slice_parallel_numbers_and_atomic_failure(context, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    store, _, chats, own, _, _, documents = context
+    repository(store)
+    barrier = Barrier(2)
+    def create():
+        backend = PostgresStore(store._url)
+        barrier.wait(timeout=5)
+        return Workshop(backend, chats['feature']['id'], documents).call('add_slice', slice_args(own))
+    with ThreadPoolExecutor(2) as pool:
+        futures = [pool.submit(create) for _ in range(2)]
+        assert {f.result(timeout=10)['id'] for f in futures} == {f'{own}-S1', f'{own}-S2'}
+    before = store.snapshot()
+    def fail(*args):
+        raise RuntimeError('synthetic post-insert failure')
+    monkeypatch.setattr(store, 'save', fail)
+    failed = call(Workshop(store, chats['feature']['id'], documents), 'add_slice', **slice_args(own))
+    refused(failed, 'Workshop unavailable')
+    assert store.snapshot() == before
+    with store.locked():
+        assert store.connection.execute('SELECT slice_counter FROM cplane_features WHERE id = %s', (own,)).fetchone()[0] == 2
+        assert store.connection.execute('SELECT count(*) FROM cplane_slice_briefs').fetchone()[0] == 2
+        assert store.connection.execute('SELECT count(*) FROM cplane_workshop_writes').fetchone()[0] == 2

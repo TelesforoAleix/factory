@@ -73,7 +73,7 @@ def validate(order):
     action, argument, target = order['action'], order['argument'], order['slice']
     if not isinstance(target, str) or not target:
         raise ValueError('invalid target')
-    if action != 'orchestrator' and not re.fullmatch(r'[^/\s]+/[^/\s]+', target):
+    if action != 'orchestrator' and not re.fullmatch(r'(?:[^/\s]+/[^/\s]+|[A-Z]{3}-F[1-9][0-9]*-S[1-9][0-9]*)', target):
         raise ValueError('invalid slice id')
     if argument is not None and not isinstance(argument, str):
         raise ValueError('invalid argument')

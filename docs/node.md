@@ -908,7 +908,8 @@ from its imported stage. Export then derives Horizon: building/testing → now;
 shortlist/grilling/ready/next → next; parked → parked; done → done.
 
 `feature export` takes one locked database snapshot, then publishes
-`features/<ID>.md` with title, project, stage and sections in stored order. It
+`features/<ID>.md` with title, project, stage and sections in stored order, plus
+stored slice briefs at `features/<ID>/<slice ID>.md`. It
 removes obsolete generated feature IDs after project moves. Git uses a fresh
 root-managed directory beneath the fence clean root, host-only settings and
 no hooks. Fetch uses the existing read key; only push gets the existing write
@@ -1291,12 +1292,13 @@ holds chat identity; supplied chat IDs, actors and other identity arguments
 cannot select another chat. Each socket has its own 50-tool-call allowance,
 including refused tool calls; all later tool calls are refused. Initialization,
 tool discovery and protocol notifications do not consume that allowance.
-Requests are limited to 64 KiB and stalled socket reads time out after two seconds.
+Requests are limited to 512,000 bytes (including JSON escaping); brief text is
+limited separately to 64 KiB. Stalled socket reads time out after two seconds.
 Unexpected host failures return a fixed message; store refusals retain their
 short sentence.
 
 The operations are `board`, `feature`, `slices`, `documents`, `document`,
-`save_section`, `set_mark`, `move_feature`, `place_feature`, `add_feature` and
+`save_section`, `set_mark`, `move_feature`, `place_feature`, `add_feature`, `add_slice` and
 `raise_decision`. `move_feature` takes exactly one of `stage` or `project`;
 `add_feature` starts in Shortlist. A feature chat may change only its stable linked
 feature, including through aliases after project transfers. A project chat may
@@ -1305,7 +1307,7 @@ The orchestrator may write anywhere. Feature chats cannot add features.
 Placement uses the board's existing global stage order; an anchor is read-only.
 Reads may see the whole board and Library. Documents use the same committed
 Markdown export and reader as the Library. Explicit feature and slice field lists
-exclude executor/session metadata, attention bodies and logs. Settings, limits,
+exclude executor/session metadata, attention bodies and logs; `slices` additionally returns stored `brief_text`. Settings, limits,
 roles, keys, chat transcripts and run-record prompts have no tool operation.
 Nothing deletes, and there is no slice-executor attachment.
 
@@ -1431,3 +1433,57 @@ overflow. The two committed screenshots are `ui/evidence/library-desktop.png`
 (1440px, folder tree, highlighted quote and draft alongside the viewer) and
 `ui/evidence/library-phone.png` (390px, viewer/back link, highlighted quote and
 the draft below the document). They contain synthetic content only.
+
+## Chats add slices
+
+Workshop `add_slice` takes `feature`, `title`, `brief` (Markdown text), `model`,
+`effort`, optional `depends_on` and optional `stop_before_merge`. Feature chats
+write only their own stable feature; project chats write only their current
+project; the orchestrator can write anywhere. Scope and current stage are checked
+under the same store lock as creation. Allowed stages are Grilling, Ready,
+Building and Testing. A project without a repository is refused. Plain repository
+names use the existing unambiguous owner resolution; an unresolved owner is refused.
+
+New IDs are `<current feature ID>-S<n>` with a persistent per-feature counter;
+numbers survive deletion and project moves. Version 1 continues to accept legacy
+`project/slice` IDs and additionally accepts this feature slice form, including
+in queued commands. Dependencies must already belong to the same stable feature.
+Slices append in list order, start in `ready`, use Codex and flow `cli`, and default
+`stop_before_merge` off. Creation does not launch an executor; the existing runner
+slots linked work only while Building and after dependencies are accepted. Adding
+work in Testing leaves the feature there until the chat moves it back to Building.
+
+The `brief` skill is enabled for every project by default. Read it before
+`add_slice`; it specifies self-contained briefs, repository-local paths, no
+secrets/private content, all required writing sections, before/after merge
+validation, and stopping before merge for security boundaries or irreversible
+node steps. The host enforces a maximum of 65,536 UTF-8 bytes, rejects NULs and
+requires the cutter's `Fixed decisions` or `Do not` section check. Requests now
+allow 512,000 bytes so a full brief fits even with JSON escaping.
+
+Migration 014 adds `brief_id` references backed by immutable Postgres brief rows,
+with actor and time, and a per-feature slice counter. `slices` includes stored
+`brief_text` so chats can review the original brief. Successful `add_slice`
+operations also record chat and time in the workshop audit, feature events,
+slice logs and notices. Brief text has no update operation; corrections are new
+slices. Planner edits cannot detach the stored brief or change its slice identity,
+repository or feature link. The runner reads stored text directly and retains it
+in the existing job record for resumes. File-path briefs keep their existing pull,
+read, frontmatter handling and validation behavior.
+
+The hourly host feature export writes stored text byte-for-byte to
+`features/<current feature ID>/<slice ID>.md` alongside the feature Markdown.
+Feature transfers preserve existing slice IDs and move exports to the current
+feature folder. No chat receives git write credentials or any new executor
+attachment. Merge approval, installs and the fence are unchanged.
+
+After owner approval and merge, request the reviewed install:
+
+```sh
+sudo factory-cplane --actor owner install factory/SL1
+```
+
+The installer applies migration 014 and restarts the existing services. Check the
+new tool in a feature chat, add a deliberately chosen bounded slice in Grilling,
+and inspect its stored brief export after the next hourly run. Do not start real
+executor work solely as an installation smoke test.

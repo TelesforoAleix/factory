@@ -451,10 +451,71 @@ class FeatureStore:
                     (Jsonb(row['backlog']), 'shortlist' if row['stage'] == 'parked' else None, item['id']))
             return report
 
+    def feature_add_slice(self, identifier, title, brief, model, effort, *, depends_on=(),
+                          stop_before_merge=False, actor):
+        from .cut import sections
+        from .planner import new_slice
+        bounded(title, 'Title')
+        bounded(brief, 'Brief', 65_536)
+        if len(brief.encode('utf-8')) > 65_536:
+            raise StateError('Brief exceeds 65536 bytes')
+        sections(brief, identifier)
+        with self.mutation():
+            feature = self._feature(identifier)
+            if feature['stage'] not in ('grilling', 'ready', 'building', 'testing'):
+                raise StateError('Slices can only be added in Grilling, Ready, Building or Testing')
+            repository = self.connection.execute(
+                'SELECT repository FROM cplane_projects WHERE key = %s', (feature['project'],)).fetchone()[0]
+            if not repository:
+                raise StateError('Project has no repository')
+            repositories = self._project_repositories(feature['project'])
+            from .stores import REPOSITORY
+            if not REPOSITORY.fullmatch(repositories[0]):
+                raise StateError('Project repository owner is unresolved')
+            linked = {s['id'] for s in self._linked_slices(feature['feature'])}
+            if any(dep not in linked for dep in depends_on):
+                raise StateError('Dependencies must be slices of the same feature')
+            data = self.load()
+            # Keep the counter across deletions and aliases/project transfers.
+            while True:
+                number = self.connection.execute(
+                    'UPDATE cplane_features SET slice_counter = slice_counter + 1 '
+                    'WHERE feature = %s RETURNING slice_counter', (feature['feature'],)).fetchone()[0]
+                slice_id = f"{feature['id']}-S{number}"
+                if not any(s['id'] == slice_id for s in data['slices']) and not self.connection.execute(
+                        'SELECT 1 FROM cplane_slice_briefs WHERE slice_id = %s', (slice_id,)).fetchone():
+                    break
+            item = new_slice(slice_id)
+            at = now().isoformat()
+            item.update(repo=repositories[0], feature=feature['title'], feature_id=feature['id'],
+                        title=title, state='ready', brief_id=slice_id, flow='cli',
+                        executor=dict(tool='codex', model=model, effort=effort),
+                        depends_on=list(depends_on), stop_before_merge=stop_before_merge)
+            item['log'].append(dict(at=at, actor=actor, event='add_slice'))
+            self.connection.execute(
+                'INSERT INTO cplane_slice_briefs (slice_id, feature, text, actor) VALUES (%s, %s, %s, %s)',
+                (slice_id, feature['feature'], brief, actor))
+            data['slices'].append(item)
+            self.save(data, [dict(at=at, id=slice_id, event='add_slice', text=f'Added {slice_id}')])
+            self._feature_event(feature['feature'], f'add_slice {slice_id}', actor)
+            return item
+
+    def stored_brief(self, brief_id):
+        with self.locked():
+            row = self.connection.execute(
+                'SELECT text FROM cplane_slice_briefs WHERE slice_id = %s', (brief_id,)).fetchone()
+            if row is None:
+                raise StateError('Stored brief not found')
+            return row[0]
+
     def feature_export_snapshot(self):
         with self.locked():
             features = self.feature_list()
             repositories = dict(self.connection.execute('SELECT key, repository FROM cplane_projects'))
             for feature in features:
                 feature['repository'] = repositories[feature['project']] or '—'
+                internal = self._feature(feature['id'])
+                feature['briefs'] = [dict(id=r[0], text=r[1]) for r in self.connection.execute(
+                    'SELECT slice_id, text FROM cplane_slice_briefs WHERE feature = %s ORDER BY time, slice_id',
+                    (internal['feature'],))]
             return features

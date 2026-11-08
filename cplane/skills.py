@@ -6,7 +6,7 @@ import re
 from .state import StateError
 
 ROOT = Path(__file__).resolve().parent.parent / 'skills'
-DEFAULTS = frozenset(('cut', 'slice-review', 'grilling'))
+DEFAULTS = frozenset(('cut', 'slice-review', 'grilling', 'brief'))
 
 
 def catalog():

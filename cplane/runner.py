@@ -490,7 +490,7 @@ class Runner:
                                   None if self.fenced else run_records.starting_commit(folder))
         if self.fenced:
             job.update(metadata, fence=True)
-        if item.get('flow', 'cli') == 'tickets':
+        if item.get('flow', 'cli') == 'tickets' or item.get('brief_id'):
             job.update(brief=brief, skills=skills)
         if review:
             job.update(review=True, repair=bool(previous.get('repair')))
@@ -964,6 +964,13 @@ class Runner:
                 if (item['state'] == 'ready' and not item['paused'] and item['slot']
                         and datetime.fromisoformat(item['slot']) <= self.instant
                         and all(dep in accepted for dep in item['depends_on'])):
+                    if item.get('brief_id'):
+                        try:
+                            prompt = state.store(self.path).stored_brief(item['brief_id'])
+                            self.launch(item, prompt)
+                        except Exception:
+                            self.slice_failure(item, 'start')
+                        continue
                     if item['brief'] is None:
                         self.attention(item, 'escalation', 'missing brief')
                         continue

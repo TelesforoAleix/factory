@@ -18,6 +18,7 @@ class FeatureExport(Planning):
 
     def allowed(self, name, generated):
         return bool(re.fullmatch(r'features/[A-Z]{3}-F[1-9][0-9]*\.md', name)
+                    or re.fullmatch(r'features/[A-Z]{3}-F[1-9][0-9]*/[A-Z]{3}-F[1-9][0-9]*-S[1-9][0-9]*\.md', name)
                     or generated and name == 'backlog.md')
 
     def validate(self, generated):
@@ -49,6 +50,29 @@ class FeatureExport(Planning):
             for section in feature['sections']:
                 content += f"\n## {section['name']}\n\n{section['text']}\n"
             path.write_text(content, encoding='utf-8')
+            if feature.get('briefs'):
+                folder = directory / feature['id']
+                if folder.is_symlink() or folder.exists() and not folder.is_dir():
+                    raise StateError('Brief directory refused')
+                folder.mkdir(exist_ok=True)
+                for brief in feature['briefs']:
+                    name = f"features/{feature['id']}/{brief['id']}.md"
+                    if not self.allowed(name, False):
+                        raise StateError('Brief ID refused')
+                    expected.add(name)
+                    path = self.clean / name
+                    if path.is_symlink():
+                        raise StateError('Brief symlink refused')
+                    path.write_bytes(brief['text'].encode('utf-8'))
+        # Never traverse a tracked symlink while cleaning old exports.
+        for folder in directory.iterdir():
+            if folder.is_symlink() or not folder.is_file() and not re.fullmatch(r'[A-Z]{3}-F[1-9][0-9]*', folder.name):
+                raise StateError('Feature export path refused')
+        for path in directory.glob('*/*.md'):
+            if str(path.relative_to(self.clean)) not in expected:
+                if not self.allowed(str(path.relative_to(self.clean)), False) or path.is_symlink():
+                    raise StateError('Feature export path refused')
+                path.unlink()
         for path in directory.glob('*.md'):
             if str(path.relative_to(self.clean)) not in expected:
                 if not self.allowed(str(path.relative_to(self.clean)), False):
