@@ -1102,21 +1102,26 @@ human operation.
 A failed build, migration, restart or health check restores the previous code and
 managed host files, re-syncs Python, restarts and checks the services, then reports
 failure. **Migrations are not undone.** A failure during rollback needs operator
-repair; a failure result never claims the old installation is healthy. No raw
-command diagnostics, environment values or credentials go into scheduler state,
-notices or the unit journal. The node-step text is never evaluated as a command.
+repair; a failure result never claims the old installation is healthy. Failed
+script output is bounded in the private result and a short tail reaches the
+Failure card and owner notice, as described below. Environment variables are
+never printed and credentials are never added to output. The node-step text is
+never evaluated as a command.
 
 Results are small atomic mode-0600 JSON files under
 `/srv/factory/runs/<anchor-hash>/installs/<request-id>.json`. The next pass answers
-the node step with `Installed <commit>` on success. Failure or any manual paths
-raises an escalation. Units use stable `factory-install-<request-id>` names,
+the node step with `Installed <commit>` on success. A failed script leaves the
+node step open for owner retry and shows a Failure card; manual protected-file
+paths still raise an escalation. Units use stable `factory-install-<request-id>` names,
 start without blocking the pass, and remain loaded after exit, so a pass restart
 can find them without starting a second installation. A completed unit with no
 result, or a lost unit after persisted launch intent, escalates; it is never
 automatically replayed. Inspect status with
 `sudo systemctl status factory-install-<request-id>` and verify `REVISION` and
 service health before resolving an escalation. Finished units and private result
-files may be cleaned up by the operator after their result has been consumed.
+files may be cleaned up by the operator after their result has been consumed
+and the node step is closed. Retain failed results while that step is open: they
+pin retries to the same repository and merged SHA.
 Installations are never requested automatically after a merge.
 
 ## Project skills
@@ -1497,7 +1502,7 @@ turn limit. `install_slice` takes only `slice`. It checks current stable scope,
 `CPLANE_INSTALL_REPOS`, an unanswered node step, no pending installation, and no
 previous chat request for that node-step interval under the store lock. It calls
 the existing request path as `chat:<id>` and audits the successful write. No chat
-can answer an install-failure escalation or retry a failed install. Those failures
+can answer an install-failure node step/escalation or retry a failed install. Those failures
 remain Failure cards on Home and escalation notices to the phone. Non-installable
 repositories retain the owner node-step flow. Stop-before-merge approval is unchanged.
 
@@ -1640,3 +1645,39 @@ sudo factory-cplane --actor owner install factory/SD1
 
 The installer applies migration 016, rebuilds the UI and restarts the existing
 services. Check a placement survives a reload and that fixed rows have no handle.
+
+## Failed install output and retry
+
+A nonzero exit from the reviewed `node/install` now records the last 8,192 UTF-8
+bytes each of stderr and stdout, the exit code, repository and merged SHA in the
+existing private install result (`runs/<state-hash>/installs/<request>.json`). A
+partial leading UTF-8 character is omitted. Child command stderr reaches this
+record, including migration errors. No environment variables are printed or
+credentials added to the installer environment; output is retained without
+heuristic scrubbing.
+
+Home's Failure card includes a short tail (up to 512 bytes per stream) and offers
+**Retry install** beside **Review**. To inspect the full bounded output, use:
+
+```sh
+sudo factory-cplane show factory/IF1b
+```
+
+A failed script leaves the original node step unanswered and retains the job's
+merge metadata. Only the owner may retry, through Home or the same install
+command. Retry uses the recorded repository and exact merged SHA; a different
+repository or SHA for that open node-step interval is refused before downloading
+or executing code. There is no automatic retry. Answering the node step by hand
+still closes it and resumes the existing handover flow. Successful installs that
+require manual protected-file work retain the existing escalation behavior.
+The version 1 state schema, root execution boundary, main reachability check,
+repository allowlist, credential isolation and rollback behavior are unchanged.
+Older failed installs whose merge metadata was already cleared are not repaired
+by this change.
+
+After the owner merges this security-boundary change with green `test` and `ui`
+checks, request the reviewed installation:
+
+```sh
+sudo factory-cplane --actor owner install factory/IF1b
+```

@@ -46,3 +46,19 @@ test('inactive attention, running and Next remain visible with quick chat links'
   const quick = screen.getByLabelText('Quick chats');
   expect([...quick.querySelectorAll('a')].map(a => [a.textContent,a.getAttribute('href')])).toEqual([['Development Orchestrator','/chats/1'],['Lab','/chats/9']]);
 });
+
+test('failed install offers same-slice retry beside Review', async () => {
+  const data = {projects:[], features:[], running:[], chats:[], attention:[
+    {kind:'failure',id:'factory/IF1b',retry_install:true,installing:false,since:'2026-11-08T00:00:00Z',text:'stderr: migration missing'}]};
+  const fetcher = vi.fn().mockImplementation((url, options) => {
+    if (options?.method === 'POST') data.attention[0].installing = true;
+    return Promise.resolve({ok:true, json:async () => structuredClone(data)});
+  });
+  vi.stubGlobal('fetch', fetcher);
+  render(<MemoryRouter><Home/></MemoryRouter>);
+  expect(await screen.findByText('stderr: migration missing')).toBeTruthy();
+  expect(screen.getByRole('link', {name:'Review'}).getAttribute('href')).toBe('/factory/slices/factory/IF1b');
+  fireEvent.click(screen.getByRole('button', {name:'Retry install'}));
+  await waitFor(() => expect(fetcher).toHaveBeenCalledWith('/api/slices/factory/IF1b/install', expect.objectContaining({method:'POST'})));
+  await waitFor(() => expect(screen.getByRole('button', {name:'Install requested'}).disabled).toBe(true));
+});
