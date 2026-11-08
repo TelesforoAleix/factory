@@ -149,7 +149,9 @@ class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore, Library
             # Previously exported notices remain append-only.
             retained = []
             for notice in notices:
-                taken = notice.get('event') in ('question', 'escalation') and self.connection.execute(
+                owner_install = (notice.get('event') == 'escalation' and
+                                 notice.get('text', '').startswith(('Install ', 'escalation: Install ')))
+                taken = not owner_install and notice.get('event') in ('question', 'escalation') and self.connection.execute(
                     'SELECT 1 FROM cplane_chat_events WHERE slice_id = %s AND attention_since = %s '
                     'AND kind = %s AND delivered AND chat IS NOT NULL LIMIT 1',
                     (notice.get('id'), notice.get('at'), notice.get('event'))).fetchone()

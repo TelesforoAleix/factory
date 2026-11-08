@@ -465,3 +465,21 @@ def test_old_review_append_cannot_start_new_testing_wait(pg_store):
     pg_store.feature_section(identifier, 'Testing review 1', 'Old review\nIdeas from testing\nAnother idea')
     pg_store.finish_session_turn(turn, 'Saved an idea.')
     assert pg_store.testing_review_waits() == []
+
+
+def test_preexisting_install_failure_ownership_cannot_hide_owner_notice(pg_store, slice_data):
+    identifier, chat = feature_chat(pg_store)
+    body = 'Install unit disappeared; inspect the node before retrying'
+    at = '2026-01-01T00:00:00Z'
+    slice_data.update(feature_id=identifier, state='escalated', attention=dict(kind='escalation',
+        body=body, since=at, answer=None, approved=False))
+    pg_store.save(dict(version=1, slices=[slice_data]))
+    # A delivered record left by the previous implementation is no longer chat-owned.
+    with pg_store.mutation():
+        feature = pg_store._feature(identifier)['feature']
+        pg_store._chat_event(feature, slice_data['id'], 'escalation', body, at)
+        pg_store.connection.execute("UPDATE cplane_chat_events SET delivered = true, chat = %s WHERE kind = 'escalation'", (chat['id'],))
+    notice = dict(at=at, id=slice_data['id'], event='escalation', text='escalation: ' + body)
+    pg_store.append_notices([notice])
+    assert notice in [n for _, n in pg_store.notices()]
+    assert 'chat_id' not in pg_store.chat_attention(slice_data)
