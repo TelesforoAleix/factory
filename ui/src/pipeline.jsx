@@ -19,10 +19,10 @@ function Panel({item, act, close}) {
   const tokenFields = [['input_tokens', 'Input'], ['cached_tokens', 'Cached'], ['cache_write_tokens', 'Cache write'], ['output_tokens', 'Output'], ['reasoning_tokens', 'Reasoning']];
   return <aside className="pipeline-panel"><button className="panel-close" onClick={close} aria-label="Close preview">×</button><Header item={item}/><FeatureChatLink feature={item.id}/>
     {attention(item).map(s => <p className="pipeline-attention text" key={s.id}><strong>{s.id}: </strong>{s.attention.body}</p>)}
-    <div className="actions">{item.moves.map(stage => <button key={stage} onClick={() => act(item.id, stage)}>Move to {name(stage)}</button>)}</div>
+    <div className="actions">{item.moves.map((stage, index) => <button className={index === 0 ? "primary" : ""} key={stage} onClick={() => act(item.id, stage)}>Move to {name(stage)}</button>)}</div>
     {item.sections[0] && <section><h3>{item.sections[0].name}</h3><Markdown text={item.sections[0].text}/></section>}
-    <section><h3>Slices</h3>{item.slices.length ? item.slices.map(s => <p key={s.id}><strong>{s.id}</strong> · {s.title} · {s.state}</p>) : <p className="muted">No linked slices.</p>}</section>
-    <section><h3>Numbers</h3>{tokenFields.filter(([key]) => totals[key] != null).map(([key, label]) => <p key={key}>{label} tokens: {totals[key].toLocaleString()}</p>)}{totals.seconds != null && <p>Seconds: {Math.round(totals.seconds).toLocaleString()}</p>}{item.stage_since && <p>In this stage: {Math.max(0, Math.floor((Date.now() - new Date(item.stage_since)) / 86400000))} days (since {date(item.stage_since)})</p>}</section>
+    <section><h3>Slices</h3>{item.slices.length ? item.slices.map(s => <p key={s.id}><code>{s.id}</code> · {s.title} · <code>{s.state}</code></p>) : <p className="muted">No linked slices.</p>}</section>
+    <section><h3>Numbers</h3>{tokenFields.filter(([key]) => totals[key] != null).map(([key, label]) => <p key={key}>{label} tokens: <code>{totals[key].toLocaleString()}</code></p>)}{totals.seconds != null && <p>Seconds: <code>{Math.round(totals.seconds).toLocaleString()}</code></p>}{item.stage_since && <p>In this stage: <code>{Math.max(0, Math.floor((Date.now() - new Date(item.stage_since)) / 86400000))} days</code> (since <code>{date(item.stage_since)}</code>)</p>}</section>
     <Link to={'/pipeline/' + encodeURIComponent(item.id)}>Full feature page →</Link>
   </aside>;
 }
@@ -41,7 +41,7 @@ function Card({item, index, selected, select, act, close}) {
   const {attributes, listeners, setNodeRef, transform, transition, isDragging} = useSortable({id: item.id, data: {stage: item.stage}});
   const line = extra(item, index);
   return <div ref={setNodeRef} style={{transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? .45 : 1}} className="pipeline-card-wrap">
-    <div className={'pipeline-card' + (selected ? ' selected' : '')}><button className="drag-handle" {...attributes} {...listeners} aria-label={'Drag ' + item.id}>⠿</button><button className="pipeline-card-open" onClick={select} aria-expanded={selected}><span className="feature-chip">Feature</span><small>{item.id}</small><strong className="feature-title">{item.title}</strong><span className="project-tag">{item.project}</span>{line && <span className={line === 'Waiting for you' ? 'pipeline-attention' : 'feature-extra'}>{line}</span>}</button></div>
+    <div className={'pipeline-card' + (selected ? ' selected' : '') + (line === 'Waiting for you' ? ' needs-you' : '')}><button className="drag-handle" {...attributes} {...listeners} aria-label={'Drag ' + item.id}>⠿</button><button className="pipeline-card-open" onClick={select} aria-expanded={selected}><small>{item.id}</small><strong className="feature-title">{item.title}</strong><span className="project-tag">{item.project}</span>{line && <span className={line === 'Waiting for you' ? 'pipeline-attention' : 'feature-extra'}>{line}</span>}</button></div>
     {selected && <div className="mobile-panel"><Panel item={item} act={act} close={close}/></div>}
   </div>;
 }
@@ -62,7 +62,7 @@ export function Pipeline() {
   const select = id => setParams(id ? {feature:id} : {});
   if (!data) return <><h1>Pipeline</h1><p>{error || 'Loading…'}</p></>;
   const visible = data.features.filter(f => !project || f.project === project); const current = data.features.find(f => f.id === selected);
-  return <div className="pipeline"><h1>Pipeline</h1><div className="project-filter" aria-label="Project filter">{[{key:'',name:'All'}, ...data.projects].map(p => <button key={p.key} aria-pressed={project === p.key} onClick={() => setProject(p.key)}>{p.name}</button>)}</div>{error && <p role="status" className="pipeline-error">{error}</p>}
+  return <div className="pipeline"><div className="page-heading"><h1>Pipeline</h1><label className="project-select">Project<select value={project} onChange={e => setProject(e.target.value)}>{[{key:'',name:'All'}, ...data.projects].map(p => <option key={p.key} value={p.key}>{p.name}</option>)}</select></label></div>{error && <p role="status" className="pipeline-error">{error}</p>}
     <div className={'pipeline-layout' + (current ? ' has-panel' : '')}><DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={dragEnd}><div className="pipeline-scroll"><div className="pipeline-grid">{stages.map(stage => <Column key={stage} stage={stage} items={visible.filter(f => f.stage === stage)} all={data.features} selected={selected} select={select} act={act} close={() => select(null)}/>)}</div></div></DndContext>{current && <div className="desktop-panel"><Panel item={current} act={act} close={() => select(null)}/></div>}</div>
   </div>;
 }
