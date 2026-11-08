@@ -299,6 +299,14 @@ def create_app(store=None):
     def open_chat(chat_id):
         return chat_response(lambda: backend().chat_open(chat_id), project_names=True)
 
+    @app.post('/api/chats/<int:chat_id>/archive')
+    def archive_chat(chat_id):
+        return chat_response(lambda: backend().chat_archive(chat_id), project_names=True)
+
+    @app.post('/api/chats/<int:chat_id>/unarchive')
+    def unarchive_chat(chat_id):
+        return chat_response(lambda: backend().chat_archive(chat_id, archived=False), project_names=True)
+
     @app.post('/api/chats/<int:chat_id>/read')
     def read_chat(chat_id):
         return chat_response(lambda: backend().chat_read(chat_id), project_names=True)

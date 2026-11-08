@@ -30,6 +30,39 @@ class ChatStore:
             raise StateError('Chat not found')
         return chats[0]
 
+    def _chat_target(self, feature):
+        return self.connection.execute(
+            "SELECT s.id, s.state, s.archived FROM cplane_sessions s JOIN cplane_features f ON f.feature = %s "
+            "WHERE (s.kind = 'feature' AND s.feature = f.feature) "
+            "OR (s.kind = 'project' AND s.project = f.project) OR s.kind = 'orchestrator' "
+            "ORDER BY CASE s.kind WHEN 'feature' THEN 0 WHEN 'project' THEN 1 ELSE 2 END LIMIT 1",
+            (feature,)).fetchone()
+
+    def chat_archive(self, chat_id, *, archived=True):
+        if type(archived) is not bool:
+            raise StateError('Archived must be a boolean')
+        with self.mutation():
+            chat = self.chat_show(chat_id)
+            if archived and chat['kind'] == 'orchestrator':
+                raise StateError('The Development Orchestrator cannot be archived')
+            if archived or chat['archived']:
+                # Preserve skipped work as completed records; never replay it.
+                # Running turns and queued owner messages are left alone.
+                self.connection.execute(
+                    "UPDATE cplane_session_messages SET status = 'done' "
+                    "WHERE session = %s AND automatic AND status = 'queued'", (chat_id,))
+                events = self.connection.execute(
+                    'SELECT id, feature FROM cplane_chat_events WHERE NOT delivered ORDER BY id').fetchall()
+                for event_id, feature in events:
+                    target = self._chat_target(feature)
+                    if target and target[0] == chat_id:
+                        self.connection.execute(
+                            'UPDATE cplane_chat_events SET delivered = true, chat = %s WHERE id = %s',
+                            (chat_id, event_id))
+            self.connection.execute('UPDATE cplane_sessions SET archived = %s WHERE id = %s',
+                                    (archived, chat_id))
+            return self.chat_show(chat_id)
+
     def chat_read(self, chat_id, *, unread=False):
         if type(unread) is not bool:
             raise StateError('Unread must be a boolean')
@@ -165,7 +198,8 @@ class ChatStore:
                 raise StateError('Chat failed')
             return self.connection.execute(
                 "INSERT INTO cplane_session_messages (session, role, text, status, automatic) "
-                "VALUES (%s, 'system', %s, 'queued', true) RETURNING id", (chat_id, text)).fetchone()[0]
+                "VALUES (%s, 'system', %s, %s, true) RETURNING id",
+                (chat_id, text, 'done' if chat['archived'] else 'queued')).fetchone()[0]
 
     def _feature_chat_stage(self, item, stage):
         """Called within the feature mutation, so failure rolls back its stage too."""
@@ -187,7 +221,9 @@ class ChatStore:
             linked = ', '.join(s['id'] for s in self._linked_slices(item['feature']))
             self._chat_event(item['feature'], None, 'testing', f"Feature {item['id']} entered Testing.\nSlices: {linked}\nRead the testing-review skill. Check installs and handovers, save the next numbered Testing review section, and ask the owner to test in open text.")
         elif stage == 'done':
-            self.connection.execute('UPDATE cplane_sessions SET archived = true WHERE feature = %s', (item['feature'],))
+            for (chat_id,) in self.connection.execute(
+                    'SELECT id FROM cplane_sessions WHERE feature = %s', (item['feature'],)).fetchall():
+                self.chat_archive(chat_id)
 
     def _chat_event(self, feature, slice_id, kind, text, since=None, source=None):
         self.connection.execute(
@@ -219,9 +255,9 @@ class ChatStore:
     def chat_can_take(self, chat_id):
         """Called under the store lock both at routing and at turn claim."""
         from .times import now
-        count, paused, title = self.connection.execute(
-            'SELECT auto_turns, auto_paused, title FROM cplane_sessions WHERE id = %s', (chat_id,)).fetchone()
-        if paused:
+        count, paused, title, archived = self.connection.execute(
+            'SELECT auto_turns, auto_paused, title, archived FROM cplane_sessions WHERE id = %s', (chat_id,)).fetchone()
+        if paused or archived:
             return False
         if count < self.limit_show()['chat_auto_turns']:
             return True
@@ -248,13 +284,13 @@ class ChatStore:
                             install_failure(attention) or (kind == 'node-step' and not installable(item))):
                         self.connection.execute('UPDATE cplane_chat_events SET delivered = true WHERE id = %s', (event_id,))
                         continue
-                row = self.connection.execute(
-                    "SELECT s.id, s.state, s.archived FROM cplane_sessions s JOIN cplane_features f ON f.feature = %s "
-                    "WHERE (s.kind = 'feature' AND s.feature = f.feature) "
-                    "OR (s.kind = 'project' AND s.project = f.project) OR s.kind = 'orchestrator' "
-                    "ORDER BY CASE s.kind WHEN 'feature' THEN 0 WHEN 'project' THEN 1 ELSE 2 END LIMIT 1",
-                    (feature,)).fetchone()
-                if not row or row[1] == 'failed' or row[2] or not self.chat_can_take(row[0]):
+                row = self._chat_target(feature)
+                if row and row[2]:
+                    self.connection.execute(
+                        'UPDATE cplane_chat_events SET delivered = true, chat = %s WHERE id = %s',
+                        (row[0], event_id))
+                    continue
+                if not row or row[1] == 'failed' or not self.chat_can_take(row[0]):
                     continue
                 chat_id = row[0]
                 message = f'Event: {kind}\nSlice: {slice_id or "(feature event)"}\n\n{text}'
@@ -317,6 +353,7 @@ class ChatStore:
                 "SELECT n.document, f.id, f.project, f.title FROM cplane_notices n "
                 "JOIN cplane_chat_events e ON e.id::text = n.document->>'review_event' "
                 "JOIN cplane_features f ON f.feature = e.feature "
+                "JOIN cplane_sessions c ON c.id = e.chat AND NOT c.archived "
                 "WHERE n.document->>'event' = 'testing-review' AND f.stage = 'testing' "
                 "AND e.id = (SELECT max(x.id) FROM cplane_chat_events x WHERE x.feature = f.feature AND x.kind = 'testing') "
                 "AND NOT EXISTS (SELECT 1 FROM cplane_session_messages m WHERE m.session = e.chat "

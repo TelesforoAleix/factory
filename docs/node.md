@@ -1554,3 +1554,57 @@ all 20 tests in 7 files; `npm run build` passed with Vite's bundle-size advisory
 This container lacked the npm launcher, so those two npm commands used its
 installed `npm-cli.js` through Node. `git diff --check` passed. Remote CI must
 still report a green `test` check, and this PR requires the owner's go before merge.
+
+## Feature corrections and chat archives
+
+Owner corrections are available through the CLI:
+
+```sh
+sudo factory-cplane --actor owner feature title FAC-F1 "Read enabled chat skills"
+sudo factory-cplane --actor owner feature close FAC-F1 --reason "Already completed outside the pipeline"
+sudo factory-cplane feature history FAC-F1
+sudo factory-cplane chat archive 42
+sudo factory-cplane chat unarchive 42
+```
+
+`feature title` replaces the title without changing the ID or aliases. It rejects
+blank titles and titles longer than 120 characters. `feature close` requires the
+owner actor and a nonblank reason, and records a correction from any stage except
+Building or Testing to Done. It opens no chat and launches nothing. Done still
+archives the feature's chats. Ordinary stage transitions and their gates are
+unchanged. Both correction commands appear in unfiltered `feature history` with
+actor and time. Correction rows use `event_id` and `event`; document revisions
+retain their existing `id`, `section` and `text` and can still be reverted.
+Section-filtered history continues to contain document revisions only.
+
+Chats also have an Archive/Unarchive secondary button in their header. The
+Development Orchestrator cannot be archived. Archived chats stay in the Archived
+chats group and keep their transcript. Their Decision cards, automatic pause
+cards, Testing review waits and waiting marks leave Home. Unarchiving restores
+open marks. A running turn finishes; owner messages can run while the chat stays
+archived. Automatic messages already queued when archived, or arriving while
+archived, remain recorded as done without execution. Routed events are retained
+with their destination and delivered flag. Unarchiving also consumes undelivered
+events targeting that chat, so skipped events are never replayed. Future automatic
+events run normally, subject to the existing automatic-turn limit.
+
+The session service uses umask 0077 and runs as root, whereas both CLIs run as
+21000:21000. Previously installed skills inherited root-only directories and
+files. Installation now sets the root-owned skill directories to 0755 and skill
+files and AGENTS.md to 0644. The workspace root remains private at 0700 and owned
+by 21000:21000. On resume, the service also repairs missing read/traverse bits for
+the saved skill snapshot and its AGENTS.md. It opens each component without
+following links, validates root ownership and non-writability, rejects file hard
+links, and holds descriptors through validation and chmod. It never refreshes
+instruction contents, walks the workspace, changes unrelated permissions or adds
+mounts. Legacy sessions without a skill snapshot are left untouched.
+
+After merge, request the reviewed install:
+
+```sh
+sudo factory-cplane --actor owner install factory/DP2
+```
+
+The orchestrator then checks that an archived chat's existing Decision card is
+gone from Home. Existing chats with a saved skill snapshot have their instruction
+modes repaired at their next turn; no workspace recreation is required.

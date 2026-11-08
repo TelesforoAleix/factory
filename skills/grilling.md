@@ -1,5 +1,13 @@
 --- {"name": "grilling", "description": "Agree a design one decision at a time, record it, then cut slices."}
 
+For every feature or slice you create or propose, use a title of about 60 characters
+at most. Name what it does for the owner, without a project prefix (the project
+shows beside it) or file references. Put Summary first: 2–3 sentences saying what
+the owner can do when it is done and what it leaves out. Keep one concern per
+feature: two outcomes joined by "and" are two features. Slices follow the same
+title rule and have a one-sentence goal.
+
+
 Grill one question at a time. Wait for the answer before asking the next question.
 Open each question with what that part does. Say why you ask now and why it matters.
 Lead with the simplest option that does the job. Mark your recommendation.

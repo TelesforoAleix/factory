@@ -161,3 +161,62 @@ def test_file_store_refused(arguments, monkeypatch, capsys):
     monkeypatch.delenv('CPLANE_DATABASE_URL', raising=False)
     assert main(['feature', *arguments]) == 1
     assert 'feature commands require Postgres' in capsys.readouterr().err
+
+
+def test_title_cli_preserves_identity_aliases_and_audits(pg_store, capsys):
+    from cplane.cli import main
+    item = pg_store.feature_add('FAC', 'Old name')
+    moved = pg_store.feature_move(item['id'], 'LAB')
+    assert main(['feature', 'title', item['id'], 'New name', '--actor', 'owner']) == 0
+    capsys.readouterr()
+    changed = pg_store.feature_show(moved['id'])
+    assert changed['title'] == 'New name'
+    assert changed['id'] == moved['id'] and changed['aliases'] == moved['aliases']
+    event = pg_store.feature_history(item['id'])[-1]
+    assert event['actor'] == 'owner' and 'Old name' in event['event'] and 'New name' in event['event']
+    for title in ('', '   ', 'x' * 121):
+        assert main(['feature', 'title', item['id'], title]) == 1
+        capsys.readouterr()
+        assert pg_store.feature_show(item['id']) == changed
+    assert pg_store.feature_title(item['id'], 'x' * 120, actor='chat:7')['title'] == 'x' * 120
+    assert pg_store.feature_history(item['id'])[-1]['actor'] == 'chat:7'
+
+
+@pytest.mark.parametrize('stage', ['shortlist', 'grilling', 'ready', 'next', 'parked', 'done'])
+def test_close_correction_bypasses_no_other_moves(pg_store, stage, capsys):
+    from cplane.cli import main
+    item = pg_store.feature_add('NEW', 'Already finished', stage=stage)
+    before_chats = len(pg_store.chats())
+    assert main(['feature', 'close', item['id'], '--reason', 'Completed outside the pipeline', '--actor', 'owner']) == 0
+    capsys.readouterr()
+    result = pg_store.feature_show(item['id'])
+    assert result['stage'] == 'done' and result['parked_from'] is None
+    assert result['review_passed'] is None
+    assert len(pg_store.chats()) == before_chats
+    assert pg_store.claim_session_turn() is None
+    for chat in pg_store.chats(kind='feature'):
+        assert chat['archived']
+    event = pg_store.feature_history(item['id'])[-1]
+    assert event['actor'] == 'owner'
+    assert f'stage {stage} to done: correction: Completed outside the pipeline' == event['event']
+
+
+@pytest.mark.parametrize('stage', ['building', 'testing'])
+def test_close_rejects_active_stages(pg_store, stage):
+    item = pg_store.feature_add('NEW', 'Active', stage=stage)
+    before = pg_store.feature_history(item['id'])
+    with pytest.raises(StateError, match='Building or Testing'):
+        pg_store.feature_close(item['id'], 'Finished')
+    assert pg_store.feature_show(item['id'])['stage'] == stage
+    assert pg_store.feature_history(item['id']) == before
+
+
+def test_close_requires_owner_and_nonempty_reason(pg_store):
+    item = pg_store.feature_add('NEW', 'Finished')
+    for actor in ('runner', 'chat:7'):
+        with pytest.raises(StateError, match='actor owner'):
+            pg_store.feature_close(item['id'], 'Finished', actor=actor)
+    for reason in ('', '  '):
+        with pytest.raises(StateError, match='Reason'):
+            pg_store.feature_close(item['id'], reason)
+    assert pg_store.feature_show(item['id'])['stage'] == 'shortlist'

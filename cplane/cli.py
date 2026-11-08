@@ -120,7 +120,7 @@ def parser():
     commands = root.add_subparsers(dest="command", required=True, parser_class=Parser)
     chat = commands.add_parser('chat', parents=[common], help='manage Postgres chats')
     chats = chat.add_subparsers(dest='chat_command', required=True, parser_class=Parser)
-    for name in ('list', 'open', 'read', 'unread', 'project', 'configure', 'defaults'):
+    for name in ('list', 'open', 'read', 'unread', 'project', 'configure', 'defaults', 'archive', 'unarchive'):
         sub = chats.add_parser(name, parents=[common])
         if name == 'list':
             sub.add_argument('--kind', choices=('orchestrator', 'project', 'feature', 'legacy'))
@@ -138,7 +138,7 @@ def parser():
     from .features import STAGES
     feature = commands.add_parser('feature', parents=[common], help='manage Postgres features')
     feature_commands = feature.add_subparsers(dest='feature_command', required=True, parser_class=Parser)
-    for name in ('add', 'list', 'show', 'stage', 'move', 'section', 'history', 'revert', 'place', 'mark'):
+    for name in ('add', 'list', 'show', 'stage', 'move', 'section', 'history', 'revert', 'place', 'mark', 'title', 'close'):
         sub = feature_commands.add_parser(name, parents=[common])
         if name == 'add':
             sub.add_argument('project')
@@ -151,7 +151,11 @@ def parser():
             sub.add_argument('id')
         if name in ('list', 'show'):
             sub.add_argument('--json', action='store_true')
-        if name == 'stage':
+        if name == 'title':
+            sub.add_argument('title')
+        elif name == 'close':
+            sub.add_argument('--reason', required=True)
+        elif name == 'stage':
             sub.add_argument('stage', choices=STAGES)
         elif name == 'place':
             placement = sub.add_mutually_exclusive_group(required=True)
@@ -297,6 +301,10 @@ def feature_command(args):
         result = backend.feature_list(project=args.project, stage=args.stage)
     elif command == 'show':
         result = backend.feature_show(args.id)
+    elif command == 'title':
+        result = backend.feature_title(args.id, args.title, actor=actor)
+    elif command == 'close':
+        result = backend.feature_close(args.id, args.reason, actor=actor)
     elif command == 'stage':
         result = backend.feature_stage(args.id, args.stage, actor=actor)
     elif command == 'place':
@@ -358,6 +366,8 @@ def main(argv=None):
                 result = backend.chat_open(args.id)
             elif command in ('read', 'unread'):
                 result = backend.chat_read(args.id, unread=command == 'unread')
+            elif command in ('archive', 'unarchive'):
+                result = backend.chat_archive(args.id, archived=command == 'archive')
             elif command == 'project':
                 result = backend.create_project_chat(args.project)
             elif command == 'configure':

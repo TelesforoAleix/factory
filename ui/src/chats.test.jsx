@@ -76,3 +76,37 @@ test('inactive chats retain owner waits and archives', async () => {
   expect(screen.queryByRole('button', {name:'Factory'})).toBeNull();
   expect(screen.getByRole('button', {name:'Lab'})).toBeTruthy();
 });
+
+test('archives and unarchives a running chat from its header', async () => {
+  let chat = {id:7,title:'Archive example',kind:'feature',area:'factory',tool:'codex',model:'test',state:'running',waiting:true,archived:false};
+  const fetcher = vi.fn(async (url, options) => {
+    if (url.endsWith('/archive')) chat = {...chat,archived:true};
+    if (url.endsWith('/unarchive')) chat = {...chat,archived:false};
+    return {ok:true,json:async () => url === '/api/projects' ? [] : url === '/api/chats' ? [chat] : url.endsWith('/open') ? {chat,messages:[]} : url.endsWith('/messages') ? [] : url.endsWith('/usage') ? {} : chat};
+  });
+  vi.stubGlobal('fetch',fetcher);
+  render(<MemoryRouter initialEntries={['/chats/7']}><App/></MemoryRouter>);
+  const archive = await screen.findByRole('button',{name:'Archive'});
+  expect(archive.disabled).toBe(false);
+  fireEvent.click(archive);
+  expect(await screen.findByRole('button',{name:'Unarchive'})).toBeTruthy();
+  const group = screen.getByText('Archived chats (1)').closest('details');
+  expect(group.querySelector('a').textContent).toContain('Archive example');
+  expect(group.textContent).not.toContain('Waiting for you');
+  expect(screen.queryByText('Waiting for you')).toBeNull();
+  fireEvent.click(screen.getByRole('button',{name:'Unarchive'}));
+  expect(await screen.findByRole('button',{name:'Archive'})).toBeTruthy();
+  await waitFor(() => expect(screen.getByText('Archived chats (0)')).toBeTruthy());
+  for (const action of ['archive','unarchive']) {
+    expect(fetcher.mock.calls.some(([url,opts]) => url === '/api/chats/7/' + action && opts.method === 'POST' && opts.headers['X-Factory-UI'] === '1')).toBe(true);
+  }
+});
+
+test('Development Orchestrator has no archive button', async () => {
+  const chat = {id:1,title:'Development Orchestrator',kind:'orchestrator',area:'homelab',tool:'codex',model:'test',state:'idle'};
+  vi.stubGlobal('fetch',async url => ({ok:true,json:async () => url === '/api/projects' ? [] : url === '/api/chats' ? [chat] : url.endsWith('/open') ? {chat,messages:[]} : url.endsWith('/messages') ? [] : url.endsWith('/usage') ? {} : chat}));
+  render(<MemoryRouter initialEntries={['/chats/1']}><App/></MemoryRouter>);
+  await screen.findByRole('button',{name:'Mark unread'});
+  expect(screen.queryByRole('button',{name:'Archive'})).toBeNull();
+  expect(screen.queryByRole('button',{name:'Unarchive'})).toBeNull();
+});
