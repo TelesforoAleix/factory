@@ -436,3 +436,14 @@ def test_review_status_needs_latest_install_evidence(slice_data):
     assert installation.review_status(item)['status'] == 'finished'
     log('node-step: Install a later merge')
     assert installation.review_status(item)['status'] == 'unconfirmed'
+
+
+def test_runner_timer_cadence_and_oneshot_unit():
+    root = Path(__file__).resolve().parents[1]
+    timer = (root / 'node/systemd/factory-runner.timer').read_text()
+    service = (root / 'node/systemd/factory-runner.service').read_text()
+    assert 'OnBootSec=60s\n' in timer
+    assert 'Description=Run the Factory scheduler every minute\n' in timer
+    assert 'OnUnitActiveSec=60s\n' in timer
+    assert 'Unit=factory-runner.service\n' in timer
+    assert 'Type=oneshot\n' in service

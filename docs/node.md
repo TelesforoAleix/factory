@@ -303,8 +303,9 @@ and import remain the orchestrator's existing process; do not import twice.
 In fenced mode a slice's `repo` must be `owner/name`; the root-owned briefs clone
 reads with its own deploy key set in its local `core.sshCommand`, never the GitHub token.
 
-The service is a root oneshot triggered every 300 seconds. Its detached turn
-supervisors survive the end of a pass (`KillMode=process`), as under launchd.
+The service is a root oneshot triggered every 60 seconds. systemd does not start
+another instance while it is active; a long pass delays the next activation
+rather than queuing overlapping passes. Its detached turn supervisors survive the end of a pass (`KillMode=process`), as under launchd.
 Stopping the timer prevents new passes; it does **not** stop existing CLI
 containers or supervisors. Do not start a second scheduler during a handoff.
 
