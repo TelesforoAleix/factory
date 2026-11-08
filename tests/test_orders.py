@@ -372,3 +372,11 @@ def test_orchestrator_symlink_cannot_escape_repos(build, slice_data, tmp_path):
     r.run()
     assert client.acks[0][1]['outcome'] == 'failed'
     tmux.open.assert_not_called()
+
+
+def test_feature_slice_id_owner_order(build, slice_data):
+    slice_data['id'] = 'FAC-F12-S3'
+    runner, client, _ = build(slice_data, [order(slice_data)])
+    runner.run()
+    assert item(runner)['paused']
+    assert client.acks[0][1]['outcome'] == 'done'

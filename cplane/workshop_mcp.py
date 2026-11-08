@@ -5,7 +5,7 @@ import socket
 import sys
 
 SOCKET = Path(__file__).with_name('workshop.sock')
-MAX_REQUEST = 65_536
+MAX_REQUEST = 512_000  # Match the host bound, including JSON-escaped briefs.
 
 
 def relay(request):

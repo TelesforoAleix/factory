@@ -490,7 +490,7 @@ class Runner:
                                   None if self.fenced else run_records.starting_commit(folder))
         if self.fenced:
             job.update(metadata, fence=True)
-        if item.get('flow', 'cli') == 'tickets':
+        if item.get('flow', 'cli') == 'tickets' or item.get('brief_id'):
             job.update(brief=brief, skills=skills)
         if review:
             job.update(review=True, repair=bool(previous.get('repair')))

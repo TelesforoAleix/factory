@@ -138,3 +138,10 @@ def test_slice_final_is_optional_and_validated(make_state, slice_data):
     slice_data['final'] = {'kind': 'handover', 'body': 'done', 'at': '2026-01-01T00:00:00Z'}
     state.save(path, {'version': 1, 'slices': [slice_data]})
     assert state.load(path)['slices'][0]['final'] == slice_data['final']
+
+
+@pytest.mark.parametrize('brief_id, file_brief', [('FAC-F1-S2', None), ('FAC-F1-S1', 'file.md')])
+def test_stored_brief_identity_is_unambiguous(slice_data, brief_id, file_brief):
+    slice_data.update(id='FAC-F1-S1', brief_id=brief_id, brief=file_brief)
+    with pytest.raises(state.StateError, match='stored brief'):
+        state.validate(dict(version=1, slices=[slice_data]))

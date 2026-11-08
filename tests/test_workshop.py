@@ -361,8 +361,8 @@ def repository(store):
 def test_add_slice_scope_and_audit(context, kind):
     store, workshops, chats, own, other, outside, _ = context
     repository(store)
-    with store.mutation():
-        store.connection.execute("UPDATE cplane_features SET stage = 'grilling'")
+    store.feature_stage(other, 'grilling')
+    store.feature_stage(outside, 'grilling')
     for target, allowed in [(own, True), (other, kind != 'feature'), (outside, kind == 'orchestrator')]:
         result = call(workshops[kind], 'add_slice', **slice_args(target))
         if not allowed:
@@ -392,7 +392,7 @@ def test_add_slice_stages(context, stage):
     store, workshops, _, own, _, _, _ = context
     repository(store)
     with store.mutation():
-        store.connection.execute('UPDATE cplane_features SET stage = %s WHERE id = %s', (stage, own))
+        store.connection.execute('UPDATE cplane_features SET stage = %s, position = 99 WHERE id = %s', (stage, own))
     result = call(workshops['feature'], 'add_slice', **slice_args(own))
     if stage in ('grilling', 'ready', 'building', 'testing'):
         value(result)
@@ -406,7 +406,7 @@ def test_add_slice_stages(context, stage):
     ('x' * 65537, 'exceeds'), ('## Do not\n' + 'é' * 32764, 'bytes'),
     ('', 'empty'), ('## Do not\n\x00', 'NUL'), ('# Task\nNo sections', 'neither'),
     ('```markdown\n## Do not\n```', 'neither'),
-])
+], ids=['characters', 'utf8-bytes', 'empty', 'nul', 'missing-section', 'fenced-section'])
 def test_add_slice_brief_refusals(context, brief, error):
     store, workshops, _, own, _, _, _ = context
     repository(store)
@@ -450,6 +450,8 @@ def test_add_slice_dependencies_identity_and_immutable_brief(context):
     refused(call(workshops['project'], 'add_slice', **slice_args(other, depends_on=[first['id']])), 'same feature')
     assert main(['edit', first['id'], '--brief', 'replacement.md']) == 1
     assert store.stored_brief(first['id']) == BRIEF
+    read = value(call(workshops['feature'], 'slices', feature=own))
+    assert read[0]['brief_text'] == BRIEF
     with pytest.raises(state.StateError):
         with store.mutation():
             store.connection.execute('UPDATE cplane_slice_briefs SET text = %s WHERE slice_id = %s', ('changed', first['id']))
@@ -465,20 +467,20 @@ def test_add_slice_dependencies_identity_and_immutable_brief(context):
     assert {b['id'] for b in exported['briefs']} == {first['id'], second['id'], third['id'], fourth['id']}
 
 
-def test_add_slice_full_byte_bound_over_socket(context, tmp_path):
+def test_add_slice_full_byte_bound_over_socket(context, tmp_path, socket_owner):
     store, _, chats, own, _, _, documents = context
     repository(store)
     # Maximal JSON expansion of ASCII controls still fits the transport.
-    brief = '## Do not\n' + '\t' * (65536 - len('## Do not\n'))
+    brief = '## Do not\n' + '\x01' * (65536 - len('## Do not\n'))
     run = tmp_path / 'max-brief'
     run.mkdir()
     with WorkshopServer(run, store, chats['feature']['id'], documents) as server:
         request = dict(jsonrpc='2.0', id=1, method='tools/call',
                        params=dict(name='add_slice', arguments={**slice_args(own), 'brief': brief}))
-        with socket.socket(socket.AF_UNIX) as client:
-            client.connect(str(server.path))
-            client.sendall(json.dumps(request).encode() + b'\n')
-            response = json.loads(client.makefile('rb').readline())
+        result = subprocess.run(['python3', str(run / 'workshop_mcp.py')],
+                                input=json.dumps(request) + '\n', capture_output=True,
+                                text=True, check=True, timeout=10)
+        response = json.loads(result.stdout)
         created = value(response['result'])
     assert store.stored_brief(created['brief_id']) == brief
 

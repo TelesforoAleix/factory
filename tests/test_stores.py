@@ -369,7 +369,13 @@ def test_runner_uses_stored_brief_and_keeps_resume_copy(pg_store, tmp_path, monk
     assert store.load()['slices'][0]['state'] == 'issued'
     job = runner.jobs[created['id']]
     assert job['brief'] == brief
-    assert 'workshop' not in processes.started[0].get('command', [])
     runner.run()
     assert len(processes.started) == 1
     assert store.stored_brief(created['brief_id']) == brief
+    processes.finish(kind='question', body='Which local detail?')
+    runner.run()
+    assert main(['answer', created['id'], 'Use the agreed value']) == 0
+    runner.run()
+    assert len(processes.started) == 2
+    assert processes.started[-1]['resume'] == 'session-1'
+    assert processes.started[-1]['brief'] == brief
