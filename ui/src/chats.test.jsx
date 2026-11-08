@@ -22,7 +22,8 @@ test('opens a chat, queues a message, and marks it unread', async () => {
   expect(screen.getAllByText(/Instructions/)[0].closest('details').open).toBe(false);
   expect(await screen.findByText('Turn usage')).toBeTruthy();
   expect(screen.getByText('Queued')).toBeTruthy();
-  expect(screen.getByLabelText('Chat tool').disabled).toBe(true);
+  expect(screen.getByRole('button', {name:'Change model'}).disabled).toBe(true);
+  expect(screen.queryByLabelText('Chat tool')).toBeNull();
   fireEvent.change(screen.getByLabelText('Message'), {target:{value:'Next'}});
   fireEvent.click(screen.getByRole('button', {name:'Send'}));
   fireEvent.click(screen.getByRole('button', {name:'Mark unread'}));
@@ -39,4 +40,26 @@ test('assistant Markdown is rendered while owner text stays literal', async () =
   expect((await screen.findByText('Bold reply')).tagName).toBe('STRONG');
   expect(screen.getByText('**Literal owner**').closest('.owner').querySelector('strong').textContent).toBe('You');
   expect(container.querySelector('script')).toBeNull();
+});
+
+test('project orchestrator shows its name and saves model settings', async () => {
+  const chat = {id:7,title:'FAC',kind:'project',project:'FAC',project_name:'Factory',area:'factory',tool:'codex',model:'old',state:'idle'};
+  const fetchMock = vi.fn(async (url, options) => ({ok:true,json:async () => url === '/api/chats' ? [chat] : url.endsWith('/open') ? {chat,messages:[]} : url.endsWith('/messages') ? [] : url.endsWith('/usage') ? {} : options?.method === 'PATCH' ? {...chat,...JSON.parse(options.body)} : chat}));
+  vi.stubGlobal('fetch', fetchMock);
+  render(<MemoryRouter initialEntries={['/chats/7']}><App/></MemoryRouter>);
+  expect(await screen.findByText('Project orchestrators')).toBeTruthy();
+  expect(await screen.findByText('Project orchestrator · Factory')).toBeTruthy();
+  expect(screen.getAllByText('Factory').length).toBeGreaterThan(1);
+  fireEvent.click(screen.getByRole('button',{name:'Change model'}));
+  fireEvent.keyDown(document, {key:'Escape'});
+  expect(screen.queryByLabelText('Chat tool')).toBeNull();
+  fireEvent.click(screen.getByRole('button',{name:'Change model'}));
+  fireEvent.pointerDown(document.body);
+  expect(screen.queryByLabelText('Chat tool')).toBeNull();
+  fireEvent.click(screen.getByRole('button',{name:'Change model'}));
+  fireEvent.change(screen.getByLabelText('Chat tool'),{target:{value:'claude'}});
+  fireEvent.change(screen.getByLabelText('Chat model'),{target:{value:'new'}});
+  fireEvent.click(screen.getByRole('button',{name:'Save'}));
+  await waitFor(() => expect(fetchMock.mock.calls.some(([url,o]) => url === '/api/chats/7' && o?.method === 'PATCH' && JSON.parse(o.body).model === 'new')).toBe(true));
+  await waitFor(() => expect(screen.queryByLabelText('Chat model')).toBeNull());
 });

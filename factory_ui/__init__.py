@@ -201,10 +201,23 @@ def create_app(store=None):
         except Exception:
             return jsonify(error='State unavailable'), 503
 
-    def chat_response(operation):
+    def chat_response(operation, project_names=False):
         from cplane.chats import public_chat_result
         try:
-            return jsonify(public_chat_result(operation()))
+            result = public_chat_result(operation())
+            if project_names:
+                names = {p['key']: p.get('name') or p['key'] for p in backend().library_projects()}
+                def add_name(chat):
+                    if isinstance(chat, dict) and chat.get('project'):
+                        chat['project_name'] = names.get(chat['project'], chat['project'])
+                    return chat
+                if isinstance(result, list):
+                    result = [add_name(chat) for chat in result]
+                elif isinstance(result, dict) and 'chat' in result:
+                    add_name(result['chat'])
+                else:
+                    add_name(result)
+            return jsonify(result)
         except (state.StateError, ValueError) as error:
             return jsonify(error=str(error)), 400
         except Exception:
@@ -218,14 +231,14 @@ def create_app(store=None):
                 raise ValueError('Archived must be true or false')
             return backend().chats(kind=request.args.get('kind'), project=request.args.get('project'),
                                    archived=None if archived is None else archived == 'true')
-        return chat_response(operation)
+        return chat_response(operation, project_names=True)
 
     @app.post('/api/chats/project')
     def project_chat():
         payload = request.get_json(silent=True)
         if not isinstance(payload, dict) or not isinstance(payload.get('project'), str):
             return jsonify(error='Project key required'), 400
-        response = chat_response(lambda: backend().create_project_chat(payload['project']))
+        response = chat_response(lambda: backend().create_project_chat(payload['project']), project_names=True)
         return response if isinstance(response, tuple) else (response, 201)
 
     @app.route('/api/chats/defaults', methods=['GET'])
@@ -241,12 +254,12 @@ def create_app(store=None):
     @app.route('/api/chats/<int:chat_id>', methods=['GET', 'PATCH'])
     def chat_detail(chat_id):
         if request.method == 'GET':
-            return chat_response(lambda: backend().chat_show(chat_id))
+            return chat_response(lambda: backend().chat_show(chat_id), project_names=True)
         payload = request.get_json(silent=True)
         if (not isinstance(payload, dict) or any(k not in ('tool', 'model') for k in payload)
                 or any(v is None for v in payload.values())):
             return jsonify(error='Invalid chat configuration'), 400
-        return chat_response(lambda: backend().chat_configure(chat_id, **payload))
+        return chat_response(lambda: backend().chat_configure(chat_id, **payload), project_names=True)
 
     @app.get('/api/chats/<int:chat_id>/usage')
     def chat_usage(chat_id):
@@ -273,15 +286,15 @@ def create_app(store=None):
 
     @app.post('/api/chats/<int:chat_id>/open')
     def open_chat(chat_id):
-        return chat_response(lambda: backend().chat_open(chat_id))
+        return chat_response(lambda: backend().chat_open(chat_id), project_names=True)
 
     @app.post('/api/chats/<int:chat_id>/read')
     def read_chat(chat_id):
-        return chat_response(lambda: backend().chat_read(chat_id))
+        return chat_response(lambda: backend().chat_read(chat_id), project_names=True)
 
     @app.post('/api/chats/<int:chat_id>/unread')
     def unread_chat(chat_id):
-        return chat_response(lambda: backend().chat_read(chat_id, unread=True))
+        return chat_response(lambda: backend().chat_read(chat_id, unread=True), project_names=True)
 
     @app.route('/api/<area>/sessions', methods=['GET', 'POST'])
     def sessions(area):
