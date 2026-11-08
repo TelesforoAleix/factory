@@ -185,7 +185,7 @@ class ChatStore:
                 "VALUES (%s, 'system', %s, 'queued', true)", (chat_id, text))
         elif stage == 'testing':
             linked = ', '.join(s['id'] for s in self._linked_slices(item['feature']))
-            self._chat_event(item['feature'], None, 'testing', f"Feature {item['id']} entered Testing.\nSlices: {linked}\nReview the acceptance criteria and raise any owner decision.")
+            self._chat_event(item['feature'], None, 'testing', f"Feature {item['id']} entered Testing.\nSlices: {linked}\nRead the testing-review skill. Check installs and handovers, save the next numbered Testing review section, and ask the owner to test in open text.")
         elif stage == 'done':
             self.connection.execute('UPDATE cplane_sessions SET archived = true WHERE feature = %s', (item['feature'],))
 
@@ -197,6 +197,7 @@ class ChatStore:
 
     def capture_chat_events(self, data):
         """Capture transitions atomically, including planner-originated changes."""
+        from .installation import installable, install_failure
         old = {r[0]: r[1] for r in self.connection.execute('SELECT id, document FROM cplane_slices')}
         for item in data['slices']:
             link = self.connection.execute('SELECT feature FROM cplane_feature_ids WHERE id = %s',
@@ -206,7 +207,9 @@ class ChatStore:
             before = old.get(item['id'], {})
             attention = item['attention']
             previous = before.get('attention')
-            if (attention and attention['kind'] in ('question', 'escalation')
+            if (attention and (attention['kind'] in ('question', 'escalation') or
+                                   (attention['kind'] == 'node-step' and installable(item)))
+                    and not install_failure(attention)
                     and attention['answer'] is None
                     and (not previous or any(attention[k] != previous[k] for k in ('kind', 'since', 'body')))):
                 self._chat_event(link[0], item['id'], attention['kind'], attention['body'], attention['since'])
@@ -235,6 +238,15 @@ class ChatStore:
                 'WHERE NOT delivered ORDER BY id').fetchall()
             from .text_bounds import cut
             for event_id, feature, slice_id, kind, text, since in rows:
+                if slice_id and kind in ('question', 'escalation', 'node-step'):
+                    from .installation import installable, install_failure
+                    item = next((s for s in self.load()['slices'] if s['id'] == slice_id), None)
+                    attention = item['attention'] if item else None
+                    if (not attention or attention['answer'] is not None or
+                            (attention['kind'], attention['since'], attention['body']) != (kind, since, text) or
+                            install_failure(attention) or (kind == 'node-step' and not installable(item))):
+                        self.connection.execute('UPDATE cplane_chat_events SET delivered = true WHERE id = %s', (event_id,))
+                        continue
                 row = self.connection.execute(
                     "SELECT s.id, s.state, s.archived FROM cplane_sessions s JOIN cplane_features f ON f.feature = %s "
                     "WHERE (s.kind = 'feature' AND s.feature = f.feature) "
@@ -252,7 +264,8 @@ class ChatStore:
     def chat_attention(self, item):
         """Attention projection with durable chat ownership; state v1 stays intact."""
         attention = item['attention']
-        if not attention or attention['kind'] not in ('question', 'escalation'):
+        from .installation import install_failure
+        if not attention or install_failure(attention) or attention['kind'] not in ('question', 'escalation'):
             return attention
         with self.locked():
             row = self.connection.execute(
@@ -272,3 +285,39 @@ class ChatStore:
             text = f"Brief: {item['brief']}\nPR: {item['pr']}\n\n" + cut(text, 28000)
             source = hashlib.sha256(json.dumps([item['id'], item['log']]).encode()).hexdigest()
             self._chat_event(link[0], item['id'], 'in review', text, source=source)
+
+    def finish_testing_review(self, turn):
+        """A completed review reply starts one durable wait per Testing entry.
+
+        Reading the chat does not acknowledge testing; only an owner message or
+        leaving this Testing entry does. Notices also serve the existing bot outbox.
+        """
+        chat_id = turn['session']['id']
+        rows = self.connection.execute(
+            "SELECT e.id, f.id, f.title FROM cplane_chat_events e "
+            "JOIN cplane_features f ON f.feature = e.feature "
+            "WHERE e.kind = 'testing' AND e.delivered AND e.chat = %s AND f.stage = 'testing' "
+            "AND e.id = (SELECT max(x.id) FROM cplane_chat_events x WHERE x.feature = e.feature AND x.kind = 'testing') "
+            "AND EXISTS (SELECT 1 FROM cplane_feature_revisions r WHERE r.feature = f.feature "
+            "AND r.section ~ '^Testing review [1-9][0-9]*$' AND r.time >= e.at) "
+            "AND NOT EXISTS (SELECT 1 FROM cplane_notices n WHERE n.document->>'event' = 'testing-review' "
+            "AND n.document->>'review_event' = e.id::text)", (chat_id,)).fetchall()
+        from .times import now
+        for event_id, feature_id, title in rows:
+            self.append_notices([dict(at=now().isoformat(), id=feature_id, event='testing-review',
+                review_event=event_id, chat=chat_id, message=turn['id'],
+                text=f'{feature_id}: {title}: Testing review ready. Test and reply in the chat.')])
+
+    def testing_review_waits(self):
+        with self.locked():
+            rows = self.connection.execute(
+                "SELECT n.document, f.id, f.project, f.title FROM cplane_notices n "
+                "JOIN cplane_chat_events e ON e.id::text = n.document->>'review_event' "
+                "JOIN cplane_features f ON f.feature = e.feature "
+                "WHERE n.document->>'event' = 'testing-review' AND f.stage = 'testing' "
+                "AND e.id = (SELECT max(x.id) FROM cplane_chat_events x WHERE x.feature = f.feature AND x.kind = 'testing') "
+                "AND NOT EXISTS (SELECT 1 FROM cplane_session_messages m WHERE m.session = e.chat "
+                "AND m.role = 'owner' AND m.id > (n.document->>'message')::bigint)").fetchall()
+            return [dict(kind='testing-review', id=identifier, project=project, title=title,
+                         since=notice['at'], chat=notice['chat'], text=notice['text'])
+                    for notice, identifier, project, title in rows]

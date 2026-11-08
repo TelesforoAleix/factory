@@ -95,7 +95,7 @@ def test_session_project_resolution_and_snapshot(pg_store, extra_skill):
     pg_store.session_messages('factory', sid, 'hello')
     turn = pg_store.claim_session_turn()
     session = turn['session']
-    assert set(session['skill_names']) == {'grilling', 'slice-review', 'brief', 'extra'}
+    assert set(session['skill_names']) == {'grilling', 'slice-review', 'brief', 'testing-review', 'extra'}
     assert session['skill_version'] == cut.skills_version()
     pg_store.finish_session_turn(turn, 'reply', 'resume-id')
     pg_store.skill_set('extra', 'FAC', False)

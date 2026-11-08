@@ -23,6 +23,41 @@ def pending(data):
                 yield item, event[len(REQUEST):]
 
 
+def installable(item):
+    return item['repo'] in os.environ.get('CPLANE_INSTALL_REPOS', '').split(',')
+
+
+def install_failure(attention):
+    return bool(attention and attention['kind'] == 'escalation' and attention['body'].startswith('Install '))
+
+
+def chat_requested(item):
+    """One chat request per attention interval, even after a failed attempt."""
+    attention = item['attention']
+    if not attention:
+        return False
+    from datetime import datetime
+    return any(e['event'].startswith(REQUEST) and e['actor'].startswith('chat:')
+               and datetime.fromisoformat(e['at']) >= datetime.fromisoformat(attention['since']) for e in item['log'])
+
+
+def review_status(item):
+    events = [e['event'] for e in item['log']]
+    if install_failure(item['attention']):
+        status = 'failed'
+    elif any(pending(dict(slices=[item]))):
+        status = 'pending'
+    elif any(e.startswith('Installed ') for e in events):
+        status = 'finished'
+    elif item['attention'] and item['attention']['kind'] == 'node-step':
+        status = 'required'
+    elif any(e.startswith(REQUEST) for e in events):
+        status = 'unconfirmed'
+    else:
+        status = 'not-required'
+    return dict(installable=installable(item), status=status)
+
+
 def request_change(actor):
     if actor != 'owner' and not re.fullmatch(r'chat:[A-Za-z0-9_-]+', actor):
         raise state.StateError('install actor must be owner or chat:<id>')
@@ -31,7 +66,11 @@ def request_change(actor):
         attention = item['attention']
         if not attention or attention['kind'] != 'node-step' or attention['answer'] is not None:
             raise state.StateError('install requires an open node-step attention')
-        if next(pending(data), None):
+        current = next(pending(data), None)
+        if current and actor == 'owner' and current[0]['id'] == item['id'] and any(
+                e['event'] == REQUEST + current[1] and e['actor'].startswith('chat:') for e in item['log']):
+            return f'Install already requested for {item["id"]}', None
+        if current:
             raise state.StateError('an install is already requested or running')
         item['log'].append({'at': at, 'actor': actor, 'event': REQUEST + uuid.uuid4().hex})
         return f'Install requested for {item["id"]}', None

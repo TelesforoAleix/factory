@@ -1487,3 +1487,59 @@ The installer applies migration 014 and restarts the existing services. Check th
 new tool in a feature chat, add a deliberately chosen bounded slice in Grilling,
 and inspect its stored brief export after the next hourly run. Do not start real
 executor work solely as an installation smoke test.
+
+## Testing review and chat installs
+
+An installable linked open `node-step` now wakes the responsible feature chat,
+falling back to its project chat or the orchestrator under the existing automatic
+turn limit. `install_slice` takes only `slice`. It checks current stable scope,
+`CPLANE_INSTALL_REPOS`, an unanswered node step, no pending installation, and no
+previous chat request for that node-step interval under the store lock. It calls
+the existing request path as `chat:<id>` and audits the successful write. No chat
+can answer an install-failure escalation or retry a failed install. Those failures
+remain Failure cards on Home and escalation notices to the phone. Non-installable
+repositories retain the owner node-step flow. Stop-before-merge approval is unchanged.
+
+Home keeps Install visible after chat delivery and shows `Install requested`
+while pending. The owner may still press it: an existing pending chat request is
+acknowledged without creating another request. The fixed installer, host service,
+allowlist and rollback are unchanged. Workshop `slices` includes safe `installation`
+status and recorded `handovers`, without exposing raw logs or executor metadata.
+
+The `testing-review` skill is enabled for every project by default. On Testing,
+the chat checks install completion and handovers, runs available quick checks,
+saves `Testing review 1`, then successive numbered sections, and asks the owner
+in the chat to test and reply in open text. Reviews include changes, Workshop
+addresses, evidence and owner checks. Later reviews cover only changes since the
+previous review. Workshop refuses replacing original review text or skipping a
+number; feedback and `Ideas from testing` may be appended to the current review.
+There is no form, review table or Ideas page.
+
+A successful chat reply after saving the review creates one durable
+`testing-review` notice per Testing entry, using existing chat events and notices;
+no schema migration is needed. Home shows a Testing review card with feature ID,
+time waited and chat link, after Question and before Stuck. The existing bot
+exports this notice to the phone once. Reading the chat does not clear the card.
+Writing an owner message or leaving that Testing entry clears it. A later Testing
+entry requires a new review and gets its own notice.
+
+The chat immediately sorts each owner point as defect, change, idea or question
+and replies one line per point. Defects become correction slices through
+`add_slice`, then Building; changes get a short grill one question at a time,
+then agreed slices and Building. Ideas are recorded in the review, and questions
+answered in chat. The owner can correct the sort. Only an explicit owner pass with
+no open point permits the chat to set `review` and move to Done. Architecture,
+scope, contract, security, persistence and topology decisions return to the owner.
+No slice executor receives Workshop.
+
+After owner approval and merge of TR1, request the existing install command:
+
+```sh
+sudo factory-cplane --actor owner install factory/TR1
+```
+
+The runner answers the node step after a good install. Confirm Home retains an
+Install card while requested, install failures remain with the owner, and opening
+a Testing review chat leaves the card until the owner writes. New chat workspaces
+receive the default skill; existing prepared workspaces retain their skill snapshot,
+so use a newly prepared chat when validating the installed skill.

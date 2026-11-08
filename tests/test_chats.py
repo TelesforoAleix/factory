@@ -346,3 +346,93 @@ def test_existing_resumed_chat_upgrades_without_resnapshotting_skills(pg_store):
     assert turn['session']['skill_version'] is None
     pg_store.finish_session_turn(turn, 'Reply', 'new-claude')
     assert pg_store.chat_configure(sid, tool='codex')['cli_session_id'] == 'old-codex'
+
+
+@pytest.mark.parametrize('installable', [True, False])
+def test_node_step_wakes_only_installable_and_keeps_home_card(pg_store, slice_data, monkeypatch, installable):
+    identifier, chat = feature_chat(pg_store)
+    monkeypatch.setenv('CPLANE_INSTALL_REPOS', 'example/repo' if installable else 'other/repo')
+    slice_data.update(feature_id=identifier, state='awaiting handover', attention=dict(kind='node-step',
+        body='Install the change', since='2026-01-01T00:00:00Z', answer=None, approved=False))
+    pg_store.save(dict(version=1, slices=[slice_data]))
+    pg_store.route_chat_events()
+    pg_store.route_chat_events()
+    events = [m for m in pg_store.session_messages('factory', chat['id']) if 'Event: node-step' in m['text']]
+    assert len(events) == int(installable)
+    cards = create_app(pg_store).test_client().get('/api/home').get_json()['attention']
+    card = next(a for a in cards if a['kind'] == 'install')
+    assert card['installable'] == installable and not card['installing']
+
+
+def test_install_failure_remains_on_home_and_phone(pg_store, slice_data):
+    identifier, chat = feature_chat(pg_store)
+    body = 'Install failed; inspect the root install unit'
+    slice_data.update(feature_id=identifier, state='escalated', attention=dict(kind='escalation',
+        body=body, since='2026-01-01T00:00:00Z', answer=None, approved=False))
+    notice = dict(at=slice_data['attention']['since'], id=slice_data['id'], event='escalation', text=body)
+    pg_store.save(dict(version=1, slices=[slice_data]), [notice])
+    pg_store.route_chat_events()
+    assert not any('Event: escalation' in m['text'] for m in pg_store.session_messages('factory', chat['id']))
+    assert notice in [n for _, n in pg_store.notices()]
+    cards = create_app(pg_store).test_client().get('/api/home').get_json()['attention']
+    assert any(a['kind'] == 'failure' and a['id'] == slice_data['id'] for a in cards)
+
+
+def testing_turn(store, identifier, chat, number):
+    # Synthetic stage setup, then the real transition and event delivery.
+    with store.mutation():
+        store.connection.execute("UPDATE cplane_features SET stage = 'building' WHERE id = %s", (identifier,))
+    store.feature_stage(identifier, 'testing', actor='runner')
+    store.route_chat_events()
+    turn = store.claim_session_turn()
+    assert turn and 'Event: testing' in turn['text']
+    store.feature_section(identifier, f'Testing review {number}', 'What changed. Where to look. Checks. What to try.', actor=f"chat:{chat['id']}")
+    store.finish_session_turn(turn, 'Please test and reply in open text.')
+    return turn
+
+
+def test_testing_review_wait_lifecycle_and_once_only_phone(pg_store):
+    from cplane.runner import BOT_EVENTS
+    identifier, chat = feature_chat(pg_store)
+    pg_store.finish_session_turn(pg_store.claim_session_turn(), 'Grill completed.')
+    turn = testing_turn(pg_store, identifier, chat, 1)
+    client = create_app(pg_store).test_client()
+    def reviews():
+        return [a for a in client.get('/api/home').get_json()['attention'] if a['kind'] == 'testing-review']
+    assert len(reviews()) == 1
+    assert reviews()[0]['id'] == identifier and reviews()[0]['chat'] == chat['id']
+    assert reviews()[0]['since']
+    pg_store.chat_open(chat['id'])
+    assert len(reviews()) == 1
+    pg_store.finish_testing_review(turn)
+    assert len([n for _, n in pg_store.notices() if n['event'] == 'testing-review']) == 1
+    assert 'testing-review' in BOT_EVENTS
+    pg_store.session_messages('factory', chat['id'], 'The button is broken; also an idea.')
+    assert reviews() == []
+    owner_turn = pg_store.claim_session_turn()
+    pg_store.finish_session_turn(owner_turn, 'defect: button\nidea: later')
+    assert reviews() == []
+    pg_store.feature_stage(identifier, 'building', actor=f"chat:{chat['id']}")
+    testing_turn(pg_store, identifier, chat, 2)
+    assert len(reviews()) == 1
+    assert len([n for _, n in pg_store.notices() if n['event'] == 'testing-review']) == 2
+    pg_store.feature_mark(identifier, 'review', actor=f"chat:{chat['id']}")
+    pg_store.feature_stage(identifier, 'done', actor=f"chat:{chat['id']}")
+    assert reviews() == []
+
+
+def test_testing_reply_without_review_or_failed_turn_does_not_request_testing(pg_store):
+    identifier, chat = feature_chat(pg_store)
+    pg_store.finish_session_turn(pg_store.claim_session_turn(), 'Grill completed.')
+    with pg_store.mutation():
+        pg_store.connection.execute("UPDATE cplane_features SET stage = 'building' WHERE id = %s", (identifier,))
+    pg_store.feature_stage(identifier, 'testing', actor='runner')
+    pg_store.route_chat_events()
+    turn = pg_store.claim_session_turn()
+    pg_store.finish_session_turn(turn, 'Still checking installs.')
+    assert pg_store.testing_review_waits() == []
+    pg_store.system_message(chat['id'], 'Continue review')
+    turn = pg_store.claim_session_turn()
+    pg_store.feature_section(identifier, 'Testing review 1', 'Review text')
+    pg_store.finish_session_turn(turn, 'Turn failed', failed=True)
+    assert pg_store.testing_review_waits() == []

@@ -18,3 +18,17 @@ test('Home filters sections and sends a quick answer under the guard', async () 
   expect(screen.queryByText('Choose?')).toBeNull();
   expect(screen.queryByText('Next feature')).toBeNull();
 });
+
+test('Testing review links to chat and requested install remains an owner action', async () => {
+  const data = {projects:[], features:[], running:[], chats:[], attention:[
+    {kind:'testing-review',id:'FAC-F1',chat:12,since:'2026-01-01T00:00:00Z',text:'Please test'},
+    {kind:'install',id:'factory/TR1',installable:true,installing:true,since:'2026-01-01T00:00:00Z',text:'Install the change'}]};
+  const fetcher = vi.fn().mockResolvedValue({ok:true,json:async () => data});
+  vi.stubGlobal('fetch', fetcher);
+  render(<MemoryRouter><Home/></MemoryRouter>);
+  expect(await screen.findByText('Testing review')).toBeTruthy();
+  expect(screen.getByRole('link', {name:'Open chat'}).getAttribute('href')).toBe('/chats/12');
+  expect(screen.getByText(/FAC-F1 · .* waiting/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', {name:'Install requested'}));
+  await waitFor(() => expect(fetcher).toHaveBeenCalledWith('/api/slices/factory/TR1/install', expect.objectContaining({method:'POST'})));
+});

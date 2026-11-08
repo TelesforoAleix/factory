@@ -151,7 +151,7 @@ class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore, Library
             for notice in notices:
                 taken = notice.get('event') in ('question', 'escalation') and self.connection.execute(
                     'SELECT 1 FROM cplane_chat_events WHERE slice_id = %s AND attention_since = %s '
-                    'AND kind = %s AND delivered LIMIT 1',
+                    'AND kind = %s AND delivered AND chat IS NOT NULL LIMIT 1',
                     (notice.get('id'), notice.get('at'), notice.get('event'))).fetchone()
                 if not taken:
                     retained.append(notice)
@@ -333,6 +333,8 @@ class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore, Library
                 'tool_sessions = CASE WHEN %s::text IS NULL THEN tool_sessions '
                 'ELSE jsonb_set(tool_sessions, ARRAY[tool], to_jsonb(%s::text)) END WHERE id = %s',
                 ('failed' if failed else 'idle', cli_id, cli_id, cli_id, cli_id, turn['session']['id']))
+            if not failed:
+                self.finish_testing_review(turn)
             self.chat_can_take(turn['session']['id'])
             if failed:
                 self.connection.execute("UPDATE cplane_session_messages SET status = 'failed' WHERE session = %s AND status = 'queued'",
