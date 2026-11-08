@@ -55,7 +55,9 @@ def home_data(store, board, clean, view):
     limits = store.limit_show()
     if len(waiting) >= limits['waiting_limit']:
         add('limit', 'pipeline', min((s['attention']['since'] for f in waiting for s in f['slices'] if s['attention'] and s['attention']['answer'] is None), default=None), project=None, text=f"Waiting limit full ({len(waiting)}/{limits['waiting_limit']})")
-    order = {k: i for i, k in enumerate(('failure', 'approval', 'install', 'decision', 'question', 'stuck', 'limit'))}
+    if hasattr(store, 'testing_review_waits'):
+        attention.extend({**a, 'title': clean(a['title']), 'text': clean(a['text'])} for a in store.testing_review_waits())
+    order = {k: i for i, k in enumerate(('failure', 'approval', 'install', 'decision', 'question', 'testing-review', 'stuck', 'limit'))}
     attention.sort(key=lambda a: (order[a['kind']], a['since'] or ''))
     running = []
     for s in slices:

@@ -26,7 +26,7 @@ CODEX_WORKTREES = Path.home() / '.codex/worktrees'
 WORKTREE_MAX_AGE = 7 * 24 * 60 * 60
 
 
-BOT_EVENTS = frozenset({'question', 'escalation', 'merge', 'owner-check', 'stuck', 'chat-paused'})
+BOT_EVENTS = frozenset({'question', 'escalation', 'merge', 'owner-check', 'stuck', 'chat-paused', 'testing-review'})
 BOT_ACCEPTED_FIELDS = frozenset({'id', 'repo', 'title', 'state', 'pr', 'feature', 'paused', 'attention'})
 
 

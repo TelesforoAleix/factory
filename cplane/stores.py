@@ -149,9 +149,11 @@ class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore, Library
             # Previously exported notices remain append-only.
             retained = []
             for notice in notices:
-                taken = notice.get('event') in ('question', 'escalation') and self.connection.execute(
+                owner_install = (notice.get('event') == 'escalation' and
+                                 notice.get('text', '').startswith(('Install ', 'escalation: Install ')))
+                taken = not owner_install and notice.get('event') in ('question', 'escalation') and self.connection.execute(
                     'SELECT 1 FROM cplane_chat_events WHERE slice_id = %s AND attention_since = %s '
-                    'AND kind = %s AND delivered LIMIT 1',
+                    'AND kind = %s AND delivered AND chat IS NOT NULL LIMIT 1',
                     (notice.get('id'), notice.get('at'), notice.get('event'))).fetchone()
                 if not taken:
                     retained.append(notice)
@@ -312,7 +314,11 @@ class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore, Library
                 self.connection.execute('UPDATE cplane_sessions SET auto_turns = 0, auto_paused = false WHERE id = %s', (row[1],))
             self.connection.execute("UPDATE cplane_session_messages SET status = 'running' WHERE id = %s", (row[0],))
             self.connection.execute("UPDATE cplane_sessions SET state = 'running' WHERE id = %s", (row[1],))
-            return dict(id=row[0], session=session, text=row[2], role=row[4], automatic=row[5])
+            owner_message = self.connection.execute(
+                "SELECT max(id) FROM cplane_session_messages WHERE session = %s AND role = 'owner'",
+                (row[1],)).fetchone()[0]
+            return dict(id=row[0], session=session, text=row[2], role=row[4], automatic=row[5],
+                        owner_message=owner_message)
 
     def finish_session_turn(self, turn, reply, cli_id=None, failed=False, *,
                             planning_commits=(), delivery_notice=None):
@@ -333,6 +339,8 @@ class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore, Library
                 'tool_sessions = CASE WHEN %s::text IS NULL THEN tool_sessions '
                 'ELSE jsonb_set(tool_sessions, ARRAY[tool], to_jsonb(%s::text)) END WHERE id = %s',
                 ('failed' if failed else 'idle', cli_id, cli_id, cli_id, cli_id, turn['session']['id']))
+            if not failed:
+                self.finish_testing_review(turn)
             self.chat_can_take(turn['session']['id'])
             if failed:
                 self.connection.execute("UPDATE cplane_session_messages SET status = 'failed' WHERE session = %s AND status = 'queued'",

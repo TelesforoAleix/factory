@@ -28,10 +28,11 @@ CHAT_INSTRUCTION = (
     'For a failed check, inspect the failure and answer_slice with a bounded repair direction. '
     'For in review, compare the handover and evidence with the brief; accept_slice when requirements '
     'and validation are met, or return_slice with a concrete note. '
-    'For Testing, review feature acceptance criteria and recorded results; request owner testing or '
-    'decisions through raise_decision. Raise architecture, scope, contract, security, persistence, '
+    'For node-step, use install_slice once when installable; install failures belong to the owner. '
+    'For Testing and owner testing replies, read and follow the testing-review skill. '
+    'Raise architecture, scope, contract, security, persistence, '
     'topology and uncertain acceptance decisions to the owner with a recommendation. '
-    'Never approve merges or request installs through slice operations. '
+    'Never approve merges. Request installs only through install_slice; never retry a failed install. '
     'A refusal is a boundary; do not bypass it using shell commands.'
 )
 
@@ -72,6 +73,8 @@ TOOLS = [
               effort=dict(type='string', enum=['low', 'medium', 'high', 'xhigh', 'max', 'ultra']),
               depends_on=dict(type='array', items=string(), uniqueItems=True),
               stop_before_merge=dict(type='boolean')), ('feature', 'title', 'brief', 'model', 'effort')),
+    tool('install_slice', 'Request the fixed install once for an installable linked open node step.',
+         dict(slice=string()), ('slice',)),
     tool('answer_slice', 'Answer a linked slice question or escalation.',
          dict(slice=string(), text=string()), ('slice', 'text')),
     tool('accept_slice', 'Accept a linked slice in review after checking its handover against its brief.',
@@ -169,21 +172,36 @@ class Workshop:
                 result = select(self.store.feature_show(args['feature']), FEATURE_FIELDS)
             elif name == 'slices':
                 internal = self.store._feature(args['feature'])
-                result = [dict(select(s, SLICE_FIELDS), **(
-                    dict(brief_text=self.store.stored_brief(s['brief_id'])) if s.get('brief_id') else {}))
-                    for s in self.store._linked_slices(internal['feature'])]
+                from .installation import review_status
+                result = []
+                for s in self.store._linked_slices(internal['feature']):
+                    handovers = [r[0] for r in self.store.connection.execute(
+                        "SELECT text FROM cplane_chat_events WHERE slice_id = %s AND kind = 'in review' ORDER BY id",
+                        (s['id'],))]
+                    result.append(dict(select(s, SLICE_FIELDS), installation=review_status(s), handovers=handovers,
+                        **(dict(brief_text=self.store.stored_brief(s['brief_id'])) if s.get('brief_id') else {})))
             elif name == 'documents':
                 result = self.documents.search(args.get('query', ''))
             elif name == 'document':
                 result = self.documents.read(args['path'])
-            elif name in ('answer_slice', 'accept_slice', 'return_slice'):
+            elif name in ('install_slice', 'answer_slice', 'accept_slice', 'return_slice'):
                 data = self.store.load()
                 item = next((s for s in data['slices'] if s['id'] == args['slice']), None)
                 if item is None or not item.get('feature_id'):
                     raise StateError('Slice must be linked to a feature')
                 scope(item['feature_id'])
+                from .installation import install_failure
+                if install_failure(item['attention']):
+                    raise StateError('Install failures belong to the owner')
                 at = now().isoformat()
-                if name == 'answer_slice':
+                if name == 'install_slice':
+                    from .installation import installable, chat_requested, request_change
+                    if not installable(item):
+                        raise StateError('Install repository is not installable')
+                    if chat_requested(item):
+                        raise StateError('This node step already has a chat install request')
+                    request_change(actor)(item, data, at)
+                elif name == 'answer_slice':
                     bounded(args['text'], 'Answer', 8000)
                     attention = item['attention']
                     if not attention or attention['kind'] not in ('question', 'escalation') or attention['answer'] is not None:
@@ -226,6 +244,20 @@ class Workshop:
                         depends_on=args.get('depends_on', ()),
                         stop_before_merge=args.get('stop_before_merge', False), actor=actor), SLICE_FIELDS)
                 elif name == 'save_section':
+                    import re
+                    if args['section'].startswith('Testing review '):
+                        sections = self.store.feature_show(args['feature'])['sections']
+                        names = [s['name'] for s in sections]
+                        existing = next((s for s in sections if s['name'] == args['section']), None)
+                        if existing:
+                            # Ideas and owner feedback may be appended; the review itself stays intact.
+                            if not args['text'].startswith(existing['text']):
+                                raise StateError('Testing reviews cannot be overwritten; append feedback or create the next review')
+                        else:
+                            numbers = [int(n.removeprefix('Testing review ')) for n in names
+                                       if re.fullmatch(r'Testing review [1-9][0-9]*', n)]
+                            if args['section'] != f'Testing review {max(numbers, default=0) + 1}':
+                                raise StateError('Use the next numbered Testing review section')
                     result = self.store.feature_section(args['feature'], args['section'], args['text'], actor=actor)
                 elif name == 'set_mark':
                     result = self.store.feature_mark(args['feature'], args['mark'], clear=args.get('clear', False), actor=actor)

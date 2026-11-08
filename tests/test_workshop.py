@@ -161,7 +161,7 @@ def test_all_reads_exclude_private_metadata(context, slice_data):
                 assert f'"{forbidden}":' not in json.dumps(result)
         slices = value(call(workshop, 'slices', feature=own))
         assert slices[0]['id'] == slice_data['id']
-        assert set(slices[0]) <= set(SLICE_FIELDS)
+        assert set(slices[0]) <= set(SLICE_FIELDS) | {'installation', 'handovers'}
         assert value(call(workshop, 'documents')) == documents.search()
         assert value(call(workshop, 'document', path='brief.md')) == documents.read('brief.md')
         refused(call(workshop, 'document', path='../private.md'), 'Invalid document path')
@@ -509,3 +509,142 @@ def test_add_slice_parallel_numbers_and_atomic_failure(context, monkeypatch):
         assert store.connection.execute('SELECT slice_counter FROM cplane_features WHERE id = %s', (own,)).fetchone()[0] == 2
         assert store.connection.execute('SELECT count(*) FROM cplane_slice_briefs').fetchone()[0] == 2
         assert store.connection.execute('SELECT count(*) FROM cplane_workshop_writes').fetchone()[0] == 2
+
+
+@pytest.mark.parametrize('kind', ['feature', 'project', 'orchestrator'])
+def test_install_slice_scope_limits_and_audit(context, slice_data, monkeypatch, kind):
+    from copy import deepcopy
+    from cplane.installation import REQUEST, FINISHED
+    store, workshops, chats, own, other, outside, _ = context
+    monkeypatch.setenv('CPLANE_INSTALL_REPOS', 'example/repo')
+    data = dict(version=1, slices=[])
+    for n, feature in enumerate((own, other, outside)):
+        item = deepcopy(slice_data)
+        item.update(id=f'example/S{n}', feature_id=feature, state='awaiting handover',
+                    attention=dict(kind='node-step', body='Install the reviewed change',
+                                   since='2026-01-01T00:00:00+00:00', answer=None, approved=False))
+        data['slices'].append(item)
+    store.save(data)
+    for item, allowed in zip(data['slices'], (True, kind != 'feature', kind == 'orchestrator')):
+        result = call(workshops[kind], 'install_slice', slice=item['id'])
+        if not allowed:
+            refused(result, 'can only write')
+            continue
+        value(result)
+        saved = store.load()
+        target = next(s for s in saved['slices'] if s['id'] == item['id'])
+        request = next(e for e in target['log'] if e['event'].startswith(REQUEST))
+        assert request['actor'] == f"chat:{chats[kind]['id']}"
+        assert target['log'][-1]['event'] == 'install_slice'
+        refused(call(workshops[kind], 'install_slice', slice=item['id']), 'already has a chat')
+        target['log'].append(dict(at=request['at'], actor='runner', event=FINISHED + request['event'][len(REQUEST):]))
+        store.save(saved)
+        refused(call(workshops[kind], 'install_slice', slice=item['id']), 'already has a chat')
+    with store.locked():
+        rows = list(store.connection.execute("SELECT chat FROM cplane_workshop_writes WHERE operation = 'install_slice'"))
+        assert len(rows) == (1 if kind == 'feature' else 2 if kind == 'project' else 3)
+
+
+def test_install_slice_refusals_and_owner_pending_request(context, slice_data, monkeypatch):
+    from cplane.installation import request_change, pending
+    store, workshops, _, own, _, _, _ = context
+    slice_data.update(feature_id=own)
+    data = dict(version=1, slices=[slice_data])
+    store.save(data)
+    refused(call(workshops['feature'], 'install_slice', slice=slice_data['id']), 'not installable')
+    monkeypatch.setenv('CPLANE_INSTALL_REPOS', 'example/repo')
+    refused(call(workshops['feature'], 'install_slice', slice=slice_data['id']), 'open node-step')
+    for kind, answer in [('question', None), ('node-step', 'Done')]:
+        slice_data['attention'] = dict(kind=kind, body='Do it', since='2026-01-01T00:00:00Z', answer=answer, approved=False)
+        store.save(data)
+        refused(call(workshops['feature'], 'install_slice', slice=slice_data['id']), 'open node-step')
+    slice_data['attention']['answer'] = None
+    store.save(data)
+    value(call(workshops['feature'], 'install_slice', slice=slice_data['id']))
+    saved = store.load()
+    request_change('owner')(saved['slices'][0], saved, '2026-11-08T00:00:00Z')
+    assert len(list(pending(saved))) == 1
+    refused(call(workshops['feature'], 'install_slice', slice='missing'), 'linked')
+    slice_data.pop('feature_id')
+    store.save(data)
+    refused(call(workshops['feature'], 'install_slice', slice=slice_data['id']), 'linked')
+
+
+def test_install_failure_cannot_be_answered_by_chat(context, slice_data):
+    store, workshops, _, own, _, _, _ = context
+    slice_data.update(feature_id=own, state='escalated', attention=dict(kind='escalation',
+        body='Install failed; inspect the root install unit', since='2026-01-01T00:00:00Z', answer=None, approved=False))
+    store.save(dict(version=1, slices=[slice_data]))
+    refused(call(workshops['feature'], 'answer_slice', slice=slice_data['id'], text='Retry'), 'belong to the owner')
+
+
+def test_review_sections_keep_original_text_and_numbering(context):
+    store, workshops, _, own, _, _, _ = context
+    w = workshops['feature']
+    refused(call(w, 'save_section', feature=own, section='Testing review 2', text='Review'), 'next numbered')
+    value(call(w, 'save_section', feature=own, section='Testing review 1', text='Review'))
+    refused(call(w, 'save_section', feature=own, section='Testing review 1', text='Replacement'), 'cannot be overwritten')
+    value(call(w, 'save_section', feature=own, section='Testing review 1', text='Review\n\nIdeas from testing\nAn idea'))
+    value(call(w, 'save_section', feature=own, section='Testing review 2', text='Only the correction changed.'))
+    assert len(store.feature_show(own)['sections']) == 2
+
+
+def test_install_requests_serialize_and_roll_back(context, slice_data, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from cplane.installation import pending
+    store, _, chats, own, _, _, documents = context
+    monkeypatch.setenv('CPLANE_INSTALL_REPOS', 'example/repo')
+    slice_data.update(feature_id=own, attention=dict(kind='node-step', body='Install',
+        since='2026-01-01T00:00:00Z', answer=None, approved=False))
+    store.save(dict(version=1, slices=[slice_data]))
+    failing = Workshop(store, chats['feature']['id'], documents)
+    original = store.save
+    monkeypatch.setattr(store, 'save', Mock(side_effect=RuntimeError('synthetic write failure')))
+    refused(call(failing, 'install_slice', slice=slice_data['id']), 'Workshop unavailable')
+    monkeypatch.setattr(store, 'save', original)
+    assert not list(pending(store.load()))
+    barrier = Barrier(2)
+    def request():
+        backend = PostgresStore(store._url)
+        workshop = Workshop(backend, chats['feature']['id'], documents)
+        barrier.wait(timeout=5)
+        return call(workshop, 'install_slice', slice=slice_data['id'])
+    with ThreadPoolExecutor(2) as pool:
+        results = [f.result(timeout=10) for f in [pool.submit(request), pool.submit(request)]]
+    assert sum(not r['isError'] for r in results) == 1
+    assert len(list(pending(store.load()))) == 1
+    with store.locked():
+        assert store.connection.execute("SELECT count(*) FROM cplane_workshop_writes WHERE operation = 'install_slice'").fetchone()[0] == 1
+
+
+def test_install_refuses_when_another_request_is_pending(context, slice_data, monkeypatch):
+    from copy import deepcopy
+    from cplane.installation import request_change
+    store, workshops, _, own, _, _, _ = context
+    monkeypatch.setenv('CPLANE_INSTALL_REPOS', 'example/repo')
+    slice_data.update(feature_id=own, attention=dict(kind='node-step', body='Install',
+        since='2026-01-01T00:00:00Z', answer=None, approved=False))
+    other = deepcopy(slice_data)
+    other['id'] = 'example/other'
+    data = dict(version=1, slices=[slice_data, other])
+    request_change('owner')(other, data, '2026-11-08T00:00:00Z')
+    store.save(data)
+    refused(call(workshops['feature'], 'install_slice', slice=slice_data['id']), 'already requested or running')
+
+
+def test_review_read_has_install_evidence_and_handovers(context, slice_data, monkeypatch):
+    from cplane.installation import REQUEST, FINISHED
+    store, workshops, _, own, _, _, _ = context
+    monkeypatch.setenv('CPLANE_INSTALL_REPOS', 'example/repo')
+    slice_data.update(feature_id=own, state='in review', log=[
+        dict(at='2026-11-08T00:00:00Z', actor='chat:1', event=REQUEST + 'a'*32),
+        dict(at='2026-11-08T00:01:00Z', actor='runner', event='Installed ' + 'b'*40),
+        dict(at='2026-11-08T00:01:00Z', actor='runner', event=FINISHED + 'a'*32)])
+    with store.mutation():
+        store.chat_handover(slice_data, 'Synthetic handover with checks and results')
+        store.save(dict(version=1, slices=[slice_data]))
+    read = value(call(workshops['feature'], 'slices', feature=own))[0]
+    assert read['installation'] == dict(installable=True, status='finished')
+    assert any('Synthetic handover' in text for text in read['handovers'])
+    assert 'log' not in read and 'attention' not in read
