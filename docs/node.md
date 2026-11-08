@@ -1543,3 +1543,13 @@ Install card while requested, install failures remain with the owner, and openin
 a Testing review chat leaves the card until the owner writes. New chat workspaces
 receive the default skill; existing prepared workspaces retain their skill snapshot,
 so use a newly prepared chat when validating the installed skill.
+
+TR1 validation used Python 3.13.18 and a disposable Postgres 17.9 with synthetic
+schemas: `CPLANE_TEST_DATABASE_URL=<temporary-url> uv run pytest -q` passed 1,252
+tests, including 226 Postgres tests; one Docker mount test skipped because Docker
+was unavailable. The focused chat, Workshop, event, store, session and install
+suite passed 253 tests, including 147 Postgres tests. `cd ui && npm test` passed
+all 20 tests in 7 files; `npm run build` passed with Vite's bundle-size advisory.
+This container lacked the npm launcher, so those two npm commands used its
+installed `npm-cli.js` through Node. `git diff --check` passed. Remote CI must
+still report a green `test` check, and this PR requires the owner's go before merge.
