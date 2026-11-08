@@ -49,7 +49,77 @@ def actor_kind(actor):
     raise StateError('Actor must be owner, chat:<id>, or runner')
 
 
+def slice_movable(item):
+    """A reset does not make a previously issued slice draggable again."""
+    return (item['state'] in ('planned', 'researching', 'ready')
+            and not item.get('session') and not item.get('pr')
+            and not any(e['event'] in ('started', 'resumed', 'state: issued')
+                        or e['event'].startswith('state: issued (forced:')
+                        for e in item['log']))
+
+
 class FeatureStore:
+    def ordered_slices(self, slices):
+        """Reorder only each feature's existing slots; retain all other priority."""
+        with self.locked():
+            aliases = dict(self.connection.execute('SELECT id, feature FROM cplane_feature_ids'))
+            ranks = {(f, sid): pos for f, sid, pos in self.connection.execute(
+                'SELECT feature, slice_id, position FROM cplane_slice_order')}
+            result = list(slices)
+            groups = {}
+            for index, item in enumerate(slices):
+                feature = aliases.get(item.get('feature_id'))
+                if feature is not None:
+                    groups.setdefault(feature, []).append(index)
+            for feature, indices in groups.items():
+                group = sorted((slices[i] for i in indices),
+                               key=lambda s: ranks.get((feature, s['id']), float('inf')))
+                for index, item in zip(indices, group):
+                    result[index] = item
+            return result
+
+    def slice_place(self, identifier, *, before=None, after=None, actor='owner'):
+        bounded(actor, 'Actor')
+        if (before is None) == (after is None):
+            raise StateError('Choose exactly one placement')
+        with self.mutation():
+            data = self.load()
+            by_id = {s['id']: s for s in data['slices']}
+            item = by_id.get(identifier)
+            anchor = by_id.get(before if before is not None else after)
+            if item is None or anchor is None:
+                raise StateError('Slice not found')
+            if identifier == anchor['id']:
+                raise StateError('Cannot place a slice relative to itself')
+            if not item.get('feature_id') or not anchor.get('feature_id'):
+                raise StateError('Placement requires linked slices')
+            feature = self._feature(item['feature_id'])
+            if self._feature(anchor['feature_id'])['feature'] != feature['feature']:
+                raise StateError('Placement target is in another feature')
+            if not slice_movable(item):
+                raise StateError('This slice has already started')
+            aliases = {feature['id'], *self.feature_show(feature['id'])['aliases']}
+            original = [s for s in self.ordered_slices(data['slices']) if s.get('feature_id') in aliases]
+            proposed = [s for s in original if s['id'] != identifier]
+            index = next(i for i, s in enumerate(proposed) if s['id'] == anchor['id'])
+            proposed.insert(index + (after is not None), item)
+            if any(old['id'] != new['id'] and not slice_movable(old)
+                   for old, new in zip(original, proposed)):
+                raise StateError('Running and finished slices must stay in place')
+            positions = {s['id']: i for i, s in enumerate(proposed)}
+            if any(positions[dep] > positions[s['id']] for s in proposed
+                   for dep in s['depends_on'] if dep in positions):
+                raise StateError('A slice must stay after its dependencies')
+            self.connection.execute('DELETE FROM cplane_slice_order WHERE feature = %s', (feature['feature'],))
+            for position, entry in enumerate(proposed):
+                self.connection.execute('INSERT INTO cplane_slice_order VALUES (%s, %s, %s)',
+                                        (feature['feature'], entry['id'], position))
+            event = f'place {identifier} ' + (f'before {before}' if before is not None else f'after {after}')
+            item['log'].append(dict(at=now().isoformat(), actor=actor, event=event))
+            self.save(data)
+            self._feature_event(feature['feature'], event, actor)
+            return [s['id'] for s in proposed]
+
     def _feature(self, identifier):
         row = self.connection.execute(
             'SELECT f.feature, f.id, f.project, f.title, f.stage, f.position, f.parked_from, f.backlog, f.design_agreed, f.review_passed '
@@ -144,7 +214,7 @@ class FeatureStore:
         from .run_records import TOKEN_FIELDS
         with self.locked():
             items = self.feature_list()
-            slices = self.load()['slices']
+            slices = self.ordered_slices(self.load()['slices'])
             for slice_item in slices:
                 slice_item['attention'] = self.chat_attention(slice_item)
             records = self.run_record_list()
@@ -295,7 +365,7 @@ class FeatureStore:
             def linked(feature, data):
                 aliases = {r[0] for r in self.connection.execute(
                     'SELECT id FROM cplane_feature_ids WHERE feature = %s', (feature['feature'],))}
-                return [s for s in data['slices'] if s.get('feature_id') in aliases]
+                return [s for s in self.ordered_slices(data['slices']) if s.get('feature_id') in aliases]
 
             def waiting(slices):
                 return any(s['attention'] and s['attention']['answer'] is None for s in slices)

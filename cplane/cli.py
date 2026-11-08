@@ -135,6 +135,13 @@ def parser():
         if name in ('configure', 'defaults'):
             sub.add_argument('--tool', choices=('codex', 'claude'))
             sub.add_argument('--model')
+    slice_parser = commands.add_parser('slice', parents=[common], help='manage linked slice order')
+    slice_commands = slice_parser.add_subparsers(dest='slice_command', required=True, parser_class=Parser)
+    place = slice_commands.add_parser('place', parents=[common])
+    place.add_argument('id')
+    placement = place.add_mutually_exclusive_group(required=True)
+    placement.add_argument('--before')
+    placement.add_argument('--after')
     from .features import STAGES
     feature = commands.add_parser('feature', parents=[common], help='manage Postgres features')
     feature_commands = feature.add_subparsers(dest='feature_command', required=True, parser_class=Parser)
@@ -406,6 +413,13 @@ def main(argv=None):
                 result = backend.project_add(args.key, args.name, repository=args.repository,
                                              actor=getattr(args, 'actor', 'owner'))
             print(json.dumps(result, ensure_ascii=False))
+            return 0
+        if args.command == 'slice':
+            if not state.postgres():
+                raise state.StateError('slice placement requires Postgres (CPLANE_DATABASE_URL)')
+            result = state.store(None).slice_place(args.id, before=args.before, after=args.after,
+                                                  actor=getattr(args, 'actor', 'owner'))
+            print(json.dumps(result))
             return 0
         if args.command == 'feature':
             return feature_command(args)

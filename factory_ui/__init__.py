@@ -8,6 +8,7 @@ from cplane import cli, planner, state
 
 from flask import Flask, jsonify, request, send_from_directory, redirect
 from cplane.stores import PostgresStore
+from cplane.features import slice_movable
 from .documents import Documents, DocumentNotFound
 
 DIST = Path(__file__).resolve().parent.parent / 'ui' / 'dist'
@@ -27,6 +28,7 @@ def view(item):
     return {
         'id': item['id'], 'title': clean(item['title']), 'state': item['state'],
         'repo': clean(item['repo']), 'feature': clean(item['feature']),
+        'movable': slice_movable(item),
         'paused': item['paused'], 'slot': item['slot'], 'depends_on': item['depends_on'],
         'executor': {key: clean(value) for key, value in item['executor'].items()}, 'pr': item['pr'],
         'final': None if final is None else {
@@ -125,6 +127,20 @@ def create_app(store=None):
             return jsonify(error=clean(' '.join(str(error).splitlines()))), 400
         except Exception:
             return jsonify(error='Pipeline unavailable'), 503
+
+    @app.post('/api/slices/<path:identifier>/place')
+    def slice_place(identifier):
+        payload = request.get_json(silent=True)
+        if (not isinstance(payload, dict) or len(payload) != 1
+                or next(iter(payload), None) not in ('before', 'after')
+                or not isinstance(next(iter(payload.values())), str)):
+            return jsonify(error='Choose before or after a slice'), 400
+        try:
+            return jsonify(order=backend().slice_place(identifier, actor='owner', **payload))
+        except state.StateError as error:
+            return jsonify(error=clean(' '.join(str(error).splitlines()))), 400
+        except Exception:
+            return jsonify(error='Slice placement unavailable'), 503
 
     @app.get('/api/slices')
     def list_slices():
