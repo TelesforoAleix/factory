@@ -117,11 +117,13 @@ def workspace(session):
     trusted_directory(WORK_ROOT)
     folder = WORK_ROOT / f'session-{session["id"]}'
     if session['cli_session_id'] or session.get('workspace_ready'):
-        # Never repair, refresh, walk or write an agent-owned workspace on resume.
+        # Never refresh or walk an agent-owned workspace on resume. Only the
+        # root-owned installed instructions may have their read modes repaired.
         info = folder.lstat()
         if (not stat.S_ISDIR(info.st_mode) or info.st_uid != 21000
                 or stat.S_IMODE(info.st_mode) != 0o700):
             raise StateError('Workspace unavailable')
+        skills.ensure_readable(folder, session.get('skill_names'))
     else:
         # mkdir is exclusive: an interrupted or planted workspace is never reused.
         folder.mkdir(mode=0o700)

@@ -237,7 +237,7 @@ class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore, Library
                 self.connection.execute(
                     "INSERT INTO cplane_session_messages (session, role, text, status) VALUES (%s, 'owner', %s, 'queued')",
                     (session_id, text))
-                self.connection.execute('UPDATE cplane_sessions SET archived = false, auto_turns = 0, auto_paused = false WHERE id = %s', (session_id,))
+                self.connection.execute('UPDATE cplane_sessions SET auto_turns = 0, auto_paused = false WHERE id = %s', (session_id,))
             rows = self.connection.execute(
                 'SELECT id, role, text, status, time, automatic FROM cplane_session_messages WHERE session = %s ORDER BY id',
                 (session_id,))
@@ -277,7 +277,7 @@ class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore, Library
             rows = self.connection.execute(
                 "SELECT m.id, m.session, m.text, s.area, m.role, m.automatic FROM cplane_session_messages m "
                 "JOIN cplane_sessions s ON s.id = m.session WHERE m.status = 'queued' AND m.role IN ('owner', 'system') "
-                "AND s.state = 'idle' AND NOT s.archived "
+                "AND s.state = 'idle' AND (NOT s.archived OR m.role = 'owner') "
                 "ORDER BY (m.role = 'owner') DESC, m.id").fetchall()
             active = {repository.lower() for chat in self.sessions() if chat['state'] == 'running'
                       for repository in chat['repositories']}

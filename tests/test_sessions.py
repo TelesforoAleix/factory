@@ -308,10 +308,14 @@ def test_session_exports_remote_default_and_resume_does_not_fetch(tmp_path, monk
     assert installed == skills.DEFAULTS
     original_instructions = (folder / 'AGENTS.md').read_bytes()
     monkeypatch.setattr(skills, 'install', Mock(side_effect=AssertionError('resume wrote skills')))
+    readable = Mock()
+    monkeypatch.setattr(skills, 'ensure_readable', readable)
     calls.clear()
     session['cli_session_id'] = resume_id
     session['workspace_ready'] = True
+    session['skill_names'] = sorted(skills.DEFAULTS)
     assert sessions.workspace(session) == (folder, paths)
+    readable.assert_called_once_with(folder, sorted(skills.DEFAULTS))
     assert calls == []
     assert (folder / 'AGENTS.md').read_bytes() == original_instructions
 

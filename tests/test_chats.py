@@ -119,7 +119,7 @@ def test_archive_waiting_read_unread_and_reopen(pg_store):
     assert len(pg_store.chat_open(sid)['messages']) == 3
     assert pg_store.chats(kind='feature')[0]['archived']
     pg_store.session_messages('factory', sid, 'Reopen')
-    assert not pg_store.chats(kind='feature')[0]['archived']
+    assert pg_store.chats(kind='feature')[0]['archived']
     assert pg_store.claim_session_turn()['text'] == 'Reopen'
 
 
@@ -500,4 +500,91 @@ def test_owner_message_processed_before_testing_event_does_not_clear_new_wait(pg
     assert turn['role'] == 'system' and turn['id'] < owner['id']
     pg_store.feature_section(identifier, 'Testing review 1', 'Review')
     pg_store.finish_session_turn(turn, 'Please test.')
+    assert len(pg_store.testing_review_waits()) == 1
+
+
+def test_archive_cli_api_skips_events_without_replay_and_owner_runs(pg_store, capsys):
+    identifier, chat = feature_chat(pg_store)
+    sid = chat['id']
+    # Archive before the opening automatic message is claimed.
+    assert main(['chat', 'archive', str(sid)]) == 0
+    assert json.loads(capsys.readouterr().out)['archived']
+    assert pg_store.claim_session_turn() is None
+    pg_store.system_message(sid, 'Skipped system message')
+    with pg_store.mutation():
+        pg_store._chat_event(pg_store._feature(identifier)['feature'], None, 'testing', 'Skipped without routing')
+    client = create_app(pg_store).test_client()
+    headers = {'X-Factory-UI': '1'}
+    assert client.post(f'/api/chats/{sid}/unarchive').status_code == 403
+    response = client.post(f'/api/chats/{sid}/unarchive', headers=headers)
+    assert response.status_code == 200 and not response.json['archived']
+    assert 'cli_session_id' not in response.json
+    pg_store.route_chat_events()
+    assert pg_store.claim_session_turn() is None
+    assert len(pg_store.session_messages('factory', sid)) == 2
+    assert all(m['status'] == 'done' for m in pg_store.session_messages('factory', sid))
+    assert client.post(f'/api/chats/{sid}/archive', headers=headers).json['archived']
+    # Even if routed while archived, no event starts or falls through to another chat.
+    with pg_store.mutation():
+        pg_store._chat_event(pg_store._feature(identifier)['feature'], None, 'testing', 'Skipped with routing')
+    pg_store.route_chat_events()
+    assert pg_store.claim_session_turn() is None
+    pg_store.session_messages('factory', sid, 'Owner message while archived')
+    turn = pg_store.claim_session_turn()
+    assert turn['text'] == 'Owner message while archived'
+    assert turn['session']['archived']
+    pg_store.finish_session_turn(turn, 'Owner reply')
+    assert pg_store.chat_show(sid)['archived']
+    assert main(['chat', 'unarchive', str(sid)]) == 0
+    assert not json.loads(capsys.readouterr().out)['archived']
+    pg_store.route_chat_events()
+    assert pg_store.claim_session_turn() is None
+    # Future events run normally.
+    pg_store.system_message(sid, 'Fresh automatic event')
+    assert pg_store.claim_session_turn()['text'] == 'Fresh automatic event'
+
+
+def test_archive_running_turn_finishes_and_hides_home_marks(pg_store):
+    from cplane.times import now
+    identifier, chat = feature_chat(pg_store)
+    sid = chat['id']
+    turn = pg_store.claim_session_turn()
+    with pg_store.mutation():
+        pg_store.connection.execute('UPDATE cplane_sessions SET auto_paused = true WHERE id = %s', (sid,))
+        pg_store.append_notices([
+            dict(event='owner-check', at=now().isoformat(), chat=sid, text='A decision'),
+            dict(event='chat-paused', at=now().isoformat(), chat=sid, text='Chat paused'),
+        ])
+    client = create_app(pg_store).test_client()
+    assert len(client.get('/api/home').json['attention']) == 2
+    assert pg_store.chat_archive(sid)['state'] == 'running'
+    pg_store.finish_session_turn(turn, 'Running reply is preserved')
+    home = client.get('/api/home').json
+    assert home['attention'] == [] and home['chats'] == []
+    assert pg_store.chat_show(sid)['waiting']
+    assert pg_store.session_messages('factory', sid)[-1]['text'] == 'Running reply is preserved'
+    pg_store.chat_archive(sid, archived=False)
+    assert client.get('/api/home').json['chats'][0]['id'] == sid
+
+
+def test_orchestrator_archive_forbidden_and_missing_chat(pg_store, capsys):
+    sid = pg_store.chats(kind='orchestrator')[0]['id']
+    assert main(['chat', 'archive', str(sid)]) == 1
+    assert 'cannot be archived' in capsys.readouterr().err
+    client = create_app(pg_store).test_client()
+    assert client.post(f'/api/chats/{sid}/archive', headers={'X-Factory-UI': '1'}).status_code == 400
+    assert not pg_store.chat_show(sid)['archived']
+    with pytest.raises(StateError, match='Chat not found'):
+        pg_store.chat_archive(999999)
+
+
+def test_archived_testing_review_wait_leaves_home(pg_store):
+    identifier, chat = feature_chat(pg_store)
+    pg_store.finish_session_turn(pg_store.claim_session_turn(), 'Grill completed.')
+    prepare_testing_turn(pg_store, identifier, chat, 1)
+    assert len(pg_store.testing_review_waits()) == 1
+    pg_store.chat_archive(chat['id'])
+    assert pg_store.testing_review_waits() == []
+    assert not any(a['kind'] == 'testing-review' for a in create_app(pg_store).test_client().get('/api/home').json['attention'])
+    pg_store.chat_archive(chat['id'], archived=False)
     assert len(pg_store.testing_review_waits()) == 1

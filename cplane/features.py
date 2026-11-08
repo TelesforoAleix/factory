@@ -90,6 +90,31 @@ class FeatureStore:
             self._feature_event(feature, f'add {identifier}', actor)
             return self.feature_show(identifier)
 
+    def feature_title(self, identifier, title, *, actor='owner'):
+        bounded(title, 'Title', 120)
+        with self.mutation():
+            item = self._feature(identifier)
+            self.connection.execute('UPDATE cplane_features SET title = %s WHERE feature = %s',
+                                    (title, item['feature']))
+            self._feature_event(item['feature'], f'title {item["title"]!r} to {title!r}', actor)
+            return self.feature_show(identifier)
+
+    def feature_close(self, identifier, reason, *, actor='owner'):
+        if actor_kind(actor) != 'owner':
+            raise StateError('Closing a feature requires actor owner')
+        bounded(reason, 'Reason', TEXT_LIMIT)
+        with self.mutation():
+            item = self._feature(identifier)
+            if item['stage'] in ('building', 'testing'):
+                raise StateError('Cannot close a feature in Building or Testing')
+            if item['stage'] != 'done':
+                self.connection.execute(
+                    "UPDATE cplane_features SET stage = 'done', position = %s, parked_from = NULL WHERE feature = %s",
+                    (self._feature_position('done'), item['feature']))
+            self._feature_chat_stage(item, 'done')
+            self._feature_event(item['feature'], f'stage {item["stage"]} to done: correction: {reason}', actor)
+            return self.feature_show(identifier)
+
     def feature_list(self, *, project=None, stage=None):
         if stage is not None:
             stage_name(stage)
@@ -393,7 +418,17 @@ class FeatureStore:
                 'SELECT id, section, text, actor, time FROM cplane_feature_revisions '
                 'WHERE feature = %s AND (%s::text IS NULL OR section = %s) ORDER BY id',
                 (item['feature'], section, section))
-            return [dict(id=r[0], section=r[1], text=r[2], actor=r[3], time=r[4].isoformat()) for r in rows]
+            revisions = [dict(id=r[0], section=r[1], text=r[2], actor=r[3], time=r[4].isoformat()) for r in rows]
+            if section is not None:
+                return revisions
+            # Correction commands have no document revision to revert. Keep their
+            # audit IDs separate so they cannot be mistaken for revision IDs.
+            events = [dict(event_id=r[0], event=r[1], actor=r[2], time=r[3].isoformat())
+                      for r in self.connection.execute(
+                          "SELECT id, event, actor, time FROM cplane_feature_events WHERE feature = %s "
+                          "AND (event LIKE 'title %%' OR event LIKE 'stage %% to done: correction: %%') ORDER BY id",
+                          (item['feature'],))]
+            return sorted([*revisions, *events], key=lambda entry: entry['time'])
 
     def feature_revert(self, identifier, revision, *, actor='owner'):
         with self.mutation():

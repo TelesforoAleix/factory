@@ -1,5 +1,8 @@
 """Repository-owned skills and project switches. No runtime writes to the source."""
+from contextlib import ExitStack
 import json
+import os
+import stat
 from pathlib import Path
 import re
 
@@ -48,12 +51,67 @@ def install(folder, names):
     for name in names:
         target = folder / '.claude' / 'skills' / name / 'SKILL.md'
         target.parent.mkdir(parents=True, exist_ok=True)
+        # The session service uses umask 0077; the CLI runs as UID 21000.
+        # Only these installed instructions need read/traverse access. Keep them
+        # root-owned, with the private workspace root controlling host access.
+        for directory in (folder / '.claude', folder / '.claude/skills', target.parent):
+            directory.chmod(0o755)
         # Claude expects YAML frontmatter delimiters on separate lines.
         metadata = available[name]
         target.write_text('---\nname: ' + name + '\ndescription: ' +
                           json.dumps(metadata['description']) + '\n---\n' + instructions(name))
+        target.chmod(0o644)
         lines.append(f"- {name}: {available[name]['description']} (.claude/skills/{name}/SKILL.md)")
     (folder / 'AGENTS.md').write_text('\n'.join(lines) + '\n')
+    (folder / 'AGENTS.md').chmod(0o644)
+
+
+def ensure_readable(folder, names):
+    """Repair only trusted instruction modes on resume, never follow agent links.
+
+    The root service created these files before transferring the workspace root.
+    Hold descriptors and validate the whole instruction chain before chmod: the
+    agent owns the workspace and may replace its immediate entries at any time.
+    """
+    # Legacy sessions without a skill snapshot predate installed instructions.
+    if names is None:
+        return
+    if not isinstance(names, list) or any(
+            not isinstance(name, str) or not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', name)
+            for name in names):
+        raise StateError('Invalid installed skills')
+    with ExitStack() as stack:
+        def opened(path, *, parent=None, directory=False):
+            flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+            if directory:
+                flags |= os.O_DIRECTORY
+            fd = os.open(path, flags, dir_fd=parent)
+            stack.callback(os.close, fd)
+            return fd
+
+        root = opened(folder, directory=True)
+        modes = []
+
+        def trusted(path, parent, *, directory=False):
+            fd = opened(path, parent=parent, directory=directory)
+            info = os.fstat(fd)
+            if (info.st_uid != 0 or info.st_gid != 0 or info.st_mode & 0o7022
+                    or not (stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode))
+                    or (not directory and info.st_nlink != 1)):
+                raise StateError('Installed instructions replaced')
+            modes.append((fd, stat.S_IMODE(info.st_mode), 0o555 if directory else 0o444))
+            return fd
+
+        trusted('AGENTS.md', root)
+        if names:
+            claude = trusted('.claude', root, directory=True)
+            directory = trusted('skills', claude, directory=True)
+        for name in names:
+            skill = trusted(name, directory, directory=True)
+            trusted('SKILL.md', skill)
+        for fd, mode, required in modes:
+            if mode & required != required:
+                os.fchmod(fd, mode | required)
 
 
 class SkillStore:
