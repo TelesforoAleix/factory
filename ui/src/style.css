@@ -342,3 +342,8 @@ header { padding-inline: max(var(--space-5), calc((100% - 1360px) / 2)); }
 .quick-chats a { white-space: nowrap; }
 .chat-list, .library-heading { min-width: 0; }
 @media (max-width: 700px) { .page-heading, .library-heading { flex-wrap: wrap; } .project-choices { flex-basis: 100%; } }
+
+.slice-list { list-style: none; padding: 0; margin: 0; }
+.slice-row { display: flex; align-items: flex-start; gap: .4rem; padding: .4rem 0; overflow-wrap: anywhere; }
+.slice-row > div { min-width: 0; flex: 1; }
+.slice-handle { flex: none; padding: .25rem; color: var(--secondary); background: transparent; border: 0; touch-action: none; }

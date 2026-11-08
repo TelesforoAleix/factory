@@ -1608,3 +1608,35 @@ sudo factory-cplane --actor owner install factory/DP2
 The orchestrator then checks that an archived chat's existing Decision card is
 gone from Home. Existing chats with a saved skill snapshot have their instruction
 modes repaired at their next turn; no workspace recreation is required.
+
+## Slice order inside a feature
+
+Drag a slice handle in the pipeline preview's Slices list to place it before or
+after another linked slice. The equivalent Postgres command is:
+
+```sh
+factory-cplane --actor chat:9 slice place factory/SD2 --before factory/SD3
+factory-cplane --actor owner slice place factory/SD3 --after factory/SD2
+```
+
+Only planned, researching and ready slices that have never been issued can move.
+Paused slices follow the same rule. Running and finished rows stay at their
+positions; moves across them are refused. A move cannot place a slice before a
+linked dependency, including by moving the dependency down. Dependencies outside
+the feature still gate execution as usual. Each successful placement records the
+actor in the slice log and feature history under the shared transaction lock.
+
+Migration 016 stores this order separately from version 1 slice documents. The
+first placement starts with the existing linked sequence; new unordered slices
+follow the saved rows in their existing sequence. Features without a saved order
+retain their existing sequence. The runner uses this sequence within each feature
+and still checks readiness, pause, dependencies, due slots and executor capacity.
+
+After merge, request the reviewed installer:
+
+```sh
+sudo factory-cplane --actor owner install factory/SD1
+```
+
+The installer applies migration 016, rebuilds the UI and restarts the existing
+services. Check a placement survives a reload and that fixed rows have no handle.

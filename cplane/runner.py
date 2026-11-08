@@ -963,6 +963,8 @@ class Runner:
             by_id = {s['id']: s for s in self.data['slices']}
             start_order = [by_id[key] for key in pipeline_order]
             start_order.extend(s for s in self.data['slices'] if s['id'] not in pipeline_order)
+            if state.postgres():
+                start_order = state.store(self.path).ordered_slices(start_order)
             for item in start_order:
                 if (item['state'] == 'ready' and not item['paused'] and item['slot']
                         and datetime.fromisoformat(item['slot']) <= self.instant
