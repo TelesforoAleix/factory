@@ -75,3 +75,15 @@ test('quote anchoring keeps exact text, uses context and refuses ambiguous match
   expect(quoteOffset('changed',{exact:'old'})).toBe(-1);
   expect(quoteOffset('moved old here',{exact:'old',prefix:'previous'})).toBe(6);
 });
+test('long documents retain their text and scrollable table wrapper', async () => {
+  const longText = 'long-document-content-'.repeat(30);
+  const longDoc = {...doc, title:'A long document title '.repeat(4), markdown:`${longText}\n\n| First | Second |\n| --- | --- |\n| ${longText} | Value |\n\n\`\`\`\n${longText}\n\`\`\``};
+  fixture();
+  const originalFetch = globalThis.fetch;
+  vi.stubGlobal('fetch', (url, options) => url.includes('/api/library/documents/') ? Promise.resolve({ok:true,json:async () => longDoc}) : originalFetch(url, options));
+  render(<MemoryRouter initialEntries={['/library/documents/factory/plan.md']}><App/></MemoryRouter>);
+  const viewer = await screen.findByLabelText('Document text');
+  expect(viewer.querySelector('p').textContent).toBe(longText);
+  expect(viewer.querySelector('.table-scroll[tabindex="0"] table')).toBeTruthy();
+  expect(viewer.querySelector('pre code').textContent.trim()).toBe(longText);
+});

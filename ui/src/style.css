@@ -45,6 +45,7 @@ body:has(.pipeline) main { max-width: none; }
 .feature-section summary { cursor: pointer; font-weight: 700; }
 @media(max-width: 700px) {
   header { flex-wrap: wrap; }
+  header nav { flex-wrap: wrap; min-width: 0; }
   .pipeline-grid { display: flex; flex-direction: column; min-width: 0; }
   .pipeline-column { width: 100%; min-height: 0; }
   .pipeline-cards { flex: initial; min-height: 3rem; }
@@ -110,11 +111,11 @@ body:has(.library) main { max-width: 1600px; }
 .library-layout { display: grid; grid-template-columns: 250px minmax(0,1fr); gap: 1.5rem; margin-top: 1.5rem; }
 .library-tree { padding: 1rem; border: 1px solid #9aa7b850; border-radius: .7rem; align-self: start; }
 .library-tree nav { display: block; } .library-tree ul { list-style: none; padding-left: .8rem; margin: .4rem 0; }
-.library-tree nav > ul { padding-left: 0; } .library-tree summary { cursor: pointer; padding: .4rem 0; }
-.library-tree li a { display: block; padding: .5rem; border-radius: .4rem; text-decoration: none; overflow-wrap: anywhere; }
+.library-tree nav > ul { padding-left: 0; } .library-tree summary { cursor: pointer; padding: .4rem 0; overflow-wrap: anywhere; }
+.library-tree li a { display: block; padding: .5rem; border-radius: .4rem; text-decoration: none; white-space: normal; overflow-wrap: anywhere; }
 .library-tree li a:hover { background: #6384ba20; } .library-tree small { display: block; font-size: .72rem; }
 .library-tree h2 { font-size: 1rem; margin-top: 1.3rem; }
-.library-viewer, .library-document > *, .library-tree { min-width: 0; }
+.library-viewer, .library-document, .library-document > *, .library-tree, .passage-viewer { min-width: 0; }
 .library-document-header h2 { margin-bottom: .4rem; } .library-controls { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
 .receiver-chip { display: flex; align-items: center; gap: .6rem; font-size: .85rem; } .receiver-chip select { width: auto; max-width: 20rem; margin: .3rem 0; border-radius: 2rem; }
 .library-document { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 1rem; margin-top: 1rem; align-items: start; }
