@@ -5,13 +5,13 @@ import {MemoryRouter} from 'react-router-dom';
 import {test, expect, vi} from 'vitest';
 import {App} from './main';
 test('navigation switches between persistent areas', async () => {
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ok: true, json: async () => []}));
+  vi.stubGlobal('fetch', vi.fn(async url => ({ok:true, json:async () => url.startsWith('/api/library') ? {documents:[],projects:[]} : []})));
   render(<MemoryRouter initialEntries={['/home-lab']}><App/></MemoryRouter>);
-  expect(screen.getByRole('heading', {name: 'Home Lab'})).toBeTruthy();
+  expect(screen.getByRole('heading', {name: 'Library'})).toBeTruthy();
   fireEvent.click(screen.getByRole('link', {name: 'Factory', exact: true}));
   expect(await screen.findByText('No slices yet.')).toBeTruthy();
-  fireEvent.click(screen.getByRole('link', {name: 'Home Lab'}));
-  expect(screen.getByRole('heading', {name: 'Home Lab'})).toBeTruthy();
+  fireEvent.click(screen.getByRole('link', {name: 'Library'}));
+  expect(screen.getByRole('heading', {name: 'Library'})).toBeTruthy();
 });
 
 test('slice detail displays a recorded final as text and handles its absence', async () => {

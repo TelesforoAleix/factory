@@ -103,3 +103,29 @@ body:has(.chats) main { max-width: 1400px; }
 .home-strip { display: flex; flex-wrap: wrap; gap: 8px; }
 .home-strip a { display: flex; gap: 10px; align-items: center; border: 1px solid #d9dfe5; border-radius: 8px; padding: 10px; }
 @media (max-width: 600px) { .home-board { grid-template-columns: 1fr; } }
+/* Library: a small semantic folder list, with a passage-aware reading pane. */
+body:has(.library) main { max-width: 1600px; }
+.library-heading h1 { margin-bottom: .2rem; }
+.library-heading p { margin-top: .3rem; }
+.library-layout { display: grid; grid-template-columns: 250px minmax(0,1fr); gap: 1.5rem; margin-top: 1.5rem; }
+.library-tree { padding: 1rem; border: 1px solid #9aa7b850; border-radius: .7rem; align-self: start; }
+.library-tree nav { display: block; } .library-tree ul { list-style: none; padding-left: .8rem; margin: .4rem 0; }
+.library-tree nav > ul { padding-left: 0; } .library-tree summary { cursor: pointer; padding: .4rem 0; }
+.library-tree li a { display: block; padding: .5rem; border-radius: .4rem; text-decoration: none; overflow-wrap: anywhere; }
+.library-tree li a:hover { background: #6384ba20; } .library-tree small { display: block; font-size: .72rem; }
+.library-tree h2 { font-size: 1rem; margin-top: 1.3rem; }
+.library-viewer, .library-document > *, .library-tree { min-width: 0; }
+.library-document-header h2 { margin-bottom: .4rem; } .library-controls { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+.receiver-chip { display: flex; align-items: center; gap: .6rem; font-size: .85rem; } .receiver-chip select { width: auto; max-width: 20rem; margin: .3rem 0; border-radius: 2rem; }
+.library-document { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 1rem; margin-top: 1rem; align-items: start; }
+.library-document > section { padding: 1.4rem; } .passage-viewer { line-height: 1.75; overflow-wrap: anywhere; }
+.selection-hint { color: #6c7b8f; font-size: .8rem; border-bottom: 1px solid #9aa7b840; padding-bottom: .8rem; }
+.library-comments { border-top: 3px solid #d4a439; padding-top: .4rem; } .library-comments h3 { margin: .6rem 0; }
+.library-comment { background: #d5b6500c; border: 1px solid #bfa55960; border-radius: .5rem; padding: .8rem; margin-top: .8rem; scroll-margin-top: 1rem; overflow-wrap: anywhere; }
+.library-comment strong { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: #8c6814; }
+.library blockquote { border-left: 3px solid #dbb044; margin: .7rem 0; padding: .2rem .7rem; font-size: .85rem; background: #d9ba5a16; white-space: pre-wrap; }
+.library-comments form { padding: .8rem; border: 1px solid #bfa559; border-radius: .5rem; }
+.library-comments small { display: block; } .library-back { display: none; } .library-placeholder { padding: 3rem 1rem; }
+.skill-switch { display: flex; gap: .5rem; align-items: center; } .skill-switch input { width: auto; margin: 0; } .skill-version { overflow-wrap: anywhere; }
+@media(max-width: 1100px) { .library-document { grid-template-columns: minmax(0,1fr); } }
+@media(max-width: 700px) { .library-layout { display: block; } .library-viewer { display: none; } .library-open .library-tree { display: none; } .library-open .library-viewer { display: block; } .library-back { display: inline-block; margin-bottom: .7rem; } .library-document > section { padding: 1rem; } .receiver-chip { width: 100%; } .receiver-chip select { min-width: 0; flex: 1; } }

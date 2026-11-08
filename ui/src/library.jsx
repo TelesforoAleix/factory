@@ -1,0 +1,84 @@
+import React, {useEffect, useRef, useState} from 'react';
+import {Link, Navigate, useNavigate, useParams, useSearchParams} from 'react-router-dom';
+import {createTextAnnotator} from '@recogito/text-annotator';
+import '@recogito/text-annotator/text-annotator.css';
+import {api, encoded, Markdown} from './documents';
+
+// Exact text is mandatory. Context disambiguates repeated passages; never guess.
+export function quoteOffset(text, selector) {
+  if (!selector?.exact) return -1;
+  const hits = []; let pos = text.indexOf(selector.exact);
+  while (pos !== -1) {hits.push(pos); pos = text.indexOf(selector.exact, pos + 1);}
+  const contextual = hits.filter(i => (!selector.prefix || text.slice(0, i).endsWith(selector.prefix)) && (!selector.suffix || text.slice(i + selector.exact.length).startsWith(selector.suffix)));
+  return contextual.length === 1 ? contextual[0] : hits.length === 1 ? hits[0] : -1;
+}
+function PassageViewer({doc, comments, onSelect, onAnchors}) {
+  const root = useRef(null), annotator = useRef(null);
+  useEffect(() => {
+    const element = root.current;
+    const anno = createTextAnnotator(element, {userSelectAction: 'SELECT', style: {fill: '#f2bd42', fillOpacity: 0.3}});
+    annotator.current = anno;
+    anno.on('createAnnotation', annotation => {
+      const selected = annotation.target.selector[0];
+      if (!selected?.quote) return;
+      const text = element.textContent;
+      onSelect({type:'TextQuoteSelector', exact:selected.quote, prefix:text.slice(Math.max(0, selected.start - 64), selected.start), suffix:text.slice(selected.end, selected.end + 64)});
+    });
+    anno.on('selectionChanged', annotations => {
+      const id = annotations[0]?.id;
+      if (id?.startsWith('comment-')) document.getElementById(id)?.scrollIntoView({block:'nearest', behavior:'smooth'});
+    });
+    return () => {annotator.current = null; anno.destroy();};
+  }, [doc.path, doc.markdown]);
+  useEffect(() => {
+    const text = root.current.textContent, anchors = {};
+    const annotations = comments.flatMap(c => {
+      const start = quoteOffset(text, c.selector); anchors[c.id] = start >= 0;
+      return start < 0 ? [] : [{id:'comment-' + c.id, bodies:[], target:{annotation:'comment-' + c.id, selector:[{quote:c.selector.exact, start, end:start + c.selector.exact.length}]}}];
+    });
+    annotator.current?.setAnnotations(annotations);
+    onAnchors(anchors);
+  }, [doc, comments]);
+  return <div ref={root} className="passage-viewer" aria-label="Document text"><Markdown>{doc.markdown}</Markdown></div>;
+}
+function FolderList({documents, link}) {
+  const root = {files:[], folders:{}};
+  for (const doc of documents) {
+    const parts = doc.path.split('/'); parts.pop(); let node = root;
+    for (const part of parts) node = (node.folders[part] ||= {files:[], folders:{}});
+    node.files.push(doc);
+  }
+  function render(node, prefix='') {return <ul>{Object.entries(node.folders).sort(([a],[b]) => a.localeCompare(b)).map(([name, child]) => <li key={name}><details open><summary>{name}</summary>{render(child, prefix + name + '/')}</details></li>)}{node.files.map(d => <li key={d.path}><Link to={link('/library/documents/' + encoded(d.path))}>{d.title}<small>{d.path}</small></Link></li>)}</ul>;}
+  return render(root);
+}
+export function OldLibraryRedirect() {
+  const params = useParams(), [search] = useSearchParams();
+  const old = params['*'] || '';
+  if (old === 'sessions') return <Navigate replace to={search.get('session')?.match(/^\d+$/) ? '/chats/' + search.get('session') : '/chats'}/>;
+  return <Navigate replace to={old.startsWith('documents/') ? '/library/' + old : old === 'backlog' ? '/library/documents/backlog.md' : '/library'}/>;
+}
+export function Library({skill=false}) {
+  const params = useParams(), path = skill ? params.name : params['*'];
+  const [search, setSearch] = useSearchParams(), project = search.get('project') || '', query = search.get('q') || '';
+  const [tree,setTree] = useState({documents:[], projects:[]}), [skills,setSkills] = useState([]), [chats,setChats] = useState([]);
+  const [doc,setDoc] = useState(null), [comments,setComments] = useState([]), [receiver,setReceiver] = useState(''), [selection,setSelection] = useState(null), [anchors,setAnchors] = useState({});
+  const [text,setText] = useState(''), [error,setError] = useState(''), [busy,setBusy] = useState(false), [notice,setNotice] = useState('');
+  const navigate = useNavigate(), generation = useRef(0);
+  const link = url => url + (search.size ? '?' + search.toString() : '');
+  useEffect(() => {let live = true;
+    const timer = setTimeout(() => api('/api/library?' + new URLSearchParams({project,q:query})).then(data => {if (live) setTree(data);}).catch(e => {if (live) setError(e.message);}), 150);
+    return () => {live = false; clearTimeout(timer);};
+  }, [project,query]);
+  useEffect(() => {let live = true; Promise.all([api('/api/skills'),api('/api/chats?archived=false')]).then(([s,c]) => {if (live) {setSkills(s); setChats(c);}}).catch(e => {if (live) setError(e.message);}); return () => {live = false;};}, []);
+  useEffect(() => {let live = true; generation.current++; setDoc(null); setComments([]); setSelection(null); setText(''); setError(''); setNotice(''); setReceiver(''); setBusy(false);
+    if (path) Promise.all([api(skill ? '/api/skills/' + encoded(path) : '/api/library/documents/' + encoded(path)), skill ? [] : api('/api/library/comments/' + encoded(path))]).then(([d,c]) => {if (live) {setDoc(d); setComments(c); setReceiver(String(d.receiver?.id || ''));}}).catch(e => {if (live) setError(e.message);});
+    return () => {live = false;};
+  }, [path,skill]);
+  function filter(key,value) {const next = new URLSearchParams(search); if (value) next.set(key,value); else next.delete(key); setSearch(next);}
+  async function action(operation) {const current = generation.current; setBusy(true); setError(''); try {await operation(() => current === generation.current);} catch(e) {if (current === generation.current) setError(e.message);} finally {if (current === generation.current) setBusy(false);}}
+  function save(e) {e.preventDefault(); action(async live => {const rows = await api('/api/library/comments/' + encoded(path), {text,selector:selection}); if (live()) {setComments(rows); setSelection(null); setText(''); setNotice('Draft saved');}});}
+  function send(grill=false) {action(async live => {const result = await api('/api/library/' + (grill ? 'grill/' : 'send/') + encoded(path), {chat:Number(receiver)}); if (live()) {if (grill) navigate('/chats/' + result.chat); else {setComments(result.comments); setNotice('Comments sent as one message');}}});}
+  function toggle(enabled) {action(async live => {const updated = await api('/api/skills/' + encoded(path), {project,enabled}); if (live()) {setDoc(updated); setSkills(rows => rows.map(s => s.name === updated.name ? updated : s));}});}
+  const drafts = comments.filter(c => !c.sent_at), visibleSkills = skills.filter(s => (s.name + ' ' + s.description).toLowerCase().includes(query.toLowerCase()));
+  return <div className={'library' + (path ? ' library-open' : '')}><div className="library-heading"><h1>Library</h1><p className="muted">Read, comment, and bring a document into a conversation.</p></div><div className="library-layout"><aside className="library-tree"><label>Project<select value={project} onChange={e => filter('project',e.target.value)}><option value="">All projects</option>{tree.projects.map(p => <option key={p.key} value={p.key}>{p.key} · {p.name}</option>)}</select></label><label>Search Library<input type="search" value={query} onChange={e => filter('q',e.target.value)}/></label><nav aria-label="Library tree"><h2>Documents</h2>{tree.documents.length ? <FolderList documents={tree.documents} link={link}/> : <p className="muted">No documents found.</p>}<h2>Skills &amp; guides</h2><ul>{visibleSkills.map(s => <li key={s.name}><Link to={link('/library/skills/' + s.name)}>{s.name}<small title={s.version}>{s.version.slice(0,8)}{project ? ' · ' + (s.projects.includes(project) ? 'On' : 'Off') : ''}</small></Link></li>)}</ul></nav></aside><div className="library-viewer"><Link className="library-back" to={link('/library')}>← Library</Link>{error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}{!path ? <div className="library-placeholder"><h2>Your reference shelf</h2><p>Choose a document or guide from the tree.</p></div> : !doc ? <p>{error ? 'Unable to load this item.' : 'Loading…'}</p> : skill ? <section><h2>{doc.name}</h2><p>{doc.description}</p><p className="skill-version">Version <code>{doc.version}</code></p>{project ? <label className="skill-switch"><input type="checkbox" checked={doc.projects.includes(project)} disabled={busy} onChange={e => toggle(e.target.checked)}/> Enabled for {project}</label> : <p>Select a project to change its switch.</p>}<Markdown>{doc.markdown}</Markdown></section> : <><div className="library-document-header"><h2>{doc.title}</h2><p className="muted">{doc.path} · {doc.status} · {doc.date}</p><div className="library-controls"><label className="receiver-chip">Send to<select aria-label="Receiving chat" value={receiver} onChange={e => setReceiver(e.target.value)}><option value="">Choose a chat</option>{chats.map(c => <option key={c.id} value={c.id}>{c.title} · {c.kind}</option>)}</select></label><button disabled={busy || !receiver} onClick={() => send(true)}>Grill this document</button></div>{doc.receiver_error && <p role="status">{doc.receiver_error} · Choose another receiving chat.</p>}</div><div className="library-document"><section><p className="selection-hint">Select a passage to leave a comment.</p><PassageViewer doc={doc} comments={comments} onSelect={setSelection} onAnchors={setAnchors}/></section><aside className="library-comments"><h3>Comments</h3><button disabled={busy || !drafts.length || !receiver} onClick={() => send()}>Send {drafts.length} comments</button>{selection && <form onSubmit={save}><h4>New passage comment</h4><blockquote>{selection.exact}</blockquote><label>Comment<textarea autoFocus required maxLength={16000} value={text} onChange={e => setText(e.target.value)}/></label><button disabled={busy}>Save draft</button><button type="button" onClick={() => setSelection(null)}>Cancel</button></form>}{!comments.length && <p className="muted">No comments yet.</p>}{comments.map(c => <article id={'comment-' + c.id} className="library-comment" key={c.id}><strong>{c.sent_at ? 'Sent' : 'Draft'}</strong>{c.selector ? <><blockquote>{c.selector.exact}</blockquote>{anchors[c.id] === false && <small>passage changed</small>}</> : <small>Whole-document note</small>}<p className="text">{c.text}</p>{c.sent_at ? <small>{c.chat ? <Link to={'/chats/' + c.chat}>{c.chat_title}</Link> : 'Imported note'} · <time dateTime={c.sent_at}>{new Date(c.sent_at).toLocaleString()}</time></small> : <small>Saved <time dateTime={c.time}>{new Date(c.time).toLocaleString()}</time></small>}</article>)}</aside></div></>}</div></div></div>;
+}
