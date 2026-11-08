@@ -14,7 +14,7 @@ test('Home filters sections and sends a quick answer under the guard', async () 
   fireEvent.change(screen.getByLabelText('Answer'), {target:{value:'Proceed'}});
   fireEvent.click(screen.getByText('Send answer'));
   await waitFor(() => expect(fetcher).toHaveBeenCalledWith('/api/actions/answer/demo/one', expect.objectContaining({method:'POST', headers:expect.objectContaining({'X-Factory-UI':'1'}), body:JSON.stringify({value:'Proceed'})})));
-  fireEvent.click(screen.getByRole('button',{name:'Other'}));
+  fireEvent.change(screen.getByLabelText('Project'), {target:{value:'OTH'}});
   expect(screen.queryByText('Choose?')).toBeNull();
   expect(screen.queryByText('Next feature')).toBeNull();
 });
