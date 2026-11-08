@@ -1,3 +1,4 @@
+import {ProjectFilter, isActive} from './projects';
 import {FeatureChatLink} from './chats';
 import React, {useEffect, useState} from 'react';
 import {Link, useParams, useSearchParams} from 'react-router-dom';
@@ -41,7 +42,7 @@ function Card({item, index, selected, select, act, close}) {
   const {attributes, listeners, setNodeRef, transform, transition, isDragging} = useSortable({id: item.id, data: {stage: item.stage}});
   const line = extra(item, index);
   return <div ref={setNodeRef} style={{transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? .45 : 1}} className="pipeline-card-wrap">
-    <div className={'pipeline-card' + (selected ? ' selected' : '') + (line === 'Waiting for you' ? ' needs-you' : '')}><button className="drag-handle" {...attributes} {...listeners} aria-label={'Drag ' + item.id}>⠿</button><button className="pipeline-card-open" onClick={select} aria-expanded={selected}><small>{item.id}</small><strong className="feature-title">{item.title}</strong><span className="project-tag">{item.project_name || item.project}</span>{line && <span className={line === 'Waiting for you' ? 'pipeline-attention' : 'feature-extra'}>{line}</span>}</button></div>
+    <div className={'pipeline-card' + (selected ? ' selected' : '') + (line === 'Waiting for you' ? ' needs-you' : '')}><button className="drag-handle" {...attributes} {...listeners} aria-label={'Drag ' + item.id}>⠿</button><button className="pipeline-card-open" onClick={select} aria-expanded={selected}><small>{item.id}</small><strong className="feature-title">{item.title}</strong><span className="project-tag">{item.project_name || item.project}</span>{item.inactive && <span className="inactive-mark">Inactive</span>}{line && <span className={line === 'Waiting for you' ? 'pipeline-attention' : 'feature-extra'}>{line}</span>}</button></div>
     {selected && <div className="mobile-panel"><Panel item={item} act={act} close={close}/></div>}
   </div>;
 }
@@ -54,17 +55,18 @@ export function Pipeline() {
   const [data, setData] = useState(null), [error, setError] = useState(''), [project, setProject] = useState('');
   const [params, setParams] = useSearchParams(); const selected = params.get('feature');
   const sensors = useSensors(useSensor(MouseSensor, {activationConstraint: {distance: 8}}), useSensor(TouchSensor, {activationConstraint: {delay: 300, tolerance: 8}}));
+  useEffect(() => {if (data?.projects.some(p => p.key === project && !isActive(p))) setProject('');}, [data, project]);
   async function refresh() { const r = await fetch('/api/pipeline'); if (!r.ok) throw Error('Pipeline unavailable'); setData(await r.json()); }
   useEffect(() => {refresh().catch(e => setError(e.message));}, []);
   async function post(id, operation, body) { const r = await fetch(`/api/pipeline/${encodeURIComponent(id)}/${operation}`, {method:'POST', headers:{'Content-Type':'application/json','X-Factory-UI':'1'}, body:JSON.stringify(body)}); const result = await r.json(); if (!r.ok) throw Error(result.error || 'Request failed'); }
   async function act(id, stage, placement) { try {setError(''); const item = data.features.find(f => f.id === id); if (stage !== item.stage) await post(id, 'move', {stage}); if (placement) await post(id, 'place', placement); } catch (e) {setError(e.message);} finally {try {await refresh();} catch {setError('Pipeline unavailable');}} }
-  function dragEnd({active, over}) {if (!over || active.id === over.id) return; const item = data.features.find(f => f.id === active.id), target = data.features.find(f => f.id === over.id); const stage = target?.stage || String(over.id).replace('stage:', ''); if (!stages.includes(stage)) return; const features = data.features.map(f => ({...f, project_name:data.projects.find(p => p.key === f.project)?.name || f.project}));
+  function dragEnd({active, over}) {if (!over || active.id === over.id) return; const item = data.features.find(f => f.id === active.id), target = data.features.find(f => f.id === over.id); const stage = target?.stage || String(over.id).replace('stage:', ''); if (!stages.includes(stage)) return; const features = data.features.map(f => ({...f, inactive:!isActive(data.projects.find(p => p.key === f.project)), project_name:data.projects.find(p => p.key === f.project)?.name || f.project}));
   const visible = features.filter(f => f.stage === stage && (!project || f.project === project) && f.id !== item.id); let placement = {bottom:true}; if (target) { const old = data.features.filter(f => f.stage === stage).findIndex(f => f.id === item.id); const idx = data.features.filter(f => f.stage === stage).findIndex(f => f.id === target.id); placement = item.stage === stage && old < idx ? {after:target.id} : {before:target.id}; } else if (visible.length) placement = {after:visible[visible.length-1].id}; act(item.id, stage, placement); }
   const select = id => setParams(id ? {feature:id} : {});
   if (!data) return <><h1>Pipeline</h1><p>{error || 'Loading…'}</p></>;
-  const features = data.features.map(f => ({...f, project_name:data.projects.find(p => p.key === f.project)?.name || f.project}));
-  const visible = features.filter(f => !project || f.project === project); const current = features.find(f => f.id === selected);
-  return <div className="pipeline"><div className="page-heading"><h1>Pipeline</h1><label className="project-select">Project<select value={project} onChange={e => setProject(e.target.value)}>{[{key:'',name:'All'}, ...data.projects].map(p => <option key={p.key} value={p.key}>{p.name || p.key}</option>)}</select></label></div>{error && <p role="status" className="pipeline-error">{error}</p>}
+  const features = data.features.map(f => ({...f, inactive:!isActive(data.projects.find(p => p.key === f.project)), project_name:data.projects.find(p => p.key === f.project)?.name || f.project}));
+  const visible = features.filter(f => (!project || f.project === project) && !(f.inactive && ['shortlist','parked'].includes(f.stage))); const current = features.find(f => f.id === selected);
+  return <div className="pipeline"><div className="page-heading"><h1>Pipeline</h1><ProjectFilter projects={data.projects} value={project} onChange={setProject}/></div>{error && <p role="status" className="pipeline-error">{error}</p>}
     <div className={'pipeline-layout' + (current ? ' has-panel' : '')}><DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={dragEnd}><div className="pipeline-scroll"><div className="pipeline-grid">{stages.filter(stage => stage !== 'done').map(stage => <Column key={stage} stage={stage} items={visible.filter(f => f.stage === stage)} all={data.features} selected={selected} select={select} act={act} close={() => select(null)}/>)}</div></div></DndContext>{current && <div className="desktop-panel"><Panel item={current} act={act} close={() => select(null)}/></div>}</div>
   </div>;
 }

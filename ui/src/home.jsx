@@ -1,3 +1,4 @@
+import {ProjectFilter, isActive} from './projects';
 import React, {useEffect, useState} from 'react';
 import {Link} from 'react-router-dom';
 import {DndContext, MouseSensor, TouchSensor, useSensor, useSensors, closestCorners} from '@dnd-kit/core';
@@ -25,17 +26,19 @@ function Attention({item, act}) {
 export function Home() {
   const [data,setData] = useState(null), [error,setError] = useState(''), [project,setProject] = useState('');
   const sensors = useSensors(useSensor(MouseSensor, {activationConstraint:{distance:8}}), useSensor(TouchSensor, {activationConstraint:{delay:300,tolerance:8}}));
+  useEffect(() => {if (data?.projects.some(p => p.key === project && !isActive(p))) setProject('');}, [data, project]);
   async function refresh() {const r = await fetch('/api/home'); if (!r.ok) throw Error('Home unavailable'); setData(await r.json());}
   useEffect(() => {refresh().catch(e => setError(e.message)); const timer = setInterval(() => refresh().catch(() => setError('Home unavailable')), 30000); return () => clearInterval(timer);}, []);
   async function act(url, payload) {try {setError(''); const r = await fetch(url, {method:'POST',headers:{'Content-Type':'application/json','X-Factory-UI':'1'},body:JSON.stringify(payload)}); if (!r.ok) {const text = await r.text(); try {throw Error(JSON.parse(text).error || 'Request failed');} catch(e) {if (e instanceof SyntaxError) throw Error(text || 'Request failed'); throw e;}} await refresh();} catch(e) {setError(e.message);}}
   function dragEnd({active,over}) {if (!over || active.id === over.id) return; const all = data.features.filter(f => f.stage === 'next'); const old = all.findIndex(f => f.id === active.id), target = all.findIndex(f => f.id === over.id); act('/api/pipeline/' + encodeURIComponent(active.id) + '/place', old < target ? {after:over.id} : {before:over.id});}
   if (!data) return <><h1>Home</h1><p>{error || 'Loading…'}</p></>;
   const visible = x => !project || x.project === project; const cards = data.attention.filter(x => visible(x) || x.kind === 'limit'); const next = data.features.filter(f => f.stage === 'next' && visible(f));
-  return <div className="home"><div className="page-heading"><h1>Home</h1><label className="project-select">Project<select value={project} onChange={e => setProject(e.target.value)}>{[{key:'',name:'All'},...data.projects].map(p => <option key={p.key} value={p.key}>{p.name || p.key}</option>)}</select></label></div>{error && <p role="alert">{error}</p>}
+  return <div className="home"><div className="page-heading"><h1>Home</h1><ProjectFilter projects={data.projects} value={project} onChange={setProject}/></div>{error && <p role="alert">{error}</p>}
     {!!cards.length && <section><h2>Needs your attention</h2><div className="home-board">{cards.map((a,i) => <Attention key={a.kind + a.id + a.since + i} item={a} act={act}/>)}</div></section>}
+    <div className="quick-chats" aria-label="Quick chats">{(data.quick_chats || []).map(c => <Link key={c.id} to={'/chats/' + c.id}>{c.title}</Link>)}</div>
     <section><h2>Chats waiting for you</h2>{data.chats.filter(visible).length ? <div className="list">{data.chats.filter(visible).map(c => <Link className="home-row" key={c.id} to={'/chats/' + c.id}><strong>{c.project && c.title === c.project ? (data.projects.find(p => p.key === c.project)?.name || c.project) : c.title}</strong><small>{c.feature || data.projects.find(p => p.key === c.project)?.name || c.project || 'Chat'}</small></Link>)}</div> : <p className="muted">No chats waiting.</p>}</section>
     <section><h2>Running now</h2>{data.running.filter(visible).length ? <div className="list">{data.running.filter(visible).map(s => <Link className="home-row" key={s.id} to={slicePath(s.id)}><span className="running-dot"/><strong>{s.title}</strong><small>{s.id}</small><time>{elapsed(s.since)} running</time></Link>)}</div> : <p className="muted">Nothing running.</p>}</section>
     <section><h2>Next</h2><DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={dragEnd}><SortableContext items={next.map(f => f.id)} strategy={verticalListSortingStrategy}><div className="list">{next.map(f => <NextItem key={f.id} item={f}/>)}</div></SortableContext></DndContext>{!next.length && <p className="muted">Nothing queued.</p>}</section>
-    <section><h2>Pipeline</h2><div className="home-strip">{stages.map(stage => <Link key={stage} to="/pipeline"><span>{title(stage)}</span><strong>{data.features.filter(f => f.stage === stage && visible(f)).length}</strong></Link>)}</div></section>
+    <section><h2>Pipeline</h2><div className="home-strip">{stages.map(stage => <Link key={stage} to="/pipeline"><span>{title(stage)}</span><strong>{data.features.filter(f => f.stage === stage && visible(f) && (!['shortlist','parked'].includes(stage) || isActive(data.projects.find(p => p.key === f.project)))).length}</strong></Link>)}</div></section>
   </div>;
 }

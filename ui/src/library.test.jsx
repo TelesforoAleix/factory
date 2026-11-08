@@ -32,7 +32,7 @@ test('tree filters search by project and links skills with versions', async () =
   expect(screen.getByText('Skills & guides')).toBeTruthy();
   expect(screen.getByText('Skills & guides').closest('details').open).toBe(false);
   expect(screen.getByText('abcdef12')).toBeTruthy();
-  fireEvent.change(screen.getByLabelText('Project'),{target:{value:'FAC'}});
+  fireEvent.click(screen.getByRole('button', {name:'Factory'}));
   fireEvent.change(screen.getByLabelText('Search Library'),{target:{value:'router'}});
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/library?project=FAC&q=router',{}));
 });
@@ -55,7 +55,7 @@ test('selection saves a W3C quote with context and guards the write', async () =
   const call=fetchMock.mock.calls.find(([url,o]) => url.includes('/comments/') && o?.method==='POST');
   expect(JSON.parse(call[1].body)).toEqual({text:'Why?',selector});
   expect(call[1].headers['X-Factory-UI']).toBe('1');
-  expect(mock.setAnnotations.mock.calls.at(-1)[0][0].target.selector[0].start).toBe(2);
+  await waitFor(() => expect(mock.setAnnotations.mock.calls.at(-1)[0][0].target.selector[0].start).toBe(2));
 });
 test('all drafts send once to chosen chat and sent history and changed quotes remain', async () => {
   const comments=[{id:1,text:'First?',selector,time:'2026-11-01'}, {id:2,text:'Second?',selector:{...selector,exact:'removed'},time:'2026-11-01'}];
@@ -108,4 +108,11 @@ test('root documents precede folders and empty comments cannot be sent', async (
   const tree = screen.getByRole('navigation',{name:'Library tree'});
   expect(tree.textContent.indexOf('Skills & guides')).toBeLessThan(tree.textContent.indexOf('Documents'));
   expect(tree.textContent.indexOf('Root plan')).toBeLessThan(tree.textContent.indexOf('factory'));
+});
+
+test('project row uses the shared active project order', async () => {
+  vi.stubGlobal('fetch',vi.fn(async url => ({ok:true,json:async () => url.startsWith('/api/library?') ? {documents:[],projects:[{key:'LAB',name:'Lab',active:true},{key:'FAC',name:'Factory',active:false},{key:'NEW',name:'No project yet',active:true}]} : []})));
+  render(<MemoryRouter initialEntries={['/library']}><App/></MemoryRouter>);
+  await screen.findByRole('button',{name:'Lab'});
+  expect([...screen.getByRole('group',{name:'Project'}).querySelectorAll('button')].map(b => b.textContent)).toEqual(['All','Lab','No project yet']);
 });

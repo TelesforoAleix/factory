@@ -191,6 +191,10 @@ def parser():
     set_limit.add_argument('value', type=int)
     project = commands.add_parser('project', parents=[common])
     projects = project.add_subparsers(dest='project_command', required=True, parser_class=Parser)
+    projects.add_parser('list', parents=[common])
+    active_project = projects.add_parser('active', parents=[common])
+    active_project.add_argument('key')
+    active_project.add_argument('value', nargs='?', choices=('on', 'off'))
     add_project = projects.add_parser('add', parents=[common])
     add_project.add_argument('key')
     add_project.add_argument('name')
@@ -382,8 +386,15 @@ def main(argv=None):
         if args.command == 'project':
             if not state.postgres():
                 raise state.StateError('project commands require Postgres (CPLANE_DATABASE_URL)')
-            result = state.store(None).project_add(args.key, args.name, repository=args.repository,
-                                                   actor=getattr(args, 'actor', 'owner'))
+            backend = state.store(None)
+            if args.project_command == 'list':
+                result = backend.library_projects()
+            elif args.project_command == 'active':
+                result = backend.project_active(args.key, None if args.value is None else args.value == 'on',
+                                                actor=getattr(args, 'actor', 'owner'))
+            else:
+                result = backend.project_add(args.key, args.name, repository=args.repository,
+                                             actor=getattr(args, 'actor', 'owner'))
             print(json.dumps(result, ensure_ascii=False))
             return 0
         if args.command == 'feature':

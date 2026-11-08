@@ -325,3 +325,20 @@ header { padding-inline: max(var(--space-5), calc((100% - 1360px) / 2)); }
 .feature-meta { font-family: var(--font-sans); }
 .pipeline-card .project-tag { font-family: var(--font-sans); }
 .chat-settings-panel button:not([type='button']) { background: var(--background); color: var(--text); border-color: var(--rule); }
+
+.project-choices { display: flex; flex-wrap: nowrap; gap: var(--space-4); overflow-x: auto; min-width: 0; max-width: 100%; }
+.project-choices button { flex: 0 0 auto; min-height: 44px; padding: var(--space-2) 0; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--secondary); white-space: nowrap; }
+.project-choices button[aria-pressed='true'] { color: var(--text); border-bottom-color: var(--signal-mark); }
+.inactive-mark { color: var(--secondary); font-size: 12px; }
+.settings-project { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-3) 0; border-bottom: 1px solid var(--rule); }
+.settings-project > span { flex: 1; min-width: 0; }
+.settings-project label { display: flex; min-height: 44px; align-items: center; gap: var(--space-2); white-space: nowrap; }
+.settings-project input { appearance: none; flex: 0 0 auto; width: 34px; height: 20px; padding: 2px; margin: 0; border: 1px solid var(--secondary); border-radius: 12px; cursor: pointer; }
+.settings-project input::before { content: ''; display: block; width: 14px; height: 14px; border-radius: 50%; background: var(--secondary); }
+.settings-project input:checked { background: var(--text); border-color: var(--text); }
+.settings-project input:checked::before { transform: translateX(14px); background: var(--background); }
+.settings-project input:disabled { cursor: wait; }
+.quick-chats { display: flex; gap: var(--space-4); overflow-x: auto; padding: var(--space-3) 0; }
+.quick-chats a { white-space: nowrap; }
+.chat-list, .library-heading { min-width: 0; }
+@media (max-width: 700px) { .page-heading, .library-heading { flex-wrap: wrap; } .project-choices { flex-basis: 100%; } }

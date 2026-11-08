@@ -65,5 +65,9 @@ def home_data(store, board, clean, view):
             f = linked.get(s['id'])
             issued = next((e['at'] for e in reversed(s['log']) if e['event'] in ('started', 'resumed', 'issued')), s['log'][0]['at'] if s['log'] else None)
             running.append(dict(id=s['id'], title=clean(s['title']), feature=f['id'] if f else clean(s['feature']), project=f['project'] if f else None, since=issued))
-    return dict(projects=board['projects'], features=features, attention=attention, running=running,
+    quick_chats = [dict(id=c['id'], title='Development Orchestrator') for c in chats if c['kind'] == 'orchestrator']
+    by_project = {c['project']: c for c in chats if c['kind'] == 'project'}
+    quick_chats.extend(dict(id=by_project[p['key']]['id'], title=clean(p['name']))
+                       for p in board['projects'] if p.get('active', True) and p['key'] in by_project)
+    return dict(quick_chats=quick_chats, projects=board['projects'], features=features, attention=attention, running=running,
                 chats=[{k: clean(v) if k == 'title' else v for k, v in c.items() if k in ('id', 'title', 'project', 'feature', 'waiting')} for c in chats if c['waiting']])

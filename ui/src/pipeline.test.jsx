@@ -10,9 +10,9 @@ test('filters, previews and displays a move refusal', async () => {
   const fetchMock = vi.fn(async (url, options) => options?.method === 'POST' ? {ok:false,json:async()=>({error:'No agreed design yet'})} : {ok:true,json:async()=>({projects:[{key:'FAC',name:'Factory'}, {key:'LAB',name:'Lab'}],features:[feature]})});
   vi.stubGlobal('fetch', fetchMock);
   render(<MemoryRouter initialEntries={['/pipeline']}><App/></MemoryRouter>);
-  fireEvent.change(await screen.findByLabelText('Project'), {target:{value:'LAB'}});
+  fireEvent.click(await screen.findByRole('button', {name:'Lab'}));
   expect(screen.queryByText('Synthetic feature')).toBeNull();
-  fireEvent.change(screen.getByLabelText('Project'), {target:{value:'FAC'}});
+  fireEvent.click(screen.getByRole('button', {name:'Factory'}));
   fireEvent.click(screen.getByRole('button', {name:/Synthetic feature/}));
   expect(screen.getAllByText('Summary').length).toBeGreaterThan(0);
   fireEvent.click(screen.getAllByRole('button', {name:'Move to Grilling'})[0]);
@@ -25,11 +25,25 @@ test('shows a project selector and collapsible stage counts', async () => {
   const features = [feature, {...feature, id:'FAC-F2', title:'Finished feature', stage:'done'}, {...feature, id:'FAC-F3', title:'Parked feature', stage:'parked'}];
   vi.stubGlobal('fetch', vi.fn(async () => ({ok:true, json:async()=>({projects, features})})));
   render(<MemoryRouter initialEntries={['/pipeline']}><App/></MemoryRouter>);
-  const filter = await screen.findByLabelText('Project');
-  expect(Array.from(filter.options).map(option => option.textContent)).toEqual(['All', ...projects.map(p => p.name)]);
+  const filter = await screen.findByRole('group', {name:'Project'});
+  expect(Array.from(filter.querySelectorAll('button')).map(button => button.textContent)).toEqual(['All', ...projects.map(p => p.name)]);
   expect(document.querySelector('.feature-chip')).toBeNull();
   expect(document.querySelector('.stage-done')).toBeNull();
   expect(screen.queryByText('Finished feature')).toBeNull();
   const parked = document.querySelector('.stage-parked .stage-toggle');
   expect(parked.getAttribute('aria-expanded')).toBe('false');
+});
+
+test('inactive projects hide only Shortlist and Parked and mark in-flight cards', async () => {
+  const projects = [{key:'FAC',name:'Factory',active:false}, {key:'LAB',name:'Lab',active:true}, {key:'NEW',name:'No project yet',active:true}];
+  const features = ['shortlist','parked','grilling','ready','next','building','testing'].map((stage,i) => ({...feature,id:`FAC-F${i + 1}`,title:`Inactive ${stage}`,stage}));
+  vi.stubGlobal('fetch', vi.fn(async () => ({ok:true,json:async()=>({projects,features})})));
+  render(<MemoryRouter initialEntries={['/pipeline']}><App/></MemoryRouter>);
+  await screen.findByText('Inactive grilling');
+  expect(screen.queryByText('Inactive shortlist')).toBeNull();
+  expect(screen.queryByText('Inactive parked')).toBeNull();
+  expect(screen.getAllByText('Inactive').length).toBe(5);
+  expect(screen.queryByRole('button', {name:'Factory'})).toBeNull();
+  expect(screen.getByRole('button', {name:'Lab'})).toBeTruthy();
+  expect(screen.getByRole('button', {name:'No project yet'})).toBeTruthy();
 });

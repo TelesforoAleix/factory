@@ -123,8 +123,7 @@ class FeatureStore:
             for slice_item in slices:
                 slice_item['attention'] = self.chat_attention(slice_item)
             records = self.run_record_list()
-            projects = [dict(key=r[0], name=r[1]) for r in self.connection.execute(
-                'SELECT key, name FROM cplane_projects ORDER BY name')]
+            projects = self.library_projects()
             for item in items:
                 internal = self._feature(item['id'])
                 ids = {item['id'], *item['aliases']}
@@ -415,6 +414,27 @@ class FeatureStore:
                     (item['feature'], row[0], row[1], actor))
                 return self.feature_show(identifier)
             return self.feature_section(identifier, row[0], row[1], actor=actor)
+
+    def project_active(self, key, active=None, *, actor='owner'):
+        if active is not None and type(active) is not bool:
+            raise StateError('Active must be a boolean')
+        bounded(actor, 'Actor')
+        with self.mutation():
+            project = next((p for p in self.library_projects() if p['key'] == key), None)
+            if project is None:
+                raise StateError('Unknown project')
+            if key == 'NEW' and active is False:
+                raise StateError('NEW is always active')
+            if active is not None:
+                self.connection.execute('UPDATE cplane_projects SET active = %s WHERE key = %s', (active, key))
+                if active and not self.connection.execute(
+                        "SELECT 1 FROM cplane_sessions WHERE kind = 'project' AND project = %s", (key,)).fetchone():
+                    self.create_project_chat(key)
+                self.connection.execute(
+                    'INSERT INTO cplane_project_events (project, actor, active) VALUES (%s, %s, %s)',
+                    (key, actor, active))
+                project['active'] = active
+            return project
 
     def project_add(self, key, name, *, repository=None, actor='owner'):
         if not re.fullmatch(r'[A-Z]{3}', key):
