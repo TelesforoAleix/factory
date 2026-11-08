@@ -908,7 +908,8 @@ from its imported stage. Export then derives Horizon: building/testing → now;
 shortlist/grilling/ready/next → next; parked → parked; done → done.
 
 `feature export` takes one locked database snapshot, then publishes
-`features/<ID>.md` with title, project, stage and sections in stored order. It
+`features/<ID>.md` with title, project, stage and sections in stored order, plus
+stored slice briefs at `features/<ID>/<slice ID>.md`. It
 removes obsolete generated feature IDs after project moves. Git uses a fresh
 root-managed directory beneath the fence clean root, host-only settings and
 no hooks. Fetch uses the existing read key; only push gets the existing write
@@ -1291,12 +1292,13 @@ holds chat identity; supplied chat IDs, actors and other identity arguments
 cannot select another chat. Each socket has its own 50-tool-call allowance,
 including refused tool calls; all later tool calls are refused. Initialization,
 tool discovery and protocol notifications do not consume that allowance.
-Requests are limited to 64 KiB and stalled socket reads time out after two seconds.
+Requests are limited to 512,000 bytes (including JSON escaping); brief text is
+limited separately to 64 KiB. Stalled socket reads time out after two seconds.
 Unexpected host failures return a fixed message; store refusals retain their
 short sentence.
 
 The operations are `board`, `feature`, `slices`, `documents`, `document`,
-`save_section`, `set_mark`, `move_feature`, `place_feature`, `add_feature` and
+`save_section`, `set_mark`, `move_feature`, `place_feature`, `add_feature`, `add_slice` and
 `raise_decision`. `move_feature` takes exactly one of `stage` or `project`;
 `add_feature` starts in Shortlist. A feature chat may change only its stable linked
 feature, including through aliases after project transfers. A project chat may
@@ -1305,7 +1307,7 @@ The orchestrator may write anywhere. Feature chats cannot add features.
 Placement uses the board's existing global stage order; an anchor is read-only.
 Reads may see the whole board and Library. Documents use the same committed
 Markdown export and reader as the Library. Explicit feature and slice field lists
-exclude executor/session metadata, attention bodies and logs. Settings, limits,
+exclude executor/session metadata, attention bodies and logs; `slices` additionally returns stored `brief_text`. Settings, limits,
 roles, keys, chat transcripts and run-record prompts have no tool operation.
 Nothing deletes, and there is no slice-executor attachment.
 
