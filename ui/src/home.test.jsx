@@ -46,3 +46,19 @@ test('inactive attention, running and Next remain visible with quick chat links'
   const quick = screen.getByLabelText('Quick chats');
   expect([...quick.querySelectorAll('a')].map(a => [a.textContent,a.getAttribute('href')])).toEqual([['Development Orchestrator','/chats/1'],['Lab','/chats/9']]);
 });
+
+test('install failure offers guarded retry beside Review and disables pending retries', async () => {
+  const item = {kind:'failure',id:'factory/IF1',retry_install:true,installing:false,text:'stderr: migration missing'};
+  const data = {projects:[],features:[],running:[],chats:[],attention:[item]};
+  const fetcher = vi.fn(async (url, options) => {
+    if (options) item.installing = true;
+    return {ok:true,json:async () => ({...data})};
+  });
+  vi.stubGlobal('fetch', fetcher);
+  render(<MemoryRouter><Home/></MemoryRouter>);
+  expect(await screen.findByText('stderr: migration missing')).toBeTruthy();
+  expect(screen.getByRole('link',{name:'Review'}).getAttribute('href')).toBe('/factory/slices/factory/IF1');
+  fireEvent.click(screen.getByRole('button',{name:'Retry install'}));
+  await waitFor(() => expect(fetcher).toHaveBeenCalledWith('/api/slices/factory/IF1/install', expect.objectContaining({method:'POST',headers:expect.objectContaining({'X-Factory-UI':'1'}),body:'{}'})));
+  await waitFor(() => expect(screen.getByRole('button',{name:'Install requested'}).disabled).toBe(true));
+});

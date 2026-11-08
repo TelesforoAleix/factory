@@ -1102,21 +1102,35 @@ human operation.
 A failed build, migration, restart or health check restores the previous code and
 managed host files, re-syncs Python, restarts and checks the services, then reports
 failure. **Migrations are not undone.** A failure during rollback needs operator
-repair; a failure result never claims the old installation is healthy. No raw
-command diagnostics, environment values or credentials go into scheduler state,
-notices or the unit journal. The node-step text is never evaluated as a command.
+repair; a failure result never claims the old installation is healthy. The installer
+lets command errors reach stderr. Failed results retain the last 8 KiB each of
+script stderr and stdout as UTF-8 text (dropping a partial leading character).
+The Failure card shows the last 512 characters of each stream. Inspect the full
+bounded output with `sudo factory-cplane show PROJECT/SLICE`, or read the private
+result file. Output is retained without heuristic scrubbing; no environment
+variables are printed and no GitHub credentials are passed to the script.
+Download and service-launch diagnostics remain suppressed. The node-step text
+is never evaluated as a command.
 
 Results are small atomic mode-0600 JSON files under
 `/srv/factory/runs/<anchor-hash>/installs/<request-id>.json`. The next pass answers
-the node step with `Installed <commit>` on success. Failure or any manual paths
-raises an escalation. Units use stable `factory-install-<request-id>` names,
+the node step with `Installed <commit>` on success. A failure keeps the node step
+unanswered, retains its merge metadata, and emits an escalation notice. Home shows
+a Failure card with **Retry install** beside **Review**, plus the open Install card.
+The owner can retry there or repeat `sudo factory-cplane --actor owner install PROJECT/SLICE`. Every retry is a new request for the same merged repository and
+SHA, pinned in the private job record before the first download; a different
+repository or SHA is refused before execution. Retries still require the allowlist
+and main ancestry checks. Answering the node step by hand closes it as before.
+Successful installs reporting manual paths retain the existing escalation flow.
+Units use stable `factory-install-<request-id>` names,
 start without blocking the pass, and remain loaded after exit, so a pass restart
 can find them without starting a second installation. A completed unit with no
 result, or a lost unit after persisted launch intent, escalates; it is never
 automatically replayed. Inspect status with
 `sudo systemctl status factory-install-<request-id>` and verify `REVISION` and
-service health before resolving an escalation. Finished units and private result
-files may be cleaned up by the operator after their result has been consumed.
+service health before retrying or answering by hand. Finished units and private
+result files may be cleaned up by the operator after their result has been consumed
+and their diagnostic output is no longer needed.
 Installations are never requested automatically after a merge.
 
 ## Project skills
@@ -1608,3 +1622,17 @@ sudo factory-cplane --actor owner install factory/DP2
 The orchestrator then checks that an archived chat's existing Decision card is
 gone from Home. Existing chats with a saved skill snapshot have their instruction
 modes repaired at their next turn; no workspace recreation is required.
+
+
+## Installer failure output and retries (IF1)
+
+After owner approval and merge, request the reviewed installation:
+
+```sh
+sudo factory-cplane --actor owner install factory/IF1
+```
+
+Confirm the install succeeds and the runner answers its node step. Future failures
+retain bounded script output in `show` and leave Install available for an owner
+retry of that same merged commit. No migration, new service or credential is needed.
+The root boundary, allowlist, exact-commit execution and rollback are unchanged.

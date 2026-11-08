@@ -13,6 +13,18 @@ from . import fence, installation, state
 from .executors import atomic_json
 
 INSTALL_ROOT = Path('/var/lib/factory/install')
+OUTPUT_LIMIT = 8192
+
+
+class InstallFailed(state.StateError):
+    def __init__(self, sha, repository, result):
+        super().__init__('Install failed; rollback attempted; migrations remain applied')
+        self.record = dict(ok=False, commit=sha, repository=repository,
+                           stderr=output_tail(result.stderr), stdout=output_tail(result.stdout))
+
+
+def output_tail(output):
+    return (output or '').encode('utf-8')[-OUTPUT_LIMIT:].decode('utf-8', errors='ignore')
 
 
 def github(repo, path, *, output=None):
@@ -50,13 +62,18 @@ def install(slice_id, request=None):
         requests = [r for s, r in installation.pending(data) if s['id'] == slice_id]
         if request is not None and request not in requests:
             raise state.StateError('Install request is no longer pending')
-        jobs = [json.loads(p.read_text()) for p in runs.glob('*/job.json')]
-        job = max((j for j in jobs if j['id'] == slice_id), key=lambda j: j['started_ns'], default={})
+        jobs = [(p, json.loads(p.read_text())) for p in runs.glob('*/job.json')]
+        job_path, job = max(((p, j) for p, j in jobs if j['id'] == slice_id),
+                            key=lambda pair: pair[1]['started_ns'], default=(None, {}))
         repo, sha = item['repo'], job.get('sha', '')
         if job.get('phase') != 'node-step' or job.get('repository', repo) != repo or not re.fullmatch('[0-9a-f]{40}', sha):
             raise state.StateError('Install requires recorded merge metadata')
         if repo not in os.environ.get('CPLANE_INSTALL_REPOS', '').split(',') or not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repo):
             raise state.StateError('Install repository is not allowlisted')
+        installation.check_commit(job, repo)
+        # Pin the first attempt durably before any download or root execution.
+        job.update(install_sha=sha, install_repository=repo)
+        atomic_json(job_path, job)
     comparison = github(repo, f'compare/{sha}...main')
     if comparison.get('status') not in ('ahead', 'identical') or comparison.get('merge_base_commit', {}).get('sha') != sha:
         raise state.StateError('Install commit is not on main')
@@ -73,9 +90,9 @@ def install(slice_id, request=None):
         env = {k: v for k, v in os.environ.items() if k.startswith('CPLANE_') or k in ('PATH', 'LANG')}
         env['HOME'] = '/root'
         result = subprocess.run(['/usr/bin/python3', str(script), str(stage), sha],
-                                env=env, capture_output=True, text=True)
+                                env=env, capture_output=True, text=True, errors='replace')
         if result.returncode:
-            raise state.StateError('Install failed; rollback attempted; migrations remain applied')
+            raise InstallFailed(sha, repo, result)
         answer = json.loads(result.stdout)
         return {'ok': True, 'commit': sha, 'manual': answer['manual']}
 
@@ -114,8 +131,10 @@ def main():
                 return 1
             try:
                 answer = install(args.slice_id, args.request)
+            except InstallFailed as error:
+                answer = error.record
             except Exception:
-                # No subprocess output, exception diagnostics, token or environment in logs.
+                # Download/service diagnostics can carry credentials; only script output is retained.
                 print('Install failed; inspect the installation and services (migrations are not undone)')
             directory = installation.runs_path(os.environ['CPLANE_STATE']) / 'installs'
             directory.mkdir(parents=True, exist_ok=True, mode=0o700)

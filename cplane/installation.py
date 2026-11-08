@@ -9,6 +9,7 @@ import uuid
 
 from . import state
 from .executors import atomic_json
+from .text_bounds import cut, ATTENTION_LIMIT
 
 REQUEST = 'install requested: '
 FINISHED = 'install finished: '
@@ -28,7 +29,9 @@ def installable(item):
 
 
 def install_failure(attention):
-    return bool(attention and attention['kind'] == 'escalation' and attention['body'].startswith('Install '))
+    return bool(attention and (attention['kind'] == 'escalation' and attention['body'].startswith('Install ')
+                               or attention['kind'] == 'node-step' and attention['answer'] is None
+                               and attention['body'].startswith('Install failed;')))
 
 
 def chat_requested(item):
@@ -45,10 +48,10 @@ def review_status(item):
     events = [e['event'] for e in item['log']]
     required = max((i for i, e in enumerate(events) if e.startswith((REQUEST, 'node-step:'))), default=-1)
     installed = max((i for i, e in enumerate(events) if e.startswith('Installed ')), default=-1)
-    if install_failure(item['attention']):
-        status = 'failed'
-    elif any(pending(dict(slices=[item]))):
+    if any(pending(dict(slices=[item]))):
         status = 'pending'
+    elif install_failure(item['attention']):
+        status = 'failed'
     elif (item['attention'] and item['attention']['kind'] == 'node-step'
           and item['attention']['answer'] is None):
         status = 'required'
@@ -69,6 +72,8 @@ def request_change(actor):
         attention = item['attention']
         if not attention or attention['kind'] != 'node-step' or attention['answer'] is not None:
             raise state.StateError('install requires an open node-step attention')
+        if actor != 'owner' and install_failure(attention):
+            raise state.StateError('only the owner can retry a failed install')
         current = next(pending(data), None)
         if current and actor == 'owner' and current[0]['id'] == item['id'] and any(
                 e['event'] == REQUEST + current[1] and e['actor'].startswith('chat:') for e in item['log']):
@@ -106,6 +111,46 @@ def start_unit(slice_id, request, directory):
         return False
 
 
+def check_commit(job, repository):
+    if (job.get('install_sha', job.get('sha')) != job.get('sha')
+            or job.get('install_repository', repository) != repository):
+        raise state.StateError('Install retry requires the same recorded merged commit and repository')
+
+
+def failure(runner, item, message):
+    """Keep the owner node step and job intact, while retaining escalation notices."""
+    attention = item['attention']
+    if attention and attention['kind'] == 'node-step' and attention['answer'] is None:
+        original = attention['body'].split('\n\nNode step:\n')[-1]
+        attention['body'] = cut('Install failed; ' + message + '\n\nNode step:\n' + original, ATTENTION_LIMIT)
+        runner.log(item, 'escalation: Install failed; ' + message, True)
+    else:
+        runner.attention(item, 'escalation', 'Install ' + message)
+
+
+def failure_summary(answer):
+    parts = []
+    for stream in ('stderr', 'stdout'):
+        output = answer.get(stream, '')
+        if isinstance(output, str) and output.strip():
+            parts.append(stream + ': ' + output.strip()[-512:])
+    return 'rollback attempted; migrations remain applied' + ('\n' + '\n'.join(parts) if parts else '; inspect the root install unit')
+
+
+def records(path, item):
+    directory = runs_path(path) / 'installs'
+    results = []
+    for entry in item['log']:
+        event = entry['event']
+        if event.startswith(REQUEST):
+            request = event[len(REQUEST):]
+            if re.fullmatch('[0-9a-f]{32}', request):
+                result = directory / (request + '.json')
+                if result.exists():
+                    results.append(dict(request=request, **json.loads(result.read_text())))
+    return results
+
+
 def process(runner):
     """Called under the scheduler lock. A stable unit name makes launch retry safe."""
     for item, request in list(pending(runner.data)):
@@ -129,38 +174,46 @@ def process(runner):
                     runner.log(item, attention['answer'], True)
                 else:
                     manual = answer.get('manual', [])
-                    runner.attention(item, 'escalation', 'Install needs attention: manual: ' + ', '.join(manual)
-                                     if answer['ok'] and manual else 'Install failed; inspect the root install unit')
+                    if answer['ok'] and manual:
+                        runner.attention(item, 'escalation', 'Install needs attention: manual: ' + ', '.join(manual))
+                    else:
+                        failure(runner, item, failure_summary(answer))
             except (ValueError, KeyError, TypeError):
-                runner.attention(item, 'escalation', 'Install result invalid or node step changed; inspect the root install unit')
+                failure(runner, item, 'result invalid or node step changed; inspect the root install unit')
             runner.log(item, FINISHED + request)
             continue
-        # A completed unit without a result is an interrupted/failed install, never retried.
+        # Never replay a completed/interrupted request; the owner may request a new attempt.
         try:
             status = subprocess.run(['systemctl', 'show', unit, '--property=LoadState,ActiveState'],
                                     capture_output=True, text=True)
         except OSError:
-            runner.attention(item, 'escalation', 'Install service manager unavailable')
+            failure(runner, item, 'service manager unavailable')
             runner.log(item, FINISHED + request)
             continue
         if 'LoadState=loaded' in status.stdout:
             if 'ActiveState=failed' in status.stdout or 'ActiveState=inactive' in status.stdout:
-                runner.attention(item, 'escalation', 'Install unit ended without a result; inspect the root install unit')
+                failure(runner, item, 'unit ended without a result; inspect the root install unit')
                 runner.log(item, FINISHED + request)
             continue
         if (directory / (request + '.started')).exists():
-            runner.attention(item, 'escalation', 'Install unit disappeared; inspect the node before retrying')
+            failure(runner, item, 'unit disappeared; inspect the node before retrying')
             runner.log(item, FINISHED + request)
             continue
         job = runner.jobs.get(item['id'])
         attention = item['attention']
         if not job or job.get('phase') != 'node-step' or not job.get('sha') or not attention or attention['kind'] != 'node-step' or attention['answer'] is not None:
-            runner.attention(item, 'escalation', 'Install requires recorded merge metadata and an open node step')
+            failure(runner, item, 'requires recorded merge metadata and an open node step')
+            runner.log(item, FINISHED + request)
+            continue
+        try:
+            check_commit(job, item['repo'])
+        except state.StateError as error:
+            failure(runner, item, str(error))
             runner.log(item, FINISHED + request)
             continue
         if not start_unit(item['id'], request, directory):
             # Do not log subprocess diagnostics or environment values.
-            runner.attention(item, 'escalation', 'Install unit could not start')
+            failure(runner, item, 'unit could not start')
             runner.log(item, FINISHED + request)
         else:
             runner.defer(item, 'install started: ' + request)

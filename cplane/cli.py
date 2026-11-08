@@ -556,6 +556,9 @@ def main(argv=None):
                 details = "\n".join(f"{key}: {json.dumps(value, ensure_ascii=False)}" for key, value in item.items())
                 folder = str(latest[1]) if latest else '(none)'
                 print(details + f'\nrun: {folder}')
+                from .installation import records
+                for record in records(path, item):
+                    print('install: ' + json.dumps(record, ensure_ascii=False))
         elif args.command in ("add", "edit", "state", "attention", "review"):
             event = note = None
             if args.command == "add" and not hasattr(args, "tool") and not hasattr(args, "model"):

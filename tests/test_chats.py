@@ -364,10 +364,11 @@ def test_node_step_wakes_only_installable_and_keeps_home_card(pg_store, slice_da
     assert card['installable'] == installable and not card['installing']
 
 
-def test_install_failure_remains_on_home_and_phone(pg_store, slice_data):
+@pytest.mark.parametrize('kind', ['escalation', 'node-step'])
+def test_install_failure_remains_on_home_and_phone(pg_store, slice_data, kind):
     identifier, chat = feature_chat(pg_store)
     body = 'Install failed; inspect the root install unit'
-    slice_data.update(feature_id=identifier, state='escalated', attention=dict(kind='escalation',
+    slice_data.update(feature_id=identifier, state='escalated' if kind == 'escalation' else 'issued', attention=dict(kind=kind,
         body=body, since='2026-01-01T00:00:00Z', answer=None, approved=False))
     notice = dict(at=slice_data['attention']['since'], id=slice_data['id'], event='escalation', text=body)
     pg_store.save(dict(version=1, slices=[slice_data]), [notice])
