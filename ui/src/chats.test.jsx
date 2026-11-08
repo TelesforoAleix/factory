@@ -21,7 +21,7 @@ test('opens a chat, queues a message, and marks it unread', async () => {
   expect(await screen.findByText('Hello')).toBeTruthy();
   expect(screen.getAllByText(/Instructions/)[0].closest('details').open).toBe(false);
   expect(await screen.findByText('Turn usage')).toBeTruthy();
-  expect(screen.getByText(/queued/)).toBeTruthy();
+  expect(screen.getByText('Queued')).toBeTruthy();
   expect(screen.getByLabelText('Chat tool').disabled).toBe(true);
   fireEvent.change(screen.getByLabelText('Message'), {target:{value:'Next'}});
   fireEvent.click(screen.getByRole('button', {name:'Send'}));
@@ -29,4 +29,14 @@ test('opens a chat, queues a message, and marks it unread', async () => {
   await waitFor(() => expect(fetchMock.mock.calls.some(([url, opts]) => url === '/api/factory/sessions/7/messages' && opts?.method === 'POST' && JSON.parse(opts.body).text === 'Next')).toBe(true));
   expect(fetchMock.mock.calls.some(([url]) => url === '/api/chats/7/unread')).toBe(true);
   expect(screen.getByText('Archived chats (1)').closest('details').open).toBe(false);
+});
+
+test('assistant Markdown is rendered while owner text stays literal', async () => {
+  const chat = {id:7, title:'Example', kind:'project', area:'factory', tool:'codex', model:'test', state:'idle'};
+  const messages = [{id:1, role:'assistant', text:'**Bold reply**\n\n<script>bad()</script>'}, {id:2, role:'owner', text:'**Literal owner**'}];
+  vi.stubGlobal('fetch', async url => ({ok:true, json:async () => url === '/api/chats' ? [chat] : url.endsWith('/open') ? {chat, messages} : url.endsWith('/messages') ? messages : url.endsWith('/usage') ? {} : chat}));
+  const {container} = render(<MemoryRouter initialEntries={['/chats/7']}><App/></MemoryRouter>);
+  expect((await screen.findByText('Bold reply')).tagName).toBe('STRONG');
+  expect(screen.getByText('**Literal owner**').closest('.owner').querySelector('strong').textContent).toBe('You');
+  expect(container.querySelector('script')).toBeNull();
 });

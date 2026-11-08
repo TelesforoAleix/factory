@@ -35,6 +35,13 @@ test('tree filters search by project and links skills with versions', async () =
   fireEvent.change(screen.getByLabelText('Search Library'),{target:{value:'router'}});
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/library?project=FAC&q=router',{}));
 });
+test('skill rows expose the selected project switch', async () => {
+  const fetchMock = fixture(); render(<MemoryRouter initialEntries={['/library?project=FAC']}><App/></MemoryRouter>);
+  const toggle = await screen.findByRole('checkbox', {name:'Enable grilling for FAC'});
+  expect(toggle.checked).toBe(true);
+  fireEvent.click(toggle);
+  await waitFor(() => expect(fetchMock.mock.calls.some(([url,o]) => url === '/api/skills/grilling' && o?.method === 'POST' && JSON.parse(o.body).enabled === false)).toBe(true));
+});
 test('selection saves a W3C quote with context and guards the write', async () => {
   const fetchMock=fixture(); render(<MemoryRouter initialEntries={['/library/documents/factory/plan.md']}><App/></MemoryRouter>);
   await screen.findByText('A searchable document.');
