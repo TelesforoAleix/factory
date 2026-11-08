@@ -1,4 +1,12 @@
 --- {"name": "brief", "description": "Write a self-contained executor brief before adding a feature slice through workshop."}
+
+For every feature or slice you create or propose, use a title of about 60 characters
+at most. Name what it does for the owner, without a project prefix (the project
+shows beside it) or file references. Put Summary first: 2–3 sentences saying what
+the owner can do when it is done and what it leaves out. Keep one concern per
+feature: two outcomes joined by "and" are two features. Slices follow the same
+title rule and have a one-sentence goal.
+
 Use this skill before workshop `add_slice`. Resolve architecture, scope, contract,
 security, persistence and topology decisions with the owner before cutting work.
 Only add work within the feature's agreed scope.
