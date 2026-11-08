@@ -30,6 +30,7 @@ test('tree filters search by project and links skills with versions', async () =
   const fetchMock=fixture(); render(<MemoryRouter initialEntries={['/library']}><App/></MemoryRouter>);
   expect(await screen.findByText('Plan')).toBeTruthy();
   expect(screen.getByText('Skills & guides')).toBeTruthy();
+  expect(screen.getByText('Skills & guides').closest('details').open).toBe(false);
   expect(screen.getByText('abcdef12')).toBeTruthy();
   fireEvent.change(screen.getByLabelText('Project'),{target:{value:'FAC'}});
   fireEvent.change(screen.getByLabelText('Search Library'),{target:{value:'router'}});
@@ -37,7 +38,9 @@ test('tree filters search by project and links skills with versions', async () =
 });
 test('skill rows expose the selected project switch', async () => {
   const fetchMock = fixture(); render(<MemoryRouter initialEntries={['/library?project=FAC']}><App/></MemoryRouter>);
-  const toggle = await screen.findByRole('checkbox', {name:'Enable grilling for FAC'});
+  await screen.findByText('Skills & guides');
+  fireEvent.click(screen.getByText('Skills & guides'));
+  const toggle = await screen.findByRole('checkbox', {name:'Enable grilling for Factory'});
   expect(toggle.checked).toBe(true);
   fireEvent.click(toggle);
   await waitFor(() => expect(fetchMock.mock.calls.some(([url,o]) => url === '/api/skills/grilling' && o?.method === 'POST' && JSON.parse(o.body).enabled === false)).toBe(true));
@@ -68,7 +71,7 @@ test('all drafts send once to chosen chat and sent history and changed quotes re
 test('skill text and project switch use the existing backend', async () => {
   const fetchMock=fixture(); render(<MemoryRouter initialEntries={['/library/skills/grilling?project=FAC']}><App/></MemoryRouter>);
   expect(await screen.findByText('Grill one question.')).toBeTruthy();
-  fireEvent.click(screen.getByRole('checkbox',{name:'Enabled for FAC'}));
+  fireEvent.click(await screen.findByRole('checkbox',{name:'Enabled for Factory'}));
   await waitFor(() => expect(fetchMock.mock.calls.some(([url,o]) => url==='/api/skills/grilling' && o?.method==='POST' && JSON.parse(o.body).enabled===false)).toBe(true));
 });
 test.each(['/home-lab','/home-lab/grills','/home-lab/backlog','/home-lab/documents/factory/plan.md'])('old address %s redirects into Library', async path => {
@@ -93,4 +96,16 @@ test('long documents retain their text and scrollable table wrapper', async () =
   expect(viewer.querySelector('p').textContent).toBe(longText);
   expect(viewer.querySelector('.table-scroll[tabindex="0"] table')).toBeTruthy();
   expect(viewer.querySelector('pre code').textContent.trim()).toBe(longText);
+});
+
+test('root documents precede folders and empty comments cannot be sent', async () => {
+  fixture(); const original = globalThis.fetch;
+  vi.stubGlobal('fetch', (url, options) => url.startsWith('/api/library?') ? Promise.resolve({ok:true,json:async () => ({projects:[],documents:[doc,{path:'root.md',title:'Root plan'}]})}) : original(url,options));
+  render(<MemoryRouter initialEntries={['/library/documents/factory/plan.md']}><App/></MemoryRouter>);
+  await screen.findByText('A searchable document.');
+  expect(screen.getByRole('button',{name:'Send 0 comments'}).disabled).toBe(true);
+  await screen.findByText('Root plan');
+  const tree = screen.getByRole('navigation',{name:'Library tree'});
+  expect(tree.textContent.indexOf('Skills & guides')).toBeLessThan(tree.textContent.indexOf('Documents'));
+  expect(tree.textContent.indexOf('Root plan')).toBeLessThan(tree.textContent.indexOf('factory'));
 });

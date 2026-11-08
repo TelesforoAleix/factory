@@ -28,12 +28,8 @@ test('shows a project selector and collapsible stage counts', async () => {
   const filter = await screen.findByLabelText('Project');
   expect(Array.from(filter.options).map(option => option.textContent)).toEqual(['All', ...projects.map(p => p.name)]);
   expect(document.querySelector('.feature-chip')).toBeNull();
-  const done = document.querySelector('.stage-done .stage-toggle');
+  expect(document.querySelector('.stage-done')).toBeNull();
+  expect(screen.queryByText('Finished feature')).toBeNull();
   const parked = document.querySelector('.stage-parked .stage-toggle');
-  expect(done.textContent).toContain('1');
-  expect(done.getAttribute('aria-expanded')).toBe('false');
   expect(parked.getAttribute('aria-expanded')).toBe('false');
-  fireEvent.click(done);
-  expect(done.getAttribute('aria-expanded')).toBe('true');
-  expect(document.querySelector('.stage-done').classList.contains('expanded')).toBe(true);
 });

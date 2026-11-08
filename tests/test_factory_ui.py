@@ -199,3 +199,24 @@ def test_home_projection_orders_attention_and_discards_stale_stuck(monkeypatch):
     assert client.get('/api/home').get_json()['attention'][0]['installable'] is True
     monkeypatch.setenv('CPLANE_INSTALL_REPOS', 'other/repo')
     assert client.get('/api/home').get_json()['attention'][0]['installable'] is False
+
+
+def test_chat_responses_include_project_name_and_fallback():
+    class ChatStore:
+        def library_projects(self):
+            return [dict(key='FAC', name='Factory')]
+
+        def chats(self, **kwargs):
+            return [dict(id=1, project='FAC'), dict(id=2, project='UNKNOWN')]
+
+        def chat_show(self, chat_id):
+            return dict(id=chat_id, project='FAC')
+
+        def chat_open(self, chat_id):
+            return dict(chat=self.chat_show(chat_id), messages=[])
+
+    client = create_app(ChatStore()).test_client()
+    rows = client.get('/api/chats').get_json()
+    assert [row['project_name'] for row in rows] == ['Factory', 'UNKNOWN']
+    assert client.get('/api/chats/1').get_json()['project_name'] == 'Factory'
+    assert client.post('/api/chats/1/open', headers={'X-Factory-UI': '1'}).get_json()['chat']['project_name'] == 'Factory'
