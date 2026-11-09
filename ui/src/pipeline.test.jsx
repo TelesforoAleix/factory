@@ -84,3 +84,17 @@ test('groups stages into four columns and toggles compact preview', async () => 
   fireEvent.keyDown(document, {key:'Escape'});
   expect(document.querySelector('.pipeline-layout.has-panel')).toBeNull();
 });
+
+test('phone stages start collapsed except the active three and a card closes on a second tap', async () => {
+  vi.stubGlobal('matchMedia', () => ({matches:true, addEventListener:vi.fn(), removeEventListener:vi.fn()}));
+  const card = {...feature, stage:'ready'};
+  vi.stubGlobal('fetch', vi.fn(async url => ({ok:true,json:async () => url === '/api/pipeline' ? {projects:[],features:[card]} : url === '/api/chats' ? [] : card})));
+  render(<MemoryRouter initialEntries={['/pipeline']}><App/></MemoryRouter>);
+  await screen.findByText('Synthetic feature');
+  expect([...document.querySelectorAll('.stage-toggle')].map(b => [b.textContent.trim().replace(/\s+\d+$/, ''), b.getAttribute('aria-expanded')])).toEqual([['Shortlist','false'],['Grilling','false'],['Ready','true'],['Next','true'],['Building','true'],['Testing','false'],['Parked','false']]);
+  const button = screen.getByRole('button',{name:/Synthetic feature/});
+  fireEvent.click(button);
+  await waitFor(() => expect(document.querySelector('.mobile-panel')).toBeTruthy());
+  fireEvent.click(button);
+  expect(document.querySelector('.mobile-panel')).toBeNull();
+});

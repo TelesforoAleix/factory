@@ -140,3 +140,18 @@ test('opens the transcript at its latest message', async () => {
     expect(document.querySelector('.chat-transcript').scrollTop).toBe(1000);
   } finally { height.mockRestore(); }
 });
+
+test('phone chat options menu contains the header actions', async () => {
+  vi.stubGlobal('matchMedia', () => ({matches:true, addEventListener:vi.fn(), removeEventListener:vi.fn()}));
+  const chat = {id:7,title:'Phone chat',kind:'feature',area:'factory',tool:'codex',model:'test',state:'idle'};
+  vi.stubGlobal('fetch', async url => ({ok:true,json:async () => url === '/api/projects' ? [] : url === '/api/chats' ? [chat] : url.endsWith('/open') ? {chat,messages:[]} : url.endsWith('/messages') ? [] : chat}));
+  render(<MemoryRouter initialEntries={['/chats/7']}><App/></MemoryRouter>);
+  const menu = await screen.findByRole('button',{name:'Chat options'});
+  expect(screen.queryByRole('button',{name:'Mark unread'})).toBeNull();
+  fireEvent.click(menu);
+  for (const name of ['Change model','Mark unread','Archive']) expect(screen.getByRole('button',{name})).toBeTruthy();
+  fireEvent.click(screen.getByRole('button',{name:'Change model'}));
+  expect(screen.getByLabelText('Chat model')).toBeTruthy();
+  fireEvent.keyDown(document,{key:'Escape'});
+  expect(screen.queryByRole('button',{name:'Mark unread'})).toBeNull();
+});

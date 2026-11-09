@@ -151,3 +151,14 @@ test('all document folders start collapsed, including unassigned folders', async
   expect([...tree.querySelectorAll('details')].every(d => !d.open)).toBe(true);
   expect(tree.textContent.indexOf('Root')).toBeLessThan(tree.textContent.indexOf('factory'));
 });
+
+test('phone document shows details and comments without write controls', async () => {
+  vi.stubGlobal('matchMedia', () => ({matches:true, addEventListener:vi.fn(), removeEventListener:vi.fn()}));
+  const fetcher = fixture([{id:1,text:'Read only',selector,time:'2026-11-01',sent_at:'2026-11-02'}]);
+  render(<MemoryRouter initialEntries={['/library/documents/factory/plan.md']}><App/></MemoryRouter>);
+  expect(await screen.findByText('Read only')).toBeTruthy();
+  expect(screen.getByText('Details').closest('details').open).toBe(false);
+  expect(screen.queryByRole('button',{name:/Send|Resolve|Delete|Grill/})).toBeNull();
+  expect(screen.queryByLabelText('Receiving chat')).toBeNull();
+  expect(fetcher.mock.calls.every(([,options]) => !options?.method)).toBe(true);
+});

@@ -1,3 +1,4 @@
+import {usePhone} from './phone';
 import {ProjectFilter, isActive} from './projects';
 import {FeatureChatLink} from './chats';
 import React, {useCallback, useEffect, useState} from 'react';
@@ -62,10 +63,11 @@ function Card({item, detail, index, selected, select, act, close, refresh}) {
 }
 function Column({stage, items, detail, selected, select, act, close, all, refresh}) {
   const {setNodeRef, isOver} = useDroppable({id: 'stage:' + stage});
-  const [expanded, setExpanded] = useState(!['done', 'parked'].includes(stage));
+  const [expanded, setExpanded] = useState(['ready', 'next', 'building'].includes(stage));
   return <div ref={setNodeRef} className={'pipeline-column stage-' + stage + (isOver ? ' over' : '') + (expanded ? ' expanded' : '') + (!items.length ? ' empty' : '')}><h2><span className="stage-heading">{name(stage)} <small>{items.length}</small></span><button className="stage-toggle" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{name(stage)} <small>{items.length}</small></button></h2><SortableContext items={items.map(i => i.id)} strategy={verticalListSortingStrategy}><div className="pipeline-cards">{items.map(item => <Card key={item.id} item={item} detail={detail} index={all.filter(f => f.stage === stage).findIndex(f => f.id === item.id)} selected={selected === item.id} select={() => select(item.id)} act={act} close={close} refresh={refresh}/>)}</div></SortableContext></div>;
 }
 export function Pipeline() {
+  const phone = usePhone();
   const [data, setData] = useState(null), [error, setError] = useState(''), [project, setProject] = useState('');
   const [params, setParams] = useSearchParams(); const selected = params.get('feature');
   const sensors = useSensors(useSensor(MouseSensor, {activationConstraint: {distance: 8}}), useSensor(TouchSensor, {activationConstraint: {delay: 300, tolerance: 8}}));
@@ -79,7 +81,7 @@ export function Pipeline() {
   useEffect(() => {refresh().catch(e => setError(e.message));}, []);
   async function post(id, operation, body) { const r = await fetch(`/api/pipeline/${encodeURIComponent(id)}/${operation}`, {method:'POST', headers:{'Content-Type':'application/json','X-Factory-UI':'1'}, body:JSON.stringify(body)}); const result = await r.json(); if (!r.ok) throw Error(result.error || 'Request failed'); }
   async function act(id, stage, placement) { try {setError(''); const item = data.features.find(f => f.id === id); if (stage !== item.stage) await post(id, 'move', {stage}); if (placement) await post(id, 'place', placement); } catch (e) {setError(e.message);} finally {try {await refresh();} catch {setError('Pipeline unavailable');}} }
-  function dragEnd({active, over}) {if (!over || active.id === over.id) return; const item = data.features.find(f => f.id === active.id), target = data.features.find(f => f.id === over.id); const stage = target?.stage || String(over.id).replace('stage:', ''); if (!stages.includes(stage)) return; const features = data.features.map(f => ({...f, inactive:!isActive(data.projects.find(p => p.key === f.project)), project_name:data.projects.find(p => p.key === f.project)?.name || f.project}));
+  function dragEnd({active, over}) {if (!over || active.id === over.id) return; const item = data.features.find(f => f.id === active.id), target = data.features.find(f => f.id === over.id); const stage = target?.stage || String(over.id).replace('stage:', ''); if (!stages.includes(stage) || (phone && stage !== item.stage)) return; const features = data.features.map(f => ({...f, inactive:!isActive(data.projects.find(p => p.key === f.project)), project_name:data.projects.find(p => p.key === f.project)?.name || f.project}));
   const visible = features.filter(f => f.stage === stage && (!project || f.project === project) && f.id !== item.id); let placement = {bottom:true}; if (target) { const old = data.features.filter(f => f.stage === stage).findIndex(f => f.id === item.id); const idx = data.features.filter(f => f.stage === stage).findIndex(f => f.id === target.id); placement = item.stage === stage && old < idx ? {after:target.id} : {before:target.id}; } else if (visible.length) placement = {after:visible[visible.length-1].id}; act(item.id, stage, placement); }
   const select = id => setParams(id && id !== selected ? {feature:id} : {});
   useEffect(() => {if (!selected) return; const key = e => {if (e.key === 'Escape') setParams({});}; document.addEventListener('keydown', key); return () => document.removeEventListener('keydown', key);}, [selected, setParams]);
