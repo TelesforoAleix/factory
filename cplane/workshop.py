@@ -92,7 +92,7 @@ TOOLS += [
          dict(file=dict(type='integer'), offset=dict(type='integer')), ('file',)),
     tool('idea_list', 'Read ideas.'),
     tool('idea_show', 'Read an idea.', dict(idea=dict(type='integer')), ('idea',)),
-    tool('inbox_route', 'Secretary: label and route an arrival.',
+    tool('inbox_route', 'Secretary: label and route an arrival. Set project to the matching existing project key, or new project only if none fits; development is a destination, not a project.',
          dict(entry=dict(type='integer'),
               kind=dict(type='string', enum=['idea', 'feedback', 'question', 'update request', 'order']),
               confidence=dict(type='number'), project=string(), feature=string(), title=string(),

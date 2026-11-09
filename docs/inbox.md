@@ -13,7 +13,7 @@ Orchestrator's writable homelab planning workspace. It receives the existing
 Workshop reads plus inbox/idea reads, and only three writes: `inbox_route`,
 `inbox_answer`, `secretary_question`. Host authorization checks each call even if
 an agent invokes a tool absent from its advertised list. Its questions can target
-only the Development Orchestrator or a project orchestrator. All new arrivals, questions and returned orchestrator answers are automatic turns and retain the existing pause limit. The Secretary
+only the Development Orchestrator or a project orchestrator. New arrival turns do not count toward the automatic-turn limit and are handled even when the Secretary is paused. The Secretary’s questions and returned orchestrator answers remain automatic turns subject to the pause limit. The Secretary
 cannot be archived. A fresh arrival after a failed Secretary turn starts a fresh
 CLI conversation while preserving the automatic count and pause. Archived or
 failed destination chats refuse delivery, leaving arrivals New for the owner.
@@ -78,7 +78,7 @@ Only `text`, `fields`, `files` are accepted. `text` is required (it may be empty
 when files are supplied). Sender fields are optional and restricted to the keys
 shown. Sender kinds are `idea`, `link`, `file`, `message`; intent is `explore` or
 `discuss`. Targets may be `development`, a project key or its unique name.
-Arrival kinds are preserved independently of the Secretary's five labels.
+Arrival kinds are preserved independently of the Secretary's five labels. Each arrival turn lists existing project keys and names; the Secretary selects the matching project key and uses `new project` only when no existing project fits. The `development` target selects the Development Orchestrator and does not imply a new project.
 The response is `{"id":42}` or an error object, then the connection closes.
 There is no deduplication key: retries create separate arrivals. A client that
 loses a response should check the inbox before resubmitting.
@@ -130,10 +130,10 @@ including owner correction closes. Reject requires a one-line reason; already
 promoted/implemented ideas cannot be rejected. The existing 32,000-character
 chat-message limit also applies to combined idea context; split a larger batch.
 
-## API for the next page
+## Owner page and API
 
 All writes require the existing `X-Factory-UI: 1` header and operate as `owner`.
-No page is included.
+The Ideas page at `/ideas` provides Inbox and Ideas tabs, owner routing, idea actions and detail views. Failed or refused arrival turns remain New and display a fixed reason; raw errors are not shown.
 
 | Method | Path | Payload/result |
 | --- | --- | --- |
@@ -142,6 +142,7 @@ No page is included.
 | GET | `/api/inbox/<entry>` | Original text/fields, metadata, transcript, idea/message links |
 | GET | `/api/inbox/files/<file>?offset=0` | Up to 64,000 bytes, base64, total length and offset |
 | POST | `/api/inbox/<entry>/transcript` | `{text}` |
+| POST | `/api/inbox/<entry>/route` | `{route: "Idea"}`, `{route: "chat", chat: 42}`, or `{route: "Rejected", reason: "One line"}` |
 | GET | `/api/ideas` | Ideas, newest first |
 | POST | `/api/ideas` | `{title, note?, tags?, files?}`; New idea with typed provenance (files use the socket shape) |
 | GET | `/api/ideas/<idea>` | Idea, attachments, feature links, state and actor history |
@@ -150,8 +151,7 @@ No page is included.
 | POST | `/api/ideas/reject` | `{idea: 7, reason: "One line"}` |
 | POST | `/api/ideas/tag` | `{idea: 7, tags: ["FAC", "intake"]}` |
 
-API responses retain owner content; the next page must render it as text, never
-HTML. Reads do not execute models. Explore/promote enqueue chat work and return
+API responses retain owner content; the page renders it as text, never HTML. Reads do not execute models. Explore/promote enqueue chat work and return
 its message ID; the detail/history endpoints expose subsequent completion.
 
 ## Validation and UI follow-up
@@ -175,12 +175,7 @@ settings and unit hardening checks. `git diff --check` passed. Remote `test` and
 `ui` checks remain the runner's
 responsibility before the owner merges.
 
-The existing Chats page groups only its previous kinds. An unread Secretary
-reply appears under Waiting for you, but after it is read the chat has no list
-group. Its direct `/chats/<id>` route, message composer and model configuration
-work. Find its ID with `factory-cplane chat list --kind secretary`. The next UI
-slice should add its navigation group; IB1 changes only APIs, as scoped. No
-Ideas page or Telegram bot integration is included here.
+The Chats page includes the Secretary group. No Telegram bot integration is included.
 
 On installer rollback, intake is stopped before code is restored. Additive
 migrations and the service account/group membership remain, as do all durable records.

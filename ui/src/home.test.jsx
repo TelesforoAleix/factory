@@ -62,3 +62,11 @@ test('failed install offers same-slice retry beside Review', async () => {
   await waitFor(() => expect(fetcher).toHaveBeenCalledWith('/api/slices/factory/IF1b/install', expect.objectContaining({method:'POST'})));
   await waitFor(() => expect(screen.getByRole('button', {name:'Install requested'}).disabled).toBe(true));
 });
+
+test('Home links new arrivals and ready explorations', async () => {
+  const data = {projects:[],features:[],running:[],chats:[],attention:[]};
+  vi.stubGlobal('fetch', async url => ({ok:true,json:async () => url === '/api/inbox' ? [{id:1,route:'New'},{id:2,route:'Idea'}] : url === '/api/ideas' ? [{id:8,title:'Insight',state:'exploring',exploration_note:'Ready'}] : data}));
+  render(<MemoryRouter><Home/></MemoryRouter>);
+  expect((await screen.findByRole('link',{name:'1 inbox items need routing'})).getAttribute('href')).toBe('/ideas?tab=inbox');
+  expect(screen.getByRole('link',{name:'Insight · Exploration ready'}).getAttribute('href')).toBe('/ideas?tab=ideas&idea=8');
+});

@@ -224,3 +224,20 @@ def test_chat_responses_include_project_name_and_fallback():
     assert [row['project_name'] for row in rows] == ['Factory', 'UNKNOWN']
     assert client.get('/api/chats/1').get_json()['project_name'] == 'Factory'
     assert client.post('/api/chats/1/open', headers={'X-Factory-UI': '1'}).get_json()['chat']['project_name'] == 'Factory'
+
+
+def test_inbox_owner_route_guard_and_dispatch():
+    from unittest.mock import Mock
+    store = Mock()
+    store.inbox_show.return_value = {'label': None}
+    store.inbox_route.return_value = {'route': 'Idea'}
+    store.inbox_reject.return_value = {'route': 'Rejected'}
+    client = create_app(store).test_client()
+    path = '/api/inbox/42/route'
+    assert client.post(path, json={'route': 'Idea'}).status_code == 403
+    headers = {'X-Factory-UI': '1'}
+    assert client.post(path, json={'route': 'Idea'}, headers=headers).json['route'] == 'Idea'
+    store.inbox_route.assert_called_once_with(42, 'idea', 1, project=None, actor='owner')
+    assert client.post(path, json={'route': 'Rejected', 'reason': 'No'}, headers=headers).json['route'] == 'Rejected'
+    store.inbox_reject.assert_called_once_with(42, 'No', actor='owner')
+    assert client.post(path, json={'route': 'chat', 'chat': 'secretary'}, headers=headers).status_code == 400

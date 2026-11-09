@@ -317,7 +317,9 @@ class PostgresStore(InboxStore, FeatureStore, RunRecordStore, SkillStore, ChatSt
                 if row[5] and row[4] == 'system' and not self.chat_event_owned(row[2]):
                     self.connection.execute("UPDATE cplane_session_messages SET status = 'done' WHERE id = %s", (row[0],))
                     continue
-                if row[5] and not self.chat_can_take(session['id']):
+                arrival = bool(row[5] and session['kind'] == 'secretary' and self.connection.execute(
+                    'SELECT 1 FROM cplane_inbox WHERE wake = %s', (row[0],)).fetchone())
+                if row[5] and not arrival and not self.chat_can_take(session['id']):
                     continue
                 repositories = self.resolve_chat_repositories(session['repositories'])
                 if any(not REPOSITORY.fullmatch(r) for r in repositories):
@@ -342,9 +344,9 @@ class PostgresStore(InboxStore, FeatureStore, RunRecordStore, SkillStore, ChatSt
                     'UPDATE cplane_sessions SET skill_names = %s, skill_version = %s WHERE id = %s',
                     (Jsonb(names), version, session['id']))
                 session.update(skill_names=names, skill_version=version)
-            if row[5]:
+            if row[5] and not arrival:
                 self.connection.execute('UPDATE cplane_sessions SET auto_turns = auto_turns + 1 WHERE id = %s', (row[1],))
-            else:
+            elif not row[5]:
                 self.connection.execute('UPDATE cplane_sessions SET auto_turns = 0, auto_paused = false WHERE id = %s', (row[1],))
             self.connection.execute("UPDATE cplane_session_messages SET status = 'running' WHERE id = %s", (row[0],))
             self.connection.execute("UPDATE cplane_sessions SET state = 'running' WHERE id = %s", (row[1],))

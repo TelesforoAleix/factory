@@ -26,6 +26,8 @@ export function Attention({item, act}) {
   </article>;
 }
 export function Home() {
+  const [inboxIdeas,setInboxIdeas] = useState({inbox:[],ideas:[]});
+  useEffect(() => {let live = true; const stop = visiblePolling(async () => {try {const [inbox,ideas] = await Promise.all(['/api/inbox','/api/ideas'].map(async u => {const r = await fetch(u); if (!r.ok) throw Error(); return r.json();})); if (live && Array.isArray(inbox) && Array.isArray(ideas)) setInboxIdeas({inbox,ideas});} catch {}}, 30000); return () => {live = false; stop();};}, []);
   const [data,setData] = useState(null), [error,setError] = useState(''), [project,setProject] = useState('');
   const sensors = useSensors(useSensor(MouseSensor, {activationConstraint:{distance:8}}), useSensor(TouchSensor, {activationConstraint:{delay:300,tolerance:8}}));
   useEffect(() => {if (data?.projects.some(p => p.key === project && !isActive(p))) setProject('');}, [data, project]);
@@ -36,6 +38,7 @@ export function Home() {
   if (!data) return <><h1>Home</h1><p>{error || 'Loading…'}</p></>;
   const visible = x => !project || x.project === project; const cards = data.attention.filter(x => visible(x) || x.kind === 'limit'); const next = data.features.filter(f => f.stage === 'next' && visible(f));
   return <div className="home"><div className="page-heading"><h1>Home</h1><ProjectFilter projects={data.projects} value={project} onChange={setProject}/></div>{error && <p role="alert">{error}</p>}
+    {(inboxIdeas.inbox.some(i => i.route === 'New') || inboxIdeas.ideas.some(i => i.state === 'exploring' && i.exploration_note)) && <section><h2>Needs you</h2>{inboxIdeas.inbox.filter(i => i.route === 'New').length > 0 && <p><Link to="/ideas?tab=inbox">{inboxIdeas.inbox.filter(i => i.route === 'New').length} inbox items need routing</Link></p>}{inboxIdeas.ideas.filter(i => i.state === 'exploring' && i.exploration_note && (!project || i.tags?.includes(project))).map(i => <p key={i.id}><Link to={'/ideas?tab=ideas&idea=' + i.id}>{i.title} · Exploration ready</Link></p>)}</section>}
     {!!cards.length && <section><h2>Needs your attention</h2><div className="home-board">{cards.map((a,i) => <Attention key={a.kind + a.id + a.since + i} item={a} act={act}/>)}</div></section>}
     <div className="quick-chats" aria-label="Quick chats">{(data.quick_chats || []).map(c => <Link key={c.id} to={'/chats/' + c.id}>{c.title}</Link>)}</div>
     <section><h2>Chats waiting for you</h2>{data.chats.filter(visible).length ? <div className="list">{data.chats.filter(visible).map(c => <Link className="home-row" key={c.id} to={'/chats/' + c.id}><strong>{c.project && c.title === c.project ? (data.projects.find(p => p.key === c.project)?.name || c.project) : c.title}</strong><small>{c.feature || data.projects.find(p => p.key === c.project)?.name || c.project || 'Chat'}</small></Link>)}</div> : <p className="muted">No chats waiting.</p>}</section>
