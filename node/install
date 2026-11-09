@@ -17,7 +17,7 @@ PROTECTED = ('node/cli', 'node/proxy', 'node/compose.yaml', 'node/check-fence.py
 
 
 def run(*args, **kwargs):
-    return subprocess.run(args, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kwargs)
+    return subprocess.run(args, check=True, stdout=subprocess.DEVNULL, **kwargs)
 
 
 def files(path):
@@ -38,7 +38,7 @@ def remove(path):
 def sync():
     env = {**os.environ, 'UV_PYTHON_INSTALL_DIR': '/opt/python'}
     python = subprocess.run(['uv', 'python', 'find', '3.13'], env=env, check=True,
-                            capture_output=True, text=True).stdout.strip()
+                            stdout=subprocess.PIPE, text=True).stdout.strip()
     if not Path(python).resolve().is_relative_to('/opt/python'):
         raise ValueError('Python must be under /opt/python')
     run('uv', 'sync', '--project', str(TARGET), '--python', python, '--frozen', '--no-dev', env=env)

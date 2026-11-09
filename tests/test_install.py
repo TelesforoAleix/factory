@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tarfile
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -71,7 +72,7 @@ def prepared_runner(tmp_path, slice_data):
 
 @pytest.mark.parametrize('result,kind', [({'ok': True, 'commit': SHA, 'manual': []}, 'node-step'),
                                         ({'ok': True, 'commit': SHA, 'manual': ['node/proxy']}, 'escalation'),
-                                        ({'ok': False}, 'escalation')])
+                                        ({'ok': False}, 'node-step')])
 def test_launch_then_result(tmp_path, slice_data, monkeypatch, result, kind):
     runner, item, request = prepared_runner(tmp_path, slice_data)
     calls = []
@@ -96,8 +97,12 @@ def test_launch_then_result(tmp_path, slice_data, monkeypatch, result, kind):
     (runner.runs / 'installs' / (request + '.json')).write_text(json.dumps(result))
     installation.process(runner)
     assert item['attention']['kind'] == kind
-    if kind == 'node-step':
+    if result['ok'] and not result.get('manual'):
         assert item['attention']['answer'] == 'Installed ' + SHA + '. Node steps are done. End with kind handover.'
+    if not result['ok']:
+        assert item['attention']['answer'] is None
+        assert installation.install_failure(item['attention'])
+        assert runner.jobs[item['id']]['sha'] == SHA
     assert not list(installation.pending(runner.data))
 
 
@@ -325,6 +330,18 @@ def test_pass_only_launches_after_explicit_request(tmp_path, slice_data, make_st
     assert 'touch' not in launches.read_text()
     assert not runner.processes.started
     request = next(installation.pending(state.load(path)))[1]
+    (runner.runs / 'installs' / (request + '.json')).write_text(json.dumps({'ok': False, 'stderr': 'migration missing'}))
+    runner.run()
+    runner.run()
+    failed_item = state.load(path)['slices'][0]
+    assert installation.install_failure(failed_item['attention'])
+    assert failed_item['attention']['kind'] == 'node-step'
+    assert failed_item['attention']['answer'] is None
+    recorded = json.loads((job_dir / 'job.json').read_text())
+    assert recorded['phase'] == 'node-step' and recorded['sha'] == SHA
+    assert not runner.processes.started
+    assert main(['--state', str(path), 'install', item['id']]) == 0
+    request = next(installation.pending(state.load(path)))[1]
     (runner.runs / 'installs' / (request + '.json')).write_text(json.dumps({'ok': True, 'commit': SHA, 'manual': []}))
     runner.launch = Mock()
     runner.run()
@@ -447,3 +464,145 @@ def test_runner_timer_cadence_and_oneshot_unit():
     assert 'OnUnitActiveSec=60s\n' in timer
     assert 'Unit=factory-runner.service\n' in timer
     assert 'Type=oneshot\n' in service
+
+
+def script_archive(monkeypatch, script):
+    # The production root interpreter path need not exist in the test container.
+    real_run = subprocess.run
+
+    def run(args, **kwargs):
+        if args[0] == '/usr/bin/python3':
+            args = [sys.executable, *args[1:]]
+        return real_run(args, **kwargs)
+
+    monkeypatch.setattr(install_host.subprocess, 'run', run)
+    archive = io.BytesIO()
+    with tarfile.open(fileobj=archive, mode='w:gz') as tar:
+        content = script.encode()
+        info = tarfile.TarInfo('root/node/install')
+        info.size = len(content)
+        tar.addfile(info, io.BytesIO(content))
+    paths = []
+
+    def github(repo, path, output=None):
+        paths.append(path)
+        if output:
+            output.write(archive.getvalue())
+        else:
+            return {'status': 'ahead', 'merge_base_commit': {'sha': SHA}}
+    monkeypatch.setattr(install_host, 'github', github)
+    return paths
+
+
+def test_failed_script_persists_bounded_output_and_retries_same_commit(
+        tmp_path, make_state, slice_data, monkeypatch, capsys):
+    from cplane import fence
+    path = host_setup(tmp_path, make_state, slice_data, monkeypatch)
+    marker = tmp_path / 'first-attempt'
+    paths = script_archive(monkeypatch, f'''
+import json, sys
+from pathlib import Path
+marker = Path({str(marker)!r})
+if not marker.exists():
+    marker.touch()
+    print('é' * 12000 + ' stdout cause')
+    print('界' * 12000 + ' migration missing', file=sys.stderr)
+    sys.exit(7)
+print(json.dumps({{'manual': []}}))
+''')
+    monkeypatch.setattr(install_host.os, 'geteuid', lambda: 0)
+    monkeypatch.setattr(fence, 'trusted_directory', lambda p: p)
+    assert main(['--state', str(path), 'install', slice_data['id']]) == 0
+    request = next(installation.pending(state.load(path)))[1]
+    monkeypatch.setattr('sys.argv', ['factory-install', slice_data['id'], '--request', request])
+    assert install_host.main() == 1
+    record = json.loads((installation.runs_path(path) / 'installs' / (request + '.json')).read_text())
+    assert record['returncode'] == 7
+    assert record['commit'] == SHA
+    assert record['repository'] == slice_data['repo']
+    for stream in ('stderr', 'stdout'):
+        assert 8100 < len(record[stream].encode()) <= 8192
+    assert record['stderr'].endswith('migration missing\n')
+    assert record['stdout'].endswith('stdout cause\n')
+    runner = Runner(path)
+    runner.data, runner.at = state.load(path), '2026-11-08T00:00:00+00:00'
+    runner.jobs = {slice_data['id']: {'phase': 'node-step', 'sha': SHA}}
+    installation.process(runner)
+    item = runner.data['slices'][0]
+    assert item['attention']['kind'] == 'node-step'
+    assert item['attention']['answer'] is None
+    assert 'migration missing' in item['attention']['body']
+    state.save(path, runner.data)
+    from factory_ui.home import home_data
+    store = SimpleNamespace(load=lambda: runner.data, notices=lambda: [], chats=lambda **kw: [],
+                            limit_show=lambda: {'waiting_limit': 10})
+    card = home_data(store, {'features': [], 'projects': []}, lambda x: x, None)['attention'][0]
+    assert card['kind'] == 'failure'
+    assert card['retry_install']
+    assert 'migration missing' in card['text']
+    assert len(card['text'].encode()) < 1200
+    capsys.readouterr()
+    assert main(['--state', str(path), 'show', slice_data['id']]) == 0
+    shown = capsys.readouterr().out
+    assert json.dumps(record) in shown
+    with pytest.raises(state.StateError, match='belong to the owner'):
+        installation.request_change('chat:22')(item, runner.data, runner.at)
+    assert main(['--state', str(path), 'install', slice_data['id']]) == 0
+    request2 = next(installation.pending(state.load(path)))[1]
+    assert request2 != request
+    monkeypatch.setattr('sys.argv', ['factory-install', slice_data['id'], '--request', request2])
+    assert install_host.main() == 0
+    assert json.loads((runner.runs / 'installs' / (request2 + '.json')).read_text())['commit'] == SHA
+    assert paths == [f'compare/{SHA}...main', f'tarball/{SHA}'] * 2
+    runner.data = state.load(path)
+    installation.process(runner)
+    assert runner.data['slices'][0]['attention']['answer'].startswith('Installed ' + SHA)
+
+
+@pytest.mark.parametrize('changed', ['sha', 'repository'])
+def test_retry_refuses_changed_merge_metadata(tmp_path, make_state, slice_data, monkeypatch, changed):
+    path = host_setup(tmp_path, make_state, slice_data, monkeypatch)
+    script_archive(monkeypatch, 'import sys; sys.exit(1)')
+    failure = install_host.install(slice_data['id'])
+    directory = installation.runs_path(path) / 'installs'
+    directory.mkdir()
+    (directory / ('b' * 32 + '.json')).write_text(json.dumps(failure))
+    job_path = installation.runs_path(path) / 'job/job.json'
+    job = json.loads(job_path.read_text())
+    job[changed] = 'b' * 40 if changed == 'sha' else 'other/repository'
+    if changed == 'repository':
+        data = state.load(path)
+        data['slices'][0]['repo'] = job[changed]
+        state.save(path, data)
+        monkeypatch.setenv('CPLANE_INSTALL_REPOS', job[changed])
+    job_path.write_text(json.dumps(job))
+    github = Mock()
+    monkeypatch.setattr(install_host, 'github', github)
+    with pytest.raises(state.StateError, match='same recorded merged commit'):
+        install_host.install(slice_data['id'])
+    github.assert_not_called()
+
+
+def test_node_installer_keeps_command_stderr(installer, monkeypatch):
+    module, *_ = installer
+    command = Mock()
+    monkeypatch.setattr(module.subprocess, 'run', command)
+    module.run('factory-cplane', 'migrate')
+    assert 'stderr' not in command.call_args.kwargs
+
+
+@pytest.mark.parametrize('postgres', [False, True])
+def test_failed_node_step_can_be_answered_by_hand(make_state, slice_data, request, postgres):
+    path = make_state([node_step(slice_data)])
+    if postgres:
+        store = request.getfixturevalue('pg_store')
+        store.import_file(path)
+    runner = Runner(path)
+    runner.data = state.load(path)
+    runner.at = '2026-11-08T00:00:00+00:00'
+    item = runner.data['slices'][0]
+    installation.failed(runner, item, 'Install failed; migration missing')
+    state.save(path, runner.data)
+    assert main(['--state', str(path), 'answer', item['id'], 'Installed by hand']) == 0
+    assert state.load(path)['slices'][0]['attention']['answer'] == 'Installed by hand'
+    assert main(['--state', str(path), 'install', item['id']]) == 1

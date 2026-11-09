@@ -55,6 +55,12 @@ def install(slice_id, request=None):
         repo, sha = item['repo'], job.get('sha', '')
         if job.get('phase') != 'node-step' or job.get('repository', repo) != repo or not re.fullmatch('[0-9a-f]{40}', sha):
             raise state.StateError('Install requires recorded merge metadata')
+        for previous in (runs / 'installs').glob('*.json'):
+            record = json.loads(previous.read_text())
+            if (record.get('id') == slice_id and record.get('node_since') == attention['since']
+                    and record.get('commit') and
+                    (record['commit'] != sha or record.get('repository') != repo)):
+                raise state.StateError('Install retry must use the same recorded merged commit')
         if repo not in os.environ.get('CPLANE_INSTALL_REPOS', '').split(',') or not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repo):
             raise state.StateError('Install repository is not allowlisted')
     comparison = github(repo, f'compare/{sha}...main')
@@ -73,9 +79,13 @@ def install(slice_id, request=None):
         env = {k: v for k, v in os.environ.items() if k.startswith('CPLANE_') or k in ('PATH', 'LANG')}
         env['HOME'] = '/root'
         result = subprocess.run(['/usr/bin/python3', str(script), str(stage), sha],
-                                env=env, capture_output=True, text=True)
+                                env=env, capture_output=True, text=True, errors='replace')
         if result.returncode:
-            raise state.StateError('Install failed; rollback attempted; migrations remain applied')
+            return {'ok': False, 'id': slice_id, 'repository': repo, 'commit': sha,
+                    'node_since': attention['since'], 'returncode': result.returncode,
+                    'error': 'Install failed; rollback attempted; migrations remain applied',
+                    'stderr': installation.output_tail(result.stderr),
+                    'stdout': installation.output_tail(result.stdout)}
         answer = json.loads(result.stdout)
         return {'ok': True, 'commit': sha, 'manual': answer['manual']}
 
@@ -115,7 +125,7 @@ def main():
             try:
                 answer = install(args.slice_id, args.request)
             except Exception:
-                # No subprocess output, exception diagnostics, token or environment in logs.
+                # Setup failures do not include arbitrary exception or environment diagnostics.
                 print('Install failed; inspect the installation and services (migrations are not undone)')
             directory = installation.runs_path(os.environ['CPLANE_STATE']) / 'installs'
             directory.mkdir(parents=True, exist_ok=True, mode=0o700)

@@ -4,6 +4,7 @@ from datetime import datetime
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import sys
 import subprocess
@@ -570,6 +571,15 @@ def main(argv=None):
                 details = "\n".join(f"{key}: {json.dumps(value, ensure_ascii=False)}" for key, value in item.items())
                 folder = str(latest[1]) if latest else '(none)'
                 print(details + f'\nrun: {folder}')
+                from .installation import REQUEST, runs_path
+                for entry in item['log']:
+                    if entry['event'].startswith(REQUEST):
+                        request = entry['event'][len(REQUEST):]
+                        if not re.fullmatch('[0-9a-f]{32}', request):
+                            continue
+                        result = runs_path(path) / 'installs' / (request + '.json')
+                        if result.exists():
+                            print(f'install {request}: ' + result.read_text())
         elif args.command in ("add", "edit", "state", "attention", "review"):
             event = note = None
             if args.command == "add" and not hasattr(args, "tool") and not hasattr(args, "model"):

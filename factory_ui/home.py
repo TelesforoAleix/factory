@@ -3,7 +3,7 @@ import os
 from datetime import datetime, timezone
 
 from cplane.runner import stuck_since
-from cplane.installation import pending
+from cplane.installation import pending, install_failure
 from cplane.chats import public_chat_result
 
 
@@ -32,6 +32,10 @@ def home_data(store, board, clean, view):
                         feature=f['id'] if f else None, chat=chat['id'] if chat else None)
             if a['kind'] == 'merge' and not a['approved'] and a.get('review'):
                 add('approval', s['id'], a['since'], **base, verdict=clean(a['review']['verdict']), pr=s['pr'])
+            elif install_failure(a) and a['answer'] is None:
+                add('failure', s['id'], a['since'], **base,
+                    retry_install=a['kind'] == 'node-step' and s['repo'] in allowed,
+                    installing=s['id'] in installing)
             elif a['kind'] == 'node-step' and a['answer'] is None:
                 add('install', s['id'], a['since'], **base, installable=s['repo'] in allowed, installing=s['id'] in installing)
             elif a['kind'] in ('question', 'escalation') and a['answer'] is None and not a.get('chat_id'):

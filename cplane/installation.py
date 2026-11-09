@@ -12,6 +12,34 @@ from .executors import atomic_json
 
 REQUEST = 'install requested: '
 FINISHED = 'install finished: '
+OUTPUT_LIMIT = 8192
+NODE_STEPS = '\n\nNode steps:\n'
+
+
+def output_tail(value, limit=OUTPUT_LIMIT):
+    return value.encode('utf-8')[-limit:].decode('utf-8', errors='ignore')
+
+
+def failure_text(answer):
+    text = answer.get('error', 'Install failed; inspect the root install unit')
+    for stream in ('stderr', 'stdout'):
+        tail = output_tail(answer.get(stream, ''), 512)
+        if tail:
+            text += f'\n{stream}: {tail}'
+    return text
+
+
+def failed(runner, item, text):
+    attention = item['attention']
+    if attention and attention['kind'] == 'node-step' and attention['answer'] is None:
+        # Preserve the original interval and job: answering by hand still closes it.
+        original = attention['body']
+        if install_failure(attention):
+            original = original.split(NODE_STEPS, 1)[1]
+        attention['body'] = text + NODE_STEPS + original
+        runner.log(item, 'escalation: ' + text, True)
+    else:
+        runner.attention(item, 'escalation', text)
 
 
 def pending(data):
@@ -28,7 +56,9 @@ def installable(item):
 
 
 def install_failure(attention):
-    return bool(attention and attention['kind'] == 'escalation' and attention['body'].startswith('Install '))
+    return bool(attention and attention['body'].startswith('Install ') and
+                (attention['kind'] == 'escalation' or
+                 (attention['kind'] == 'node-step' and NODE_STEPS in attention['body'])))
 
 
 def chat_requested(item):
@@ -69,6 +99,8 @@ def request_change(actor):
         attention = item['attention']
         if not attention or attention['kind'] != 'node-step' or attention['answer'] is not None:
             raise state.StateError('install requires an open node-step attention')
+        if actor != 'owner' and install_failure(attention):
+            raise state.StateError('Install failures belong to the owner')
         current = next(pending(data), None)
         if current and actor == 'owner' and current[0]['id'] == item['id'] and any(
                 e['event'] == REQUEST + current[1] and e['actor'].startswith('chat:') for e in item['log']):
@@ -125,12 +157,16 @@ def process(runner):
                     attention = item['attention']
                     if not attention or attention['kind'] != 'node-step' or attention['answer'] is not None:
                         raise ValueError()
+                    if install_failure(attention):
+                        attention['body'] = attention['body'].split(NODE_STEPS, 1)[1]
                     attention['answer'] = 'Installed ' + answer['commit'] + '. Node steps are done. End with kind handover.'
                     runner.log(item, attention['answer'], True)
                 else:
                     manual = answer.get('manual', [])
-                    runner.attention(item, 'escalation', 'Install needs attention: manual: ' + ', '.join(manual)
-                                     if answer['ok'] and manual else 'Install failed; inspect the root install unit')
+                    if answer['ok'] and manual:
+                        runner.attention(item, 'escalation', 'Install needs attention: manual: ' + ', '.join(manual))
+                    else:
+                        failed(runner, item, failure_text(answer))
             except (ValueError, KeyError, TypeError):
                 runner.attention(item, 'escalation', 'Install result invalid or node step changed; inspect the root install unit')
             runner.log(item, FINISHED + request)
