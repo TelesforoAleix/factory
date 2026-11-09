@@ -167,6 +167,7 @@ class FeatureStore:
             item = self._feature(identifier)
             self.connection.execute('UPDATE cplane_features SET title = %s WHERE feature = %s',
                                     (title, item['feature']))
+            self.connection.execute("UPDATE cplane_sessions SET title = %s WHERE feature = %s AND kind = 'feature'", (title, item['feature']))
             self._feature_event(item['feature'], f'title {item["title"]!r} to {title!r}', actor)
             return self.feature_show(identifier)
 

@@ -332,6 +332,32 @@ class ChatStore:
                 (item.get('feature_id'), item['id'], attention['kind'], attention['since'], attention['body'])).fetchone()
             return dict(attention, chat_id=row[0]) if row and row[0] is not None else attention
 
+    def chat_attentions(self, items):
+        """Resolve ownership for all eligible slice attentions in one query."""
+        from .installation import install_failure
+        candidates = [item for item in items if chat_added(item) and item['attention']
+                      and not install_failure(item['attention'])
+                      and item['attention']['kind'] in ('question', 'escalation')]
+        if not candidates:
+            return {}
+        with self.locked():
+            rows = self.connection.execute(
+                "SELECT DISTINCT ON (e.slice_id, e.kind, e.attention_since, e.text, e.feature) "
+                "e.slice_id, e.kind, e.attention_since, e.text, e.feature, e.chat "
+                "FROM cplane_chat_events e WHERE e.delivered AND e.slice_id = ANY(%s) "
+                "ORDER BY e.slice_id, e.kind, e.attention_since, e.text, e.feature, e.id DESC",
+                ([item['id'] for item in candidates],)).fetchall()
+            links = dict(self.connection.execute('SELECT id, feature FROM cplane_feature_ids WHERE id = ANY(%s)',
+                                                 ([item.get('feature_id') for item in candidates],)).fetchall())
+        owners = {(sid, kind, since, text, feature): chat for sid, kind, since, text, feature, chat in rows}
+        result = {}
+        for item in candidates:
+            a = item['attention']
+            chat = owners.get((item['id'], a['kind'], a['since'], a['body'], links.get(item.get('feature_id'))))
+            if chat is not None:
+                result[item['id']] = dict(a, chat_id=chat)
+        return result
+
     def chat_handover(self, item, text):
         import hashlib
         import json

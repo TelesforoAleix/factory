@@ -171,6 +171,17 @@ class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore, Library
             return list(self.connection.execute(
                 'SELECT id, document FROM cplane_notices WHERE id > %s ORDER BY id', (after,)))
 
+    def home_notices(self, slices, chats):
+        """Read only notices that can affect the current Home projection."""
+        stalled = [s['id'] for s in slices if s['state'] == 'issued']
+        chat_ids = [str(c['id']) for c in chats]
+        with self.locked():
+            return list(self.connection.execute(
+                "SELECT id, document FROM cplane_notices WHERE "
+                "(document->>'event' = 'stuck' AND document->>'id' = ANY(%s)) OR "
+                "(document->>'event' IN ('owner-check', 'chat-paused') AND document->>'chat' = ANY(%s)) "
+                "ORDER BY id", (stalled, chat_ids)))
+
     def snapshot(self):
         with self.locked():
             return self.load(), self.notices()

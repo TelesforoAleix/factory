@@ -45,6 +45,14 @@ def view(item):
     }
 
 
+def slice_summary(item):
+    full = view(item)
+    final = full['final']
+    if final:
+        final = {**final, 'body': '\n'.join(final['body'].splitlines()[:3])[:500]}
+    return {**{key: full[key] for key in ('id', 'title', 'state', 'pr', 'paused', 'movable', 'attention')}, 'final': final}
+
+
 def create_app(store=None):
     app = Flask(__name__, static_folder=None)
     app.config['STORE'] = store
@@ -66,7 +74,7 @@ def create_app(store=None):
         for item in data['features']:
             item['title'] = clean(item['title'])
             item['sections'] = [{**section, 'name': clean(section['name']), 'text': clean(section['text'])} for section in item['sections']]
-            item['slices'] = [view(s) for s in item['slices']]
+            item['slices'] = [slice_summary(s) for s in item['slices']]
             item.pop('backlog', None)
             item['project_name'] = next((clean(p['name']) for p in data['projects'] if p['key'] == item['project']), item['project'])
         for project in data['projects']:

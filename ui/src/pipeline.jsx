@@ -18,8 +18,9 @@ function Markdown({text}) { return <div className="markdown"><ReactMarkdown rema
 function Header({item}) { return <><small className="feature-meta"><code>{item.id}</code> · {name(item.stage)} · {item.project_name || item.project}</small><h2>{item.title}</h2></>; }
 function SliceRow({slice, error}) {
   const {attributes, listeners, setNodeRef, transform, isDragging} = useSortable({id: slice.id, disabled: {draggable: !slice.movable}});
-  // Only the dragged row follows the pointer; fixed rows keep their positions.
-  return <li ref={setNodeRef} className="slice-row" style={isDragging ? {transform: CSS.Transform.toString(transform), position: 'relative', zIndex: 1, background: 'var(--background)'} : undefined}>{slice.movable && <button className="slice-handle" {...attributes} {...listeners} aria-label={'Drag slice ' + slice.id}>⠿</button>}<div><code>{slice.id}</code> · {slice.title} · <code>{slice.state}</code>{error && <p role="status" className="pipeline-error">{error}</p>}</div></li>;
+  const [open, setOpen] = useState(false), [detail, setDetail] = useState(null), [errorDetail, setErrorDetail] = useState('');
+  function toggle() { if (!open && !detail) fetch('/api/slices/' + encodeURIComponent(slice.id)).then(r => {if (!r.ok) throw Error('Slice unavailable'); return r.json();}).then(setDetail).catch(e => setErrorDetail(e.message)); setOpen(!open); }
+  return <li ref={setNodeRef} className="slice-row" style={isDragging ? {transform: CSS.Transform.toString(transform), position: 'relative', zIndex: 1, background: 'var(--background)'} : undefined}>{slice.movable && <button className="slice-handle" {...attributes} {...listeners} aria-label={'Drag slice ' + slice.id}>⠿</button>}<div><button type="button" onClick={toggle} aria-expanded={open}><code>{slice.id}</code> · {slice.title} · <code>{slice.state}</code></button>{!open && slice.final?.body && <p className="text">{slice.final.body}</p>}{open && (detail ? <><p className="text">{detail.final?.body}</p><ol>{detail.log.map((entry, i) => <li key={i}>{entry.at} · {entry.actor} · {entry.event}</li>)}</ol></> : <p>{errorDetail || 'Loading…'}</p>)}{error && <p role="status" className="pipeline-error">{error}</p>}</div></li>;
 }
 export function SliceList({slices, refresh}) {
   const [error, setError] = useState(null), [pending, setPending] = useState(false);
@@ -49,6 +50,9 @@ function Panel({item, act, close, refresh}) {
     <section><h3>Numbers</h3>{tokenFields.filter(([key]) => totals[key] != null).map(([key, label]) => <p key={key}>{label} tokens: <code>{totals[key].toLocaleString()}</code></p>)}{totals.seconds != null && <p>Seconds: <code>{Math.round(totals.seconds).toLocaleString()}</code></p>}{item.stage_since && <p>In this stage: <code>{Math.max(0, Math.floor((Date.now() - new Date(item.stage_since)) / 86400000))} days</code> (since <code>{date(item.stage_since)}</code>)</p>}</section>
   </aside>;
 }
+function PanelSkeleton({close}) {
+  return <aside className="pipeline-panel" aria-busy="true" aria-label="Loading feature"><button className="panel-close" onClick={close} aria-label="Close preview">×</button><p>Loading…</p>{['Details', 'Slices', 'Numbers'].map(section => <section key={section}><h3>{section}</h3><div className="panel-skeleton"/></section>)}</aside>;
+}
 function extra(item, index) {
   if (item.stage === 'next') return `Queue #${index + 1}`;
   return item.extra;
@@ -58,7 +62,7 @@ function Card({item, detail, index, selected, select, act, close, refresh}) {
   const line = extra(item, index);
   return <div ref={setNodeRef} style={{transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? .45 : 1}} className="pipeline-card-wrap">
     <div className={'pipeline-card' + (selected ? ' selected' : '') + (line === 'Waiting for you' ? ' needs-you' : '')}><button className="drag-handle" {...attributes} {...listeners} aria-label={'Drag ' + item.id}>⠿</button><button className="pipeline-card-open" onClick={select} aria-expanded={selected}><small>{item.id}</small><strong className="feature-title">{item.title}</strong><span className="project-tag">{item.project_name || item.project}</span>{item.inactive && <span className="inactive-mark">Inactive</span>}{line && <span className={line === 'Waiting for you' ? 'pipeline-attention' : 'feature-extra'}>{line}</span>}</button></div>
-    {selected && detail && <div className="mobile-panel"><Panel item={detail} act={act} close={close} refresh={refresh}/></div>}
+    {selected && <div className="mobile-panel">{detail?.id === item.id ? <Panel item={detail} act={act} close={close} refresh={refresh}/> : <PanelSkeleton close={close}/>}</div>}
   </div>;
 }
 function Column({stage, items, detail, selected, select, act, close, all, refresh}) {
@@ -89,7 +93,7 @@ export function Pipeline() {
   const features = data.features.map(f => ({...f, inactive:!isActive(data.projects.find(p => p.key === f.project)), project_name:data.projects.find(p => p.key === f.project)?.name || f.project}));
   const visible = features.filter(f => (!project || f.project === project) && !(f.inactive && ['shortlist','parked'].includes(f.stage))); const current = features.find(f => f.id === selected);
   return <div className="pipeline"><div className="page-heading"><h1>Pipeline</h1><ProjectFilter projects={data.projects} value={project} onChange={setProject}/></div>{error && <p role="status" className="pipeline-error">{error}</p>}
-    <div className={'pipeline-layout' + (current ? ' has-panel' : '')}><DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={dragEnd}><div className="pipeline-scroll"><div className="pipeline-grid">{[['shortlist'], ['grilling'], ['ready','next'], ['building','testing'], ['parked']].map(group => <div className={'pipeline-group' + (group[0] === 'parked' ? ' parked-group' : '')} key={group[0]}>{group.map(stage => <Column key={stage} stage={stage} items={visible.filter(f => f.stage === stage)} detail={detail} all={data.features} selected={selected} select={select} act={act} close={() => select(null)} refresh={refresh}/>)}</div>)}</div></div></DndContext>{current && detail && <div className="desktop-panel"><Panel item={detail} act={act} close={() => select(null)} refresh={refresh}/></div>}</div>
+    <div className={'pipeline-layout' + (current ? ' has-panel' : '')}><DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={dragEnd}><div className="pipeline-scroll"><div className="pipeline-grid">{[['shortlist'], ['grilling'], ['ready','next'], ['building','testing'], ['parked']].map(group => <div className={'pipeline-group' + (group[0] === 'parked' ? ' parked-group' : '')} key={group[0]}>{group.map(stage => <Column key={stage} stage={stage} items={visible.filter(f => f.stage === stage)} detail={detail} all={data.features} selected={selected} select={select} act={act} close={() => select(null)} refresh={refresh}/>)}</div>)}</div></div></DndContext>{current && <div className="desktop-panel">{detail?.id === current.id ? <Panel item={detail} act={act} close={() => select(null)} refresh={refresh}/> : <PanelSkeleton close={() => select(null)}/>}</div>}</div>
   </div>;
 }
 export function FeaturePage() {
@@ -98,5 +102,5 @@ export function FeaturePage() {
     fetch('/api/pipeline/' + encodeURIComponent(id)).then(async r => {if (!r.ok) throw Error('Feature unavailable'); return r.json();}).then(data => {if (live) setItem(data);}).catch(e => {if (live) setError(e.message);});
     return () => {live = false;};
   }, [id]);
-  return <><Link className="feature-back" to={'/pipeline?feature=' + encodeURIComponent(id)}>← Pipeline</Link>{item ? <><Header item={item}/><FeatureChatLink feature={item.id}/>{item.sections.map((s,i) => <details className="feature-section" key={s.name} open={i === 0 || undefined}><summary>{s.name}</summary><Markdown text={s.text}/></details>)}</> : <p>{error || 'Loading…'}</p>}</>;
+  return <><Link className="feature-back" to={'/pipeline?feature=' + encodeURIComponent(id)}>← Pipeline</Link>{item ? <><Header item={item}/><FeatureChatLink feature={item.id}/><section><h3>Slices</h3>{item.slices.length ? <SliceList slices={item.slices} refresh={async () => {const r = await fetch('/api/pipeline/' + encodeURIComponent(id)); if (r.ok) setItem(await r.json());}}/> : <p>No linked slices.</p>}</section>{item.sections.map((s,i) => <details className="feature-section" key={s.name} open={i === 0 || undefined}><summary>{s.name}</summary><Markdown text={s.text}/></details>)}</> : <p>{error || 'Loading…'}</p>}</>;
 }

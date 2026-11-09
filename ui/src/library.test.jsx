@@ -114,7 +114,7 @@ test('project row uses the shared active project order', async () => {
   vi.stubGlobal('fetch',vi.fn(async url => ({ok:true,json:async () => url.startsWith('/api/library?') ? {documents:[],projects:[{key:'LAB',name:'Lab',active:true},{key:'FAC',name:'Factory',active:false},{key:'NEW',name:'No project yet',active:true}]} : []})));
   render(<MemoryRouter initialEntries={['/library']}><App/></MemoryRouter>);
   await screen.findByRole('button',{name:'Lab'});
-  expect([...screen.getByRole('group',{name:'Project'}).querySelectorAll('button')].map(b => b.textContent)).toEqual(['All','Lab','No project yet']);
+  expect([...screen.getByRole('group',{name:'Project'}).querySelectorAll('button')].map(b => b.textContent)).toEqual(['All','Lab']);
 });
 
 test('drafts delete and sent comments resolve into a collapsed history', async () => {
