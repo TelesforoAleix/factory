@@ -19,6 +19,7 @@ AT = '2026-11-07T12:00:00+00:00'
 def linked(store, feature, slice_data, **fields):
     item = copy.deepcopy(slice_data)
     item.update(feature_id=feature, **fields)
+    item['log'].insert(0, dict(at=AT, actor='chat:1', event='add_slice'))
     store.save(dict(version=1, slices=[item]))
     return item
 
@@ -205,6 +206,10 @@ def test_slice_tools_refuse_unlinked_and_wrong_state(context, slice_data):
 def test_runner_handover_wakes_once_and_return_resumes(pg_store, runner_setup, slice_data):
     runner, processes, _ = runner_setup
     runner_board(pg_store, runner, slice_data, [('building', {})])
+    data = pg_store.load()
+    for s in data['slices']:
+        s['log'].insert(0, dict(at=AT, actor='chat:1', event='add_slice'))
+    pg_store.save(data)
     runner.run()
     processes.finish(kind='handover', body='Full synthetic handover with validation')
     runner.run()
@@ -223,6 +228,10 @@ def test_runner_handover_wakes_once_and_return_resumes(pg_store, runner_setup, s
 def test_runner_question_is_taken_before_phone_notice(pg_store, runner_setup, slice_data):
     runner, processes, _ = runner_setup
     runner_board(pg_store, runner, slice_data, [('building', {})])
+    data = pg_store.load()
+    for s in data['slices']:
+        s['log'].insert(0, dict(at=AT, actor='chat:1', event='add_slice'))
+    pg_store.save(data)
     runner.run()
     processes.finish(kind='question', body='Synthetic question for chat')
     runner.run()
@@ -265,3 +274,79 @@ def test_return_without_session_uses_existing_runner_deferral(context, slice_dat
     saved = store.load()['slices'][0]
     assert saved['state'] == 'issued' and saved['session'] is None
     assert saved['attention']['answer'] == 'Repair the acceptance gap'
+
+
+@pytest.mark.parametrize('actor,event', [('owner', 'add_slice'), ('planner', 'add'), ('chat:1', 'edit')])
+@pytest.mark.parametrize('kind', ['question', 'escalation', 'in review'])
+def test_non_chat_slices_never_wake_chats(context, slice_data, actor, event, kind):
+    store, _, chats, own, *_ = context
+    item = copy.deepcopy(slice_data)
+    item.update(feature_id=own, state='ready')
+    item['log'] = [dict(at=AT, actor=actor, event=event)]
+    store.save(dict(version=1, slices=[item]))
+    if kind == 'in review':
+        item['state'] = 'in review'
+    else:
+        item.update(state='issued', attention=question('failing check: synthetic' if kind == 'escalation' else 'Choice?', kind))
+    store.save(dict(version=1, slices=[item]))
+    # Also skip a previously captured but undelivered event from before the upgrade.
+    with store.mutation():
+        store._chat_event(store._feature(own)['feature'], item['id'], kind, 'Old queued event')
+    store.route_chat_events()
+    assert not any('Event:' in m['text'] for m in store.session_messages('factory', chats['feature']['id']))
+    assert 'chat_id' not in (store.chat_attention(item) or {})
+    # Past delivery stays recorded but no longer hides an owner/planner question.
+    with store.mutation():
+        store.connection.execute('UPDATE cplane_chat_events SET chat = %s WHERE slice_id = %s',
+                                 (chats['feature']['id'], item['id']))
+    assert 'chat_id' not in (store.chat_attention(item) or {})
+    if kind in ('question', 'escalation'):
+        notice = dict(at=AT, id=item['id'], event=kind, text='Owner still receives this')
+        store.append_notices([notice])
+        assert notice in [n for _, n in store.notices()]
+
+
+def test_event_summary_names_each_slice(context, slice_data):
+    store, _, chats, own, *_ = context
+    first = copy.deepcopy(slice_data)
+    first.update(id='factory/SD1', feature_id=own, state='issued')
+    first['log'] = [dict(at=AT, actor='chat:1', event='add_slice')]
+    second = copy.deepcopy(first)
+    second['id'] = 'factory/SD2'
+    store.save(dict(version=1, slices=[first, second]))
+    for item in (first, second):
+        item['state'] = 'in review'
+    store.save(dict(version=1, slices=[first, second]))
+    store.route_chat_events()
+    summaries = [m['text'].splitlines()[0] for m in store.session_messages('factory', chats['feature']['id']) if 'Event: in review' in m['text']]
+    assert summaries == ['Event: in review · factory/SD1', 'Event: in review · factory/SD2']
+
+
+def test_real_chat_add_slice_routes_its_question(context):
+    from test_workshop import repository, slice_args
+    store, workshops, chats, own, *_ = context
+    repository(store)
+    created = value(call(workshops['feature'], 'add_slice', **slice_args(own)))
+    data = store.load()
+    data['slices'][0].update(state='issued', attention=question())
+    store.save(data)
+    store.route_chat_events()
+    messages = store.session_messages('factory', chats['feature']['id'])
+    assert messages[-1]['text'].startswith(f'Event: question · {created["id"]}\n')
+    assert store.chat_attention(store.load()['slices'][0])['chat_id'] == chats['feature']['id']
+
+
+def test_old_queued_owner_slice_event_is_preserved_without_running(context, slice_data):
+    store, _, chats, own, *_ = context
+    sid = chats['feature']['id']
+    opening = store.claim_session_turn()
+    store.finish_session_turn(opening, 'Grill reply', 'synthetic-resume')
+    item = copy.deepcopy(slice_data)
+    item.update(feature_id=own, state='in review')
+    store.save(dict(version=1, slices=[item]))
+    old_event = store.system_message(sid, f'Event: in review\nSlice: {item["id"]}\n\nOld event')
+    assert store.claim_session_turn() is None
+    message = next(m for m in store.session_messages('factory', sid) if m['id'] == old_event)
+    assert message['status'] == 'done' and message['text'].endswith('Old event')
+    store.system_message(sid, 'Event: testing\nSlice: (feature event)\n\nFeature event')
+    assert store.claim_session_turn()['text'].endswith('Feature event')

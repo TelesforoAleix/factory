@@ -116,3 +116,28 @@ test('project row uses the shared active project order', async () => {
   await screen.findByRole('button',{name:'Lab'});
   expect([...screen.getByRole('group',{name:'Project'}).querySelectorAll('button')].map(b => b.textContent)).toEqual(['All','Lab','No project yet']);
 });
+
+test('drafts delete and sent comments resolve into a collapsed history', async () => {
+  let comments = [{id:1,text:'Draft to delete',selector,time:'2026-11-01'}, {id:2,text:'Sent to resolve',selector,time:'2026-11-01',sent_at:'2026-11-02',chat:7,chat_title:'Factory project'}];
+  const fetcher = vi.fn(async (url, options) => {
+    if (url.endsWith('/1') && options?.method === 'DELETE') comments = comments.filter(c => c.id !== 1);
+    if (url.endsWith('/2') && options?.method === 'PATCH') comments = comments.map(c => ({...c,resolved_at:'2026-11-03',resolution_note:JSON.parse(options.body).note}));
+    return {ok:true,json:async () => url.startsWith('/api/library?') ? {documents:[doc],projects:[]} : url === '/api/skills' ? [] : url.startsWith('/api/chats') ? [chat] : url.includes('/documents/') ? doc : comments};
+  });
+  vi.stubGlobal('fetch',fetcher);
+  render(<MemoryRouter initialEntries={['/library/documents/factory/plan.md']}><App/></MemoryRouter>);
+  await screen.findByText('Draft to delete');
+  expect(screen.queryByRole('button',{name:'Delete draft 2'})).toBeNull();
+  fireEvent.click(screen.getByRole('button',{name:'Delete draft 1'}));
+  await waitFor(() => expect(screen.queryByText('Draft to delete')).toBeNull());
+  fireEvent.click(screen.getByRole('button',{name:'Resolve comment 2'}));
+  fireEvent.change(screen.getByLabelText('Resolution note'),{target:{value:'Fixed in the design'}});
+  fireEvent.click(screen.getByRole('button',{name:'Save resolution'}));
+  const summary = await screen.findByText('Resolved (1)');
+  expect(summary.closest('details').open).toBe(false);
+  expect(screen.queryByText('Sent to resolve')).toBeNull();
+  expect(screen.getByText('Fixed in the design')).toBeTruthy();
+  expect(screen.getByRole('link',{name:'Factory project'}).getAttribute('href')).toBe('/chats/7');
+  await waitFor(() => expect(mock.setAnnotations.mock.calls.at(-1)[0]).toEqual([]));
+  expect(fetcher.mock.calls.filter(([,o]) => ['PATCH','DELETE'].includes(o?.method)).every(([,o]) => o.headers['X-Factory-UI'] === '1')).toBe(true);
+});

@@ -62,6 +62,16 @@ def register_library(app, backend, documents):
             return backend().document_comments(document, payload)
         return respond(operation)
 
+    @app.route('/api/library/comments/<path:document>/<int:comment_id>', methods=['DELETE', 'PATCH'])
+    def change_comment(document, comment_id):
+        def operation():
+            payload = request.get_json(silent=True)
+            if request.method == 'PATCH' and (not isinstance(payload, dict) or set(payload) != {'note'}):
+                raise StateError('Provide a resolution note')
+            return backend().document_comment_change(document, comment_id,
+                delete=request.method == 'DELETE', note=payload.get('note') if isinstance(payload, dict) else None)
+        return respond(operation)
+
     @app.post('/api/library/send/<path:document>')
     @app.post('/api/library/grill/<path:document>')
     def send(document):

@@ -352,6 +352,7 @@ def test_existing_resumed_chat_upgrades_without_resnapshotting_skills(pg_store):
 def test_node_step_wakes_only_installable_and_keeps_home_card(pg_store, slice_data, monkeypatch, installable):
     identifier, chat = feature_chat(pg_store)
     monkeypatch.setenv('CPLANE_INSTALL_REPOS', 'example/repo' if installable else 'other/repo')
+    slice_data['log'].append(dict(at='2026-01-01T00:00:00Z', actor='chat:1', event='add_slice'))
     slice_data.update(feature_id=identifier, state='awaiting handover', attention=dict(kind='node-step',
         body='Install the change', since='2026-01-01T00:00:00Z', answer=None, approved=False))
     pg_store.save(dict(version=1, slices=[slice_data]))

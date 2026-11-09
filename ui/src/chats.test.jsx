@@ -110,3 +110,21 @@ test('Development Orchestrator has no archive button', async () => {
   expect(screen.queryByRole('button',{name:'Archive'})).toBeNull();
   expect(screen.queryByRole('button',{name:'Unarchive'})).toBeNull();
 });
+
+test('failed chat allows a retry and labels slice events distinctly', async () => {
+  const chat = {id:7,title:'Failed chat',kind:'feature',area:'factory',tool:'codex',model:'test',state:'failed'};
+  let messages = [{id:1,role:'system',automatic:true,text:'Event: in review\nSlice: factory/SD1\nHandover'}];
+  const fetcher = vi.fn(async (url, options) => {
+    if (url.endsWith('/messages') && options?.method === 'POST') messages = [...messages,{id:2,role:'system',text:'New session started'},{id:3,role:'owner',text:'Retry'}];
+    return {ok:true,json:async () => url === '/api/projects' ? [] : url === '/api/chats' ? [chat] : url.endsWith('/open') ? {chat,messages} : url.endsWith('/messages') ? messages : {}};
+  });
+  vi.stubGlobal('fetch',fetcher);
+  render(<MemoryRouter initialEntries={['/chats/7']}><App/></MemoryRouter>);
+  await screen.findAllByText(/Event: in review · factory\/SD1/);
+  expect(screen.getByRole('button',{name:'Send'}).disabled).toBe(false);
+  fireEvent.change(screen.getByLabelText('Message'),{target:{value:'Retry'}});
+  fireEvent.click(screen.getByRole('button',{name:'Send'}));
+  await screen.findAllByText(/New session started/);
+  expect(fetcher.mock.calls.some(([url,o]) => url.endsWith('/messages') && o?.method === 'POST')).toBe(true);
+  expect(fetcher.mock.calls.some(([url]) => url === '/api/chats/7')).toBe(false);
+});

@@ -2,8 +2,8 @@ import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-export async function api(path, payload) {
-  const response = await fetch(path, payload === undefined ? {} : {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Factory-UI': '1'}, body: JSON.stringify(payload)});
+export async function api(path, payload, method='POST') {
+  const response = await fetch(path, payload === undefined ? {} : {method, headers: {'Content-Type': 'application/json', 'X-Factory-UI': '1'}, body: JSON.stringify(payload)});
   const data = await response.json();
   if (!response.ok) throw Error(data.error || 'Request failed');
   return data;

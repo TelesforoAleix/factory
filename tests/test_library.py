@@ -96,7 +96,7 @@ def test_note_migration_keeps_text_time_and_legacy_history(pg_store):
     # Recreate the exact pre-013 boundary in this test's disposable schema.
     with pg_store.mutation():
         pg_store.connection.execute('DROP TABLE cplane_document_comments')
-        pg_store.connection.execute("DELETE FROM cplane_migrations WHERE name = '013_library.sql'")
+        pg_store.connection.execute("DELETE FROM cplane_migrations WHERE name IN ('013_library.sql', '017_comment_resolution.sql')")
         pg_store.connection.execute("INSERT INTO cplane_document_notes(document,text,time) VALUES ('backlog.md','Original note','2026-01-02T03:04:05Z')")
     sid = pg_store.create_session('homelab', 'Old grill', 'codex', 'test', ['owner/repo'])
     pg_store.session_messages('homelab', sid, 'Keep this message')
@@ -147,3 +147,61 @@ def test_documents_remain_readable_without_a_usable_default_chat(published, pg_s
     response = client_for(published, pg_store).get('/api/library/documents/backlog.md')
     assert response.status_code == 200
     assert response.json['markdown'] and response.json['receiver'] is None
+
+
+def test_delete_draft_resolve_sent_guards_and_history(published, pg_store):
+    client = client_for(published, pg_store)
+    comment = draft(pg_store)[0]
+    url = f'/api/library/comments/folder/plan.md/{comment["id"]}'
+    assert client.delete(url).status_code == 403
+    assert client.patch(url, json={'note':'Done'}, headers=HEADERS).status_code == 400
+    assert client.delete(url.replace('folder/plan.md', 'other.md'), headers=HEADERS).status_code == 400
+    assert client.delete(url, headers=HEADERS).json == []
+    comment = draft(pg_store)[0]
+    url = f'/api/library/comments/folder/plan.md/{comment["id"]}'
+    result = pg_store.library_send('folder/plan.md')
+    chat = pg_store.chat_show(result['chat'])
+    before = pg_store.session_messages(chat['area'], chat['id'])
+    assert client.delete(url, headers=HEADERS).status_code == 400
+    for note in ('', ' ', 'two\nlines', 'two\rlines', 'x' * 1001, None):
+        assert client.patch(url, json={'note':note}, headers=HEADERS).status_code == 400
+    assert client.patch(url, json={'note':'Fixed', 'resolved':True}, headers=HEADERS).status_code == 400
+    result = client.patch(url, json={'note':'  Fixed in the design  '}, headers=HEADERS)
+    assert result.status_code == 200
+    saved = result.json[0]
+    assert saved['resolution_note'] == 'Fixed in the design' and saved['resolved_at']
+    assert saved['text'] == comment['text'] and saved['selector'] == comment['selector']
+    assert saved['chat'] == chat['id'] and saved['chat_title'] == chat['title']
+    assert client.delete(url, headers=HEADERS).status_code == 400
+    assert client.patch(url, json={'note':'Another'}, headers=HEADERS).status_code == 400
+    assert pg_store.session_messages(chat['area'], chat['id']) == before
+    pg_store.migrate()
+    assert pg_store.document_comments('folder/plan.md')[0] == saved
+
+
+def test_comment_017_additive_upgrade_preserves_drafts_and_sent(pg_store):
+    first = draft(pg_store)[0]
+    pg_store.library_send('folder/plan.md')
+    second = draft(pg_store, text='Draft kept')[-1]
+    with pg_store.mutation():
+        pg_store.connection.execute('ALTER TABLE cplane_document_comments DROP CONSTRAINT comment_resolution, DROP COLUMN resolved_at, DROP COLUMN resolution_note')
+        pg_store.connection.execute("DELETE FROM cplane_migrations WHERE name = '017_comment_resolution.sql'")
+    pg_store.migrate()
+    pg_store.migrate()
+    rows = pg_store.document_comments('folder/plan.md')
+    assert [c['id'] for c in rows] == [first['id'], second['id']]
+    assert rows[0]['sent_at'] and rows[1]['sent_at'] is None
+    assert all(c['resolved_at'] is None and c['resolution_note'] is None for c in rows)
+
+
+def test_owner_comment_message_can_restart_failed_receiving_chat(pg_store):
+    chat = pg_store.chats(kind='orchestrator')[0]
+    pg_store.session_messages(chat['area'], chat['id'], 'First turn')
+    pg_store.finish_session_turn(pg_store.claim_session_turn(), 'Failed', failed=True)
+    draft(pg_store)
+    sent = pg_store.library_send('folder/plan.md', chat['id'])
+    assert sent['comments'][0]['sent_at']
+    assert pg_store.chat_show(chat['id'])['state'] == 'idle'
+    messages = pg_store.session_messages(chat['area'], chat['id'])
+    assert messages[-2]['text'] == 'New session started'
+    assert 'Comments on document:' in messages[-1]['text']

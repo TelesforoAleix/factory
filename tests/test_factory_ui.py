@@ -115,9 +115,10 @@ def test_pipeline_api_guard_reads_and_refusals():
     class BoardStore:
         def __init__(self):
             self.calls = []
-        def feature_board(self):
+        def feature_board(self, identifier=None):
+            if identifier == 'missing': raise StateError('Feature not found')
             return {'projects': [{'key': 'FAC', 'name': 'Factory'}], 'features': [{
-                'id': 'FAC-F1', 'aliases': ['OLD-F1'], 'title': 'Title /private/path',
+                'id': 'FAC-F1', 'project': 'FAC', 'aliases': ['OLD-F1'], 'title': 'Title /private/path',
                 'sections': [{'name': 'Overview', 'text': 'Read /private/file'}],
                 'slices': [], 'backlog': {'private': 'secret'}}]}
         def feature_stage(self, identifier, stage, *, actor):
@@ -175,7 +176,7 @@ def test_home_projection_orders_attention_and_discards_stale_stuck(monkeypatch):
     now = datetime.now(timezone.utc)
     old = (now - timedelta(minutes=30)).isoformat()
     item = planner.new_slice('demo/one')
-    item.update(title='One', repo='owner/repo', feature='Feature', state='issued', pr=7)
+    item.update(title='One', repo='owner/repo', feature='Feature', feature_id='FAC-F1', state='issued', pr=7)
     item['log'] = [dict(at=old, actor='runner', event='issued')]
     item['attention'] = dict(kind='merge', body='Approve', since=old, answer=None, approved=False,
                              review=dict(verdict='Looks good', actor='planner', at=old))
@@ -183,13 +184,16 @@ def test_home_projection_orders_attention_and_discards_stale_stuck(monkeypatch):
                    sections=[], slices=[item])
     class HomeStore:
         def load(self): return dict(slices=[item])
-        def feature_board(self): return dict(projects=[dict(key='FAC', name='Factory', active=False)], features=[feature])
+        def locked(self):
+            from contextlib import nullcontext
+            return nullcontext()
+        def feature_cards(self): return dict(projects=[dict(key='FAC', name='Factory', active=False)], features=[{k:v for k,v in feature.items() if k not in ('slices', 'sections')} | dict(extra=None, waiting=True)])
         def notices(self): return [(1, dict(event='stuck', id=item['id'], since=old, reason='no new log activity', at=old))]
         def chats(self, **kwargs): return []
         def limit_show(self): return dict(waiting_limit=1, building_limit=2)
     client = create_app(HomeStore()).test_client()
     result = client.get('/api/home').get_json()
-    assert [a['kind'] for a in result['attention']] == ['approval', 'stuck', 'limit']
+    assert [a['kind'] for a in result['attention']] == ['approval', 'limit']
     assert result['attention'][0]['verdict'] == 'Looks good'
     assert result['running'][0]['feature'] == 'FAC-F1'
     item['log'].append(dict(at=now.isoformat(), actor='runner', event='progress'))

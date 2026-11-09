@@ -39,8 +39,8 @@ def test_queue_limit_order_and_failure(pg_store):
     assert d['session']['cli_session_id'] == 'synthetic-resume'
     assert d['text'] == 'second'
     assert len(pg_store.interrupted_session_turns()) == 2
-    with pytest.raises(Exception):
-        pg_store.session_messages('factory', ids[1], 'no retry')
+    pg_store.session_messages('factory', ids[1], 'Retry')
+    assert pg_store.chat_show(ids[1])['state'] == 'idle'
 
 
 def test_routes_guard_and_area(pg_store):
@@ -142,14 +142,15 @@ def test_turn_rejects_invalid_stored_repository(tmp_path, monkeypatch, repositor
     store = Mock()
     sessions.execute_turn(turn, store)
     store.finish_session_turn.assert_called_once_with(
-        turn, 'Turn failed. Create a new session.', failed=True)
+        turn, 'Turn failed. Send a message to start a new session.', failed=True)
     export.assert_not_called()
     launch.assert_not_called()
     assert list(tmp_path.iterdir()) == []
 
 
 @pytest.mark.parametrize('resume_id', ['synthetic', None])
-def test_resume_rejects_link_without_host_write(tmp_path, monkeypatch, resume_id):
+@pytest.mark.parametrize('restart', [True, False])
+def test_resume_rejects_link_without_host_write(tmp_path, monkeypatch, resume_id, restart):
     root = tmp_path / 'work'
     root.mkdir()
     outside = tmp_path / 'outside'
@@ -157,7 +158,7 @@ def test_resume_rejects_link_without_host_write(tmp_path, monkeypatch, resume_id
     (root / 'session-1').symlink_to(outside, target_is_directory=True)
     monkeypatch.setattr(sessions, 'WORK_ROOT', root)
     with pytest.raises(Exception, match='Workspace unavailable'):
-        sessions.workspace(dict(id=1, cli_session_id=resume_id, workspace_ready=True, repositories=[]))
+        sessions.workspace(dict(id=1, cli_session_id=resume_id, workspace_ready=not restart, _restart=restart, repositories=[]))
     assert list(outside.iterdir()) == []
 
 
@@ -318,6 +319,11 @@ def test_session_exports_remote_default_and_resume_does_not_fetch(tmp_path, monk
     readable.assert_called_once_with(folder, sorted(skills.DEFAULTS))
     assert calls == []
     assert (folder / 'AGENTS.md').read_bytes() == original_instructions
+    # A historical first turn can have failed before saving its CLI ID.
+    session.update(cli_session_id=None, workspace_ready=False, _restart=True)
+    assert sessions.workspace(session) == (folder, paths)
+    assert calls == []
+    assert (folder / 'AGENTS.md').read_bytes() == original_instructions
 
 
 def test_pushed_commits_are_session_messages(pg_store):
@@ -330,3 +336,48 @@ def test_pushed_commits_are_session_messages(pg_store):
     assert [row['text'] for row in rows][-3:] == [
         'Updated.', *['Planning pushed commit ' + commit for commit in commits]]
     assert all(row['role'] == 'assistant' and row['status'] == 'done' for row in rows[-3:])
+
+
+@pytest.mark.parametrize('area', ['factory', 'homelab'])
+def test_failed_message_rolls_over_once_with_bounded_records(pg_store, tmp_path, area):
+    sid = create(pg_store, area)
+    pg_store.session_messages(area, sid, 'Prior owner decision')
+    first = pg_store.claim_session_turn()
+    pg_store.finish_session_turn(first, 'Prior answer', 'failed-resume')
+    pg_store.session_messages(area, sid, 'x' * 32000)
+    failed = pg_store.claim_session_turn()
+    pg_store.finish_session_turn(failed, 'Failed reply', failed=True)
+    before = pg_store.session_messages(area, sid)
+    client = create_app(pg_store).test_client()
+    url = f'/api/{area}/sessions/{sid}/messages'
+    assert client.post(url, json={'text':'Retry'}, headers={'X-Factory-UI':'1'}).status_code == 200
+    rows = pg_store.session_messages(area, sid)
+    assert rows[:len(before)] == before
+    assert rows[-2]['role'] == 'system' and rows[-2]['text'] == 'New session started'
+    assert rows[-2]['status'] == 'done' and rows[-1]['status'] == 'queued'
+    assert pg_store.chat_show(sid)['state'] == 'idle'
+    pg_store.session_messages(area, sid, 'Next queued message')
+    assert sum(m['text'] == 'New session started' for m in pg_store.session_messages(area, sid)) == 1
+    turn = pg_store.claim_session_turn()
+    assert turn['text'] == 'Retry' and turn['session']['cli_session_id'] is None
+    assert 'Prior owner decision' in turn['context'] and 'Prior answer' in turn['context']
+    assert len(turn['context']) < 16000
+    command = sessions.turn_command(turn, tmp_path, [], tmp_path)
+    assert 'resume' not in command and '--resume' not in command
+    assert 'Current message:\nRetry' in command[-1]
+    pg_store.finish_session_turn(turn, 'Recovered', 'new-resume')
+    assert pg_store.claim_session_turn()['session']['cli_session_id'] == 'new-resume'
+
+
+def test_failed_first_turn_restarts_without_resume_or_skill_resnapshot(pg_store):
+    sid = create(pg_store)
+    pg_store.session_messages('factory', sid, 'First decision')
+    first = pg_store.claim_session_turn()
+    pg_store.finish_session_turn(first, 'First turn failed', failed=True)
+    assert not pg_store.chat_show(sid)['workspace_ready']
+    pg_store.session_messages('factory', sid, 'Try again')
+    retry = pg_store.claim_session_turn()
+    assert retry['session']['_restart'] and retry['session']['cli_session_id'] is None
+    assert retry['session']['skill_names'] == first['session']['skill_names']
+    assert retry['session']['skill_version'] == first['session']['skill_version']
+    assert 'First decision' in retry['context']

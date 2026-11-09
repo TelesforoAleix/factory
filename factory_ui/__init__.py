@@ -61,13 +61,23 @@ def create_app(store=None):
     def slices():
         return backend().load()['slices']
 
-    def board_data():
-        data = backend().feature_board()
+    def board_data(identifier=None):
+        data = backend().feature_board(identifier)
         for item in data['features']:
             item['title'] = clean(item['title'])
             item['sections'] = [{**section, 'name': clean(section['name']), 'text': clean(section['text'])} for section in item['sections']]
             item['slices'] = [view(s) for s in item['slices']]
             item.pop('backlog', None)
+            item['project_name'] = next((clean(p['name']) for p in data['projects'] if p['key'] == item['project']), item['project'])
+        for project in data['projects']:
+            project['name'] = clean(project['name'])
+        return data
+
+    def cards_data(store=None):
+        data = (store or backend()).feature_cards()
+        for item in data['features']:
+            item['title'] = clean(item['title'])
+            item['extra'] = clean(item['extra'])
         for project in data['projects']:
             project['name'] = clean(project['name'])
         return data
@@ -83,22 +93,28 @@ def create_app(store=None):
     def home():
         from .home import home_data
         try:
-            return jsonify(home_data(backend(), board_data(), clean, view))
+            store = backend()
+            with store.locked():
+                return jsonify(home_data(store, cards_data(store), clean, view))
         except Exception:
             return jsonify(error='Home unavailable'), 503
 
     @app.get('/api/pipeline')
     def pipeline_board():
         try:
-            return jsonify(board_data())
+            return jsonify(cards_data())
         except Exception:
             return jsonify(error='Pipeline unavailable'), 503
 
     @app.get('/api/pipeline/<identifier>')
     def pipeline_feature(identifier):
         try:
-            item = next((f for f in board_data()['features'] if identifier == f['id'] or identifier in f['aliases']), None)
+            item = board_data(identifier)['features'][0]
             return jsonify(item) if item else (jsonify(error='Feature not found'), 404)
+        except state.StateError as error:
+            if str(error).startswith('Feature not found'):
+                return jsonify(error='Feature not found'), 404
+            return jsonify(error='Pipeline unavailable'), 503
         except Exception:
             return jsonify(error='Pipeline unavailable'), 503
 

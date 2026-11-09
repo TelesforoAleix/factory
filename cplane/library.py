@@ -31,8 +31,6 @@ class LibraryStore:
             chat = self.chat_show(chat_id)
             if chat['archived']:
                 raise StateError('Choose a non-archived chat')
-            if chat['state'] == 'failed':
-                raise StateError('Chat failed')
             return chat
 
     def document_comments(self, document, payload=None):
@@ -56,12 +54,39 @@ class LibraryStore:
                     'INSERT INTO cplane_document_comments (document, quote, prefix, suffix, text) VALUES (%s,%s,%s,%s,%s)',
                     (document, selector['exact'], selector['prefix'], selector['suffix'], payload['text']))
             rows = self.connection.execute(
-                'SELECT c.id, c.quote, c.prefix, c.suffix, c.text, c.time, c.sent_at, c.chat, s.title, c.legacy_note '
+                'SELECT c.id, c.quote, c.prefix, c.suffix, c.text, c.time, c.sent_at, c.chat, s.title, c.legacy_note, c.resolved_at, c.resolution_note '
                 'FROM cplane_document_comments c LEFT JOIN cplane_sessions s ON s.id = c.chat '
                 'WHERE c.document = %s ORDER BY c.id', (document,))
             return [dict(id=r[0], selector=(dict(type='TextQuoteSelector', exact=r[1], prefix=r[2], suffix=r[3]) if r[1] else None),
                          text=r[4], time=r[5].isoformat(), sent_at=r[6].isoformat() if r[6] else None,
-                         chat=r[7], chat_title=r[8], imported=r[9] is not None) for r in rows]
+                         chat=r[7], chat_title=r[8], imported=r[9] is not None, resolved_at=r[10].isoformat() if r[10] else None, resolution_note=r[11]) for r in rows]
+
+    def document_comment_change(self, document, comment_id, *, delete=False, note=None):
+        from factory_ui.documents import document_path
+        document_path(document)
+        with self.mutation():
+            row = self.connection.execute(
+                'SELECT sent_at, resolved_at FROM cplane_document_comments WHERE document = %s AND id = %s',
+                (document, comment_id)).fetchone()
+            if row is None:
+                raise StateError('Comment not found')
+            if delete:
+                if row[0] is not None:
+                    raise StateError('Sent comments cannot be deleted')
+                self.connection.execute('DELETE FROM cplane_document_comments WHERE document = %s AND id = %s',
+                                        (document, comment_id))
+            else:
+                bounded(note, 'Resolution note', 1000)
+                if any(c in note for c in ('\n', '\r', '\u2028', '\u2029')):
+                    raise StateError('Resolution note must be one line')
+                if row[0] is None:
+                    raise StateError('Only sent comments can be resolved')
+                if row[1] is not None:
+                    raise StateError('Comment is already resolved')
+                self.connection.execute(
+                    'UPDATE cplane_document_comments SET resolved_at = clock_timestamp(), resolution_note = %s '
+                    'WHERE document = %s AND id = %s', (note.strip(), document, comment_id))
+            return self.document_comments(document)
 
     def library_send(self, document, chat_id=None, *, grill=False):
         from factory_ui.documents import document_path
