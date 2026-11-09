@@ -72,10 +72,10 @@ function Column({stage, items, detail, selected, select, act, close, all, refres
 }
 export function Pipeline() {
   const phone = usePhone();
-  const [data, setData] = useState(null), [error, setError] = useState(''), [project, setProject] = useState('');
-  const [params, setParams] = useSearchParams(); const selected = params.get('feature');
+  const [params, setParams] = useSearchParams(), selected = params.get('feature'), project = params.get('project') || '';
+  const [data, setData] = useState(null), [error, setError] = useState('');
+  const setProject = value => setParams(previous => {const next = new URLSearchParams(previous); if (value) next.set('project', value); else next.delete('project'); return next;});
   const sensors = useSensors(useSensor(MouseSensor, {activationConstraint: {distance: 8}}), useSensor(TouchSensor, {activationConstraint: {delay: 300, tolerance: 8}}));
-  useEffect(() => {if (data?.projects.some(p => p.key === project && !isActive(p))) setProject('');}, [data, project]);
   const [revision, setRevision] = useState(0), [detail, setDetail] = useState(null);
   const refresh = useCallback(async () => {const r = await fetch('/api/pipeline'); if (!r.ok) throw Error('Pipeline unavailable'); setData(await r.json()); setRevision(n => n + 1);}, []);
   useEffect(() => {let live = true; setDetail(null); if (!selected || !data) return;
@@ -87,11 +87,11 @@ export function Pipeline() {
   async function act(id, stage, placement) { try {setError(''); const item = data.features.find(f => f.id === id); if (stage !== item.stage) await post(id, 'move', {stage}); if (placement) await post(id, 'place', placement); } catch (e) {setError(e.message);} finally {try {await refresh();} catch {setError('Pipeline unavailable');}} }
   function dragEnd({active, over}) {if (!over || active.id === over.id) return; const item = data.features.find(f => f.id === active.id), target = data.features.find(f => f.id === over.id); const stage = target?.stage || String(over.id).replace('stage:', ''); if (!stages.includes(stage) || (phone && stage !== item.stage)) return; const features = data.features.map(f => ({...f, inactive:!isActive(data.projects.find(p => p.key === f.project)), project_name:data.projects.find(p => p.key === f.project)?.name || f.project}));
   const visible = features.filter(f => f.stage === stage && (!project || f.project === project) && f.id !== item.id); let placement = {bottom:true}; if (target) { const old = data.features.filter(f => f.stage === stage).findIndex(f => f.id === item.id); const idx = data.features.filter(f => f.stage === stage).findIndex(f => f.id === target.id); placement = item.stage === stage && old < idx ? {after:target.id} : {before:target.id}; } else if (visible.length) placement = {after:visible[visible.length-1].id}; act(item.id, stage, placement); }
-  const select = id => setParams(id && id !== selected ? {feature:id} : {});
-  useEffect(() => {if (!selected) return; const key = e => {if (e.key === 'Escape') setParams({});}; document.addEventListener('keydown', key); return () => document.removeEventListener('keydown', key);}, [selected, setParams]);
+  const select = id => setParams(previous => {const next = new URLSearchParams(previous); if (id && id !== selected) next.set('feature', id); else next.delete('feature'); return next;});
+  useEffect(() => {if (!selected) return; const key = e => {if (e.key === 'Escape') setParams(previous => {const next = new URLSearchParams(previous); next.delete('feature'); return next;});}; document.addEventListener('keydown', key); return () => document.removeEventListener('keydown', key);}, [selected, setParams]);
   if (!data) return <><h1>Pipeline</h1><p>{error || 'Loading…'}</p></>;
   const features = data.features.map(f => ({...f, inactive:!isActive(data.projects.find(p => p.key === f.project)), project_name:data.projects.find(p => p.key === f.project)?.name || f.project}));
-  const visible = features.filter(f => (!project || f.project === project) && !(f.inactive && ['shortlist','parked'].includes(f.stage))); const current = features.find(f => f.id === selected);
+  const visible = features.filter(f => (!project || f.project === project) && !(f.inactive && !project && ['shortlist','parked'].includes(f.stage))); const current = features.find(f => f.id === selected);
   return <div className="pipeline"><div className="page-heading"><h1>Pipeline</h1><ProjectFilter projects={data.projects} value={project} onChange={setProject}/></div>{error && <p role="status" className="pipeline-error">{error}</p>}
     <div className={'pipeline-layout' + (current ? ' has-panel' : '')}><DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={dragEnd}><div className="pipeline-scroll"><div className="pipeline-grid">{[['shortlist'], ['grilling'], ['ready','next'], ['building','testing'], ['parked']].map(group => <div className={'pipeline-group' + (group[0] === 'parked' ? ' parked-group' : '')} key={group[0]}>{group.map(stage => <Column key={stage} stage={stage} items={visible.filter(f => f.stage === stage)} detail={detail} all={data.features} selected={selected} select={select} act={act} close={() => select(null)} refresh={refresh}/>)}</div>)}</div></div></DndContext>{current && <div className="desktop-panel">{detail?.id === current.id ? <Panel item={detail} act={act} close={() => select(null)} refresh={refresh}/> : <PanelSkeleton close={() => select(null)}/>}</div>}</div>
   </div>;

@@ -64,3 +64,22 @@ def test_home_constructs_one_store_for_entire_request(pg_store, monkeypatch):
     monkeypatch.setattr('factory_ui.PostgresStore', factory)
     assert create_app().test_client().get('/api/home').status_code == 200
     factory.assert_called_once()
+
+
+def test_read_projections_match_validated_load_and_writes_still_validate(pg_store, slice_data, monkeypatch):
+    import pytest
+    from cplane.state import StateError
+    feature = pg_store.feature_add('FAC', 'Synthetic feature', stage='building')
+    item = copy.deepcopy(slice_data)
+    item['feature_id'] = feature['id']
+    pg_store.save(dict(version=1, slices=[item]))
+    client = create_app(pg_store).test_client()
+    paths = ('/api/home', '/api/pipeline/' + feature['id'])
+    projected = [client.get(path).json for path in paths]
+    with monkeypatch.context() as patch:
+        patch.setattr(pg_store, 'page_state', pg_store.load)
+        assert [client.get(path).json for path in paths] == projected
+    item['paused'] = 'invalid'
+    with pytest.raises(StateError, match='invalid state'):
+        pg_store.save(dict(version=1, slices=[item]))
+    assert pg_store.load()['slices'][0]['paused'] is False

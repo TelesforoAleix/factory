@@ -450,3 +450,36 @@ header { padding-inline: max(var(--space-5), calc((100% - 1360px) / 2)); }
 }
 
 .panel-skeleton { height: 2.5rem; border-radius: .25rem; background: var(--surface); }
+
+/* Project navigation shares the menu rhythm, with a separate phone row. */
+header { flex-wrap: nowrap; gap: 24px; }
+header .brand { flex: none; }
+header > nav[aria-label='Areas'] { flex: none; flex-wrap: nowrap; }
+header .project-nav { margin-left: auto; min-width: 0; overflow-x: auto; flex-wrap: nowrap; }
+.project-nav a { font-style: italic; }
+.project-dropdown { display: none; }
+.project-field { display: flex; align-items: baseline; gap: 16px; }
+.project-field > :first-child { flex: 1; min-width: 0; }
+.project-field > button { flex: none; }
+.project-edit { max-width: 640px; }
+.project-edit input, .project-edit textarea { width: 100%; }
+.project-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; }
+.project-heading details { margin-top: 16px; }
+.project-feature { display: flex; flex-direction: column; align-items: start; }
+.project-feature a { text-decoration: none; }
+.project-feature small { display: block; }
+.project-usage { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+@media (min-width: 700px) and (max-width: 1050px) {
+  header { gap: 16px; }
+  header > nav[aria-label='Areas'] { gap: 12px; }
+}
+@media (max-width: 699px) {
+  header { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 24px; row-gap: 4px; padding: 8px 16px 0; }
+  header > nav[aria-label='Areas'] { grid-column: 1 / -1; grid-row: 2; min-width: 0; max-width: 100%; overflow-x: auto; flex-wrap: nowrap; gap: 20px; }
+  header .project-nav { display: none; }
+  .project-dropdown { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 220px; margin: 0; }
+  .project-dropdown select { min-width: 0; max-width: 140px; min-height: 44px; }
+  .project-usage { grid-template-columns: 1fr; gap: 8px; }
+  .project-field { flex-wrap: wrap; gap: 8px; }
+  .project-page .home-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

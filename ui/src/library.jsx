@@ -1,5 +1,5 @@
 import {usePhone} from './phone';
-import {ProjectFilter, isActive} from './projects';
+import {ProjectFilter} from './projects';
 import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {Link, Navigate, useNavigate, useParams, useSearchParams} from 'react-router-dom';
 import {createTextAnnotator} from '@recogito/text-annotator';
@@ -72,7 +72,6 @@ export function Library({skill=false}) {
   const [doc,setDoc] = useState(null), [comments,setComments] = useState([]), [receiver,setReceiver] = useState(''), [selection,setSelection] = useState(null), [anchors,setAnchors] = useState({});
   const [text,setText] = useState(''), [error,setError] = useState(''), [busy,setBusy] = useState(false), [notice,setNotice] = useState('');
   const navigate = useNavigate(), generation = useRef(0);
-  useEffect(() => {if (tree.projects.some(p => p.key === project && !isActive(p))) filter('project', '');}, [tree.projects, project]);
   const link = url => url + (search.size ? '?' + search.toString() : '');
   useEffect(() => {let live = true;
     const timer = setTimeout(() => api('/api/library?' + new URLSearchParams({project,q:query})).then(data => {if (live) setTree(data);}).catch(e => {if (live) setError(e.message);}), 150);

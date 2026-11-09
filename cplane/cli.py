@@ -211,6 +211,12 @@ def parser():
     add_project.add_argument('key')
     add_project.add_argument('name')
     add_project.add_argument('--repository')
+    set_project = projects.add_parser('set', parents=[common])
+    set_project.add_argument('key')
+    set_project.add_argument('--name')
+    for command in (add_project, set_project):
+        for field in ('about', 'public-url', 'repository-url'):
+            command.add_argument('--' + field)
     view = commands.add_parser("pending", parents=[common], help="show pending slices")
     view.add_argument("--json", action="store_true", help="output grouped JSON")
     show = commands.add_parser("show", parents=[common], help="show one complete slice")
@@ -411,8 +417,13 @@ def main(argv=None):
                 result = backend.project_active(args.key, None if args.value is None else args.value == 'on',
                                                 actor=getattr(args, 'actor', 'owner'))
             else:
-                result = backend.project_add(args.key, args.name, repository=args.repository,
-                                             actor=getattr(args, 'actor', 'owner'))
+                fields = {field: getattr(args, field) for field in ('name', 'about', 'public_url', 'repository_url')
+                          if getattr(args, field) is not None}
+                if args.project_command == 'set':
+                    result = backend.project_set(args.key, actor=getattr(args, 'actor', 'owner'), **fields)
+                else:
+                    result = backend.project_add(args.key, repository=args.repository,
+                                                 actor=getattr(args, 'actor', 'owner'), **fields)
             print(json.dumps(result, ensure_ascii=False))
             return 0
         if args.command == 'slice':

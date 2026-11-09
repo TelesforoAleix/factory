@@ -123,3 +123,17 @@ test('swaps an open panel in place and loads slice details on demand', async () 
   await waitFor(() => expect(panel.textContent).toContain('Full final'));
   expect(panel.textContent).toContain('history');
 });
+
+test('project page context filters Pipeline and survives preview open and close', async () => {
+  const other = {...feature,id:'LAB-F1',project:'LAB',title:'Other project feature'};
+  vi.stubGlobal('fetch', vi.fn(async url => ({ok:true,json:async () => url === '/api/pipeline' ? {projects:[{key:'FAC',name:'Factory',active:false},{key:'LAB',name:'Lab'}],features:[feature,other]} : url === '/api/chats' ? [] : feature})));
+  render(<MemoryRouter initialEntries={['/pipeline?project=FAC']}><App/></MemoryRouter>);
+  const card = await screen.findByRole('button',{name:/Synthetic feature/});
+  expect(screen.queryByText('Other project feature')).toBeNull();
+  fireEvent.click(card);
+  await screen.findAllByText('Summary');
+  expect(screen.queryByText('Other project feature')).toBeNull();
+  fireEvent.keyDown(document,{key:'Escape'});
+  expect(screen.queryByText('Other project feature')).toBeNull();
+  expect(screen.getByRole('button',{name:'Factory'}).getAttribute('aria-pressed')).toBe('true');
+});

@@ -124,7 +124,9 @@ def test_archive_waiting_read_unread_and_reopen(pg_store):
 
 
 def test_project_unique_defaults_and_configuration(pg_store):
-    pg_store.project_add('XYZ', 'Synthetic project', repository='owner/repo')
+    # A migrated project may predate automatic project-chat creation.
+    with pg_store.mutation():
+        pg_store.connection.execute("INSERT INTO cplane_projects (key, name, repository) VALUES ('XYZ', 'Synthetic project', 'owner/repo')")
     pg_store.chat_defaults('project', chat_tool='claude', chat_model='synthetic-a')
     with ThreadPoolExecutor(2) as pool:
         def create(_):
@@ -153,7 +155,8 @@ def test_project_unique_defaults_and_configuration(pg_store):
 def test_routes_guard_defaults_and_cli(pg_store, capsys, monkeypatch):
     client = create_app(pg_store).test_client()
     headers = {'X-Factory-UI': '1'}
-    pg_store.project_add('XYZ', 'Synthetic', repository='owner/repo')
+    with pg_store.mutation():
+        pg_store.connection.execute("INSERT INTO cplane_projects (key, name, repository) VALUES ('XYZ', 'Synthetic', 'owner/repo')")
     assert client.post('/api/chats/project', json={'project': 'XYZ'}).status_code == 403
     response = client.post('/api/chats/project', json={'project': 'XYZ'}, headers=headers)
     assert response.status_code == 201
@@ -186,7 +189,7 @@ def test_routes_guard_defaults_and_cli(pg_store, capsys, monkeypatch):
 
 def test_queue_prioritizes_owner_globally_and_serializes_shared_repository(pg_store):
     pg_store.project_add('XYZ', 'Synthetic', repository='owner/shared')
-    chat = pg_store.create_project_chat('XYZ')
+    chat = pg_store.chats(kind='project', project='XYZ')[0]
     feature, feature_chat_row = feature_chat(pg_store, project='XYZ')
     pg_store.session_messages('factory', chat['id'], 'Owner first')
     owner = pg_store.claim_session_turn()
@@ -298,10 +301,10 @@ def test_unresolved_message_fails_and_other_chat_runs(pg_store):
 
 
 def test_invalid_project_repository_does_not_create_chat(pg_store):
-    pg_store.project_add('XYZ', 'Invalid', repository='../outside')
     with pytest.raises(StateError, match='Invalid project repository'):
-        pg_store.create_project_chat('XYZ')
+        pg_store.project_add('XYZ', 'Invalid', repository='../outside')
     assert not pg_store.chats(kind='project')
+    assert not any(p['key'] == 'XYZ' for p in pg_store.library_projects())
 
 
 def test_tool_switch_keeps_separate_resume_ids_and_original_skill_snapshot(pg_store, tmp_path):

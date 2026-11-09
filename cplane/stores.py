@@ -133,6 +133,16 @@ class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore, Library
             state.validate(data)
             return data
 
+    def page_state(self):
+        """Read persisted documents for owner projections, like feature_cards.
+
+        save/import validate before persistence. Scheduler and mutation loads still
+        validate via load(); read-only pages do not repeat full schema traversal.
+        """
+        with self.locked():
+            return {'version': 1, 'slices': [row[0] for row in self.connection.execute(
+                'SELECT document FROM cplane_slices ORDER BY position')]}
+
     def save(self, data, notices=()):
         state.validate(data)
         with self.mutation():

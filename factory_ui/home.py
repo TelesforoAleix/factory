@@ -8,7 +8,7 @@ from cplane.chats import public_chat_result
 
 
 def home_data(store, board, clean, view):
-    data = store.load()
+    data = store.page_state() if hasattr(store, 'page_state') else store.load()
     slices = data['slices']
     chats = public_chat_result(store.chats(archived=False))
     notices = [n for _, n in (store.home_notices(slices, chats) if hasattr(store, 'home_notices') else store.notices())]

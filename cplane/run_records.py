@@ -114,6 +114,30 @@ class RunRecordStore:
     def _run_record_dict(columns, row):
         return {key: value.isoformat() if isinstance(value, datetime) else value for key, value in zip(columns, row)}
 
+    def project_usage(self, project):
+        """UTC calendar month; difference Codex cumulative counters before filtering."""
+        fields = ('input_tokens', 'output_tokens', 'cached_tokens')
+        counters = ', '.join(
+            f"CASE WHEN tool = 'codex' AND session_id IS NOT NULL AND prior_id IS NOT NULL "
+            f"THEN CASE WHEN {f} >= prior_{f} THEN {f} - prior_{f} "
+            f"WHEN {f} < prior_{f} THEN {f} END ELSE {f} END AS {f}" for f in fields)
+        lag = ', '.join(f'lag({f}) OVER session AS prior_{f}' for f in fields)
+        with self.locked():
+            rows = self.connection.execute(
+                "WITH previous AS (SELECT id, tool, session_id, project, started_at, seconds, input_tokens, output_tokens, cached_tokens, lag(id) OVER session AS prior_id, " + lag +
+                " FROM cplane_run_records WINDOW session AS (PARTITION BY tool, session_id ORDER BY id)), "
+                "turns AS (SELECT project, started_at, seconds, " + counters + " FROM previous) "
+                "SELECT period, count(t.project), sum(input_tokens), sum(output_tokens), sum(cached_tokens), sum(seconds) "
+                "FROM (VALUES ('month'), ('all_time')) p(period) LEFT JOIN turns t ON t.project = %s "
+                "AND (period = 'all_time' OR started_at >= date_trunc('month', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' "
+                "AND started_at < (date_trunc('month', now() AT TIME ZONE 'UTC') + interval '1 month') AT TIME ZONE 'UTC') "
+                "GROUP BY period", (project,)).fetchall()
+            return {period: dict(input_tokens=(int(i) if i is not None else None) if count else 0,
+                                 output_tokens=(int(o) if o is not None else None) if count else 0,
+                                 cached_tokens=(int(c) if c is not None else None) if count else 0,
+                                 hours=seconds / 3600 if seconds is not None else (None if count else 0))
+                    for period, count, i, o, c, seconds in rows}
+
     def run_record_show(self, identifier):
         with self.locked():
             row = self.connection.execute('SELECT id, ' + ', '.join(FIELDS) +
