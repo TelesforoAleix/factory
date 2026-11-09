@@ -441,6 +441,9 @@ def create_app(store=None):
         except OSError:
             return jsonify(error='Documents unavailable'), 503
 
+    from .inbox import register_inbox
+    register_inbox(app, backend)
+
     from .library import register_library
     register_library(app, backend, documents)
 

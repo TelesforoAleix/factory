@@ -2,7 +2,7 @@
 from .features import bounded
 from .state import StateError
 
-KINDS = ('orchestrator', 'project', 'feature', 'legacy')
+KINDS = ('orchestrator', 'project', 'feature', 'legacy', 'secretary')
 
 
 def public_chat_result(value):
@@ -48,8 +48,9 @@ class ChatStore:
             raise StateError('Archived must be a boolean')
         with self.mutation():
             chat = self.chat_show(chat_id)
-            if archived and chat['kind'] == 'orchestrator':
-                raise StateError('The Development Orchestrator cannot be archived')
+            if archived and chat['kind'] in ('orchestrator', 'secretary'):
+                title = 'Secretary' if chat['kind'] == 'secretary' else 'Development Orchestrator'
+                raise StateError(f'The {title} cannot be archived')
             if archived or chat['archived']:
                 # Preserve skipped work as completed records; never replay it.
                 # Running turns and queued owner messages are left alone.
@@ -226,6 +227,7 @@ class ChatStore:
             linked = ', '.join(s['id'] for s in self._linked_slices(item['feature']))
             self._chat_event(item['feature'], None, 'testing', f"Feature {item['id']} entered Testing.\nSlices: {linked}\nRead the testing-review skill. Check installs and handovers, save the next numbered Testing review section, and ask the owner to test in open text.")
         elif stage == 'done':
+            self.ideas_implemented(item['feature'])
             for (chat_id,) in self.connection.execute(
                     'SELECT id FROM cplane_sessions WHERE feature = %s', (item['feature'],)).fetchall():
                 self.chat_archive(chat_id)

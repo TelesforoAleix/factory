@@ -11,7 +11,7 @@ import pytest
 
 from cplane import sessions
 from cplane.stores import PostgresStore
-from cplane.workshop import Workshop, WorkshopServer, TOOLS, SLICE_FIELDS
+from cplane.workshop import Workshop, WorkshopServer, TOOLS, SLICE_FIELDS, SECRETARY_WRITES
 from factory_ui.documents import Documents
 from test_stores import pg_store
 
@@ -219,7 +219,7 @@ def test_socket_identity_lifecycle_and_stdio_client(context, tmp_path, socket_ow
         replies = [json.loads(line) for line in result.stdout.splitlines()]
         assert [r['id'] for r in replies] == [2, 3, 4]
         assert replies[0]['result']['capabilities'] == {'tools': {}}
-        assert replies[1]['result']['tools'] == TOOLS
+        assert replies[1]['result']['tools'] == [t for t in TOOLS if t['name'] not in SECRETARY_WRITES]
         value(replies[2]['result'])
     assert not server.path.exists()
 

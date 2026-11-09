@@ -1681,3 +1681,49 @@ checks, request the reviewed installation:
 ```sh
 sudo factory-cplane --actor owner install factory/IF1b
 ```
+
+## IB1 inbox and Secretary installation
+
+After the owner merges IB1 with green `test` and `ui` checks:
+
+```sh
+sudo factory-cplane --actor owner install factory/IB1
+```
+
+Before installation, confirm `/etc/factory/ui.env` remains root:root 0600 and
+contains only the existing `CPLANE_DATABASE_URL` assignment. Systemd loads this
+file before dropping intake privileges; do not make it group-readable. If the
+node uses a database password/service file inaccessible to the intake account
+(including home or host `/tmp` paths hidden by the sandbox), stop and escalate
+rather than widening permissions. Credential options are described in
+[the intake protocol](inbox.md).
+
+The reviewed installer applies migration 019, creates the `factory-intake`
+system group and login-disabled system user with no home, adds `homelab-bot` to
+the group, installs/enables the local intake service and restarts the existing
+Factory services. Restart the separately managed Telegram bot service to acquire
+its new supplementary group; its code and private arrival folder are unchanged.
+Confirm `systemctl is-active factory-intake` and that
+`/run/factory-intake` is factory-intake:factory-intake 0750 and `intake.sock` is
+factory-intake:factory-intake 0660. Confirm the running service UID is the dedicated
+user, with no capabilities and no writable paths beyond its runtime/private
+scratch space. Attachments are stored in Postgres, so no attachment directory is
+made writable. The unit enables ProtectSystem=strict, ProtectHome, PrivateTmp and
+NoNewPrivileges.
+
+Run typed synthetic entries for each Secretary label:
+
+```sh
+sudo factory-cplane --actor owner inbox add 'Synthetic idea: a switch to hide completed work' --kind idea --target development
+sudo factory-cplane --actor owner inbox add 'Synthetic feedback: the completed-work switch is hard to find' --kind message --target development
+sudo factory-cplane --actor owner inbox add 'Synthetic question: what does Shortlist mean?' --kind message --target development
+sudo factory-cplane --actor owner inbox add 'Synthetic update request: which features are currently Building?' --kind message --target development
+sudo factory-cplane --actor owner inbox add 'Synthetic order: please discuss adding a completed-work switch; do not implement it' --kind message --target development
+sudo factory-cplane inbox list
+```
+
+Verify one Secretary wake per entry, labels and routes, retained original words,
+idea provenance, replies reaching the existing phone notice path, and automatic
+pause after the configured consecutive-turn limit. Use an owner chat message to
+continue a paused chat. The bot does not submit to the socket until its separate
+integration is implemented. See [the intake protocol and API](inbox.md).
