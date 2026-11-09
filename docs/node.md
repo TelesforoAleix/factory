@@ -68,6 +68,7 @@ CLI output arguments. Run closes stdin, has no TTY, and requires `codex exec` or
 `claude -p`/`--print`. The launcher adds sandbox/approval bypass flags and disables
 Claude's inner sandbox: the sealed container supplies the sandbox. It does not
 rewrite runner commands. `docker_arguments()` exposes the argument list to tests.
+The exact command `codex debug models` is also allowed in the same container, mounts, network and login, without exec's sandbox/approval bypass flags; all other non-exec Codex commands are refused.
 The host launcher needs Docker access, which itself confers administrator power.
 It invokes no shell, forwards no host environment into the container, captures no
 CLI output, disables Docker logging and propagates the process exit code.
@@ -1750,13 +1751,9 @@ sudo factory-cplane models list
 Codex reads visible entries from `codex debug models`. Claude probes `fable`,
 `opus`, `sonnet`, `haiku` once each and records their full IDs and efforts low,
 medium, high, xhigh, max. Refreshes use the chat container, UID and login mounts.
+Claude aliases that refuse or return no model are skipped and named in the update result; at least one alias must resolve for the update to succeed.
 The root session supervisor handles web requests while chat workers are idle,
 without holding the database lock during probes, and cleans up interrupted runs.
-
-**Deployment gate:** the existing launcher permits only `codex exec`, so Codex
-updates remain blocked pending the owner's decision on an exact-command fence
-exception. This slice leaves the fence, logins, installer and services unchanged.
-Do not merge as complete before resolving that escalation.
 
 Seven stored roles replace chat defaults and `roles-command`: orchestrator,
 project, feature, secretary, light, standard, strong. Chat roles retain installed

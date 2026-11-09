@@ -17,6 +17,10 @@ NETWORK = 'factory-cli'
 TOOLS = ('claude', 'codex')
 
 
+class SessionCleanupError(Exception):
+    """Container cleanup failed, overriding the turn's exit status."""
+
+
 def real_directory(path):
     """Check every component before resolution; never follow a symlink."""
     path = Path(path)
@@ -114,10 +118,11 @@ def docker_arguments(tool, *, repo=None, run=None, command=(), login=False, read
         if command[0] != tool:
             raise ValueError('command must start with the named tool')
         if tool == 'codex':
-            if command[1:2] != ['exec']:
+            if command[1:2] == ['exec']:
+                command[1:1] = ['--dangerously-bypass-approvals-and-sandbox',
+                                '-c', 'cli_auth_credentials_store="file"']
+            elif command != ['codex', 'debug', 'models']:
                 raise ValueError('non-interactive Codex runs require codex exec')
-            command[1:1] = ['--dangerously-bypass-approvals-and-sandbox',
-                            '-c', 'cli_auth_credentials_store="file"']
         else:
             options = command[1:command.index('--')] if '--' in command else command[1:]
             if '-p' not in options and '--print' not in options:
@@ -185,9 +190,11 @@ def main(argv=None):
                     remove_session_container(options.session_turn)
                 except (OSError, subprocess.CalledProcessError):
                     print('factory-cli: session cleanup failed', file=sys.stderr)
-                    return 125
+                    raise SessionCleanupError from None
         return subprocess.run(args, stdin=None if login else subprocess.DEVNULL,
                               check=False).returncode
+    except SessionCleanupError:
+        return 125
     except (ValueError, OSError, subprocess.CalledProcessError):
         # Do not echo arguments, environment, or potentially sensitive OS error text.
         print('factory-cli: refused; check paths, login ownership/mode, command and Docker availability',
