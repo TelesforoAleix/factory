@@ -128,3 +128,15 @@ test('failed chat allows a retry and labels slice events distinctly', async () =
   expect(fetcher.mock.calls.some(([url,o]) => url.endsWith('/messages') && o?.method === 'POST')).toBe(true);
   expect(fetcher.mock.calls.some(([url]) => url === '/api/chats/7')).toBe(false);
 });
+
+test('opens the transcript at its latest message', async () => {
+  const chat = {id:7,title:'Example',kind:'feature',area:'factory',tool:'codex',model:'test',state:'idle'};
+  const messages = [{id:1,role:'owner',text:'Latest'}];
+  vi.stubGlobal('fetch', async url => ({ok:true,json:async () => url === '/api/projects' ? [] : url === '/api/chats' ? [chat] : url.endsWith('/open') ? {chat,messages} : url.endsWith('/messages') ? messages : {}}));
+  const height = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(1000);
+  try {
+    render(<MemoryRouter initialEntries={['/chats/7']}><App/></MemoryRouter>);
+    await screen.findByText('Latest');
+    expect(document.querySelector('.chat-transcript').scrollTop).toBe(1000);
+  } finally { height.mockRestore(); }
+});

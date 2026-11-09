@@ -15,7 +15,7 @@ test('filters, previews and displays a move refusal', async () => {
   fireEvent.click(screen.getByRole('button', {name:'Factory'}));
   fireEvent.click(screen.getByRole('button', {name:/Synthetic feature/}));
   expect((await screen.findAllByText('Summary')).length).toBeGreaterThan(0);
-  fireEvent.click(screen.getAllByRole('button', {name:'Move to Grilling'})[0]);
+  fireEvent.click(screen.getAllByRole('button', {name:'Grilling'})[0]);
   expect(await screen.findByText('No agreed design yet')).toBeTruthy();
   await waitFor(() => expect(fetchMock.mock.calls.some(([url, options]) => url === '/api/pipeline/FAC-F1/move' && options?.headers['X-Factory-UI'] === '1')).toBe(true));
 });
@@ -66,4 +66,21 @@ test('full feature page reads only its detail', async () => {
   render(<MemoryRouter initialEntries={['/pipeline/FAC-F1']}><App/></MemoryRouter>);
   await screen.findByText('Summary');
   expect(fetcher.mock.calls.some(([url]) => url === '/api/pipeline')).toBe(false);
+});
+
+test('groups stages into four columns and toggles compact preview', async () => {
+  vi.stubGlobal('fetch', vi.fn(async url => ({ok:true,json:async () => url === '/api/pipeline' ? {projects:[],features:[feature]} : url === '/api/chats' ? [] : feature})));
+  render(<MemoryRouter initialEntries={['/pipeline']}><App/></MemoryRouter>);
+  await screen.findByText('Synthetic feature');
+  const groups = [...document.querySelectorAll('.pipeline-group')];
+  expect(groups.map(g => [...g.querySelectorAll('.pipeline-column')].map(c => c.className.match(/stage-\w+/)[0]))).toEqual([['stage-shortlist'],['stage-grilling'],['stage-ready','stage-next'],['stage-building','stage-testing'],['stage-parked']]);
+  const card = screen.getByRole('button', {name:/Synthetic feature/});
+  fireEvent.click(card);
+  expect(document.querySelector('.pipeline-layout.has-panel')).toBeTruthy();
+  expect(card.getAttribute('aria-expanded')).toBe('true');
+  fireEvent.click(card);
+  expect(document.querySelector('.pipeline-layout.has-panel')).toBeNull();
+  fireEvent.click(card);
+  fireEvent.keyDown(document, {key:'Escape'});
+  expect(document.querySelector('.pipeline-layout.has-panel')).toBeNull();
 });
