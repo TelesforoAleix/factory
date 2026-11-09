@@ -2,6 +2,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
 import ctypes
+from datetime import datetime, timezone
 import fcntl
 import io
 import json
@@ -118,7 +119,35 @@ def workspace(session):
     folder = WORK_ROOT / f'session-{session["id"]}'
     # Older first-turn failures may have a complete workspace but no resume ID.
     # Reuse only through the same ownership/mode/export checks as provider rollover.
-    retry_workspace = session.get('_restart') and folder.exists()
+    exists = os.path.lexists(folder)
+    retry_workspace = session.get('_restart') and exists
+    if exists and not session.get('cli_session_id'):
+        info = folder.lstat()
+        reusable = (retry_workspace or session.get('workspace_ready')) and stat.S_ISDIR(info.st_mode) and info.st_uid == 21000 and stat.S_IMODE(info.st_mode) == 0o700
+        if reusable:
+            components = [folder / 'repos', *(folder / 'repos' / r.split('/')[1] for r in repositories)]
+            if session.get('area') != 'homelab':
+                components.append(folder / 'repos/.planning')
+            try:
+                for component in components:
+                    info = component.lstat()
+                    if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+                        reusable = False
+                        break
+            except OSError:
+                reusable = False
+        if not reusable:
+            # Rename the directory entry itself, never traverse an untrusted tree.
+            stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+            for suffix in range(10000):
+                aside = WORK_ROOT / f'session-{session["id"]}-abandoned-{stamp}-{suffix}'
+                if not os.path.lexists(aside):
+                    os.rename(folder, aside)
+                    break
+            else:
+                raise StateError('Workspace unavailable')
+            retry_workspace = False
+            session['workspace_ready'] = False
     if session['cli_session_id'] or session.get('workspace_ready') or retry_workspace:
         # Never refresh or walk an agent-owned workspace on resume. Only the
         # root-owned installed instructions may have their read modes repaired.
@@ -253,8 +282,10 @@ def execute_turn(turn, store):
 
 
 def _execute_turn(turn, store, accounting):
+    reason = 'Workspace could not be prepared.'
     try:
         folder, paths = workspace(turn['session'])
+        reason = 'The model tool could not complete the turn.'
         trusted_directory(RUNS)
         run = RUNS / f'session-turn-{turn["id"]}'
         run.mkdir(mode=0o700)  # root-owned; no agent output files to follow
@@ -274,7 +305,7 @@ def _execute_turn(turn, store, accounting):
             raise CleanupError('Container cleanup failed')
         if result.returncode:
             LOG.error('Session turn %s exited %s', turn['id'], result.returncode)
-            reply = 'Turn timed out after 20 minutes.' if result.returncode == 124 else 'Turn failed. Send a message to start a new session.'
+            reply = 'Turn timed out after 20 minutes.' if result.returncode == 124 else 'The model tool exited with an error.'
             store.finish_session_turn(turn, reply, failed=True)
             return
         cli_id, reply = parse_reply(turn['session']['tool'], result.stdout)
@@ -298,7 +329,7 @@ def _execute_turn(turn, store, accounting):
         raise
     except Exception:
         LOG.error('Session turn %s failed', turn['id'])
-        store.finish_session_turn(turn, 'Turn failed. Send a message to start a new session.', failed=True)
+        store.finish_session_turn(turn, reason, failed=True)
         return
     if commits:
         store.finish_session_turn(turn, reply, cli_id, planning_commits=commits)
