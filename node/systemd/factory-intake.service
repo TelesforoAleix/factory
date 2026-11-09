@@ -1,0 +1,20 @@
+[Unit]
+Description=Factory local phone intake
+After=postgresql.service
+
+[Service]
+User=root
+Group=factory-intake
+WorkingDirectory=/opt/factory
+EnvironmentFile=/etc/factory/runner.env
+ExecStart=/opt/factory/.venv/bin/python -m cplane.intake
+RuntimeDirectory=factory-intake
+RuntimeDirectoryMode=0750
+UMask=0077
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

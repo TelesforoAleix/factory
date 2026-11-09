@@ -13,6 +13,7 @@ from .features import FeatureStore
 from .run_records import RunRecordStore
 from .skills import SkillStore
 from .chats import ChatStore, chat_added
+from .inbox import InboxStore
 from .library import LibraryStore
 
 
@@ -79,7 +80,7 @@ class FileStore:
 LOCK_KEY = 0x43504C414E45
 
 
-class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore, LibraryStore):
+class PostgresStore(InboxStore, FeatureStore, RunRecordStore, SkillStore, ChatStore, LibraryStore):
     def __init__(self, url):
         if not url:
             raise state.StateError("Postgres connection failed")
@@ -392,6 +393,7 @@ class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore, Library
                 ('failed' if failed else 'idle', cli_id, cli_id, cli_id, cli_id, turn['session']['id']))
             if not failed:
                 self.finish_testing_review(turn)
+                self.finish_inbox_turn(turn, reply)
             self.chat_can_take(turn['session']['id'])
             if failed:
                 self.connection.execute("UPDATE cplane_session_messages SET status = 'failed' WHERE session = %s AND status = 'queued'",

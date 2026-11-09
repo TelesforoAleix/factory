@@ -212,7 +212,7 @@ def installer(tmp_path, monkeypatch):
     commands = tmp_path / 'commands'
     commands.mkdir()
     log = tmp_path / 'commands.log'
-    for name in ('uv', 'docker', 'systemctl', 'factory-cplane', 'chown', 'chmod', 'curl'):
+    for name in ('uv', 'docker', 'systemctl', 'factory-cplane', 'chown', 'chmod', 'curl', 'groupadd', 'usermod'):
         script = commands / name
         script.write_text('#!/bin/sh\nprintf "%s\\n" "' + name + ' $*" >> "$INSTALL_TEST_LOG"\n' +
                           ('if [ "$1" = python ]; then echo /opt/python/3.13/bin/python; fi\n' if name == 'uv' else '') +
@@ -237,6 +237,9 @@ def test_install_manual_preserves_fence_and_backup(installer):
     assert 'uv sync --project' in commands and '--frozen --no-dev' in commands
     assert 'npm ci && npm run build' in commands
     assert 'factory-cplane migrate' in commands
+    assert 'groupadd --force --system factory-intake' in commands
+    assert 'usermod --append --groups factory-intake homelab-bot' in commands
+    assert commands.index('systemctl restart factory-ui factory-sessions') < commands.index('systemctl restart factory-intake.service')
     assert 'systemctl daemon-reload' in commands
 
 

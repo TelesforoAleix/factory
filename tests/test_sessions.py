@@ -52,7 +52,9 @@ def test_routes_guard_and_area(pg_store):
     assert response.status_code == 201
     sid = response.json['id']
     assert 'cli_session_id' not in client.get(path).json[0]
-    assert client.get('/api/factory/sessions').json == []
+    factory_sessions = client.get('/api/factory/sessions').json
+    assert [s['kind'] for s in factory_sessions] == ['secretary']
+    assert all('cli_session_id' not in s for s in factory_sessions)
     messages = path + f'/{sid}/messages'
     assert client.post(messages, json={'text': 'hello'}).status_code == 403
     assert client.post(messages, json={'text': 'hello'}, headers={'X-Factory-UI': '1'}).json[0]['status'] == 'queued'

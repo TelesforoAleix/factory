@@ -70,6 +70,7 @@ def install(stage, commit):
         old, new = files(TARGET / path), files(stage / path)
         manual.extend(str(Path(path) / name) if name else path
                       for name in sorted(old.keys() | new.keys()) if old.get(name) != new.get(name))
+    intake_was_installed = (SYSTEMD / 'factory-intake.service').exists()
     managed = []
     for source, destination in [('node/bin', BIN), ('node/systemd', SYSTEMD)]:
         old, new = TARGET / source, stage / source
@@ -115,6 +116,8 @@ def install(stage, commit):
             run('chmod', '-R', 'go-w', str(TARGET))
             run('chmod', '-R', 'go+rX', str(TARGET))
             run('factory-cplane', 'migrate')
+            run('groupadd', '--force', '--system', 'factory-intake')
+            run('usermod', '--append', '--groups', 'factory-intake', 'homelab-bot')
             for source, destination, mode in managed:
                 if source.exists():
                     shutil.copyfile(source, destination)
@@ -122,9 +125,14 @@ def install(stage, commit):
                     destination.chmod(mode)
                 else:
                     remove(destination)
+            # New intake must never enqueue work into an older session worker.
             restart()
+            run('systemctl', 'enable', 'factory-intake.service')
+            run('systemctl', 'restart', 'factory-intake.service')
             check()
         except Exception:
+            subprocess.run(['systemctl', 'stop', 'factory-intake.service'],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if (TARGET / '.venv').exists():
                 (TARGET / '.venv').rename(previous / '.venv')
             remove(TARGET)
@@ -137,6 +145,12 @@ def install(stage, commit):
                     destination.chmod(mode)
                     os.chown(destination, 0, 0)
             sync()
+            run('systemctl', 'daemon-reload')
+            if intake_was_installed:
+                run('systemctl', 'restart', 'factory-intake.service')
+            else:
+                subprocess.run(['systemctl', 'disable', 'factory-intake.service'],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             restart()
             check()
             raise

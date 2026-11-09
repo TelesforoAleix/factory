@@ -124,13 +124,13 @@ def parser():
     for name in ('list', 'open', 'read', 'unread', 'project', 'configure', 'defaults', 'archive', 'unarchive'):
         sub = chats.add_parser(name, parents=[common])
         if name == 'list':
-            sub.add_argument('--kind', choices=('orchestrator', 'project', 'feature', 'legacy'))
+            sub.add_argument('--kind', choices=('orchestrator', 'project', 'feature', 'legacy', 'secretary'))
             sub.add_argument('--project')
             sub.add_argument('--archived', action=argparse.BooleanOptionalAction, default=None)
         elif name == 'project':
             sub.add_argument('project')
         elif name == 'defaults':
-            sub.add_argument('kind', nargs='?', choices=('orchestrator', 'project', 'feature', 'legacy'))
+            sub.add_argument('kind', nargs='?', choices=('orchestrator', 'project', 'feature', 'legacy', 'secretary'))
         else:
             sub.add_argument('id', type=int)
         if name in ('configure', 'defaults'):
@@ -187,6 +187,38 @@ def parser():
     importer = feature_commands.add_parser('import-backlog', parents=[common])
     importer.add_argument('file')
     importer.add_argument('--dry-run', action='store_true')
+    inbox = commands.add_parser('inbox', parents=[common])
+    inbox_commands = inbox.add_subparsers(dest='inbox_command', required=True, parser_class=Parser)
+    inbox_commands.add_parser('list', parents=[common])
+    show_entry = inbox_commands.add_parser('show', parents=[common])
+    show_entry.add_argument('id', type=int)
+    add_entry = inbox_commands.add_parser('add', parents=[common])
+    add_entry.add_argument('text')
+    add_entry.add_argument('--file', action='append', default=[])
+    add_entry.add_argument('--kind', choices=('idea','link','file','message'))
+    add_entry.add_argument('--target')
+    add_entry.add_argument('--intent', choices=('explore','discuss'))
+    transcript = inbox_commands.add_parser('transcript', parents=[common])
+    transcript.add_argument('id', type=int)
+    transcript.add_argument('text')
+    idea = commands.add_parser('idea', parents=[common])
+    ideas = idea.add_subparsers(dest='idea_command', required=True, parser_class=Parser)
+    ideas.add_parser('list', parents=[common])
+    new_idea = ideas.add_parser('add', parents=[common])
+    new_idea.add_argument('title')
+    new_idea.add_argument('--note', default='')
+    new_idea.add_argument('--tag', action='append', default=[])
+    for action in ('show','reject','tag','explore','promote'):
+        sub = ideas.add_parser(action, parents=[common])
+        sub.add_argument('id', type=int, nargs='+' if action in ('explore','promote') else None)
+        if action == 'reject':
+            sub.add_argument('--reason', required=True)
+        if action == 'tag':
+            sub.add_argument('tags', nargs='*')
+        if action in ('explore','promote'):
+            sub.add_argument('--project')
+        if action == 'promote':
+            sub.add_argument('--feature')
     skill = commands.add_parser('skill', parents=[common])
     skill_commands = skill.add_subparsers(dest='skill_command', required=True, parser_class=Parser)
     skill_list = skill_commands.add_parser('list', parents=[common])
@@ -424,6 +456,43 @@ def main(argv=None):
                 else:
                     result = backend.project_add(args.key, repository=args.repository,
                                                  actor=getattr(args, 'actor', 'owner'), **fields)
+            print(json.dumps(result, ensure_ascii=False))
+            return 0
+        if args.command in ('inbox','idea'):
+            if not state.postgres():
+                raise state.StateError('Inbox and ideas require Postgres (CPLANE_DATABASE_URL)')
+            backend = state.store(None)
+            actor = getattr(args, 'actor', 'owner')
+            action = getattr(args, args.command + '_command')
+            if args.command == 'inbox':
+                if action == 'list':
+                    result = backend.inbox_list()
+                elif action == 'show':
+                    result = backend.inbox_show(args.id)
+                elif action == 'transcript':
+                    result = backend.inbox_transcript(args.id, args.text, actor=actor)
+                else:
+                    import mimetypes
+                    from .inbox import FILE_LIMIT
+                    files = []
+                    for name in args.file:
+                        path = Path(name)
+                        with path.open('rb') as stream:
+                            content = stream.read(FILE_LIMIT+1)
+                        files.append(dict(name=path.name, media_type=mimetypes.guess_type(path.name)[0] or 'application/octet-stream', content=content))
+                    result = backend.inbox_add(args.text, fields={k:getattr(args,k) for k in ('kind','target','intent') if getattr(args,k) is not None}, files=files)
+            elif action == 'list':
+                result = backend.idea_list()
+            elif action == 'show':
+                result = backend.idea_show(args.id)
+            elif action == 'add':
+                result = backend.idea_new(args.title,args.note,tags=args.tag,actor=actor)
+            elif action == 'reject':
+                result = backend.idea_reject(args.id,args.reason,actor=actor)
+            elif action == 'tag':
+                result = backend.idea_tag(args.id,args.tags,actor=actor)
+            else:
+                result = backend.idea_request(args.id,action=action,project=args.project,feature=getattr(args,'feature',None),actor=actor)
             print(json.dumps(result, ensure_ascii=False))
             return 0
         if args.command == 'slice':

@@ -194,7 +194,7 @@ def turn_command(turn, folder, paths, run):
         args += ['--read-only-path', str(path)]
     if tool == 'codex':
         command = ['codex', 'exec', '--skip-git-repo-check', '--json', '-m', session['model'],
-                   '-c', 'model_reasoning_effort="medium"']
+                   '-c', 'model_reasoning_effort="low"' if session.get('kind') == 'secretary' else 'model_reasoning_effort="medium"']
         if session.get('kind') in WORKSHOP_KINDS:
             command += ['-c', 'mcp_servers.workshop.command="python3"',
                         '-c', 'mcp_servers.workshop.args=["/run/factory/workshop_mcp.py"]']
@@ -211,7 +211,9 @@ def turn_command(turn, folder, paths, run):
         prompt = turn['context'] + '\n\nCurrent message:\n' + prompt
     if session.get('kind') in WORKSHOP_KINDS:
         from .workshop import CHAT_INSTRUCTION
-        prompt += '\n\n' + CHAT_INSTRUCTION
+        prompt += f'\n\nCurrent message ID: {turn["id"]}'
+        from .inbox import SECRETARY_INSTRUCTION
+        prompt += '\n\n' + (SECRETARY_INSTRUCTION if session.get('kind') == 'secretary' else CHAT_INSTRUCTION)
     if session.get('area') == 'homelab':
         prompt += '\n\n' + HOMELAB_INSTRUCTION
     return [*args, '--', *command, '--', prompt]

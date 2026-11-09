@@ -1681,3 +1681,35 @@ checks, request the reviewed installation:
 ```sh
 sudo factory-cplane --actor owner install factory/IF1b
 ```
+
+## IB1 inbox and Secretary installation
+
+After the owner merges IB1 with green `test` and `ui` checks:
+
+```sh
+sudo factory-cplane --actor owner install factory/IB1
+```
+
+The reviewed installer applies migration 019, creates `factory-intake`, adds
+`homelab-bot`, installs/enables the local intake service and restarts the existing
+Factory services. Restart the separately managed Telegram bot service to acquire
+its new supplementary group; its code and private arrival folder are unchanged.
+Confirm `systemctl is-active factory-intake` and that
+`/run/factory-intake` is root:factory-intake 0750 and `intake.sock` is 0660.
+
+Run typed synthetic entries for each Secretary label:
+
+```sh
+sudo factory-cplane --actor owner inbox add 'Synthetic idea: a switch to hide completed work' --kind idea --target development
+sudo factory-cplane --actor owner inbox add 'Synthetic feedback: the completed-work switch is hard to find' --kind message --target development
+sudo factory-cplane --actor owner inbox add 'Synthetic question: what does Shortlist mean?' --kind message --target development
+sudo factory-cplane --actor owner inbox add 'Synthetic update request: which features are currently Building?' --kind message --target development
+sudo factory-cplane --actor owner inbox add 'Synthetic order: please discuss adding a completed-work switch; do not implement it' --kind message --target development
+sudo factory-cplane inbox list
+```
+
+Verify one Secretary wake per entry, labels and routes, retained original words,
+idea provenance, replies reaching the existing phone notice path, and automatic
+pause after the configured consecutive-turn limit. Use an owner chat message to
+continue a paused chat. The bot does not submit to the socket until its separate
+integration is implemented. See [the intake protocol and API](inbox.md).
