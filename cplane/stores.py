@@ -13,6 +13,8 @@ from .features import FeatureStore
 from .run_records import RunRecordStore
 from .skills import SkillStore
 from .chats import ChatStore, chat_added
+from .models import ModelStore
+from .roles import RoleStore
 from .inbox import InboxStore
 from .library import LibraryStore
 
@@ -80,7 +82,7 @@ class FileStore:
 LOCK_KEY = 0x43504C414E45
 
 
-class PostgresStore(InboxStore, FeatureStore, RunRecordStore, SkillStore, ChatStore, LibraryStore):
+class PostgresStore(ModelStore, RoleStore, InboxStore, FeatureStore, RunRecordStore, SkillStore, ChatStore, LibraryStore):
     def __init__(self, url):
         if not url:
             raise state.StateError("Postgres connection failed")
@@ -230,25 +232,31 @@ class PostgresStore(InboxStore, FeatureStore, RunRecordStore, SkillStore, ChatSt
                 'skill_names, skill_version, kind, project, (SELECT f.id FROM cplane_features f WHERE f.feature = s.feature) AS feature, archived, last_read_at, workspace_ready, auto_turns, auto_paused, '
                 "EXISTS (SELECT 1 FROM cplane_session_messages m WHERE m.session = s.id AND m.role = 'assistant' "
                 'AND (s.last_read_at IS NULL OR m.time > s.last_read_at)) AS waiting '
-                'FROM cplane_sessions s WHERE (%s::text IS NULL OR area = %s) '
+                ', effort, role_overrides, tool_sessions FROM cplane_sessions s WHERE (%s::text IS NULL OR area = %s) '
                 'AND (%s::bigint IS NULL OR s.id = %s) ORDER BY s.id',
                 (area, area, session_id, session_id))
             keys = ('id', 'area', 'title', 'tool', 'model', 'state', 'cli_session_id', 'repositories', 'skill_names', 'skill_version',
-                    'kind', 'project', 'feature', 'archived', 'last_read_at', 'workspace_ready', 'auto_turns', 'auto_paused', 'waiting')
+                    'kind', 'project', 'feature', 'archived', 'last_read_at', 'workspace_ready', 'auto_turns', 'auto_paused', 'waiting', 'effort', 'role_overrides', 'tool_sessions')
             result = [dict(zip(keys, row)) for row in rows]
             for chat in result:
+                self.resolve_chat(chat)
                 if chat['last_read_at'] is not None:
                     chat['last_read_at'] = chat['last_read_at'].isoformat()
             return result
 
-    def create_session(self, area, title, tool, model, repositories):
+    def create_session(self, area, title, tool, model, repositories, *, effort=None):
         title, tool, model, repositories = validate_session(
             dict(title=title, tool=tool, model=model, repositories=repositories), area)
         with self.mutation():
+            selected_effort = self.role_get('legacy')['effort'] if effort is None else effort
+            model = self.model_choice(tool, model, selected_effort)
+            overrides = dict(tool=tool, model=model)
+            if effort is not None:
+                overrides['effort'] = effort
             return self.connection.execute(
-                'INSERT INTO cplane_sessions (area, title, tool, model, repositories) '
-                'VALUES (%s, %s, %s, %s, %s) RETURNING id',
-                (area, title, tool, model, Jsonb(repositories))).fetchone()[0]
+                'INSERT INTO cplane_sessions (area, title, tool, model, repositories, role_overrides) '
+                'VALUES (%s, %s, %s, %s, %s, %s) RETURNING id',
+                (area, title, tool, model, Jsonb(repositories), Jsonb(overrides))).fetchone()[0]
 
     def session_messages(self, area, session_id, text=None):
         with self.mutation():
@@ -338,6 +346,9 @@ class PostgresStore(InboxStore, FeatureStore, RunRecordStore, SkillStore, ChatSt
                 break
             else:
                 return None
+            self.connection.execute(
+                'UPDATE cplane_sessions SET tool = %s, model = %s, effort = %s, cli_session_id = %s WHERE id = %s',
+                (session['tool'], session['model'], session['effort'], session['cli_session_id'], session['id']))
             if session['skill_names'] is None and not (session['cli_session_id'] or session['workspace_ready']):
                 names, version = self.session_skills(session['repositories'])
                 self.connection.execute(

@@ -11,6 +11,13 @@ import pytest
 from cplane import sessions
 from factory_ui import create_app
 from test_stores import pg_store
+from conftest import seed_model_choices
+
+
+@pytest.fixture(autouse=True)
+def choices(request):
+    if 'pg_store' in request.fixturenames:
+        seed_model_choices(request.getfixturevalue('pg_store'))
 
 
 @pytest.fixture(autouse=True)
@@ -167,7 +174,7 @@ def test_resume_rejects_link_without_host_write(tmp_path, monkeypatch, resume_id
 @pytest.mark.parametrize('tool', ['codex', 'claude'])
 @pytest.mark.parametrize('resume', [None, 'saved-id'])
 def test_one_message_and_resume(tool, resume, tmp_path):
-    turn = dict(id=7, text='literal $(false)', session=dict(tool=tool, model='synthetic', cli_session_id=resume))
+    turn = dict(id=7, text='literal $(false)', session=dict(tool=tool, model='synthetic', effort='medium', cli_session_id=resume))
     args = sessions.turn_command(turn, tmp_path, [tmp_path / 'repos/name'], tmp_path / 'run')
     assert args[:2] == ['factory-cli', 'run']
     assert args[-1] == turn['text']
@@ -183,7 +190,7 @@ def test_one_message_and_resume(tool, resume, tmp_path):
 @pytest.mark.parametrize('resume', [None, 'saved-id'])
 def test_turn_prompt_instruction_does_not_change_stored_text(area, tool, resume, tmp_path):
     turn = dict(id=7, text='Owner message', session=dict(
-        area=area, tool=tool, model='synthetic', cli_session_id=resume))
+        area=area, tool=tool, model='synthetic', effort='medium', cli_session_id=resume))
     prompt = sessions.turn_command(turn, tmp_path, [], tmp_path / 'run')[-1]
     assert turn['text'] == 'Owner message'
     if area == 'homelab':
@@ -197,7 +204,7 @@ def test_turn_prompt_instruction_does_not_change_stored_text(area, tool, resume,
 
 def test_timeout_short_failure_and_cleanup_uncertainty(tmp_path, monkeypatch):
     store = Mock()
-    turn = dict(id=5, text='synthetic', session=dict(tool='codex', model='synthetic', cli_session_id=None))
+    turn = dict(id=5, text='synthetic', session=dict(tool='codex', model='synthetic', effort='medium', cli_session_id=None))
     monkeypatch.setattr(sessions, 'workspace', lambda _: (tmp_path, []))
     monkeypatch.setattr(sessions, 'RUNS', tmp_path)
     monkeypatch.setattr(sessions.subprocess, 'run', lambda *a, **k: subprocess.CompletedProcess(a, 124, '', 'private detail'))

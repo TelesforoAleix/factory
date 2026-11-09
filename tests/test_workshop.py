@@ -14,6 +14,7 @@ from cplane.stores import PostgresStore
 from cplane.workshop import Workshop, WorkshopServer, TOOLS, SLICE_FIELDS, SECRETARY_WRITES
 from factory_ui.documents import Documents
 from test_stores import pg_store
+from conftest import seed_model_choices
 
 
 def call(workshop, name, **arguments):
@@ -33,6 +34,7 @@ def refused(result, text):
 
 @pytest.fixture
 def context(pg_store, tmp_path):
+    seed_model_choices(pg_store)
     # No repository resolution, remote fetch, or real chat execution.
     with pg_store.mutation():
         pg_store.connection.execute('UPDATE cplane_projects SET repository = NULL')
@@ -150,8 +152,8 @@ def test_all_reads_exclude_private_metadata(context, slice_data):
     with store.mutation():
         store.connection.execute('UPDATE cplane_sessions SET cli_session_id = %s WHERE id = %s', (secret, sid))
         store.connection.execute("INSERT INTO cplane_run_records (turn_key, kind, tool, feature_id, prompt) VALUES ('synthetic', 'chat', 'codex', %s, %s)", (own, secret))
-        store.connection.execute("UPDATE cplane_settings SET value = 123")
-        store.connection.execute("UPDATE cplane_chat_settings SET chat_model = %s", (secret,))
+        store.connection.execute("UPDATE cplane_settings SET value = 123 WHERE name IN ('building_limit','waiting_limit','chat_auto_turns')")
+        store.connection.execute("UPDATE cplane_roles SET model = %s", (secret,))
     for workshop in workshops.values():
         for operation, args in [('board', {}), ('feature', dict(feature=own)), ('slices', dict(feature=own)),
                                 ('documents', {}), ('document', dict(path='brief.md'))]:
@@ -219,7 +221,11 @@ def test_socket_identity_lifecycle_and_stdio_client(context, tmp_path, socket_ow
         replies = [json.loads(line) for line in result.stdout.splitlines()]
         assert [r['id'] for r in replies] == [2, 3, 4]
         assert replies[0]['result']['capabilities'] == {'tools': {}}
-        assert replies[1]['result']['tools'] == [t for t in TOOLS if t['name'] not in SECRETARY_WRITES]
+        listed = replies[1]['result']['tools']
+        assert [t['name'] for t in listed] == [t['name'] for t in TOOLS if t['name'] not in SECRETARY_WRITES]
+        add = next(t for t in listed if t['name'] == 'add_slice')['inputSchema']['properties']
+        assert 'example-model' in add['model']['enum']
+        assert 'high' in add['effort']['enum']
         value(replies[2]['result'])
     assert not server.path.exists()
 
@@ -259,7 +265,7 @@ def test_socket_removed_after_turn(context, tmp_path, monkeypatch, outcome, sock
 @pytest.mark.parametrize('resume', [None, 'synthetic'])
 @pytest.mark.parametrize('kind', ['feature', 'project', 'orchestrator', 'legacy'])
 def test_turn_mcp_arguments(tool, resume, kind, tmp_path):
-    turn = dict(id=7, text='Synthetic', session=dict(tool=tool, model='synthetic', cli_session_id=resume, kind=kind))
+    turn = dict(id=7, text='Synthetic', session=dict(tool=tool, model='synthetic', effort='medium', cli_session_id=resume, kind=kind))
     command = sessions.turn_command(turn, tmp_path, [], tmp_path / 'run')
     if kind == 'legacy':
         assert not any('workshop' in a for a in command)

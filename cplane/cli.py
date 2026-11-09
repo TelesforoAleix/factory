@@ -136,6 +136,7 @@ def parser():
         if name in ('configure', 'defaults'):
             sub.add_argument('--tool', choices=('codex', 'claude'))
             sub.add_argument('--model')
+            sub.add_argument('--effort', choices=('low', 'medium', 'high', 'xhigh', 'max', 'ultra'))
     slice_parser = commands.add_parser('slice', parents=[common], help='manage linked slice order')
     slice_commands = slice_parser.add_subparsers(dest='slice_command', required=True, parser_class=Parser)
     place = slice_commands.add_parser('place', parents=[common])
@@ -227,11 +228,16 @@ def parser():
         switch = skill_commands.add_parser(action, parents=[common])
         switch.add_argument('name')
         switch.add_argument('project')
+    models = commands.add_parser('models', parents=[common])
+    model_commands = models.add_subparsers(dest='models_command', required=True, parser_class=Parser)
+    model_commands.add_parser('list', parents=[common])
+    update_models = model_commands.add_parser('update', parents=[common])
+    update_models.add_argument('tool', choices=('codex', 'claude'))
     limits = commands.add_parser('limit', parents=[common])
     limit_commands = limits.add_subparsers(dest='limit_command', required=True, parser_class=Parser)
     limit_commands.add_parser('show', parents=[common])
     set_limit = limit_commands.add_parser('set', parents=[common])
-    set_limit.add_argument('name', choices=('building_limit', 'waiting_limit', 'chat_auto_turns'))
+    set_limit.add_argument('name', choices=('building_limit', 'waiting_limit', 'chat_auto_turns', 'executors', 'repository_runs'))
     set_limit.add_argument('value', type=int)
     project = commands.add_parser('project', parents=[common])
     projects = project.add_subparsers(dest='project_command', required=True, parser_class=Parser)
@@ -276,7 +282,7 @@ def parser():
         sub.add_argument("--flow", choices=("cli", "tickets"), default=argparse.SUPPRESS)
         sub.add_argument("--tool", choices=("codex", "claude"), default=argparse.SUPPRESS)
         if command == "add":
-            sub.add_argument("--role", default="cutter", help="role whose first cli route sets tool, model and effort when neither --tool nor --model is given (read from the local roles-command; default: cutter)")
+            sub.add_argument("--level", choices=("light", "standard", "strong"), default="standard")
         sub.add_argument("--stop-before-merge", action=argparse.BooleanOptionalAction, default=argparse.SUPPRESS)
         sub.add_argument("--depends-on", nargs="*", action="extend", default=argparse.SUPPRESS, metavar="ID")
     move = commands.add_parser("state", parents=[common], help="move a slice between planning states")
@@ -417,9 +423,9 @@ def main(argv=None):
             elif command == 'project':
                 result = backend.create_project_chat(args.project)
             elif command == 'configure':
-                result = backend.chat_configure(args.id, tool=args.tool, model=args.model)
+                result = backend.chat_configure(args.id, **{k: getattr(args, k) for k in ('tool', 'model', 'effort') if getattr(args, k) is not None})
             else:
-                result = backend.chat_defaults(args.kind, chat_tool=args.tool, chat_model=args.model)
+                result = backend.chat_defaults(args.kind, chat_tool=args.tool, chat_model=args.model, effort=args.effort)
             # Resume IDs belong only to the runner.
             from .chats import public_chat_result
             print(json.dumps(public_chat_result(result), indent=2, ensure_ascii=False, default=str))
@@ -432,6 +438,13 @@ def main(argv=None):
                 backend.skill_set(args.name, args.project, args.skill_command == 'on')
             print(json.dumps(backend.skill_list(args.project), ensure_ascii=False))
             return 0
+        if args.command == 'models':
+            if not state.postgres():
+                raise state.StateError('models commands require Postgres (CPLANE_DATABASE_URL)')
+            backend = state.store(None)
+            result = backend.model_list() if args.models_command == 'list' else backend.models_update(args.tool)
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+            return 1 if isinstance(result, dict) and result.get('status') == 'failed' else 0
         if args.command == 'limit':
             if not state.postgres():
                 raise state.StateError('limit commands require Postgres (CPLANE_DATABASE_URL)')
@@ -615,6 +628,11 @@ def main(argv=None):
             item = next((item for item in state.load(path)["slices"] if item["id"] == args.id), None)
             if item is None:
                 raise state.StateError(f"unknown slice: {args.id}")
+            if state.postgres():
+                backend = state.store(path)
+                policy = backend.slice_policy(item['id'])
+                item = dict(item, level=policy['level'] if policy else 'standard',
+                            executor=backend.slice_executor(item))
             default_runs = '/srv/factory/runs' if fenced() else '~/Library/Application Support/cplane/runs'
             base = Path(os.environ.get('CPLANE_RUNS', default_runs)).expanduser().resolve()
             runs = base / hashlib.sha256(str(path.resolve()).encode()).hexdigest()[:20]
@@ -662,15 +680,6 @@ def main(argv=None):
                             print(f'install {request}: ' + result.read_text())
         elif args.command in ("add", "edit", "state", "attention", "review"):
             event = note = None
-            if args.command == "add" and not hasattr(args, "tool") and not hasattr(args, "model"):
-                from . import roles
-                route, why = roles.lookup(args.role, roles.command_file())
-                if route is None:
-                    note = f"roles: {why}; using built-in defaults"
-                else:
-                    args.tool, args.model = route["tool"], route["model"]
-                    if "effort" in route and not hasattr(args, "effort"):
-                        args.effort = route["effort"]
             if args.command == "state":
                 event = f"state: {args.target}"
                 if args.force:

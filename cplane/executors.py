@@ -77,7 +77,7 @@ def command(job):
             if job.get('resume'):
                 args += ['resume', job['resume']]
         else:
-            args = ['claude', '-p', '--model', job['model'], '--output-format', 'json',
+            args = ['claude', '-p', '--model', job['model'], '--effort', job.get('effort', 'medium'), '--output-format', 'json',
                     '--json-schema', json.dumps(FINAL_SCHEMA)]
             if job.get('resume'):
                 args += ['--resume', job['resume']]
@@ -93,7 +93,7 @@ def command(job):
         if job.get('resume'):
             args += ['resume', job['resume']]
         return args + ['--', job['prompt']]
-    args = ['claude', '-p', '--model', job['model'], '--settings', str(folder / 'sandbox.json'),
+    args = ['claude', '-p', '--model', job['model'], '--effort', job.get('effort', 'medium'), '--settings', str(folder / 'sandbox.json'),
             '--permission-mode', 'acceptEdits', '--allowedTools', 'Bash', '--output-format', 'json',
             '--json-schema', json.dumps(FINAL_SCHEMA)]
     if job.get('resume'):

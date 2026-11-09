@@ -283,7 +283,7 @@ def test_turn_records_pushes_or_delivery_refusal(tmp_path, monkeypatch, notice):
     from unittest.mock import Mock
     monkeypatch.setattr(fence, 'ROOT_UID', os.getuid())
     turn = dict(id=7, text='synthetic', session=dict(
-        id=1, area='homelab', tool='claude', model='synthetic', cli_session_id=None))
+        id=1, area='homelab', tool='claude', model='synthetic', effort='medium', cli_session_id=None))
     monkeypatch.setattr(sessions, 'workspace', lambda _: (tmp_path, []))
     monkeypatch.setattr(sessions, 'RUNS', tmp_path)
     monkeypatch.setattr(sessions.os, 'chown', Mock())

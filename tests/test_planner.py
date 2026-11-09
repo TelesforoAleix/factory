@@ -36,7 +36,7 @@ def test_add_defaults_and_log(make_state):
     assert invoke(path, *ADD) == 0
     item = load(path)['slices'][0]
     assert item == dict(id='new/W2', repo='example/repo', feature='feature', title='Title',
-                       state='planned', brief=None, executor={'tool': 'codex', 'model': 'gpt-6.1-sol'},
+                       state='planned', brief=None, executor={'tool': 'codex', 'model': 'gpt-6.1-terra', 'effort': 'medium'},
                        stop_before_merge=False, depends_on=[], slot=None, paused=False,
                        session=None, pr=None, attention=None, log=item['log'])
     assert len(item['log']) == 1
@@ -52,7 +52,7 @@ def test_add_all_options(make_state):
                   '--stop-before-merge', '--depends-on', 'voice/W1', 'absent/W0', '--actor', 'planner') == 0
     item = load(path)['slices'][1]
     assert item['brief'] == 'brief.md'
-    assert item['executor'] == {'tool': 'claude', 'model': 'opus'}
+    assert item['executor'] == {'tool': 'claude', 'model': 'opus', 'effort': 'medium'}
     assert item['stop_before_merge']
     assert item['depends_on'] == ['voice/W1', 'absent/W0']
     assert item['log'][0]['actor'] == 'planner'

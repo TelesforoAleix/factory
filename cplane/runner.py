@@ -377,13 +377,20 @@ class Runner:
     def save_job(self, job):
         atomic_json(Path(job['run']) / 'job.json', job)
 
+    def execution(self, item):
+        if state.postgres():
+            return state.store(self.path).slice_executor(item)
+        from .roles import DEFAULT_LEVELS
+        return {**DEFAULT_LEVELS['standard'], **item['executor']}
+
     def choose(self, item, resume=False):
-        model = item['executor']['model']
+        execution = self.execution(item)
+        model = execution['model']
         if resume:
             tool = item['session']['tool']
             model = self.jobs[item['id']]['model']
         else:
-            tool = item['executor']['tool']
+            tool = execution['tool']
         if tool == 'codex':
             if any(j['phase'] == 'usage-limit-wait' and j['reset_at'] > self.instant.timestamp()
                    for j in self.jobs.values()):
@@ -403,7 +410,7 @@ class Runner:
                 if expired:
                     used = 0
                 if (expired or 0 <= age < 3600) and isinstance(used, (int, float)) and 0 <= used < 90:
-                    return 'claude', model if resume or model in ('opus', 'sonnet') else ('opus' if 'sol' in model.lower() else 'sonnet')
+                    return 'claude', model
             except (KeyError, TypeError):
                 pass
         return None
@@ -417,7 +424,8 @@ class Runner:
                    and s['state'] in ('issued', 'awaiting handover')
                    and (self.fenced or (not s['attention'] and not s['paused']))]
         running = sorted([j['id'] for j in active] + [s['id'] for s in unknown])
-        if len(running) >= 2:
+        limits = state.store(self.path).limit_show() if state.postgres() else dict(executors=2, repository_runs=1)
+        if len(running) >= limits['executors']:
             return f"deferred: executor limit (running: {', '.join(running)})"
         repo = item['repo'].casefold() if self.fenced else self.repo(item)
         busy = next((j['id'] for j in active
@@ -425,7 +433,7 @@ class Runner:
         if busy is None:
             busy = next((s['id'] for s in unknown
                          if (s['repo'].casefold() == repo if self.fenced else self.repo(s) == repo)), None)
-        return f'deferred: repository busy ({busy})' if busy else None
+        return f'deferred: repository busy ({busy})' if busy and limits['repository_runs'] == 1 else None
 
     def repo(self, item):
         name = item['repo'].split('/')[-1]
@@ -445,7 +453,7 @@ class Runner:
             self.defer(item, 'deferred: capacity unavailable')
             return False
         tool, model = choice
-        effort = item['executor'].get('effort', 'low' if 'luna' in model.lower() else 'medium')
+        effort = self.execution(item)['effort']
         previous = self.jobs.get(item['id'])
         if resume and previous and bool(previous.get('fence')) != self.fenced:
             raise state.StateError('resume mode differs from saved job; needs attention')

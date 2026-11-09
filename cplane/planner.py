@@ -41,8 +41,30 @@ def change_for(args):
                 state.store(None)._feature(values['feature_id'])
             if item.get('brief_id') and set(values) & {'brief', 'id', 'repo', 'feature_id'}:
                 raise StateError('Stored brief identity and repository are immutable; create a new slice')
+            if state.postgres() and (args.command == 'add' or executor or 'id' in values):
+                backend = state.store(None)
+                if args.command == 'add':
+                    level = args.level
+                    overrides = executor
+                else:
+                    policy = backend.slice_policy(item['id'])
+                    level = policy['level'] if policy else 'standard'
+                    overrides = {**(policy['overrides'] if policy else item['executor']), **executor}
+                selected = {**backend.role_get(level), **overrides}
+                if executor:
+                    selected['model'] = backend.model_choice(**selected)
+                    if 'model' in overrides:
+                        overrides['model'] = selected['model']
+                backend.slice_level(values.get('id', item['id']), level, overrides)
+                if values.get('id') and values['id'] != item['id']:
+                    backend.connection.execute('DELETE FROM cplane_slice_levels WHERE slice_id = %s', (item['id'],))
+                item['executor'] = selected
+            elif args.command == 'add':
+                from .roles import DEFAULT_LEVELS
+                item['executor'] = dict(DEFAULT_LEVELS[args.level])
             item.update(values)
-            item["executor"].update(executor)
+            if not state.postgres():
+                item["executor"].update(executor)
         elif args.command == "state":
             target = args.target
             if args.force:

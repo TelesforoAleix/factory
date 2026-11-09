@@ -36,6 +36,8 @@ def test_defaults_new_and_cli(pg_store, capsys):
 
 
 def test_activation_defaults_idempotence_and_serialization(pg_store):
+    from conftest import seed_model_choices
+    seed_model_choices(pg_store)
     pg_store.chat_defaults('project', chat_tool='claude', chat_model='synthetic-model')
     pg_store.project_active('FAC', False)
     with ThreadPoolExecutor(max_workers=2) as pool:

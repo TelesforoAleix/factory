@@ -415,6 +415,8 @@ def test_socket_size_limit_before_store(tmp_path, monkeypatch):
 
 
 def test_concurrent_arrivals_and_migration_singleton(store):
+    from conftest import seed_model_choices
+    seed_model_choices(store)
     from concurrent.futures import ThreadPoolExecutor
     from cplane.stores import PostgresStore
 

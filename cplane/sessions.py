@@ -223,14 +223,14 @@ def turn_command(turn, folder, paths, run):
         args += ['--read-only-path', str(path)]
     if tool == 'codex':
         command = ['codex', 'exec', '--skip-git-repo-check', '--json', '-m', session['model'],
-                   '-c', 'model_reasoning_effort="low"' if session.get('kind') == 'secretary' else 'model_reasoning_effort="medium"']
+                   '-c', f'model_reasoning_effort="{session["effort"]}"']
         if session.get('kind') in WORKSHOP_KINDS:
             command += ['-c', 'mcp_servers.workshop.command="python3"',
                         '-c', 'mcp_servers.workshop.args=["/run/factory/workshop_mcp.py"]']
         if session['cli_session_id']:
             command += ['resume', session['cli_session_id']]
     else:
-        command = ['claude', '-p', '--output-format', 'json', '--model', session['model']]
+        command = ['claude', '-p', '--output-format', 'json', '--model', session['model'], '--effort', session['effort']]
         if session.get('kind') in WORKSHOP_KINDS:
             command += ['--mcp-config', '/run/factory/workshop-mcp.json']
         if session['cli_session_id']:
@@ -355,6 +355,9 @@ def main():
     with open('/run/factory-sessions.lock', 'w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         store = PostgresStore(url)
+        from .models import recover_catalog_runs
+        recover_catalog_runs()
+        store.models_recover()
         for turn in store.interrupted_session_turns():
             cleanup_interrupted_turn(turn)
             run_records.chat_record(store, turn, {'outcome': 'interrupted'})
@@ -364,6 +367,8 @@ def main():
             exporter = DocumentExporter()
             next_export = 0
             while True:
+                if not active:
+                    store.models_process_one()
                 if time.monotonic() >= next_export:
                     try:
                         exporter.refresh()

@@ -1733,3 +1733,81 @@ idea provenance, replies reaching the existing phone notice path, and automatic
 pause after the configured consecutive-turn limit. Use an owner chat message to
 continue a paused chat. The bot does not submit to the socket until its separate
 integration is implemented. See [the intake protocol and API](inbox.md).
+
+## Stored models, roles and runner limits
+
+Migration 021 stores model IDs, labels, supported efforts and refresh times in
+Postgres. Choosing never launches a CLI. Explicit updates replace one tool's rows
+atomically; failure retains its old list and returns the fixed reason
+`Model update failed; previous list kept.` No probe output or credentials are saved.
+
+```sh
+sudo factory-cplane models update codex
+sudo factory-cplane models update claude
+sudo factory-cplane models list
+```
+
+Codex reads visible entries from `codex debug models`. Claude probes `fable`,
+`opus`, `sonnet`, `haiku` once each and records their full IDs and efforts low,
+medium, high, xhigh, max. Refreshes use the chat container, UID and login mounts.
+The root session supervisor handles web requests while chat workers are idle,
+without holding the database lock during probes, and cleans up interrupted runs.
+
+**Deployment gate:** the existing launcher permits only `codex exec`, so Codex
+updates remain blocked pending the owner's decision on an exact-command fence
+exception. This slice leaves the fence, logins, installer and services unchanged.
+Do not merge as complete before resolving that escalation.
+
+Seven stored roles replace chat defaults and `roles-command`: orchestrator,
+project, feature, secretary, light, standard, strong. Chat roles retain installed
+tool/model choices and start at medium effort, except Secretary's low. Role
+changes apply on the next turn. Per-chat overrides win; JSON null restores
+inheritance. Legacy conversations retain explicit provider/model choices and
+follow the project role's effort. Both CLIs receive effort on every turn, and
+provider switches retain separate resume IDs. A removed choice keeps working;
+API `in_list: false` means “not in the list”. New choices require catalog validation.
+
+Use `cplane add --level light|standard|strong`, default standard. Starting routes:
+
+| Level | Model | Effort |
+| --- | --- | --- |
+| light | gpt-6-luna | low |
+| standard | gpt-6.1-terra | medium |
+| strong | gpt-6.1-sol | medium |
+
+The runner resolves the role at launch; explicit slice fields win. Existing
+routes stay explicit. Claude IDs pass through without heuristic mapping. Postgres
+stores levels and overrides outside version 1 documents; `show` includes the
+level and resolved executor. JSON exports omit this policy metadata. File-only
+creation snapshots built-in defaults. `--role` and its command lookup are removed.
+Planner mutations retain the locked, validated update and audit path.
+
+| Limit | Initial | Stops |
+| --- | --- | --- |
+| building_limit | 3 | Promotion when active Building capacity is full |
+| waiting_limit | 3 | Promotion when too many Building features have unanswered attention |
+| chat_auto_turns | 5 | Consecutive automatic chat turns until an owner message |
+| executors | 2 | New slice runs when executor capacity is full |
+| repository_runs | 1 | Simultaneous slice runs in one repository |
+
+All five live in `cplane_settings`; use `cplane limit show` and `limit set NAME
+VALUE`. Executors accepts 1–4, repository_runs only 1; other validation is unchanged.
+Capacity checks reread limits and count issued sessions with missing local run files.
+Lowering a limit never kills an existing run.
+
+Owner API writes require `X-Factory-UI: 1`. GET/POST `/api/settings/roles` uses
+`{role, tool, model, effort}`; GET/POST `/api/settings/limits` uses `{name, value}`
+and returns descriptions. GET `/api/settings/models` returns `models` and latest
+`updates`; POST `/api/settings/models/update` accepts `{tool}` and returns HTTP
+202 with an id and queued/running status. Poll GET for completion or fixed failure.
+Pending requests are deduplicated. Chat configuration accepts effort and nullable
+overrides; defaults commands alias roles. Legacy session creation also validates
+choices. Workshop's existing add_slice schema advertises stored Codex choices;
+Settings has no chat write tool. No Settings page or runtime dependency is added.
+
+After resolving the deployment gate and obtaining green `test` and `ui` checks,
+the orchestrator requests `sudo factory-cplane --actor owner install factory/RA1`.
+Confirm migration 021, run both updates, inspect the list, and confirm a chat turn
+records its role's effort. Add a bounded synthetic slice with `--level light` and
+verify its next runner launch uses Luna at low effort. Start it only through the
+existing runner or an explicit test; never edit state JSON by hand.

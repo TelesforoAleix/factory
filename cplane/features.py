@@ -6,6 +6,14 @@ from zoneinfo import ZoneInfo
 from .state import StateError
 from .times import now
 
+LIMIT_DESCRIPTIONS = {
+    'building_limit': 'Stops more features entering Building when its capacity is full.',
+    'waiting_limit': 'Stops promotion into Building when too many Building features have unanswered attention.',
+    'chat_auto_turns': 'Stops a chat taking consecutive automatic turns until the owner writes.',
+    'executors': 'Stops new slice runs when the executor capacity is full.',
+    'repository_runs': 'Stops simultaneous slice runs in the same repository.',
+}
+
 STAGES = ('shortlist', 'grilling', 'ready', 'next', 'building', 'testing', 'done', 'parked')
 TEXT_LIMIT = 16_000  # Same long-text bound as document notes.
 
@@ -492,10 +500,14 @@ class FeatureStore:
                 'SELECT name, value FROM cplane_settings ORDER BY name')}
 
     def limit_set(self, name, value):
-        if name not in ('building_limit', 'waiting_limit', 'chat_auto_turns'):
-            raise StateError('Unknown limit; choose building_limit, waiting_limit or chat_auto_turns')
+        if not isinstance(name, str) or name not in LIMIT_DESCRIPTIONS:
+            raise StateError('Unknown limit')
         if type(value) is not int or value < 1:
             raise StateError('Limit must be a whole number of at least 1')
+        if name == 'executors' and value > 4:
+            raise StateError('Executors must be between 1 and 4')
+        if name == 'repository_runs' and value != 1:
+            raise StateError('Repository runs must be 1')
         with self.mutation():
             self.connection.execute('UPDATE cplane_settings SET value = %s WHERE name = %s', (value, name))
             return self.limit_show()
@@ -694,6 +706,7 @@ class FeatureStore:
             raise StateError('Brief exceeds 65536 bytes')
         sections(brief, identifier)
         with self.mutation():
+            model = self.model_choice('codex', model, effort)
             feature = self._feature(identifier)
             if feature['stage'] not in ('grilling', 'ready', 'building', 'testing'):
                 raise StateError('Slices can only be added in Grilling, Ready, Building or Testing')
@@ -728,6 +741,7 @@ class FeatureStore:
             self.connection.execute(
                 'INSERT INTO cplane_slice_briefs (slice_id, feature, text, actor) VALUES (%s, %s, %s, %s)',
                 (slice_id, feature['feature'], brief, actor))
+            self.slice_level(slice_id, 'standard', item['executor'])
             data['slices'].append(item)
             self.save(data, [dict(at=at, id=slice_id, event='add_slice', text=f'Added {slice_id}')])
             self._feature_event(feature['feature'], f'add_slice {slice_id}', actor)

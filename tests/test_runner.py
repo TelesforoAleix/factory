@@ -1720,10 +1720,10 @@ def test_failing_pull_still_raises_and_never_launches_autostash(setup):
 
 
 @pytest.mark.parametrize('model,expected', [
-    ('opus', 'opus'), ('sonnet', 'sonnet'), ('gpt-6.1-sol', 'opus'),
-    ('Some-SOL', 'opus'), ('other', 'sonnet'), ('Opus', 'sonnet'),
+    ('opus', 'opus'), ('sonnet', 'sonnet'), ('gpt-6.1-sol', 'gpt-6.1-sol'),
+    ('Some-SOL', 'Some-SOL'), ('other', 'other'), ('Opus', 'Opus'),
 ])
-def test_claude_model_mapping(setup, model, expected):
+def test_claude_model_choice_is_preserved(setup, model, expected):
     r, p, _ = setup
     r.codex_reader = lambda: 100
     edit(r, lambda s: s['executor'].update(tool='claude', model=model))

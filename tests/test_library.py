@@ -93,6 +93,8 @@ def test_archived_receiver_and_invalid_selector_refused(pg_store):
 
 
 def test_note_migration_keeps_text_time_and_legacy_history(pg_store):
+    from conftest import seed_model_choices
+    seed_model_choices(pg_store)
     # Recreate the exact pre-013 boundary in this test's disposable schema.
     with pg_store.mutation():
         pg_store.connection.execute('DROP TABLE cplane_document_comments')

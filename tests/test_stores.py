@@ -341,6 +341,8 @@ def test_export_stdout_refuses_notices(backend, capsys):
 
 
 def test_runner_uses_stored_brief_and_keeps_resume_copy(pg_store, tmp_path, monkeypatch):
+    from conftest import seed_model_choices
+    seed_model_choices(pg_store)
     from datetime import datetime, timezone
     from test_runner import FakeProcesses, FakeGitHub
     from cplane.workshop import Workshop

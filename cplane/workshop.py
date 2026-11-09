@@ -130,7 +130,15 @@ class Workshop:
             elif method == 'tools/list':
                 kind = self.store.chat_show(self.chat_id)['kind']
                 allowed = (READS | SECRETARY_WRITES if kind == 'secretary' else SCHEMAS.keys() - SECRETARY_WRITES)
-                response['result'] = dict(tools=[t for t in TOOLS if t['name'] in allowed])
+                import copy
+                tools = copy.deepcopy([t for t in TOOLS if t['name'] in allowed])
+                for entry in tools:
+                    if entry['name'] == 'add_slice':
+                        choices = [m for m in self.store.model_list() if m['tool'] == 'codex']
+                        fields = entry['inputSchema']['properties']
+                        fields['model']['enum'] = sorted({m['model'] for m in choices})
+                        fields['effort']['enum'] = sorted({e for m in choices for e in m['efforts']})
+                response['result'] = dict(tools=tools)
             elif method == 'tools/call':
                 self.calls += 1
                 if self.calls > MAX_CALLS:
