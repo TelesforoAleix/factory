@@ -76,7 +76,8 @@ def install(slice_id, request=None):
         if not script.is_file():
             raise state.StateError('Commit has no node/install')
         # Never pass GitHub credentials to the installer or its build processes.
-        env = {k: v for k, v in os.environ.items() if k.startswith('CPLANE_') or k in ('PATH', 'LANG')}
+        env = {k: v for k, v in os.environ.items() if k.startswith('CPLANE_') or k == 'LANG'}
+        env['PATH'] = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
         env['HOME'] = '/root'
         result = subprocess.run(['/usr/bin/python3', str(script), str(stage), sha],
                                 env=env, capture_output=True, text=True, errors='replace')
