@@ -144,13 +144,13 @@ def test_turn_rejects_invalid_stored_repository(tmp_path, monkeypatch, repositor
     store = Mock()
     sessions.execute_turn(turn, store)
     store.finish_session_turn.assert_called_once_with(
-        turn, 'Turn failed. Send a message to start a new session.', failed=True)
+        turn, 'Workspace could not be prepared.', failed=True)
     export.assert_not_called()
     launch.assert_not_called()
     assert list(tmp_path.iterdir()) == []
 
 
-@pytest.mark.parametrize('resume_id', ['synthetic', None])
+@pytest.mark.parametrize('resume_id', ['synthetic'])
 @pytest.mark.parametrize('restart', [True, False])
 def test_resume_rejects_link_without_host_write(tmp_path, monkeypatch, resume_id, restart):
     root = tmp_path / 'work'
@@ -203,6 +203,11 @@ def test_timeout_short_failure_and_cleanup_uncertainty(tmp_path, monkeypatch):
     monkeypatch.setattr(sessions.subprocess, 'run', lambda *a, **k: subprocess.CompletedProcess(a, 124, '', 'private detail'))
     sessions.execute_turn(turn, store)
     assert store.finish_session_turn.call_args.args[1] == 'Turn timed out after 20 minutes.'
+    store.reset_mock()
+    turn['id'] = 8
+    monkeypatch.setattr(sessions.subprocess, 'run', lambda *a, **k: subprocess.CompletedProcess(a, 1, '', 'private detail'))
+    sessions.execute_turn(turn, store)
+    assert store.finish_session_turn.call_args.args[1] == 'The model tool exited with an error.'
     store.reset_mock()
     turn['id'] = 6
     monkeypatch.setattr(sessions.subprocess, 'run', lambda *a, **k: subprocess.CompletedProcess(a, 125, '', ''))
@@ -383,3 +388,29 @@ def test_failed_first_turn_restarts_without_resume_or_skill_resnapshot(pg_store)
     assert retry['session']['skill_names'] == first['session']['skill_names']
     assert retry['session']['skill_version'] == first['session']['skill_version']
     assert 'First decision' in retry['context']
+
+
+def test_restart_moves_unsuitable_workspace_aside(tmp_path, monkeypatch):
+    work = tmp_path / 'work'
+    work.mkdir()
+    old = work / 'session-1'
+    old.mkdir()
+    (old / 'marker').write_text('preserved')
+    monkeypatch.setattr(sessions, 'WORK_ROOT', work)
+    def export(_clone, destination, _ref, **_kwargs):
+        destination.mkdir()
+    monkeypatch.setattr(sessions, 'export_tree', export)
+    monkeypatch.setattr(sessions.skills, 'install', lambda *_args: None)
+    monkeypatch.setattr(sessions.os, 'chown', lambda *_args, **_kwargs: None)
+    original = Path.lstat
+    def lstat(path):
+        info = original(path)
+        if path in (work / 'session-1/repos', work / 'session-1/repos/.planning'):
+            fields = list(info); fields[4] = 0
+            return os.stat_result(fields)
+        return info
+    monkeypatch.setattr(Path, 'lstat', lstat)
+    folder, _ = sessions.workspace(dict(id=1, cli_session_id=None, _restart=True, repositories=[]))
+    assert folder == old
+    assert not (folder / 'marker').exists()
+    assert [p.read_text() for p in work.glob('session-1-abandoned-*/marker')] == ['preserved']

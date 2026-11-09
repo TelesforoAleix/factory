@@ -483,3 +483,23 @@ header .project-nav { margin-left: auto; min-width: 0; overflow-x: auto; flex-wr
   .project-field { flex-wrap: wrap; gap: 8px; }
   .project-page .home-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+.project-dialog-backdrop { position: fixed; inset: 0; z-index: 20; background: #0008; display: grid; place-items: center; padding: 16px; }
+.project-dialog { background: var(--background); border: 1px solid var(--rule); padding: 24px; width: min(100%, 640px); max-height: 90dvh; overflow: auto; }
+@media (max-width: 699px) {
+  input, select, textarea { font-size: 16px; }
+  body { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+  .shell > header { padding-top: max(16px, env(safe-area-inset-top)); }
+  body:has(.chat-open) .shell > header, body:has(.library-open) .shell > header { display: none; }
+  body:has(.chat-open) main { height: var(--phone-chat-height, 100dvh); padding-top: max(8px, env(safe-area-inset-top)); }
+  body:has(.library-open) main { padding-top: max(8px, env(safe-area-inset-top)); padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+  .chat-main { position: relative; }
+  .chat-back { position: absolute; left: 0; top: 0; z-index: 1; padding-top: 10px; }
+  .chat-header { padding-left: 70px; min-height: 52px; }
+  .chat-header > div:first-child > p { display: none; }
+  .chat-header h1 { font-size: 16px; }
+  .library-open .library-heading { display: none; }
+  .library-open .library-layout { margin-top: 0; }
+  .library-viewer { position: relative; }
+  .library-back { position: absolute; top: 0; left: 0; padding-top: 10px; }
+  .phone-document-header h2 { padding: 10px 0 0 90px; min-height: 44px; }
+}
