@@ -448,3 +448,5 @@ header { padding-inline: max(var(--space-5), calc((100% - 1360px) / 2)); }
   .library-document-header { display: none; }
   .library-tree li a, .library-tree summary, .chat-row { min-height: 44px; }
 }
+
+.panel-skeleton { height: 2.5rem; border-radius: .25rem; background: var(--surface); }

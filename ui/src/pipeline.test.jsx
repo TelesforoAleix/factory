@@ -45,7 +45,7 @@ test('inactive projects hide only Shortlist and Parked and mark in-flight cards'
   expect(screen.getAllByText('Inactive').length).toBe(5);
   expect(screen.queryByRole('button', {name:'Factory'})).toBeNull();
   expect(screen.getByRole('button', {name:'Lab'})).toBeTruthy();
-  expect(screen.getByRole('button', {name:'No project yet'})).toBeTruthy();
+  expect(screen.queryByRole('button', {name:'No project yet'})).toBeNull();
 });
 
 test('slim cards fetch one detail only when opened', async () => {
@@ -97,4 +97,29 @@ test('phone stages start collapsed except the active three and a card closes on 
   await waitFor(() => expect(document.querySelector('.mobile-panel')).toBeTruthy());
   fireEvent.click(button);
   expect(document.querySelector('.mobile-panel')).toBeNull();
+});
+
+test('swaps an open panel in place and loads slice details on demand', async () => {
+  const second = {...feature, id:'FAC-F2', title:'Second feature', slices:[{id:'repo/S1', title:'Slice', state:'ready', movable:false, final:{body:'First line'}}]};
+  let resolveSecond;
+  const pending = new Promise(resolve => {resolveSecond = resolve;});
+  const fetcher = vi.fn(async url => {
+    if (url === '/api/pipeline') return {ok:true,json:async () => ({projects:[],features:[feature,second]})};
+    if (url === '/api/pipeline/FAC-F2') return pending;
+    return {ok:true,json:async () => url === '/api/chats' ? [] : url.startsWith('/api/slices/') ? {final:{body:'Full final'},log:[{at:'now',actor:'tester',event:'history'}]} : feature};
+  });
+  vi.stubGlobal('fetch', fetcher);
+  render(<MemoryRouter initialEntries={['/pipeline']}><App/></MemoryRouter>);
+  fireEvent.click(await screen.findByRole('button', {name:/Synthetic feature/}));
+  await screen.findAllByText('Summary');
+  const panel = document.querySelector('.desktop-panel');
+  fireEvent.click(screen.getByRole('button', {name:/Second feature/}));
+  expect(document.querySelector('.desktop-panel')).toBe(panel);
+  expect(panel.querySelector('[aria-busy="true"]')).toBeTruthy();
+  resolveSecond({ok:true,json:async () => second});
+  await waitFor(() => expect(panel.textContent).toContain('First line'));
+  expect(fetcher.mock.calls.some(([url]) => url.startsWith('/api/slices/'))).toBe(false);
+  fireEvent.click(panel.querySelector('.slice-row button'));
+  await waitFor(() => expect(panel.textContent).toContain('Full final'));
+  expect(panel.textContent).toContain('history');
 });

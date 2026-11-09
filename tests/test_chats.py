@@ -589,3 +589,9 @@ def test_archived_testing_review_wait_leaves_home(pg_store):
     assert not any(a['kind'] == 'testing-review' for a in create_app(pg_store).test_client().get('/api/home').json['attention'])
     pg_store.chat_archive(chat['id'], archived=False)
     assert len(pg_store.testing_review_waits()) == 1
+
+
+def test_feature_rename_updates_feature_chat(pg_store):
+    identifier, chat = feature_chat(pg_store, 'Original', 'FAC')
+    pg_store.feature_title(identifier, 'Renamed')
+    assert pg_store.chat_show(chat['id'])['title'] == 'Renamed'

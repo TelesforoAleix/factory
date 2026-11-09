@@ -36,10 +36,11 @@ def main():
                 store.feature_section(f['id'], 'Overview', 'Synthetic design text. ' * 180)
             slices = []
             for i in range(41):
-                item = dict(id=f'factory/S{i}', repo='example/repo', feature='Synthetic', feature_id=features[i % 24]['id'],
+                item = dict(id=f'factory/S{i}', repo='example/repo', feature='Synthetic', feature_id=features[0]['id'],
                             title=f'Synthetic slice {i}', state='ready', brief='briefs/synthetic.md',
                             executor=dict(tool='codex', model='synthetic'), stop_before_merge=True,
                             depends_on=[], slot=None, paused=False, session=None, pr=None, attention=None,
+                            final=dict(kind='handover', body='Synthetic final message. ' * 100, at='2026-11-07T12:00:00+00:00'),
                             log=[dict(at='2026-11-07T12:00:00+00:00', actor='synthetic', event='Synthetic history. ' * 14) for _ in range(10)])
                 slices.append(item)
             store.save(dict(version=1, slices=slices))

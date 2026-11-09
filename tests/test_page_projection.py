@@ -38,7 +38,9 @@ def test_lists_are_bounded_and_detail_keeps_sections_and_slices(pg_store, slice_
         assert response.json['sections'][0]['text'].startswith('Private detail text')
         assert len(response.json['slices']) == 4 and response.json['moves']
         assert response.json['project_name'] == 'factory'
-        assert response.json['slices'][0]['log']
+        assert 'log' not in response.json['slices'][0]
+        detail = client.get('/api/slices/' + response.json['slices'][0]['id'])
+        assert detail.status_code == 200 and detail.json['log']
     # A moved feature remains addressable via its old alias and linked on Home.
     moved = pg_store.feature_move(features[0]['id'], 'LAB')
     assert client.get('/api/pipeline/' + features[0]['id']).json['id'] == moved['id']

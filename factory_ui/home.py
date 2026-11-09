@@ -10,8 +10,8 @@ from cplane.chats import public_chat_result
 def home_data(store, board, clean, view):
     data = store.load()
     slices = data['slices']
-    notices = [n for _, n in store.notices()]
     chats = public_chat_result(store.chats(archived=False))
+    notices = [n for _, n in (store.home_notices(slices, chats) if hasattr(store, 'home_notices') else store.notices())]
     features = board['features']
     by_feature = {f['id']: f for f in features}
     aliases = store.feature_links() if hasattr(store, 'feature_links') else {}
@@ -24,11 +24,13 @@ def home_data(store, board, clean, view):
     def add(kind, identifier, since, **fields):
         attention.append(dict(kind=kind, id=identifier, since=since, **fields))
 
+    owned = store.chat_attentions(slices) if hasattr(store, 'chat_attentions') else None
+    stuck_notices = {(n.get('id'), n.get('since'), n.get('reason')) for n in notices if n.get('event') == 'stuck'}
     for s in slices:
         f = linked.get(s['id'])
         project = f['project'] if f else None
         chat = feature_chats.get(f['id']) if f else None
-        a = store.chat_attention(s) if hasattr(store, 'chat_attention') else s['attention']
+        a = owned.get(s['id'], s['attention']) if owned is not None else (store.chat_attention(s) if hasattr(store, 'chat_attention') else s['attention'])
         if a and s['state'] != 'accepted':
             base = dict(project=project, title=clean(s['title']), text=clean(a['body']),
                         feature=f['id'] if f else None, chat=chat['id'] if chat else None)
@@ -50,7 +52,7 @@ def home_data(store, board, clean, view):
             stalled = None
         if stalled:
             since, reason = stalled
-            if any(n.get('event') == 'stuck' and n.get('id') == s['id'] and n.get('since') == since.isoformat() and n.get('reason') == reason for n in notices):
+            if (s['id'], since.isoformat(), reason) in stuck_notices:
                 add('stuck', s['id'], since.isoformat(), project=project, title=clean(s['title']), text=reason)
     by_chat = {c['id']: c for c in chats}
     paused_notices = {n.get('chat'): n for n in notices if n.get('event') == 'chat-paused'}
