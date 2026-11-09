@@ -182,5 +182,15 @@ if __name__ == '__main__':
         raise SystemExit('node/install requires root')
     try:
         print(json.dumps(install(Path(sys.argv[1]).resolve(), sys.argv[2])))
-    except Exception:
-        raise SystemExit('Install failed; rollback attempted; migrations are not undone') from None
+    except Exception as error:
+        print('Install failed; rollback attempted; migrations are not undone', file=sys.stderr)
+        if isinstance(error, FileNotFoundError):
+            reason = Path(error.filename).name if error.filename else 'unknown program'
+        elif isinstance(error, subprocess.CalledProcessError):
+            command = error.cmd
+            program = command[0] if isinstance(command, (list, tuple)) else command.split()[0]
+            reason = f'{Path(program).name} exited with return code {error.returncode}'
+        else:
+            reason = str(error)
+        print(' '.join(f'{type(error).__name__}: {reason}'.splitlines())[:200], file=sys.stderr)
+        raise SystemExit(1) from None

@@ -159,11 +159,18 @@ def test_exact_archive_and_clean_installer_environment(tmp_path, make_state, sli
             return {'status': 'ahead', 'merge_base_commit': {'sha': SHA}}
     monkeypatch.setattr(install_host, 'github', github)
     monkeypatch.setenv('GH_TOKEN', 'synthetic-never-forward')
+    monkeypatch.setenv('PATH', '/opt/factory/.venv/bin:/usr/local/bin:/usr/bin:/bin')
+    monkeypatch.setenv('LANG', 'C.UTF-8')
     command = Mock(return_value=SimpleNamespace(returncode=0, stdout='{"manual": []}'))
     monkeypatch.setattr(install_host.subprocess, 'run', command)
     assert install_host.install(slice_data['id']) == {'ok': True, 'commit': SHA, 'manual': []}
     assert paths == [f'compare/{SHA}...main', f'tarball/{SHA}']
     assert 'GH_TOKEN' not in command.call_args.kwargs['env']
+    env = command.call_args.kwargs['env']
+    assert env['PATH'] == '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+    assert env['HOME'] == '/root'
+    assert env['LANG'] == 'C.UTF-8'
+    assert env['CPLANE_INSTALL_REPOS'] == slice_data['repo']
     assert command.call_args.args[0][-1] == SHA
 
 
@@ -594,6 +601,36 @@ def test_node_installer_keeps_command_stderr(installer, monkeypatch):
     monkeypatch.setattr(module.subprocess, 'run', command)
     module.run('factory-cplane', 'migrate')
     assert 'stderr' not in command.call_args.kwargs
+
+
+@pytest.mark.parametrize('error,detail', [
+    (FileNotFoundError(2, 'synthetic-sensitive-value', 'groupadd'),
+     'FileNotFoundError: groupadd'),
+    (subprocess.CalledProcessError(7, ['/usr/local/bin/uv', 'synthetic-sensitive-value'],
+                                 output='synthetic-sensitive-value', stderr='synthetic-sensitive-value'),
+     'CalledProcessError: uv exited with return code 7'),
+    (subprocess.CalledProcessError(9, 'curl synthetic-sensitive-value'),
+     'CalledProcessError: curl exited with return code 9'),
+    (ValueError('invalid installation'), 'ValueError: invalid installation'),
+    (RuntimeError('x' * 300), ('RuntimeError: ' + 'x' * 300)[:200]),
+    (ValueError('first line\nsecond line'), 'ValueError: first line second line'),
+])
+def test_node_installer_failure_output(monkeypatch, capsys, error, detail):
+    source = compile(Path('node/install').read_text(), 'node/install', 'exec')
+    monkeypatch.setenv('INSTALL_TEST_SECRET', 'synthetic-sensitive-value')
+    monkeypatch.setattr(os, 'geteuid', lambda: 0)
+    monkeypatch.setattr(sys, 'argv', ['node/install', '/synthetic-stage', SHA])
+    # Fail before install is entered; exercise the actual __main__ exception handler.
+    monkeypatch.setattr(Path, 'resolve', Mock(side_effect=error))
+    with pytest.raises(SystemExit) as exited:
+        exec(source, {'__name__': '__main__'})
+    assert exited.value.code == 1
+    output = capsys.readouterr()
+    assert output.out == ''
+    assert output.err.splitlines() == [
+        'Install failed; rollback attempted; migrations are not undone', detail]
+    assert 'synthetic-sensitive-value' not in output.err
+    assert len(output.err.splitlines()[1]) <= 200
 
 
 @pytest.mark.parametrize('postgres', [False, True])

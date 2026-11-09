@@ -1648,6 +1648,12 @@ services. Check a placement survives a reload and that fixed rows have no handle
 
 ## Failed install output and retry
 
+The host installer gives `node/install` the fixed PATH
+`/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`; on failure the
+script follows its fixed stderr message with one line naming the exception and
+missing program, failed program and return code, or other exception message (at
+most 200 characters), without dumping the environment or other command arguments.
+
 A nonzero exit from the reviewed `node/install` now records the last 8,192 UTF-8
 bytes each of stderr and stdout, the exit code, repository and merged SHA in the
 existing private install result (`runs/<state-hash>/installs/<request>.json`). A
