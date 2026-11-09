@@ -345,6 +345,7 @@ def test_socket_protocol_mode_and_rejection(tmp_path):
     try:
         assert stat.S_IMODE(path.stat().st_mode) == 0o660
         assert path.stat().st_gid == os.getgid()
+        assert path.stat().st_uid == os.geteuid()
         for value, expected in [
             (
                 dict(
@@ -553,3 +554,23 @@ def test_idea_can_link_multiple_features_without_regressing_implemented(store):
     detail = store.idea_show(idea["id"])
     assert detail["state"] == "implemented"
     assert set(detail["features"]) == {first["id"], second["id"]}
+
+
+def test_intake_unit_uses_database_only_settings_and_minimal_writes():
+    import configparser
+    config = configparser.ConfigParser(interpolation=None, strict=False)
+    config.read('node/systemd/factory-intake.service')
+    service = config['Service']
+    assert service['User'] == service['Group'] == 'factory-intake'
+    assert service['EnvironmentFile'] == '/etc/factory/ui.env'
+    assert service['RuntimeDirectory'] == 'factory-intake'
+    assert service['RuntimeDirectoryMode'] == '0750'
+    assert service['ReadWritePaths'].split() == ['/run/factory-intake']
+    for setting in ('NoNewPrivileges', 'ProtectHome', 'PrivateTmp', 'PrivateDevices',
+                    'RestrictSUIDSGID', 'LockPersonality'):
+        assert service.getboolean(setting)
+    assert service['ProtectSystem'] == 'strict'
+    assert service['CapabilityBoundingSet'] == service['AmbientCapabilities'] == ''
+    assert '-/etc/factory/runner.env' in service['InaccessiblePaths'].split()
+    assert '-/etc/factory/github-token' in service['InaccessiblePaths'].split()
+    assert '-/srv/factory' in service['InaccessiblePaths'].split()

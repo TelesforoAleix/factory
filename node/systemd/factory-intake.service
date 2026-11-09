@@ -3,10 +3,10 @@ Description=Factory local phone intake
 After=postgresql.service
 
 [Service]
-User=root
+User=factory-intake
 Group=factory-intake
 WorkingDirectory=/opt/factory
-EnvironmentFile=/etc/factory/runner.env
+EnvironmentFile=/etc/factory/ui.env
 ExecStart=/opt/factory/.venv/bin/python -m cplane.intake
 RuntimeDirectory=factory-intake
 RuntimeDirectoryMode=0750
@@ -14,6 +14,16 @@ UMask=0077
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ReadWritePaths=/run/factory-intake
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=true
+LockPersonality=true
+InaccessiblePaths=-/etc/factory/runner.env -/etc/factory/github-token -/srv/factory -/run/docker.sock -/var/run/docker.sock
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 
 [Install]

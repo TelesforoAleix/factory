@@ -80,7 +80,7 @@ class IntakeServer(socketserver.UnixStreamServer):
 def main():
     gid = grp.getgrnam("factory-intake").gr_gid
     path = Path(SOCKET)
-    # Parent is root-owned, group-traversable and never group-writable.
+    # Systemd creates the service-owned parent, group-traversable and never group-writable.
     path.unlink(missing_ok=True)
     with IntakeServer(
         path, lambda: PostgresStore(os.environ.get("CPLANE_DATABASE_URL")), gid

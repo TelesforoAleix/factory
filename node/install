@@ -2,6 +2,8 @@
 """Reviewed host installation for an already unpacked commit. No node-step text."""
 import json
 import os
+import grp
+import pwd
 from pathlib import Path
 import re
 import shutil
@@ -42,6 +44,23 @@ def sync():
     if not Path(python).resolve().is_relative_to('/opt/python'):
         raise ValueError('Python must be under /opt/python')
     run('uv', 'sync', '--project', str(TARGET), '--python', python, '--frozen', '--no-dev', env=env)
+
+
+def intake_account():
+    """Create a login-disabled service identity; never repurpose another account."""
+    group = grp.getgrnam('factory-intake')
+    if group.gr_gid == 0:
+        raise ValueError('factory-intake requires a dedicated unprivileged service group')
+    try:
+        account = pwd.getpwnam('factory-intake')
+    except KeyError:
+        run('useradd', '--system', '--gid', 'factory-intake', '--no-create-home',
+            '--home-dir', '/nonexistent', '--shell', '/usr/sbin/nologin', 'factory-intake')
+        return
+    if (account.pw_uid == 0 or account.pw_gid != group.gr_gid
+            or account.pw_dir != '/nonexistent'
+            or account.pw_shell not in ('/usr/sbin/nologin', '/sbin/nologin')):
+        raise ValueError('factory-intake requires a dedicated unprivileged service account')
 
 
 def restart():
@@ -117,6 +136,7 @@ def install(stage, commit):
             run('chmod', '-R', 'go+rX', str(TARGET))
             run('factory-cplane', 'migrate')
             run('groupadd', '--force', '--system', 'factory-intake')
+            intake_account()
             run('usermod', '--append', '--groups', 'factory-intake', 'homelab-bot')
             for source, destination, mode in managed:
                 if source.exists():

@@ -207,12 +207,13 @@ def installer(tmp_path, monkeypatch):
     monkeypatch.setattr(module, 'TARGET', target)
     monkeypatch.setattr(module, 'BIN', bin_dir)
     monkeypatch.setattr(module, 'SYSTEMD', units)
+    monkeypatch.setattr(module.grp, 'getgrnam', lambda name: SimpleNamespace(gr_gid=23002))
     monkeypatch.setattr(module.os, 'chown', lambda *a: None)
     # Executable fakes exercise argv, sync, UI build, restart and failing health check.
     commands = tmp_path / 'commands'
     commands.mkdir()
     log = tmp_path / 'commands.log'
-    for name in ('uv', 'docker', 'systemctl', 'factory-cplane', 'chown', 'chmod', 'curl', 'groupadd', 'usermod'):
+    for name in ('uv', 'docker', 'systemctl', 'factory-cplane', 'chown', 'chmod', 'curl', 'groupadd', 'usermod', 'useradd'):
         script = commands / name
         script.write_text('#!/bin/sh\nprintf "%s\\n" "' + name + ' $*" >> "$INSTALL_TEST_LOG"\n' +
                           ('if [ "$1" = python ]; then echo /opt/python/3.13/bin/python; fi\n' if name == 'uv' else '') +
@@ -238,6 +239,7 @@ def test_install_manual_preserves_fence_and_backup(installer):
     assert 'npm ci && npm run build' in commands
     assert 'factory-cplane migrate' in commands
     assert 'groupadd --force --system factory-intake' in commands
+    assert 'useradd --system --gid factory-intake --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin factory-intake' in commands
     assert 'usermod --append --groups factory-intake homelab-bot' in commands
     assert commands.index('systemctl restart factory-ui factory-sessions') < commands.index('systemctl restart factory-intake.service')
     assert 'systemctl daemon-reload' in commands
@@ -609,3 +611,48 @@ def test_failed_node_step_can_be_answered_by_hand(make_state, slice_data, reques
     assert main(['--state', str(path), 'answer', item['id'], 'Installed by hand']) == 0
     assert state.load(path)['slices'][0]['attention']['answer'] == 'Installed by hand'
     assert main(['--state', str(path), 'install', item['id']]) == 1
+
+
+def test_intake_account_creation_and_idempotence(installer, monkeypatch):
+    module, _, _, _ = installer
+    command = Mock()
+    monkeypatch.setattr(module, 'run', command)
+    monkeypatch.setattr(module.pwd, 'getpwnam', Mock(side_effect=KeyError))
+    module.intake_account()
+    command.assert_called_once_with('useradd', '--system', '--gid', 'factory-intake',
+                                    '--no-create-home', '--home-dir', '/nonexistent',
+                                    '--shell', '/usr/sbin/nologin', 'factory-intake')
+    command.reset_mock()
+    monkeypatch.setattr(module.pwd, 'getpwnam', lambda name: SimpleNamespace(
+        pw_uid=23001, pw_gid=23002, pw_dir='/nonexistent', pw_shell='/usr/sbin/nologin'))
+    monkeypatch.setattr(module.grp, 'getgrnam', lambda name: SimpleNamespace(gr_gid=23002))
+    module.intake_account()
+    command.assert_not_called()
+
+
+@pytest.mark.parametrize('changes', [dict(pw_uid=0), dict(pw_gid=0), dict(pw_dir='/root'),
+                                     dict(pw_shell='/bin/sh')])
+def test_intake_account_refuses_conflicting_identity(installer, monkeypatch, changes):
+    module, _, _, _ = installer
+    account = dict(pw_uid=23001, pw_gid=23002, pw_dir='/nonexistent', pw_shell='/usr/sbin/nologin')
+    account.update(changes)
+    monkeypatch.setattr(module.pwd, 'getpwnam', lambda name: SimpleNamespace(**account))
+    monkeypatch.setattr(module.grp, 'getgrnam', lambda name: SimpleNamespace(gr_gid=23002))
+    command = Mock()
+    monkeypatch.setattr(module, 'run', command)
+    with pytest.raises(ValueError, match='dedicated unprivileged'):
+        module.intake_account()
+    command.assert_not_called()
+
+
+def test_intake_account_refuses_privileged_group_before_creating_user(installer, monkeypatch):
+    module, _, _, _ = installer
+    monkeypatch.setattr(module.grp, 'getgrnam', lambda name: SimpleNamespace(gr_gid=0))
+    lookup = Mock(side_effect=KeyError)
+    monkeypatch.setattr(module.pwd, 'getpwnam', lookup)
+    command = Mock()
+    monkeypatch.setattr(module, 'run', command)
+    with pytest.raises(ValueError, match='dedicated unprivileged service group'):
+        module.intake_account()
+    lookup.assert_not_called()
+    command.assert_not_called()
