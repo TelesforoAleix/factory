@@ -141,3 +141,13 @@ test('drafts delete and sent comments resolve into a collapsed history', async (
   await waitFor(() => expect(mock.setAnnotations.mock.calls.at(-1)[0]).toEqual([]));
   expect(fetcher.mock.calls.filter(([,o]) => ['PATCH','DELETE'].includes(o?.method)).every(([,o]) => o.headers['X-Factory-UI'] === '1')).toBe(true);
 });
+
+test('all document folders start collapsed, including unassigned folders', async () => {
+  fixture(); const original = globalThis.fetch;
+  vi.stubGlobal('fetch', (url, options) => url.startsWith('/api/library?') ? Promise.resolve({ok:true,json:async () => ({projects:[],documents:[doc,{path:'unassigned/nested/note.md',title:'Note'},{path:'root.md',title:'Root'}]})}) : original(url,options));
+  render(<MemoryRouter initialEntries={['/library']}><App/></MemoryRouter>);
+  await screen.findByText('Root');
+  const tree = screen.getByRole('navigation',{name:'Library tree'});
+  expect([...tree.querySelectorAll('details')].every(d => !d.open)).toBe(true);
+  expect(tree.textContent.indexOf('Root')).toBeLessThan(tree.textContent.indexOf('factory'));
+});
