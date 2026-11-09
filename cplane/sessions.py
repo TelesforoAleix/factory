@@ -116,7 +116,10 @@ def workspace(session):
         raise StateError('Invalid session repository')
     trusted_directory(WORK_ROOT)
     folder = WORK_ROOT / f'session-{session["id"]}'
-    if session['cli_session_id'] or session.get('workspace_ready'):
+    # Older first-turn failures may have a complete workspace but no resume ID.
+    # Reuse only through the same ownership/mode/export checks as provider rollover.
+    retry_workspace = session.get('_restart') and folder.exists()
+    if session['cli_session_id'] or session.get('workspace_ready') or retry_workspace:
         # Never refresh or walk an agent-owned workspace on resume. Only the
         # root-owned installed instructions may have their read modes repaired.
         info = folder.lstat()
@@ -204,6 +207,8 @@ def turn_command(turn, folder, paths, run):
         if session['cli_session_id']:
             command += ['--resume', session['cli_session_id']]
     prompt = ('Workshop event: ' if turn.get('role') == 'system' else '') + turn['text']
+    if turn.get('context'):
+        prompt = turn['context'] + '\n\nCurrent message:\n' + prompt
     if session.get('kind') in WORKSHOP_KINDS:
         from .workshop import CHAT_INSTRUCTION
         prompt += '\n\n' + CHAT_INSTRUCTION
@@ -267,7 +272,7 @@ def _execute_turn(turn, store, accounting):
             raise CleanupError('Container cleanup failed')
         if result.returncode:
             LOG.error('Session turn %s exited %s', turn['id'], result.returncode)
-            reply = 'Turn timed out after 20 minutes.' if result.returncode == 124 else 'Turn failed. Create a new session.'
+            reply = 'Turn timed out after 20 minutes.' if result.returncode == 124 else 'Turn failed. Send a message to start a new session.'
             store.finish_session_turn(turn, reply, failed=True)
             return
         cli_id, reply = parse_reply(turn['session']['tool'], result.stdout)
@@ -291,7 +296,7 @@ def _execute_turn(turn, store, accounting):
         raise
     except Exception:
         LOG.error('Session turn %s failed', turn['id'])
-        store.finish_session_turn(turn, 'Turn failed. Create a new session.', failed=True)
+        store.finish_session_turn(turn, 'Turn failed. Send a message to start a new session.', failed=True)
         return
     if commits:
         store.finish_session_turn(turn, reply, cli_id, planning_commits=commits)
@@ -320,7 +325,7 @@ def main():
         for turn in store.interrupted_session_turns():
             cleanup_interrupted_turn(turn)
             run_records.chat_record(store, turn, {'outcome': 'interrupted'})
-            store.finish_session_turn(turn, 'Turn interrupted. Create a new session.', failed=True)
+            store.finish_session_turn(turn, 'Turn interrupted. Send a message to start a new session.', failed=True)
         with ThreadPoolExecutor(max_workers=2) as pool:
             active = []
             exporter = DocumentExporter()

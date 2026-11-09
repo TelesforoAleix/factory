@@ -13,7 +13,9 @@ def home_data(store, board, clean, view):
     notices = [n for _, n in store.notices()]
     chats = public_chat_result(store.chats(archived=False))
     features = board['features']
-    linked = {s['id']: f for f in features for s in f['slices']}
+    by_feature = {f['id']: f for f in features}
+    aliases = store.feature_links() if hasattr(store, 'feature_links') else {}
+    linked = {s['id']: by_feature.get(aliases.get(s.get('feature_id'), s.get('feature_id'))) for s in slices}
     feature_chats = {c['feature']: c for c in chats if c.get('kind') == 'feature' and c.get('feature')}
     allowed = os.environ.get('CPLANE_INSTALL_REPOS', '').split(',')
     installing = {s['id'] for s, _ in pending(data)}
@@ -42,7 +44,10 @@ def home_data(store, board, clean, view):
                 # Install and runner failures are recognizable from the current escalation.
                 failure = a['kind'] == 'escalation' and (a['body'].startswith('Install ') or ' failed:' in a['body'].split('\n')[0])
                 add('failure' if failure else 'question', s['id'], a['since'], **base)
+        approval_wait = a and a['kind'] == 'merge' and not a['approved'] and a.get('review')
         stalled = stuck_since(s, datetime.now(timezone.utc))
+        if approval_wait and stalled and stalled[1] == 'no new log activity':
+            stalled = None
         if stalled:
             since, reason = stalled
             if any(n.get('event') == 'stuck' and n.get('id') == s['id'] and n.get('since') == since.isoformat() and n.get('reason') == reason for n in notices):
@@ -55,10 +60,13 @@ def home_data(store, board, clean, view):
         paused = n.get('event') == 'chat-paused' and c and c.get('auto_paused') and paused_notices[c['id']] is n
         if decision or paused:
             add('decision', c.get('feature') or str(c['id']), n['at'], project=c.get('project'), chat=c['id'], text=clean(n.get('text', '')))
-    waiting = [f for f in features if f['stage'] == 'building' and any(s['attention'] and s['attention']['answer'] is None for s in f['slices'])]
+    waiting = {f['id'] for s in slices if (f := linked.get(s['id'])) and f['stage'] == 'building'
+               and s['attention'] and s['attention']['answer'] is None}
     limits = store.limit_show()
     if len(waiting) >= limits['waiting_limit']:
-        add('limit', 'pipeline', min((s['attention']['since'] for f in waiting for s in f['slices'] if s['attention'] and s['attention']['answer'] is None), default=None), project=None, text=f"Waiting limit full ({len(waiting)}/{limits['waiting_limit']})")
+        since = min((s['attention']['since'] for s in slices if linked.get(s['id'])
+                     and linked[s['id']]['id'] in waiting and s['attention'] and s['attention']['answer'] is None), default=None)
+        add('limit', 'pipeline', since, project=None, text=f"Waiting limit full ({len(waiting)}/{limits['waiting_limit']})")
     if hasattr(store, 'testing_review_waits'):
         attention.extend({**a, 'title': clean(a['title']), 'text': clean(a['text'])} for a in store.testing_review_waits())
     order = {k: i for i, k in enumerate(('failure', 'approval', 'install', 'decision', 'question', 'testing-review', 'stuck', 'limit'))}

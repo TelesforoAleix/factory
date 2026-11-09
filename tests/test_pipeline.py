@@ -307,10 +307,13 @@ def test_board_reads_alias_links_and_owner_moves(pg_store, slice_data):
     assert board.status_code == 200
     feature = board.json['features'][0]
     assert feature['id'] == moved['id']
-    assert feature['slices'][0]['id'] == slice_data['id']
-    assert 'parked' in feature['moves'] and 'ready' in feature['moves']
-    assert feature['stage_since'] is not None
-    assert client.get('/api/pipeline/' + item['id']).json['id'] == moved['id']
+    assert feature['slice_count'] == 1 and feature['slice_counts']['issued'] == 1
+    assert 'slices' not in feature and 'moves' not in feature
+    detail = client.get('/api/pipeline/' + item['id']).json
+    assert detail['id'] == moved['id']
+    assert detail['slices'][0]['id'] == slice_data['id']
+    assert 'parked' in detail['moves'] and 'ready' in detail['moves']
+    assert detail['stage_since'] is not None
 
 
 def runner_board(store, runner, slice_data, specs):

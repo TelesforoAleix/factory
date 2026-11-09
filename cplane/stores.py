@@ -12,7 +12,7 @@ from . import state
 from .features import FeatureStore
 from .run_records import RunRecordStore
 from .skills import SkillStore
-from .chats import ChatStore
+from .chats import ChatStore, chat_added
 from .library import LibraryStore
 
 
@@ -155,6 +155,10 @@ class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore, Library
                     'SELECT 1 FROM cplane_chat_events WHERE slice_id = %s AND attention_since = %s '
                     'AND kind = %s AND delivered AND chat IS NOT NULL LIMIT 1',
                     (notice.get('id'), notice.get('at'), notice.get('event'))).fetchone()
+                if taken:
+                    row = self.connection.execute('SELECT document FROM cplane_slices WHERE id = %s',
+                                                  (notice.get('id'),)).fetchone()
+                    taken = bool(row and chat_added(row[0]))
                 if not taken:
                     retained.append(notice)
             notices = retained
@@ -233,7 +237,12 @@ class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore, Library
                 from .features import bounded
                 bounded(text, 'Message', 32000)
                 if sessions[0]['state'] == 'failed':
-                    raise state.StateError('Session failed; create a new session')
+                    self.connection.execute(
+                        "UPDATE cplane_sessions SET state = 'idle', cli_session_id = NULL, "
+                        "tool_sessions = tool_sessions - tool WHERE id = %s", (session_id,))
+                    self.connection.execute(
+                        "INSERT INTO cplane_session_messages (session, role, text, status, automatic) "
+                        "VALUES (%s, 'system', 'New session started', 'done', true)", (session_id,))
                 self.connection.execute(
                     "INSERT INTO cplane_session_messages (session, role, text, status) VALUES (%s, 'owner', %s, 'queued')",
                     (session_id, text))
@@ -283,6 +292,9 @@ class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore, Library
                       for repository in chat['repositories']}
             for row in rows:
                 session = self.sessions(row[3], row[1])[0]
+                if row[5] and row[4] == 'system' and not self.chat_event_owned(row[2]):
+                    self.connection.execute("UPDATE cplane_session_messages SET status = 'done' WHERE id = %s", (row[0],))
+                    continue
                 if row[5] and not self.chat_can_take(session['id']):
                     continue
                 repositories = self.resolve_chat_repositories(session['repositories'])
@@ -317,7 +329,25 @@ class PostgresStore(FeatureStore, RunRecordStore, SkillStore, ChatStore, Library
             owner_message = self.connection.execute(
                 "SELECT max(id) FROM cplane_session_messages WHERE session = %s AND role = 'owner'",
                 (row[1],)).fetchone()[0]
-            return dict(id=row[0], session=session, text=row[2], role=row[4], automatic=row[5],
+            context = ''
+            if not session['cli_session_id']:
+                session['_restart'] = self.connection.execute(
+                    "SELECT EXISTS (SELECT 1 FROM cplane_session_messages WHERE session = %s "
+                    "AND role = 'system' AND text = 'New session started' AND id < %s)",
+                    (row[1], row[0])).fetchone()[0]
+                from .text_bounds import cut
+                records = self.connection.execute(
+                    'SELECT role, text FROM cplane_session_messages WHERE session = %s AND id < %s '
+                    "AND role IN ('owner', 'assistant') ORDER BY id DESC LIMIT 8", (row[1], row[0])).fetchall()
+                opening = self.connection.execute(
+                    'SELECT text FROM cplane_session_messages WHERE session = %s AND id < %s ORDER BY id LIMIT 1',
+                    (row[1], row[0])).fetchone()
+                if opening:
+                    context = (f"Chat: {session['title']}\nProject: {session['project'] or '(none)'}\n"
+                               f"Feature: {session['feature'] or '(none)'}\n"
+                               f"Conversation origin: {cut(opening[0], 1200)}\n\nRecent chat records:\n" +
+                               '\n\n'.join(f'{role}: {cut(text, 1600)}' for role, text in reversed(records)))
+            return dict(id=row[0], session=session, text=row[2], context=context, role=row[4], automatic=row[5],
                         owner_message=owner_message)
 
     def finish_session_turn(self, turn, reply, cli_id=None, failed=False, *,

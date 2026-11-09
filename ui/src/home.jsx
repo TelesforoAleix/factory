@@ -1,3 +1,4 @@
+import {visiblePolling} from './polling';
 import {ProjectFilter, isActive} from './projects';
 import React, {useEffect, useState} from 'react';
 import {Link} from 'react-router-dom';
@@ -29,7 +30,7 @@ export function Home() {
   const sensors = useSensors(useSensor(MouseSensor, {activationConstraint:{distance:8}}), useSensor(TouchSensor, {activationConstraint:{delay:300,tolerance:8}}));
   useEffect(() => {if (data?.projects.some(p => p.key === project && !isActive(p))) setProject('');}, [data, project]);
   async function refresh() {const r = await fetch('/api/home'); if (!r.ok) throw Error('Home unavailable'); setData(await r.json());}
-  useEffect(() => {refresh().catch(e => setError(e.message)); const timer = setInterval(() => refresh().catch(() => setError('Home unavailable')), 30000); return () => clearInterval(timer);}, []);
+  useEffect(() => {let live = true; const stop = visiblePolling(async () => {try {const r = await fetch('/api/home'); if (!r.ok) throw Error('Home unavailable'); const data = await r.json(); if (live) setData(data);} catch(e) {if (live) setError(e.message);}}, 30000); return () => {live = false; stop();};}, []);
   async function act(url, payload) {try {setError(''); const r = await fetch(url, {method:'POST',headers:{'Content-Type':'application/json','X-Factory-UI':'1'},body:JSON.stringify(payload)}); if (!r.ok) {const text = await r.text(); try {throw Error(JSON.parse(text).error || 'Request failed');} catch(e) {if (e instanceof SyntaxError) throw Error(text || 'Request failed'); throw e;}} await refresh();} catch(e) {setError(e.message);}}
   function dragEnd({active,over}) {if (!over || active.id === over.id) return; const all = data.features.filter(f => f.stage === 'next'); const old = all.findIndex(f => f.id === active.id), target = all.findIndex(f => f.id === over.id); act('/api/pipeline/' + encodeURIComponent(active.id) + '/place', old < target ? {after:over.id} : {before:over.id});}
   if (!data) return <><h1>Home</h1><p>{error || 'Loading…'}</p></>;

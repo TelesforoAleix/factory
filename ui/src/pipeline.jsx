@@ -1,6 +1,6 @@
 import {ProjectFilter, isActive} from './projects';
 import {FeatureChatLink} from './chats';
-import React, {useEffect, useState} from 'react';
+import React, {useCallback, useEffect, useState} from 'react';
 import {Link, useParams, useSearchParams} from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -50,35 +50,33 @@ function Panel({item, act, close, refresh}) {
   </aside>;
 }
 function extra(item, index) {
-  if (item.stage === 'ready') return `${item.slices.length} slices`;
   if (item.stage === 'next') return `Queue #${index + 1}`;
-  if (item.stage === 'building') {
-    if (attention(item).length) return 'Waiting for you';
-    const running = item.slices.filter(s => ['issued','awaiting handover'].includes(s.state) && !s.paused);
-    return item.slices.length ? `${item.slices.filter(s => s.state === 'accepted').length} of ${item.slices.length} slices done${running.length ? ' · ' + running.map(s => s.title).join(', ') : ''}` : null;
-  }
-  if (item.stage === 'done' && item.stage_since) return `Finished ${date(item.stage_since)}`;
-  if (item.stage === 'parked' && item.parked_from) return `From ${name(item.parked_from)}`;
+  return item.extra;
 }
-function Card({item, index, selected, select, act, close, refresh}) {
+function Card({item, detail, index, selected, select, act, close, refresh}) {
   const {attributes, listeners, setNodeRef, transform, transition, isDragging} = useSortable({id: item.id, data: {stage: item.stage}});
   const line = extra(item, index);
   return <div ref={setNodeRef} style={{transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? .45 : 1}} className="pipeline-card-wrap">
     <div className={'pipeline-card' + (selected ? ' selected' : '') + (line === 'Waiting for you' ? ' needs-you' : '')}><button className="drag-handle" {...attributes} {...listeners} aria-label={'Drag ' + item.id}>⠿</button><button className="pipeline-card-open" onClick={select} aria-expanded={selected}><small>{item.id}</small><strong className="feature-title">{item.title}</strong><span className="project-tag">{item.project_name || item.project}</span>{item.inactive && <span className="inactive-mark">Inactive</span>}{line && <span className={line === 'Waiting for you' ? 'pipeline-attention' : 'feature-extra'}>{line}</span>}</button></div>
-    {selected && <div className="mobile-panel"><Panel item={item} act={act} close={close} refresh={refresh}/></div>}
+    {selected && detail && <div className="mobile-panel"><Panel item={detail} act={act} close={close} refresh={refresh}/></div>}
   </div>;
 }
-function Column({stage, items, selected, select, act, close, all, refresh}) {
+function Column({stage, items, detail, selected, select, act, close, all, refresh}) {
   const {setNodeRef, isOver} = useDroppable({id: 'stage:' + stage});
   const [expanded, setExpanded] = useState(!['done', 'parked'].includes(stage));
-  return <div ref={setNodeRef} className={'pipeline-column stage-' + stage + (isOver ? ' over' : '') + (expanded ? ' expanded' : '')}><h2><span className="stage-heading">{name(stage)} <small>{items.length}</small></span><button className="stage-toggle" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{name(stage)} <small>{items.length}</small></button></h2><SortableContext items={items.map(i => i.id)} strategy={verticalListSortingStrategy}><div className="pipeline-cards">{items.map(item => <Card key={item.id} item={item} index={all.filter(f => f.stage === stage).findIndex(f => f.id === item.id)} selected={selected === item.id} select={() => select(item.id)} act={act} close={close} refresh={refresh}/>)}</div></SortableContext></div>;
+  return <div ref={setNodeRef} className={'pipeline-column stage-' + stage + (isOver ? ' over' : '') + (expanded ? ' expanded' : '')}><h2><span className="stage-heading">{name(stage)} <small>{items.length}</small></span><button className="stage-toggle" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{name(stage)} <small>{items.length}</small></button></h2><SortableContext items={items.map(i => i.id)} strategy={verticalListSortingStrategy}><div className="pipeline-cards">{items.map(item => <Card key={item.id} item={item} detail={detail} index={all.filter(f => f.stage === stage).findIndex(f => f.id === item.id)} selected={selected === item.id} select={() => select(item.id)} act={act} close={close} refresh={refresh}/>)}</div></SortableContext></div>;
 }
 export function Pipeline() {
   const [data, setData] = useState(null), [error, setError] = useState(''), [project, setProject] = useState('');
   const [params, setParams] = useSearchParams(); const selected = params.get('feature');
   const sensors = useSensors(useSensor(MouseSensor, {activationConstraint: {distance: 8}}), useSensor(TouchSensor, {activationConstraint: {delay: 300, tolerance: 8}}));
   useEffect(() => {if (data?.projects.some(p => p.key === project && !isActive(p))) setProject('');}, [data, project]);
-  async function refresh() { const r = await fetch('/api/pipeline'); if (!r.ok) throw Error('Pipeline unavailable'); setData(await r.json()); }
+  const [revision, setRevision] = useState(0), [detail, setDetail] = useState(null);
+  const refresh = useCallback(async () => {const r = await fetch('/api/pipeline'); if (!r.ok) throw Error('Pipeline unavailable'); setData(await r.json()); setRevision(n => n + 1);}, []);
+  useEffect(() => {let live = true; setDetail(null); if (!selected || !data) return;
+    fetch('/api/pipeline/' + encodeURIComponent(selected)).then(async r => {if (!r.ok) throw Error('Feature unavailable'); return r.json();}).then(item => {if (live) setDetail(item);}).catch(e => {if (live) setError(e.message);});
+    return () => {live = false;};
+  }, [selected, revision]);
   useEffect(() => {refresh().catch(e => setError(e.message));}, []);
   async function post(id, operation, body) { const r = await fetch(`/api/pipeline/${encodeURIComponent(id)}/${operation}`, {method:'POST', headers:{'Content-Type':'application/json','X-Factory-UI':'1'}, body:JSON.stringify(body)}); const result = await r.json(); if (!r.ok) throw Error(result.error || 'Request failed'); }
   async function act(id, stage, placement) { try {setError(''); const item = data.features.find(f => f.id === id); if (stage !== item.stage) await post(id, 'move', {stage}); if (placement) await post(id, 'place', placement); } catch (e) {setError(e.message);} finally {try {await refresh();} catch {setError('Pipeline unavailable');}} }
@@ -89,7 +87,14 @@ export function Pipeline() {
   const features = data.features.map(f => ({...f, inactive:!isActive(data.projects.find(p => p.key === f.project)), project_name:data.projects.find(p => p.key === f.project)?.name || f.project}));
   const visible = features.filter(f => (!project || f.project === project) && !(f.inactive && ['shortlist','parked'].includes(f.stage))); const current = features.find(f => f.id === selected);
   return <div className="pipeline"><div className="page-heading"><h1>Pipeline</h1><ProjectFilter projects={data.projects} value={project} onChange={setProject}/></div>{error && <p role="status" className="pipeline-error">{error}</p>}
-    <div className={'pipeline-layout' + (current ? ' has-panel' : '')}><DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={dragEnd}><div className="pipeline-scroll"><div className="pipeline-grid">{stages.filter(stage => stage !== 'done').map(stage => <Column key={stage} stage={stage} items={visible.filter(f => f.stage === stage)} all={data.features} selected={selected} select={select} act={act} close={() => select(null)} refresh={refresh}/>)}</div></div></DndContext>{current && <div className="desktop-panel"><Panel item={current} act={act} close={() => select(null)} refresh={refresh}/></div>}</div>
+    <div className={'pipeline-layout' + (current ? ' has-panel' : '')}><DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={dragEnd}><div className="pipeline-scroll"><div className="pipeline-grid">{stages.filter(stage => stage !== 'done').map(stage => <Column key={stage} stage={stage} items={visible.filter(f => f.stage === stage)} detail={detail} all={data.features} selected={selected} select={select} act={act} close={() => select(null)} refresh={refresh}/>)}</div></div></DndContext>{current && detail && <div className="desktop-panel"><Panel item={detail} act={act} close={() => select(null)} refresh={refresh}/></div>}</div>
   </div>;
 }
-export function FeaturePage() { const {id} = useParams(); const [item,setItem] = useState(null), [error,setError] = useState(''); useEffect(() => {Promise.all([fetch('/api/pipeline/' + encodeURIComponent(id)), fetch('/api/pipeline')]).then(async ([r, board]) => {if (!r.ok) throw Error('Feature unavailable'); const feature = await r.json(); const data = board.ok ? await board.json() : {}; return {...feature, project_name:data.projects?.find(p => p.key === feature.project)?.name || feature.project};}).then(setItem).catch(e => setError(e.message));}, [id]); return <><Link className="feature-back" to={'/pipeline?feature=' + encodeURIComponent(id)}>← Pipeline</Link>{item ? <><Header item={item}/><FeatureChatLink feature={item.id}/>{item.sections.map((s,i) => <details className="feature-section" key={s.name} open={i === 0 || undefined}><summary>{s.name}</summary><Markdown text={s.text}/></details>)}</> : <p>{error || 'Loading…'}</p>}</>; }
+export function FeaturePage() {
+  const {id} = useParams(); const [item,setItem] = useState(null), [error,setError] = useState('');
+  useEffect(() => {let live = true; setItem(null); setError('');
+    fetch('/api/pipeline/' + encodeURIComponent(id)).then(async r => {if (!r.ok) throw Error('Feature unavailable'); return r.json();}).then(data => {if (live) setItem(data);}).catch(e => {if (live) setError(e.message);});
+    return () => {live = false;};
+  }, [id]);
+  return <><Link className="feature-back" to={'/pipeline?feature=' + encodeURIComponent(id)}>← Pipeline</Link>{item ? <><Header item={item}/><FeatureChatLink feature={item.id}/>{item.sections.map((s,i) => <details className="feature-section" key={s.name} open={i === 0 || undefined}><summary>{s.name}</summary><Markdown text={s.text}/></details>)}</> : <p>{error || 'Loading…'}</p>}</>;
+}

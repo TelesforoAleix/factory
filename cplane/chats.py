@@ -13,6 +13,11 @@ def public_chat_result(value):
     return value
 
 
+def chat_added(item):
+    """Creation provenance survives resets, feature aliases and later planner edits."""
+    return any(e['event'] == 'add_slice' and e['actor'].startswith('chat:') for e in item['log'])
+
+
 class ChatStore:
     def chats(self, *, kind=None, project=None, archived=None):
         if kind is not None and kind not in KINDS:
@@ -266,6 +271,17 @@ class ChatStore:
                                  event='chat-paused', text=f'{title}: Chat paused after automatic turns; write a message to continue.')])
         return False
 
+    def chat_event_owned(self, text):
+        """Recheck queued slice events delivered before the routing rule changed."""
+        lines = text.splitlines()
+        if len(lines) < 2 or not lines[0].startswith('Event: ') or not lines[1].startswith('Slice: '):
+            return True
+        identifier = lines[1][7:]
+        if identifier == '(feature event)':
+            return True
+        row = self.connection.execute('SELECT document FROM cplane_slices WHERE id = %s', (identifier,)).fetchone()
+        return bool(row and chat_added(row[0]))
+
     def route_chat_events(self):
         """Runner delivery, serialized with slice writes and owner messages."""
         with self.mutation():
@@ -275,6 +291,9 @@ class ChatStore:
             from .text_bounds import cut
             items = {s['id']: s for s in self.load()['slices']} if rows else {}
             for event_id, feature, slice_id, kind, text, since in rows:
+                if slice_id and (slice_id not in items or not chat_added(items[slice_id])):
+                    self.connection.execute('UPDATE cplane_chat_events SET delivered = true WHERE id = %s', (event_id,))
+                    continue
                 if slice_id and kind in ('question', 'escalation', 'node-step'):
                     from .installation import installable, install_failure
                     item = items.get(slice_id)
@@ -293,7 +312,8 @@ class ChatStore:
                 if not row or row[1] == 'failed' or not self.chat_can_take(row[0]):
                     continue
                 chat_id = row[0]
-                message = f'Event: {kind}\nSlice: {slice_id or "(feature event)"}\n\n{text}'
+                label = f'Event: {kind}' + (f' · {slice_id}' if slice_id else '')
+                message = f'{label}\nSlice: {slice_id or "(feature event)"}\n\n{text}'
                 self.system_message(chat_id, cut(message, 32000))
                 self.connection.execute('UPDATE cplane_chat_events SET delivered = true, chat = %s WHERE id = %s',
                                         (chat_id, event_id))
@@ -302,7 +322,7 @@ class ChatStore:
         """Attention projection with durable chat ownership; state v1 stays intact."""
         attention = item['attention']
         from .installation import install_failure
-        if not attention or install_failure(attention) or attention['kind'] not in ('question', 'escalation'):
+        if not chat_added(item) or not attention or install_failure(attention) or attention['kind'] not in ('question', 'escalation'):
             return attention
         with self.locked():
             row = self.connection.execute(
@@ -310,7 +330,7 @@ class ChatStore:
                 '(SELECT feature FROM cplane_feature_ids WHERE id = %s) AND slice_id = %s AND kind = %s '
                 'AND attention_since = %s AND text = %s AND delivered ORDER BY id DESC LIMIT 1',
                 (item.get('feature_id'), item['id'], attention['kind'], attention['since'], attention['body'])).fetchone()
-            return dict(attention, chat_id=row[0]) if row else attention
+            return dict(attention, chat_id=row[0]) if row and row[0] is not None else attention
 
     def chat_handover(self, item, text):
         import hashlib

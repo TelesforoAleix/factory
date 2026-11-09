@@ -1,6 +1,7 @@
 """Postgres feature operations, using the store's locked transaction path."""
 import re
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from .state import StateError
 from .times import now
@@ -209,11 +210,11 @@ class FeatureStore:
                 'SELECT name, position, text FROM cplane_feature_sections WHERE feature = %s ORDER BY position', (feature,))]
             return item
 
-    def feature_board(self):
+    def feature_board(self, identifier=None):
         """Read board data together under the store lock; never expose run prompts."""
         from .run_records import TOKEN_FIELDS
         with self.locked():
-            items = self.feature_list()
+            items = self.feature_list() if identifier is None else [self.feature_show(identifier)]
             slices = self.ordered_slices(self.load()['slices'])
             for slice_item in slices:
                 slice_item['attention'] = self.chat_attention(slice_item)
@@ -253,6 +254,55 @@ class FeatureStore:
                     known = [v for v in values if v is not None]
                     item['numbers'][field] = sum(known) if known else None
             return dict(projects=projects, features=items)
+
+    def feature_links(self):
+        with self.locked():
+            return dict(self.connection.execute(
+                'SELECT a.id, f.id FROM cplane_feature_ids a JOIN cplane_features f ON f.feature = a.feature'))
+
+    def feature_cards(self):
+        """Bulk list projection; no sections, logs, handovers, moves or run records."""
+        with self.locked():
+            rows = self.connection.execute(
+                "SELECT f.id, f.title, f.project, f.stage, f.position, f.parked_from, "
+                "e.since FROM cplane_features f LEFT JOIN "
+                "(SELECT feature, max(time) AS since FROM cplane_feature_events "
+                "WHERE event LIKE 'stage %%' OR event LIKE 'add %%' GROUP BY feature) e "
+                "ON e.feature = f.feature ORDER BY f.position, f.id").fetchall()
+            aliases = self.feature_links()
+            linked = {}
+            for row in self.connection.execute(
+                    "SELECT document->>'feature_id', document->>'title', document->>'state', "
+                    "(document->>'paused')::boolean, document->'attention' FROM cplane_slices ORDER BY position"):
+                feature, slice_title, state, paused, attention = row
+                item = dict(title=slice_title, state=state, paused=paused, attention=attention)
+                linked.setdefault(aliases.get(feature), []).append(item)
+            cards = []
+            for identifier, title, project, stage, position, parked, since in rows:
+                group = linked.get(identifier, [])
+                counts = {state: sum(s['state'] == state for s in group) for state in
+                          ('planned', 'researching', 'ready', 'issued', 'awaiting handover', 'in review', 'accepted', 'escalated')}
+                open_items = [s for s in group if s['state'] != 'accepted' and s['attention'] and (
+                    s['attention']['kind'] == 'owner-check' or
+                    s['attention']['kind'] == 'merge' and not s['attention']['approved'] or
+                    s['attention']['kind'] in ('question', 'escalation', 'node-step') and s['attention']['answer'] is None)]
+                running = [s['title'] for s in group if s['state'] in ('issued', 'awaiting handover') and not s['paused']]
+                extra = None
+                if stage == 'ready':
+                    extra = f'{len(group)} slices'
+                elif stage == 'building':
+                    extra = ('Waiting for you' if open_items else
+                             f"{counts['accepted']} of {len(group)} slices done" +
+                             (' · ' + ', '.join(running) if running else '') if group else None)
+                elif stage == 'done' and since:
+                    finished = since.astimezone(ZoneInfo('Europe/Copenhagen'))
+                    extra = f'Finished {finished.day} {finished.strftime("%b %Y")}'
+                elif stage == 'parked' and parked:
+                    extra = f'From {parked.capitalize()}'
+                cards.append(dict(id=identifier, title=title, project=project, stage=stage, position=position,
+                                  extra=extra, slice_counts=counts, slice_count=len(group),
+                                  open_attention=len(open_items), waiting=bool(open_items)))
+            return dict(projects=self.library_projects(), features=cards)
 
     def _linked_slices(self, feature):
         return [r[0] for r in self.connection.execute(
