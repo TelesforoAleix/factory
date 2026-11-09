@@ -459,8 +459,9 @@ def test_failed_secretary_does_not_block_intake_or_reset_auto_limit(store):
     second = store.inbox_add("Second")
     assert second["id"] != first["id"]
     secretary = store.chats(kind="secretary")[0]
-    assert secretary["auto_turns"] == 1 and secretary["auto_paused"]
-    assert store.claim_session_turn() is None
+    assert secretary["auto_turns"] == 0 and not secretary["auto_paused"]
+    assert store.inbox_show(first["id"])["failure_reason"] == "Secretary turn failed"
+    assert store.claim_session_turn()["session"]["kind"] == "secretary"
     assert store.inbox_show(second["id"])["route"] == "New"
 
 
@@ -574,3 +575,38 @@ def test_intake_unit_uses_database_only_settings_and_minimal_writes():
     assert '-/etc/factory/runner.env' in service['InaccessiblePaths'].split()
     assert '-/etc/factory/github-token' in service['InaccessiblePaths'].split()
     assert '-/srv/factory' in service['InaccessiblePaths'].split()
+
+
+def test_arrivals_bypass_paused_limit_and_project_label(store):
+    secretary = store.chats(kind="secretary")[0]
+    with store.mutation():
+        store.connection.execute("UPDATE cplane_projects SET name='Factory' WHERE key='FAC'")
+        store.connection.execute("UPDATE cplane_sessions SET auto_turns=5, auto_paused=true WHERE id=%s", (secretary["id"],))
+    entries = [store.inbox_add("Factory project order", fields={"target":"development"}) for _ in range(5)]
+    for entry in entries:
+        turn = store.claim_session_turn()
+        assert turn and '"key": "FAC"' in turn["text"] and '"name": "Factory"' in turn["text"]
+        routed = store.inbox_route(entry["id"], "order", 1, project="Factory", actor=f"chat:{secretary['id']}")
+        assert routed["label"]["project"] == "FAC"
+        assert routed["delivery_chat"] == store.chats(kind="orchestrator")[0]["id"]
+        store.finish_session_turn(turn, "Handled", "synthetic")
+    assert store.chats(kind="secretary")[0]["auto_turns"] == 5
+    assert store.chats(kind="secretary")[0]["auto_paused"]
+
+
+def test_owner_routes_and_rejection_api(store):
+    client = create_app(store).test_client()
+    headers = {"X-Factory-UI": "1"}
+    entry = store.inbox_add("A new idea")
+    path = f"/api/inbox/{entry['id']}/route"
+    assert client.post(path, json={"route":"Idea"}).status_code == 403
+    assert client.post(path, json={"route":"Idea"}, headers=headers).json["route"] == "Idea"
+    entry = store.inbox_add("Send this")
+    chat = store.chats(kind="orchestrator")[0]["id"]
+    routed = client.post(f"/api/inbox/{entry['id']}/route", json={"route":"chat", "chat":chat}, headers=headers).json
+    assert routed["delivery_chat"] == chat
+    entry = store.inbox_add("Reject this")
+    path = f"/api/inbox/{entry['id']}/route"
+    assert client.post(path, json={"route":"Rejected", "reason":"No\nthanks"}, headers=headers).status_code == 400
+    result = client.post(path, json={"route":"Rejected", "reason":"Not useful"}, headers=headers).json
+    assert result["route"] == "Rejected" and result["rejection_reason"] == "Not useful"

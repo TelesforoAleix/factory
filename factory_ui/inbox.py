@@ -43,6 +43,24 @@ def register_inbox(app, backend):
             lambda: backend().inbox_file(file, int(request.args.get("offset", "0")))
         )
 
+    @app.post("/api/inbox/<int:entry>/route")
+    def route_entry(entry):
+        def route():
+            payload = request.get_json(silent=True)
+            if not isinstance(payload, dict):
+                raise StateError("Invalid route")
+            if payload.get("route") == "Idea" and set(payload) == {"route"}:
+                item = backend().inbox_show(entry)
+                return backend().inbox_route(entry, "idea", 1, project=(item.get("label") or {}).get("project"), actor="owner")
+            if payload.get("route") == "chat" and set(payload) == {"route", "chat"} and type(payload["chat"]) is int:
+                item = backend().inbox_show(entry)
+                label = item.get("label") or {}
+                return backend().inbox_route(entry, label.get("kind", "order"), 1, project=label.get("project"), chat=payload["chat"], actor="owner")
+            if payload.get("route") == "Rejected" and set(payload) == {"route", "reason"}:
+                return backend().inbox_reject(entry, payload["reason"], actor="owner")
+            raise StateError("Invalid route")
+        return response(route)
+
     @app.post("/api/inbox/<int:entry>/transcript")
     def transcript(entry):
         def attach():

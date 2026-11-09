@@ -155,3 +155,10 @@ test('phone chat options menu contains the header actions', async () => {
   fireEvent.keyDown(document,{key:'Escape'});
   expect(screen.queryByRole('button',{name:'Mark unread'})).toBeNull();
 });
+
+test('Secretary remains listed after it is read', async () => {
+  const chats = [{id:1,title:'Development Orchestrator',kind:'orchestrator'}, {id:2,title:'Secretary',kind:'secretary',waiting:false}];
+  vi.stubGlobal('fetch', async url => ({ok:true,json:async () => url === '/api/projects' ? [] : chats}));
+  render(<MemoryRouter initialEntries={['/chats']}><App/></MemoryRouter>);
+  expect((await screen.findByText('Secretary', {selector:'h2'})).nextSibling.textContent).toContain('Secretary');
+});
