@@ -216,9 +216,10 @@ class FeatureStore:
         from .run_records import TOKEN_FIELDS
         with self.locked():
             items = self.feature_list() if identifier is None else [self.feature_show(identifier)]
-            slices = self.ordered_slices(self.load()['slices'])
+            slices = self.ordered_slices(self.page_state()['slices'])
+            owned = self.chat_attentions(slices)
             for slice_item in slices:
-                slice_item['attention'] = self.chat_attention(slice_item)
+                slice_item['attention'] = owned.get(slice_item['id'], slice_item['attention'])
             records = self.run_record_list()
             projects = self.library_projects()
             for item in items:
@@ -592,21 +593,77 @@ class FeatureStore:
                 project['active'] = active
             return project
 
-    def project_add(self, key, name, *, repository=None, actor='owner'):
-        if not re.fullmatch(r'[A-Z]{3}', key):
+    @staticmethod
+    def _project_fields(fields):
+        from urllib.parse import urlsplit
+        if not fields or set(fields) - {'name', 'about', 'public_url', 'repository_url'}:
+            raise StateError('Choose project fields; keys cannot change')
+        for field, value in fields.items():
+            if field == 'name':
+                bounded(value, 'Project name', 60)
+            elif field == 'about':
+                bounded(value, 'About', 600, empty=True)
+            elif value is not None and value != '':
+                if not isinstance(value, str):
+                    raise StateError('URLs must use https://')
+                try:
+                    url = urlsplit(value)
+                    valid = (value.startswith('https://') and url.hostname and url.port != 0
+                             and not url.username and not url.password
+                             and not any(c.isspace() or ord(c) < 32 for c in value)
+                             and not any(c in value for c in ('\\', '<', '>', '"')))
+                except ValueError:
+                    valid = False
+                if not valid:
+                    raise StateError('URLs must use https:// and include a host')
+        return {k: (v or None) if k.endswith('_url') else v for k, v in fields.items()}
+
+    def project_show(self, key):
+        with self.locked():
+            row = self.connection.execute(
+                'SELECT key, name, repository, active, about, public_url, repository_url '
+                'FROM cplane_projects WHERE key = %s AND key <> \'NEW\'', (key,)).fetchone()
+            if row is None:
+                raise StateError('Project not found')
+            return dict(zip(('key', 'name', 'repository', 'active', 'about', 'public_url', 'repository_url'), row))
+
+    def project_set(self, key, *, actor='owner', **fields):
+        from psycopg.types.json import Jsonb
+        if actor != 'owner':
+            raise StateError('Only the owner can edit project fields')
+        fields = self._project_fields(fields)
+        with self.mutation():
+            self.project_show(key)
+            self.connection.execute('UPDATE cplane_projects SET ' +
+                                    ', '.join(f'{k} = %s' for k in fields) + ' WHERE key = %s',
+                                    (*fields.values(), key))
+            self.connection.execute(
+                'INSERT INTO cplane_project_events (project, actor, changes) VALUES (%s, %s, %s)',
+                (key, actor, Jsonb(fields)))
+            return self.project_show(key)
+
+    def project_add(self, key, name, *, repository=None, actor='owner', **fields):
+        if not isinstance(key, str) or not re.fullmatch(r'[A-Z]{3}', key):
             raise StateError('Project key must be three uppercase letters')
-        bounded(name, 'Project name')
+        fields = self._project_fields(dict(name=name, **fields))
         bounded(actor, 'Actor')
         if repository is not None:
             bounded(repository, 'Repository')
+        from psycopg.types.json import Jsonb
         with self.mutation():
+            if self.connection.execute('SELECT 1 FROM cplane_projects WHERE key = %s', (key,)).fetchone():
+                raise StateError('Project key already taken')
             if repository is not None and self.connection.execute(
                     'SELECT 1 FROM cplane_projects WHERE repository = %s', (repository,)).fetchone():
                 raise StateError('Repository already has a project key')
-            self.connection.execute('INSERT INTO cplane_projects (key, name, repository) VALUES (%s, %s, %s)',
-                                    (key, name, repository))
-            self.connection.execute('INSERT INTO cplane_project_events (project, actor) VALUES (%s, %s)', (key, actor))
-        return dict(key=key, name=name, repository=repository)
+            self.connection.execute('INSERT INTO cplane_projects (key, repository, ' + ', '.join(fields) +
+                                    ') VALUES (' + ', '.join(['%s'] * (len(fields) + 2)) + ')',
+                                    (key, repository, *fields.values()))
+            self.create_project_chat(key)
+            self.connection.execute(
+                'INSERT INTO cplane_project_events (project, actor, active, changes) VALUES (%s, %s, true, %s)',
+                (key, actor, Jsonb(fields)))
+            return self.project_show(key)
 
     def feature_import_backlog(self, text, *, dry_run=False, actor='owner'):
         from psycopg.types.json import Jsonb

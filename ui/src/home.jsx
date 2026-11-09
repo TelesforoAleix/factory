@@ -14,7 +14,7 @@ function NextItem({item}) {
   const {attributes, listeners, setNodeRef, transform, transition} = useSortable({id:item.id});
   return <div className="home-row next-row" ref={setNodeRef} style={{transform:CSS.Transform.toString(transform), transition}}><button className="drag-handle" {...attributes} {...listeners} aria-label={'Drag ' + item.id}>⠿</button><Link to={'/pipeline/' + encodeURIComponent(item.id)}><strong>{item.title}</strong><small>{item.id}</small></Link></div>;
 }
-function Attention({item, act}) {
+export function Attention({item, act}) {
   const [answer, setAnswer] = useState(''), [confirm, setConfirm] = useState(false);
   const labels = {'testing-review':'Testing review', failure:'Failure', approval:'Approval', install:'Install', decision:'Decision', question:'Question or escalation', stuck:'Stuck', limit:'Limit full'};
   return <article className={'home-attention home-' + item.kind}><div className="home-card-heading"><strong>{labels[item.kind]}</strong><small>{item.id} · {elapsed(item.since)} waiting</small></div>{item.title && <h3>{item.title}</h3>}<p className="text">{item.text}</p>{item.verdict && <p className="text"><strong>Review:</strong> {item.verdict}</p>}

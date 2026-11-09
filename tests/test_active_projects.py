@@ -62,7 +62,7 @@ def test_activation_failure_rolls_back_flag_and_event(pg_store, monkeypatch):
 def test_project_api_guard_and_home_quick_chats(pg_store):
     client = create_app(pg_store).test_client()
     assert client.patch('/api/projects/FAC', json={'active':True}).status_code == 403
-    for payload in ({'active':'false'}, {'name':'Rename'}, {'active':False, 'name':'Rename'}):
+    for payload in ({'active':'false'}, {'key':'XYZ'}, {'active':False, 'name':'Rename'}):
         assert client.patch('/api/projects/FAC', json=payload, headers=HEADERS).status_code == 400
     assert client.patch('/api/projects/NEW', json={'active':False}, headers=HEADERS).status_code == 400
     for key in ('LAB', 'FAC'):

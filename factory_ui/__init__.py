@@ -267,12 +267,43 @@ def create_app(store=None):
     def projects():
         return chat_response(lambda: backend().library_projects())
 
-    @app.patch('/api/projects/<key>')
-    def project_active(key):
+    @app.post('/api/projects')
+    def project_add():
         payload = request.get_json(silent=True)
-        if not isinstance(payload, dict) or set(payload) != {'active'} or type(payload['active']) is not bool:
-            return jsonify(error='Provide an active boolean'), 400
-        return chat_response(lambda: backend().project_active(key, payload['active'], actor='owner'))
+        if not isinstance(payload, dict) or set(payload) != {'key', 'name'}:
+            return jsonify(error='Provide a key and name'), 400
+        response = chat_response(lambda: backend().project_add(**payload, actor='owner'))
+        return response if isinstance(response, tuple) else (response, 201)
+
+    @app.get('/api/projects/<key>')
+    def project_page(key):
+        from .home import home_data
+        from .projects import project_data
+        try:
+            store = backend()
+            with store.locked():
+                project = store.project_show(key)
+                home = home_data(store, cards_data(store), clean, view)
+                return jsonify(project_data(store, project, home, clean))
+        except state.StateError as error:
+            if str(error) == 'Project not found':
+                return jsonify(error='Project not found'), 404
+            return jsonify(error='Project unavailable'), 503
+        except Exception:
+            return jsonify(error='Project unavailable'), 503
+
+    @app.patch('/api/projects/<key>')
+    def project_update(key):
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict) or not payload:
+            return jsonify(error='Provide project fields'), 400
+        if 'active' in payload:
+            if set(payload) != {'active'} or type(payload['active']) is not bool:
+                return jsonify(error='Provide an active boolean separately'), 400
+            return chat_response(lambda: backend().project_active(key, payload['active'], actor='owner'))
+        if set(payload) - {'name', 'about', 'public_url', 'repository_url'}:
+            return jsonify(error='Choose project fields; keys cannot change'), 400
+        return chat_response(lambda: backend().project_set(key, actor='owner', **payload))
 
     @app.get('/api/chats')
     def chats():

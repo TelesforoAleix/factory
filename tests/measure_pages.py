@@ -15,6 +15,9 @@ import uuid
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument('--http', action='store_true', help='Measure HTTP over 127.0.0.1')
+    parser.add_argument('--projects', action='store_true', help='Include the project page')
+    parser.add_argument('--profile', type=Path, help='Write one cProfile per endpoint to this directory')
     args = parser.parse_args()
     sys.path.insert(0, str(args.source.resolve()))
     import psycopg
@@ -50,15 +53,45 @@ def main():
                 turn = store.claim_session_turn()
                 store.finish_session_turn(turn, 'Synthetic assistant text. ' * 20, 'synthetic-resume')
             client = create_app(store).test_client()
+            server = None
+            if args.http:
+                from threading import Thread
+                from urllib.request import build_opener, ProxyHandler
+                local_http = build_opener(ProxyHandler({}))
+                from werkzeug.serving import make_server, WSGIRequestHandler
+                class QuietHandler(WSGIRequestHandler):
+                    def log_request(self, *args, **kwargs):
+                        pass
+                server = make_server('127.0.0.1', 0, create_app(store), request_handler=QuietHandler)
+                thread = Thread(target=server.serve_forever, daemon=True)
+                thread.start()
+            paths = ['/api/home', '/api/pipeline', '/api/pipeline/' + features[0]['id'], f'/api/factory/sessions/{sid}/messages']
+            if args.projects:
+                paths.append('/api/projects/FAC')
             result = {}
-            for path in ['/api/home', '/api/pipeline', '/api/pipeline/' + features[0]['id'], f'/api/factory/sessions/{sid}/messages']:
+            for path in paths:
                 measurements = []
+                if args.profile:
+                    import cProfile
+                    args.profile.mkdir(parents=True, exist_ok=True)
+                    profiler = cProfile.Profile()
+                    profiler.runcall(client.get, path)
+                    profiler.dump_stats(str(args.profile / (path.strip('/').replace('/', '_') + '.prof')))
                 for _ in range(7):
                     started = time.perf_counter()
-                    response = client.get(path)
+                    if server:
+                        with local_http.open(f'http://127.0.0.1:{server.server_port}' + path, timeout=10) as response:
+                            body = response.read()
+                            status = response.status
+                    else:
+                        response = client.get(path)
+                        body, status = response.data, response.status_code
                     measurements.append((time.perf_counter() - started) * 1000)
-                    assert response.status_code == 200, (path, response.json)
-                result[path] = dict(median_ms=round(statistics.median(measurements), 2), max_ms=round(max(measurements), 2), bytes=len(response.data))
+                    assert status == 200, (path, body)
+                result[path] = dict(median_ms=round(statistics.median(measurements), 2), max_ms=round(max(measurements), 2), bytes=len(body))
+            if server:
+                server.shutdown()
+                thread.join()
             print(json.dumps(result, indent=2))
         finally:
             conn.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(schema)))
