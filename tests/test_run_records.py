@@ -173,7 +173,7 @@ def test_chat_one_record_per_owner_message(tmp_path, monkeypatch, tool, code, ca
     store = Mock()
     store.run_record_add.side_effect = RuntimeError('PRIVATE')
     turn = dict(id=7, text='exact owner message', session=dict(id=2, repositories=[], tool=tool,
-                                                             model='synthetic', cli_session_id=None))
+                                                             model='synthetic', effort='medium', cli_session_id=None))
     monkeypatch.setattr(sessions, 'workspace', lambda _: (tmp_path, []))
     monkeypatch.setattr(sessions, 'trusted_directory', lambda _: None)
     monkeypatch.setattr(sessions, 'RUNS', tmp_path)

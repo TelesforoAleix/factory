@@ -1,56 +1,63 @@
-"""Role defaults for `cplane add`, read from a local command's JSON output.
+"""Stored role policy and execution levels, separate from version 1 documents."""
+from .state import StateError
 
-The command lives in the local file `roles-command`, beside `orders-url`. Its output is
-untrusted: only a validated tool, model and effort are used.
-"""
-import json
-import os
-from pathlib import Path
-import shlex
-import subprocess
-
-TOOLS = ("codex", "claude")
-EFFORTS = ("low", "medium", "high", "xhigh", "max", "ultra")
+TOOLS = ('codex', 'claude')
+EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max', 'ultra')
+LEVELS = ('light', 'standard', 'strong')
+DEFAULT_LEVELS = {
+    'light': dict(tool='codex', model='gpt-6-luna', effort='low'),
+    'standard': dict(tool='codex', model='gpt-6.1-terra', effort='medium'),
+    'strong': dict(tool='codex', model='gpt-6.1-sol', effort='medium'),
+}
 
 
-def command_file():
-    base = Path(os.environ.get("CPLANE_RUNS", "~/Library/Application Support/cplane/runs")).expanduser().resolve()
-    return base.parent / "roles-command"
+class RoleStore:
+    def role_list(self):
+        with self.locked():
+            return [dict(role=r[0], tool=r[1], model=r[2], effort=r[3],
+                         in_list=self.model_in_list(r[1], r[2], r[3]))
+                    for r in self.connection.execute(
+                        'SELECT role, tool, model, effort FROM cplane_roles ORDER BY role').fetchall()]
 
+    def role_get(self, role):
+        # Legacy conversations follow the project policy unless overridden.
+        role = 'project' if role == 'legacy' else role
+        with self.locked():
+            row = self.connection.execute(
+                'SELECT tool, model, effort FROM cplane_roles WHERE role = %s', (role,)).fetchone()
+            if row is None:
+                raise StateError('Unknown role')
+            return dict(zip(('tool', 'model', 'effort'), row))
 
-def lookup(role, path):
-    """Return (route, None) for the role's first cli route, or (None, reason)."""
-    try:
-        argv = shlex.split(Path(path).read_text())
-    except FileNotFoundError:
-        return None, "no roles-command"
-    except (OSError, ValueError):
-        return None, "roles-command unreadable"
-    if not argv:
-        return None, "roles-command is empty"
-    try:
-        result = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10)
-    except subprocess.TimeoutExpired:
-        return None, "roles-command timed out"
-    except (OSError, ValueError):
-        return None, "roles-command could not run"
-    if result.returncode:
-        return None, "roles-command failed"
-    try:
-        table = json.loads(result.stdout)
-    except ValueError:
-        return None, "roles-command output is not valid"
-    routes = table.get(role) if isinstance(table, dict) else None
-    if not isinstance(routes, list):
-        return None, f"no routes for role {role}"
-    route = next((r for r in routes if isinstance(r, dict) and r.get("kind") == "cli"), None)
-    if route is None:
-        return None, f"role {role} has no cli route"
-    tool, model, effort = route.get("tool"), route.get("model"), route.get("effort")
-    if (tool not in TOOLS or not isinstance(model, str) or not model.strip()
-            or (effort is not None and effort not in EFFORTS)):
-        return None, f"route for role {role} is not valid"
-    chosen = {"tool": tool, "model": model}
-    if effort is not None:
-        chosen["effort"] = effort
-    return chosen, None
+    def role_set(self, role, tool, model, effort):
+        with self.mutation():
+            self.role_get(role)
+            if role == 'legacy':
+                raise StateError('Unknown role')
+            model = self.model_choice(tool, model, effort)
+            self.connection.execute('UPDATE cplane_roles SET tool = %s, model = %s, effort = %s WHERE role = %s',
+                                    (tool, model, effort, role))
+            return self.role_list()
+
+    def slice_policy(self, identifier):
+        with self.locked():
+            row = self.connection.execute(
+                'SELECT level, overrides FROM cplane_slice_levels WHERE slice_id = %s', (identifier,)).fetchone()
+            return dict(level=row[0], overrides=row[1]) if row else None
+
+    def slice_level(self, identifier, level, overrides):
+        from psycopg.types.json import Jsonb
+        if level not in LEVELS:
+            raise StateError('Unknown executor level')
+        with self.mutation():
+            self.connection.execute(
+                'INSERT INTO cplane_slice_levels VALUES (%s, %s, %s) ON CONFLICT (slice_id) '
+                'DO UPDATE SET level = EXCLUDED.level, overrides = EXCLUDED.overrides',
+                (identifier, level, Jsonb(overrides)))
+
+    def slice_executor(self, item):
+        policy = self.slice_policy(item['id'])
+        if policy is None:
+            # Imported and historical documents are explicit configurations.
+            return {**self.role_get('standard'), **item['executor']}
+        return {**self.role_get(policy['level']), **policy['overrides']}

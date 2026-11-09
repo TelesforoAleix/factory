@@ -46,3 +46,19 @@ def pytest_terminal_summary(terminalreporter):
     if _POSTGRES_RESULTS:
         passed = _POSTGRES_RESULTS.count('passed')
         terminalreporter.write_line(f'Postgres 17: {passed} passed, {len(_POSTGRES_RESULTS) - passed} failed')
+
+
+def seed_model_choices(store):
+    """Explicit synthetic choices for tests that exercise configuration writes."""
+    from psycopg.types.json import Jsonb
+    from cplane.roles import EFFORTS
+    names = ['model', 'test', 'synthetic-cheap', 'synthetic', 'synthetic-model', 'synthetic-a', 'synthetic-b', 'synthetic-c',
+             'synthetic-d', 'synthetic-cli', 'synthetic-default', 'synthetic-codex',
+             'synthetic-claude', 'example-model', 'gpt-5.3-codex', 'gpt-6-luna',
+             'gpt-6.1-terra', 'gpt-6.1-sol', 'opus', 'sonnet']
+    with store.mutation():
+        for tool in ('codex', 'claude'):
+            for model in names:
+                store.connection.execute(
+                    'INSERT INTO cplane_models (tool, model, label, efforts) VALUES (%s,%s,%s,%s) ON CONFLICT DO NOTHING',
+                    (tool, model, model, Jsonb(list(EFFORTS if tool == 'codex' else EFFORTS[:-1]))))

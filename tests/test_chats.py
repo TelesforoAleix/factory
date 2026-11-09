@@ -11,6 +11,13 @@ from cplane.state import StateError
 from cplane.stores import PostgresStore
 from factory_ui import create_app
 from test_stores import pg_store
+from conftest import seed_model_choices
+
+
+@pytest.fixture(autouse=True)
+def configuration_choices(request):
+    if request.node.name != 'test_migration_carries_sessions_and_bootstraps_empty_database':
+        seed_model_choices(request.getfixturevalue('pg_store'))
 
 
 def feature_chat(store, title='Feature', project='NEW'):
@@ -26,13 +33,15 @@ def test_migration_carries_sessions_and_bootstraps_empty_database(pg_store):
     assert store.chats(kind='orchestrator')[0]['area'] == 'homelab'
     with store.mutation():
         store.connection.execute('DELETE FROM cplane_sessions')
-        store.connection.execute('DROP TABLE cplane_chat_settings')
+        store.connection.execute('DROP TABLE cplane_roles, cplane_models, cplane_slice_levels, cplane_model_updates')
+        store.connection.execute("DELETE FROM cplane_settings WHERE name IN ('executors','repository_runs')")
+        store.connection.execute('ALTER TABLE cplane_sessions DROP COLUMN effort, DROP COLUMN role_overrides')
         store.connection.execute('DROP INDEX cplane_chat_latest_reply')
         store.connection.execute('ALTER TABLE cplane_sessions DROP COLUMN kind, DROP COLUMN project, '
                                  'DROP COLUMN feature, DROP COLUMN archived, DROP COLUMN last_read_at, '
                                  'DROP COLUMN tool_sessions, DROP COLUMN workspace_ready')
         store.connection.execute('ALTER TABLE cplane_session_messages DROP COLUMN automatic')
-        store.connection.execute("DELETE FROM cplane_migrations WHERE name IN ('009_chats.sql', '010_chat_tool_sessions.sql')")
+        store.connection.execute("DELETE FROM cplane_migrations WHERE name IN ('009_chats.sql', '010_chat_tool_sessions.sql', '021_model_settings.sql')")
         factory = store.connection.execute(
             "INSERT INTO cplane_sessions (area,title,tool,model,cli_session_id,repositories) "
             "VALUES ('factory','Old code','claude','synthetic','saved','[\"owner/repo\"]') RETURNING id").fetchone()[0]
@@ -140,7 +149,7 @@ def test_project_unique_defaults_and_configuration(pg_store):
     assert chat['repositories'] == ['owner/repo']
     assert chat['tool'] == 'claude' and chat['model'] == 'synthetic-a'
     pg_store.chat_defaults('project', chat_model='synthetic-b')
-    assert pg_store.chats(kind='project')[0]['model'] == 'synthetic-a'
+    assert pg_store.chats(kind='project')[0]['model'] == 'synthetic-b'
     assert pg_store.chat_configure(chat['id'], model='synthetic-c')['model'] == 'synthetic-c'
     for kwargs in (dict(tool='shell'), dict(model='--bad'), dict(model=''), dict(model=['bad'])):
         with pytest.raises(StateError):

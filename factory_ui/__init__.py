@@ -305,6 +305,41 @@ def create_app(store=None):
             return jsonify(error='Choose project fields; keys cannot change'), 400
         return chat_response(lambda: backend().project_set(key, actor='owner', **payload))
 
+    @app.get('/api/settings/models')
+    def settings_models():
+        return chat_response(lambda: backend().models_status())
+
+    @app.post('/api/settings/models/update')
+    def settings_models_update():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict) or set(payload) != {'tool'}:
+            return jsonify(error='Provide a model tool'), 400
+        response = chat_response(lambda: backend().models_request(payload['tool']))
+        return response if isinstance(response, tuple) else (response, 202)
+
+    @app.route('/api/settings/roles', methods=['GET', 'POST'])
+    def settings_roles():
+        if request.method == 'GET':
+            return chat_response(lambda: backend().role_list())
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict) or set(payload) != {'role', 'tool', 'model', 'effort'}:
+            return jsonify(error='Provide role, tool, model and effort'), 400
+        return chat_response(lambda: backend().role_set(**payload))
+
+    @app.route('/api/settings/limits', methods=['GET', 'POST'])
+    def settings_limits():
+        from cplane.features import LIMIT_DESCRIPTIONS
+        def operation():
+            store = backend()
+            if request.method == 'POST':
+                payload = request.get_json(silent=True)
+                if not isinstance(payload, dict) or set(payload) != {'name', 'value'}:
+                    raise ValueError('Provide a limit name and value')
+                store.limit_set(**payload)
+            return [dict(name=k, value=v, description=LIMIT_DESCRIPTIONS[k])
+                    for k, v in store.limit_show().items()]
+        return chat_response(operation)
+
     @app.get('/api/chats')
     def chats():
         def operation():
@@ -327,7 +362,7 @@ def create_app(store=None):
     @app.route('/api/chats/defaults/<kind>', methods=['GET', 'PATCH'])
     def chat_defaults(kind=None):
         payload = request.get_json(silent=True) if request.method == 'PATCH' else {}
-        if not isinstance(payload, dict) or any(k not in ('chat_tool', 'chat_model') for k in payload):
+        if not isinstance(payload, dict) or any(k not in ('chat_tool', 'chat_model', 'effort') for k in payload):
             return jsonify(error='Invalid chat defaults'), 400
         if any(v is None for v in payload.values()):
             return jsonify(error='Invalid chat defaults'), 400
@@ -338,8 +373,7 @@ def create_app(store=None):
         if request.method == 'GET':
             return chat_response(lambda: backend().chat_show(chat_id), project_names=True)
         payload = request.get_json(silent=True)
-        if (not isinstance(payload, dict) or any(k not in ('tool', 'model') for k in payload)
-                or any(v is None for v in payload.values())):
+        if (not isinstance(payload, dict) or any(k not in ('tool', 'model', 'effort') for k in payload)):
             return jsonify(error='Invalid chat configuration'), 400
         return chat_response(lambda: backend().chat_configure(chat_id, **payload), project_names=True)
 
@@ -396,8 +430,11 @@ def create_app(store=None):
                 return jsonify([{k: v for k, v in item.items() if k != 'cli_session_id'}
                                 for item in store.sessions(area)])
             from cplane.stores import validate_session
-            fields = validate_session(request.get_json(silent=True), area)
-            return jsonify(id=store.create_session(area, *fields)), 201
+            payload = request.get_json(silent=True)
+            fields = validate_session(payload, area)
+            return jsonify(id=store.create_session(area, *fields, effort=payload.get('effort'))), 201
+        except state.StateError as error:
+            return jsonify(error=str(error)), 400
         except ValueError:
             return jsonify(error='Invalid session fields'), 400
         except Exception:

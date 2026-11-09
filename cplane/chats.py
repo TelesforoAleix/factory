@@ -84,48 +84,63 @@ class ChatStore:
             chat = self.chat_read(chat_id)
             return dict(chat=chat, messages=self.session_messages(chat['area'], chat_id))
 
-    def chat_defaults(self, kind=None, *, chat_tool=None, chat_model=None):
+    def chat_defaults(self, kind=None, *, chat_tool=None, chat_model=None, effort=None):
         if kind is not None and kind not in KINDS:
             raise StateError('Unknown chat kind')
         with self.mutation():
-            if chat_tool is not None or chat_model is not None:
+            if any(v is not None for v in (chat_tool, chat_model, effort)):
                 if kind is None:
                     raise StateError('Choose a chat kind')
-                current = self.chat_defaults(kind)[kind]
-                tool = current['chat_tool'] if chat_tool is None else chat_tool
-                model = current['chat_model'] if chat_model is None else chat_model
-                self._chat_fields(tool, model)
-                self.connection.execute(
-                    'UPDATE cplane_chat_settings SET chat_tool = %s, chat_model = %s WHERE kind = %s',
-                    (tool, model, kind))
-            return {r[0]: dict(chat_tool=r[1], chat_model=r[2]) for r in self.connection.execute(
-                'SELECT kind, chat_tool, chat_model FROM cplane_chat_settings '
-                'WHERE (%s::text IS NULL OR kind = %s) ORDER BY kind', (kind, kind))}
+                current = self.role_get(kind)
+                self.role_set('project' if kind == 'legacy' else kind,
+                              current['tool'] if chat_tool is None else chat_tool,
+                              current['model'] if chat_model is None else chat_model,
+                              current['effort'] if effort is None else effort)
+            return {k: dict(chat_tool=v['tool'], chat_model=v['model'], effort=v['effort'])
+                    for k in KINDS if kind is None or k == kind
+                    for v in [self.role_get(k)]}
 
-    @staticmethod
-    def _chat_fields(tool, model):
-        from .stores import validate_session
-        try:
-            validate_session(dict(title='Chat', tool=tool, model=model), 'factory')
-        except ValueError:
-            raise StateError('Invalid chat tool or model') from None
+    def resolve_chat(self, chat):
+        overrides = chat.pop('role_overrides')
+        saved = chat.pop('tool_sessions')
+        previous_tool = chat['tool']
+        if chat['state'] != 'running':
+            chat.update(self.role_get(chat['kind']))
+            chat.update(overrides)
+            if chat['tool'] != previous_tool:
+                chat['cli_session_id'] = saved.get(chat['tool'])
+        chat['overrides'] = overrides
+        chat['in_list'] = self.model_in_list(chat['tool'], chat['model'], chat['effort'])
 
-    def chat_configure(self, chat_id, *, tool=None, model=None):
+    def chat_configure(self, chat_id, **fields):
+        from psycopg.types.json import Jsonb
+        if set(fields) - {'tool', 'model', 'effort'}:
+            raise StateError('Invalid chat configuration')
         with self.mutation():
             chat = self.chat_show(chat_id)
-            tool = chat['tool'] if tool is None else tool
-            model = chat['model'] if model is None else model
-            self._chat_fields(tool, model)
+            overrides = dict(chat['overrides'])
+            for key, value in fields.items():
+                if value is None:
+                    overrides.pop(key, None)
+                else:
+                    overrides[key] = value
+            selected = {**self.role_get(chat['kind']), **overrides}
+            # Clearing overrides must also work when the retained role is no longer listed.
+            if any(value is not None for value in fields.values()):
+                selected['model'] = self.model_choice(**selected)
+                if 'model' in overrides:
+                    overrides['model'] = selected['model']
             if chat['state'] == 'running':
                 raise StateError('Chat has a running turn')
             cli_id = chat['cli_session_id']
-            if tool != chat['tool']:
+            if selected['tool'] != chat['tool']:
                 saved = self.connection.execute(
                     'SELECT tool_sessions FROM cplane_sessions WHERE id = %s', (chat_id,)).fetchone()[0]
-                cli_id = saved.get(tool)
+                cli_id = saved.get(selected['tool'])
             self.connection.execute(
-                'UPDATE cplane_sessions SET tool = %s, model = %s, cli_session_id = %s WHERE id = %s',
-                (tool, model, cli_id, chat_id))
+                'UPDATE cplane_sessions SET tool = %s, model = %s, effort = %s, '
+                'role_overrides = %s, cli_session_id = %s WHERE id = %s',
+                (selected['tool'], selected['model'], selected['effort'], Jsonb(overrides), cli_id, chat_id))
             return self.chat_show(chat_id)
 
     def _project_repositories(self, project):

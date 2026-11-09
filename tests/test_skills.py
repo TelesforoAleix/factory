@@ -89,6 +89,8 @@ def test_switches_defaults_validation_and_api(pg_store, extra_skill, capsys):
 
 
 def test_session_project_resolution_and_snapshot(pg_store, extra_skill):
+    from conftest import seed_model_choices
+    seed_model_choices(pg_store)
     pg_store.skill_set('extra', 'FAC', True)
     pg_store.skill_set('cut', 'FAC', False)
     sid = pg_store.create_session('factory', 'Synthetic', 'codex', 'model', ['owner/factory'])
@@ -162,7 +164,7 @@ def test_private_service_umask_installs_readable_instructions(tmp_path, tool):
     script = 'from pathlib import Path; import sys; [Path(p).read_text() for p in sys.argv[1:]]'
     result = subprocess.run(['python3', '-c', script, *map(str, paths)], capture_output=True, **process)
     assert result.returncode == 0, result.stderr
-    turn = dict(id=1, text='Read skills', session=dict(tool=tool, model='synthetic', cli_session_id=None))
+    turn = dict(id=1, text='Read skills', session=dict(tool=tool, model='synthetic', effort='medium', cli_session_id=None))
     command = turn_command(turn, folder, [], tmp_path / 'run')
     assert command[command.index('--repo') + 1] == str(folder)
     assert '--read-only-path' not in command
