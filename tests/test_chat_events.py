@@ -123,7 +123,7 @@ def test_limit_pause_pending_owner_priority_and_resume(context, slice_data):
     assert len(notices) == 1
     store.chat_open(sid)
     home = create_app(store).test_client().get('/api/home').get_json()
-    assert any(a.get('chat') == sid and 'paused' in a.get('text', '') for a in home['attention'])
+    assert not any(a.get('chat') == sid and 'paused' in a.get('text', '') for a in home['attention'])
     assert store.claim_session_turn() is None
     store.session_messages('factory', sid, 'Continue with my decision')
     store.route_chat_events()
