@@ -58,7 +58,9 @@ def home_data(store, board, clean, view):
     paused_notices = {n.get('chat'): n for n in notices if n.get('event') == 'chat-paused'}
     for n in notices:
         c = by_chat.get(n.get('chat'))
-        unread = c and (not c.get('last_read_at') or c['last_read_at'] < n['at'])
+        unread = (c and n.get('event') in ('owner-check', 'chat-paused')
+                  and (not c.get('last_read_at')
+                       or datetime.fromisoformat(c['last_read_at']) < datetime.fromisoformat(n['at'])))
         decision = n.get('event') == 'owner-check' and unread
         paused = n.get('event') == 'chat-paused' and unread and c.get('auto_paused') and paused_notices[c['id']] is n
         if decision or paused:

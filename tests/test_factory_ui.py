@@ -223,10 +223,18 @@ def test_home_chat_decisions_follow_read_and_latest_pause():
         return home_data(HomeStore(), dict(features=[], projects=[]), lambda value: value, None)['attention']
 
     assert [card['text'] for card in cards()] == ['Check', 'Paused']
+    # Postgres returns UTC timestamps, while notices use Copenhagen local time.
+    # Lexicographic ordering puts this later read before both notices.
+    notices[0]['at'] = '2026-01-01T01:00:00+01:00'
+    notices[1]['at'] = '2026-01-01T01:01:00+01:00'
+    chat['last_read_at'] = '2026-01-01T00:02:00.123456+00:00'
+    assert cards() == []
+    chat['last_read_at'] = '2026-01-01T00:01:00+00:00'
+    assert cards() == []
     chat['last_read_at'] = '2026-01-01T00:02:00Z'
     assert cards() == []
     assert chat['auto_paused'] is True
-    notices.append(dict(event='chat-paused', chat=1, at='2026-01-01T00:03:00Z', text='Paused again'))
+    notices.append(dict(event='chat-paused', chat=1, at='2026-01-01T01:03:00+01:00', text='Paused again'))
     assert [card['text'] for card in cards()] == ['Paused again']
     chat['last_read_at'] = None
     assert [card['text'] for card in cards()] == ['Check', 'Paused again']
