@@ -147,6 +147,35 @@ def test_refuse_interactive_or_wrong_tool(launcher, tool, command):
                                   run=launcher.RUN_ROOT / 'turn', command=command)
 
 
+def test_codex_catalog_uses_same_fence_without_exec_flags(launcher, monkeypatch):
+    args = launcher.docker_arguments('codex', repo=launcher.WORK_ROOT / 'repo',
+                                     run=launcher.RUN_ROOT / 'turn',
+                                     command=['codex', 'debug', 'models'])
+    index = args.index(launcher.IMAGE)
+    assert args[:index] == build(launcher)[:index]
+    assert args[index + 1:] == ['codex', 'debug', 'models']
+    calls = []
+    monkeypatch.setattr(launcher.subprocess, 'run', lambda cmd, **kw:
+                        calls.append((cmd, kw)) or subprocess.CompletedProcess(cmd, 0))
+    assert launcher.main(['run', '--tool', 'codex', '--repo', str(launcher.WORK_ROOT / 'repo'),
+                          '--run', str(launcher.RUN_ROOT / 'turn'),
+                          '--', 'codex', 'debug', 'models']) == 0
+    assert calls == [(args, {'stdin': subprocess.DEVNULL, 'check': False})]
+
+
+@pytest.mark.parametrize('command', [
+    ['codex', 'debug', 'models', '--x'], ['codex', 'debug', 'prompt-input'],
+    ['codex', 'login'], ['codex', 'debug'], ['codex', '--help'],
+    ['codex', 'debug', 'models', ''],
+])
+def test_refuse_other_codex_commands(launcher, monkeypatch, command):
+    def unexpected_run(*args, **kwargs):
+        pytest.fail('refused command reached Docker')
+    monkeypatch.setattr(launcher.subprocess, 'run', unexpected_run)
+    assert launcher.main(['run', '--tool', 'codex', '--repo', str(launcher.WORK_ROOT / 'repo'),
+                          '--run', str(launcher.RUN_ROOT / 'turn'), '--', *command]) == 2
+
+
 def test_run_closes_stdin_and_preserves_literal_prompt(launcher, monkeypatch, capsys):
     calls = []
     def fake_run(args, **kwargs):
@@ -259,6 +288,43 @@ def test_session_timeout_removes_container(launcher, monkeypatch):
                           '--', 'codex', 'exec', '--', 'synthetic']) == 124
     assert calls[0][1]['timeout'] == 1200
     assert calls[-1][0] == ['docker', 'rm', '-f', 'factory-session-turn-7']
+
+
+@pytest.mark.parametrize('outcome,expected', [('success', 17), ('timeout', 124), ('oserror', 2),
+                                           ('processerror', 2), ('interrupt', None)])
+@pytest.mark.parametrize('cleanup_error', [None, OSError, subprocess.CalledProcessError])
+def test_session_exit_status_and_cleanup(launcher, monkeypatch, capsys, outcome, expected, cleanup_error):
+    calls = []
+    def run(args, **kwargs):
+        if outcome == 'timeout':
+            raise subprocess.TimeoutExpired(args, 1200)
+        if outcome == 'oserror':
+            raise OSError('private detail')
+        if outcome == 'processerror':
+            raise subprocess.CalledProcessError(1, args)
+        if outcome == 'interrupt':
+            raise KeyboardInterrupt
+        return subprocess.CompletedProcess(args, 17)
+    def cleanup(turn_id):
+        calls.append(turn_id)
+        if cleanup_error is subprocess.CalledProcessError:
+            raise cleanup_error(1, ['docker'])
+        if cleanup_error:
+            raise cleanup_error('private detail')
+    monkeypatch.setattr(launcher.subprocess, 'run', run)
+    monkeypatch.setattr(launcher, 'remove_session_container', cleanup)
+    argv = ['run', '--tool', 'codex', '--repo', str(launcher.WORK_ROOT / 'repo'),
+            '--run', str(launcher.RUN_ROOT / 'turn'), '--session-turn', '7',
+            '--', 'codex', 'exec', '--', 'synthetic']
+    if outcome == 'interrupt' and not cleanup_error:
+        with pytest.raises(KeyboardInterrupt):
+            launcher.main(argv)
+    else:
+        assert launcher.main(argv) == (125 if cleanup_error else expected)
+    assert calls == [7]
+    stderr = capsys.readouterr().err
+    assert ('session cleanup failed' in stderr) == bool(cleanup_error)
+    assert 'private detail' not in stderr
 
 
 def test_agent_cannot_write_named_repository(launcher):

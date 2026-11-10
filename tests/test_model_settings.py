@@ -118,6 +118,63 @@ def test_database_insert_failure_rolls_back_whole_replacement(pg_store, programs
     assert pg_store.model_list() == before
 
 
+@pytest.mark.parametrize('refusal', [dict(is_error=True, modelUsage={}, result='private refusal'),
+                                    dict(is_error=True, modelUsage={'private-model': {}}),
+                                    dict(modelUsage={}), {}, dict(modelUsage=None)])
+def test_claude_catalog_skips_refusal_or_missing_model(refusal):
+    calls = []
+    def run(argv):
+        alias = argv[argv.index('--model') + 1]
+        calls.append(alias)
+        return json.dumps(refusal if alias == 'fable' else
+                          dict(modelUsage={f'claude-{alias}-synthetic': {}}, result='private output'))
+    rows = models.catalog('claude', run)
+    assert calls == list(models.ALIASES)
+    assert rows == [dict(model=f'claude-{a}-synthetic', label=a, efforts=models.CLAUDE_EFFORTS)
+                    for a in models.ALIASES if a != 'fable']
+
+
+@pytest.mark.parametrize('payload', [dict(is_error=True, modelUsage={}, result='private refusal'),
+                                   dict(modelUsage={}), {}])
+def test_claude_catalog_all_refuse_or_missing_model_fails(payload):
+    with pytest.raises(ValueError, match='empty or duplicate catalog'):
+        models.catalog('claude', lambda argv: json.dumps(payload))
+
+
+@pytest.mark.parametrize('all_refuse', [False, True])
+def test_claude_update_reports_skips_and_preserves_rows_on_all_refuse(
+        pg_store, programs, monkeypatch, capsys, all_refuse):
+    assert pg_store.models_update('codex')['status'] == 'completed'
+    assert pg_store.models_update('claude')['status'] == 'completed'
+    before = pg_store.model_list()
+    original = models.subprocess.run
+    def probe(argv, **kwargs):
+        if argv[:2] == ['factory-cli', 'run'] and argv[argv.index('--tool') + 1] == 'claude':
+            alias = argv[argv.index('--model') + 1]
+            if all_refuse or alias == 'fable':
+                return subprocess.CompletedProcess(argv, 0, json.dumps(dict(
+                    is_error=True, modelUsage={}, result='private refusal')), '')
+        return original(argv, **kwargs)
+    monkeypatch.setattr(models.subprocess, 'run', probe)
+    assert main(['models', 'update', 'claude']) == (1 if all_refuse else 0)
+    result = json.loads(capsys.readouterr().out)
+    if all_refuse:
+        assert result == dict(status='failed', tool='claude', reason=models.FAILURE)
+        assert pg_store.model_list() == before
+    else:
+        assert result == dict(status='completed', tool='claude', skipped=['fable'],
+                              reason='Skipped aliases: fable.')
+        rows = pg_store.model_list()
+        assert [r for r in rows if r['tool'] == 'codex'] == [r for r in before if r['tool'] == 'codex']
+        assert {r['label'] for r in rows if r['tool'] == 'claude'} == {'opus', 'sonnet', 'haiku'}
+        pg_store.models_request('claude')
+        assert pg_store.models_process_one()
+        update = pg_store.models_status()['updates'][0]
+        assert update['status'] == 'completed'
+        assert update['reason'] == 'Skipped aliases: fable.'
+        assert 'private' not in json.dumps(pg_store.models_status())
+
+
 def test_seven_roles_and_default_limits(pg_store):
     roles = {r['role']: r for r in pg_store.role_list()}
     assert set(roles) == {'orchestrator', 'project', 'feature', 'secretary', 'light', 'standard', 'strong'}

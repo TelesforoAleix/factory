@@ -31,8 +31,10 @@ def catalog(tool, run):
             payload = json.loads(run(['claude', '-p', '--model', alias, '--effort', 'low',
                                       '--output-format', 'json', '--', 'Reply only: OK']))
             if payload.get('is_error'):
-                raise ValueError('failed probe')
-            ids = list(payload['modelUsage'])
+                continue
+            ids = list(payload.get('modelUsage') or {})
+            if not ids:
+                continue
             if len(ids) != 1:
                 raise ValueError('ambiguous model')
             rows.append(dict(model=ids[0], label=alias, efforts=list(CLAUDE_EFFORTS)))
@@ -133,7 +135,12 @@ class ModelStore:
                     self.connection.execute(
                         'INSERT INTO cplane_models (tool, model, label, efforts) VALUES (%s, %s, %s, %s)',
                         (tool, row['model'], row['label'], Jsonb(row['efforts'])))
-            return dict(status='completed', tool=tool)
+            result = dict(status='completed', tool=tool)
+            if tool == 'claude':
+                skipped = [alias for alias in ALIASES if alias not in {r['label'] for r in rows}]
+                if skipped:
+                    result.update(skipped=skipped, reason='Skipped aliases: ' + ', '.join(skipped) + '.')
+            return result
         except Exception:
             # Never persist or return subprocess output, arguments or credentials.
             return dict(status='failed', tool=tool, reason=FAILURE)
