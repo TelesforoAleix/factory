@@ -367,6 +367,81 @@ def test_claude_auto_merge_resume_handover(setup):
     assert item(r)['state'] == 'in review'
 
 
+@pytest.mark.parametrize('body', ['', ' \n', pr_reply(None), pr_reply('')])
+def test_post_merge_waiting_without_node_steps_finishes(setup, body):
+    r, p, gh = setup
+    edit(r, lambda s: s.update(stop_before_merge=False))
+    claude_start(r)
+    p.finish('waiting', pr_reply())
+    r.run()
+    gh.checks.return_value = 'green', ''
+    r.run()
+    assert p.started[-1]['sha'] == 'abc123'
+    p.finish('waiting', body)
+    r.run()
+    assert item(r)['state'] == 'in review'
+    assert item(r)['attention'] is None
+    assert any(e['event'] == 'finished' for e in item(r)['log'])
+    assert r.jobs['voice/W1']['phase'] == 'collected'
+    r.run()
+    assert len(p.started) == 2
+    gh.open.assert_called_once()
+    gh.merge.assert_called_once()
+
+
+def test_post_merge_node_step_replays_after_state_save_failure(setup, monkeypatch):
+    r, p, gh = setup
+    edit(r, lambda s: s.update(stop_before_merge=False))
+    claude_start(r)
+    p.finish('waiting', pr_reply(None))
+    r.run()
+    gh.merge.return_value = 'a' * 40
+    gh.checks.return_value = 'green', ''
+    r.run()
+    p.finish('waiting', pr_reply('Install the merged commit'))
+    with monkeypatch.context() as patch:
+        patch.setattr(state, 'save', Mock(side_effect=OSError('synthetic disk failure')))
+        with pytest.raises(OSError, match='synthetic disk failure'):
+            r.run()
+    assert r.jobs['voice/W1']['phase'] == 'node-step'
+    assert item(r)['attention'] is None
+    r.run()
+    assert item(r)['attention']['kind'] == 'node-step'
+    assert item(r)['attention']['body'] == 'Install the merged commit'
+    assert r.jobs['voice/W1']['sha'] == 'a' * 40
+    r.run()
+    assert len(p.started) == 2
+    gh.open.assert_called_once()
+    gh.merge.assert_called_once()
+
+
+@pytest.mark.parametrize('title', ['[Blocked] needs input', '[bLoCkEd] needs input',
+                                  'Blocked: needs input', 'BLOCKED: needs input'])
+@pytest.mark.parametrize('approved', [False, True])
+def test_blocked_live_pr_title_is_not_merged(setup, title, approved):
+    r, p, gh = setup
+    edit(r, lambda s: s.update(stop_before_merge=approved))
+    claude_start(r)
+    p.finish('waiting', pr_reply())  # The live title can differ from the request.
+    r.run()
+    real_github = GitHub()
+    real_github.call = Mock(return_value=json.dumps(
+        {'state': 'OPEN', 'title': title, 'mergeCommit': None}))
+    gh.merge.side_effect = real_github.merge
+    gh.checks.return_value = 'green', ''
+    r.run()
+    if approved:
+        edit(r, lambda s: s['attention'].update(approved=True))
+        r.run()
+    assert item(r)['attention']['kind'] == 'escalation'
+    assert item(r)['attention']['body'] == 'PR titled as blocked; not merged'
+    assert r.jobs['voice/W1']['phase'] == 'pr'
+    assert 'sha' not in r.jobs['voice/W1']
+    real_github.call.assert_called_once_with('example/repo', 'pr', 'view', '12',
+                                             '--json', 'state,mergeCommit,title')
+    assert len(p.started) == 1
+
+
 @pytest.mark.parametrize('node_steps', [None, 'Run migration on owner node'])
 def test_claude_approval_and_node_steps(setup, node_steps):
     r, p, gh = setup
@@ -658,7 +733,7 @@ def test_gh_arguments_include_full_repository_for_pr_calls(monkeypatch):
         '[]',  # open lookup
         'https://github.com/owner/repo/pull/12',  # create
         '{"statusCheckRollup":[]}',  # checks
-        '{"state":"OPEN","mergeCommit":null}',  # merge view
+        '{"state":"OPEN","title":"Example","mergeCommit":null}',  # merge view
         '',  # merge
         '{"state":"MERGED","mergeCommit":{"oid":"abc"}}',  # merge confirmation
     ])
@@ -1312,7 +1387,7 @@ def test_github_open_and_merge_are_recoverable():
     gh.call = Mock(return_value='{"state":"MERGED","mergeCommit":{"oid":"sha"}}')
     assert gh.merge('owner/repo', 12) == 'sha'
     assert gh.call.call_count == 1
-    gh.call = Mock(side_effect=['{"state":"OPEN","mergeCommit":null}', '', '{"state":"MERGED","mergeCommit":{"oid":"sha"}}'])
+    gh.call = Mock(side_effect=['{"state":"OPEN","title":"Example","mergeCommit":null}', '', '{"state":"MERGED","mergeCommit":{"oid":"sha"}}'])
     assert gh.merge('owner/repo', 12) == 'sha'
     assert gh.call.call_count == 3
 

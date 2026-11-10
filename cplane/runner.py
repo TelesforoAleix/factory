@@ -213,6 +213,10 @@ class Git:
         return result.stdout.strip() if result.returncode == 0 else ''
 
 
+class BlockedPR(state.StateError):
+    pass
+
+
 class GitHubReadError(state.StateError):
     pass
 
@@ -317,11 +321,13 @@ class GitHub:
         return info['state'] == 'OPEN'
 
     def merge(self, repo, number, expected=None):
-        fields = 'state,mergeCommit,headRefOid' if expected else 'state,mergeCommit'
+        fields = 'state,mergeCommit,title,headRefOid' if expected else 'state,mergeCommit,title'
         info = json.loads(self.call(repo, 'pr', 'view', str(number), '--json', fields))
         if expected and info['headRefOid'] != expected:
             raise state.StateError('PR head differs from delivered bundle')
         if info['state'] != 'MERGED':
+            if re.match(r'(?:\[blocked\]|blocked:)', info['title'], re.I):
+                raise BlockedPR('PR titled as blocked; not merged')
             self.call(repo, 'pr', 'merge', str(number), '--squash',
                       *(['--match-head-commit', expected] if expected else []))
             info = json.loads(self.call(repo, 'pr', 'view', str(number), '--json', 'state,mergeCommit'))
@@ -629,9 +635,28 @@ class Runner:
             self.log(item, 'finished', True)
         elif final['kind'] in ('question', 'escalation'):
             self.attention(item, final['kind'], final['body'])
-        elif self.fenced and job.get('sha'):
+        elif job.get('sha'):
             # A post-merge turn only collects replies; it can never publish again.
-            self.attention(item, 'node-step', final['body'])
+            node_steps = final['body'].strip()
+            match = re.match(r'\s*```(?:json)?\s*\n(.*?)\n```', final['body'], re.S)
+            try:
+                if match or node_steps.startswith('{'):
+                    request = json.loads(match[1] if match else node_steps)
+                    if not isinstance(request, dict) or 'node_steps' not in request:
+                        raise ValueError('expected node_steps')
+                    node_steps = request['node_steps']
+                    if node_steps is not None and not isinstance(node_steps, str):
+                        raise ValueError('invalid node_steps')
+                    node_steps = (node_steps or '').strip()
+            except ValueError as error:
+                self.attention(item, 'escalation', 'invalid post-merge request: ' + str(error))
+            else:
+                if node_steps:
+                    job['phase'] = 'node-step'
+                    self.attention(item, 'node-step', node_steps)
+                else:
+                    item['state'], item['attention'] = 'in review', None
+                    self.log(item, 'finished', True)
         elif job.get('review') and final['kind'] == 'waiting':
             self.apply_review(item, job, final['body'])
         elif item.get('flow', 'cli') == 'tickets' and final['kind'] == 'waiting':
@@ -780,7 +805,11 @@ class Runner:
                 self.attention(item, 'merge', f'Approve PR #{item["pr"]}: workflow changes')
                 return
         options = {'expected': job['tip']} if self.fenced else {}
-        sha = self.github.merge(self.github_repo(item), item['pr'], **options)
+        try:
+            sha = self.github.merge(self.github_repo(item), item['pr'], **options)
+        except BlockedPR as error:
+            self.attention(item, 'escalation', str(error))
+            return
         job['phase'], job['sha'] = 'merged', sha
         self.save_job(job)
         self.log(item, f'merged: {sha}', True)
@@ -924,7 +953,9 @@ class Runner:
                             if phase_before == 'node-step':
                                 self.attention(item, 'node-step', job['request']['node_steps'])
                         marker = 'collected turn: ' + Path(job['run']).name
-                        if (job['phase'] in ('ended', 'collected', 'pr', 'usage-limit-wait')
+                        if ((job['phase'] in ('ended', 'collected', 'pr', 'usage-limit-wait')
+                             or (job['phase'] == 'node-step' and job.get('sha')
+                                 and (job.get('final') or {}).get('kind') == 'waiting'))
                                 and not any(e['event'] == marker for e in item['log'])):
                             item['session'] = {'tool': job['tool'], 'id': job['session'], 'folder': job['repo']}
                             item['state'] = 'issued'

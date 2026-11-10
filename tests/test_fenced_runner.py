@@ -385,7 +385,7 @@ def test_gh_api_uses_per_call_token_without_repo_flag(delivery, monkeypatch):
 def test_fenced_merge_uses_match_head_and_rejects_replaced_head():
     gh = GitHub()
     gh.call = Mock(side_effect=[
-        '{"state":"OPEN","headRefOid":"tip","mergeCommit":null}', '',
+        '{"state":"OPEN","title":"Example","headRefOid":"tip","mergeCommit":null}', '',
         '{"state":"MERGED","mergeCommit":{"oid":"merge-sha"}}'])
     assert gh.merge('example/repo', 12, expected='tip') == 'merge-sha'
     assert gh.call.call_args_list[1].args == (
@@ -810,7 +810,9 @@ def test_tickets_refuse_unfenced_runner(make_state, tmp_path, monkeypatch):
     processes.start.assert_not_called()
 
 
-def test_resume_after_merge_waiting_cannot_publish(delivery, make_state):
+@pytest.mark.parametrize('node_steps', [None, '', '  ', 'Install the merged commit'])
+@pytest.mark.parametrize('reply_format', ['text', 'json'])
+def test_resume_after_merge_waiting_cannot_publish(delivery, make_state, node_steps, reply_format):
     d = delivery
     runner = Runner(make_state(), github=Mock(), git=Mock(), processes=Mock(start=Mock(return_value=123)), codex_reader=lambda: 5)
     item = state.load(runner.path)['slices'][0]
@@ -824,11 +826,21 @@ def test_resume_after_merge_waiting_cannot_publish(delivery, make_state):
     assert runner.launch(item, 'Node step answered', resume=True)
     resumed = runner.jobs[item['id']]
     assert resumed['sha'] == 'merged-sha'
-    resumed.update(phase='ended', final=dict(kind='waiting', body='```json\n' + json.dumps(request(resumed)) + '\n```'))
+    reply = {**request(resumed), 'node_steps': node_steps, 'sha': 'untrusted-reply-sha'}
+    body = '```json\n' + json.dumps(reply) + '\n```' if reply_format == 'json' else node_steps or ''
+    resumed.update(phase='ended', final=dict(kind='waiting', body=body))
     runner.apply_final(item, resumed)
     runner.fence.publish.assert_not_called()
     runner.github.open.assert_not_called()
-    assert item['attention']['kind'] == 'node-step'
+    assert resumed['sha'] == 'merged-sha'
+    if node_steps and node_steps.strip():
+        assert item['attention']['kind'] == 'node-step'
+        assert item['attention']['body'] == node_steps
+        assert resumed['phase'] == 'node-step'
+    else:
+        assert item['state'] == 'in review'
+        assert item['attention'] is None
+        assert item['log'][-2]['event'] == 'finished'
     resumed.update(phase='ended', final=dict(kind='handover', body='Handover'))
     runner.apply_final(item, resumed)
     assert item['state'] == 'in review'
@@ -1140,7 +1152,8 @@ def test_post_merge_review_session_does_not_resubmit_or_publish(ticket_runner):
     assert resumed['sha'] == 'merged-sha'
     assert not resumed.get('review')
     runner.fence.publish = Mock(side_effect=AssertionError('cannot publish after merge'))
-    processes.finish('waiting', '```json\n' + json.dumps(request(resumed)) + '\n```')
+    reply = {**request(resumed), 'node_steps': 'Install the merged commit'}
+    processes.finish('waiting', '```json\n' + json.dumps(reply) + '\n```')
     runner.run()
     assert state.load(runner.path)['slices'][0]['attention']['kind'] == 'node-step'
     data = state.load(runner.path)
