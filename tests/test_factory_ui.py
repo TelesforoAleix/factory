@@ -2,6 +2,12 @@ from factory_ui import create_app
 
 
 class Store:
+    def slice_policy(self, identifier):
+        return None
+
+    def slice_executor(self, item):
+        return item['executor']
+
     def load(self):
         return {'slices': [{
             'id': 'demo/one', 'title': 'Example', 'state': 'ready', 'repo': 'owner/repo',
@@ -23,7 +29,7 @@ def test_slice_views_omit_private_fields_and_redact_paths():
     assert 'brief' not in item and 'session' not in item
     assert item['final'] is None
     assert '<script>' in item['attention']['body']
-    assert client.get('/api/slices/demo/one').get_json() == item
+    assert client.get('/api/slices/demo/one').get_json() == {**item, 'level': None}
     assert client.get('/api/slices/demo/missing').status_code == 404
 
 
@@ -241,3 +247,34 @@ def test_inbox_owner_route_guard_and_dispatch():
     assert client.post(path, json={'route': 'Rejected', 'reason': 'No'}, headers=headers).json['route'] == 'Rejected'
     store.inbox_reject.assert_called_once_with(42, 'No', actor='owner')
     assert client.post(path, json={'route': 'chat', 'chat': 'secretary'}, headers=headers).status_code == 400
+
+
+def test_slice_level_changes_only_before_issue_and_preserves_overrides():
+    from contextlib import nullcontext
+    class PolicyStore(Store):
+        def __init__(self):
+            self.state = 'planned'
+            self.policy = {'level': 'light', 'overrides': {'model': 'custom'}}
+        def locked(self):
+            return nullcontext()
+        def load(self):
+            data = super().load()
+            data['slices'][0]['state'] = self.state
+            return data
+        def slice_policy(self, identifier):
+            return self.policy
+        def slice_level(self, identifier, level, overrides):
+            self.policy = {'level': level, 'overrides': overrides}
+    store = PolicyStore()
+    client = create_app(store).test_client()
+    headers = {'X-Factory-UI': '1'}
+    for status in ('planned', 'ready'):
+        store.state = status
+        assert client.post('/api/slices/demo/one/level', headers=headers, json={'level': 'strong'}).status_code == 200
+        assert store.policy == {'level': 'strong', 'overrides': {'model': 'custom'}}
+    store.policy = None
+    assert client.post('/api/slices/demo/one/level', headers=headers, json={'level': 'light'}).status_code == 200
+    assert store.policy['overrides'] == {}
+    store.state = 'issued'
+    assert client.post('/api/slices/demo/one/level', headers=headers, json={'level': 'standard'}).status_code == 400
+    assert client.post('/api/slices/demo/one/level', headers=headers, json={'level': 'bad'}).status_code == 400

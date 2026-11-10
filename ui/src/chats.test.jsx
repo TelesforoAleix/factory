@@ -44,13 +44,14 @@ test('assistant Markdown is rendered while owner text stays literal', async () =
 });
 
 test('project orchestrator shows its name and saves model settings', async () => {
-  const chat = {id:7,title:'FAC',kind:'project',project:'FAC',project_name:'Factory',area:'factory',tool:'codex',model:'old',state:'idle'};
-  const fetchMock = vi.fn(async (url, options) => ({ok:true,json:async () => url === '/api/projects' ? [{key:'FAC',name:'Factory',active:true}] : url === '/api/chats' ? [chat] : url.endsWith('/open') ? {chat,messages:[]} : url.endsWith('/messages') ? [] : url.endsWith('/usage') ? {} : options?.method === 'PATCH' ? {...chat,...JSON.parse(options.body)} : chat}));
+  const chat = {id:7,title:'FAC',kind:'project',project:'FAC',project_name:'Factory',area:'factory',tool:'codex',model:'old',effort:'low',in_list:false,state:'idle'};
+  const fetchMock = vi.fn(async (url, options) => ({ok:true,json:async () => url === '/api/settings/models' ? {models:[{tool:'codex',model:'old',label:'old',efforts:['low']},{tool:'claude',model:'new',label:'new',efforts:['high']}]} : url === '/api/projects' ? [{key:'FAC',name:'Factory',active:true}] : url === '/api/chats' ? [chat] : url.endsWith('/open') ? {chat,messages:[]} : url.endsWith('/messages') ? [] : url.endsWith('/usage') ? {} : options?.method === 'PATCH' ? {...chat,...JSON.parse(options.body)} : chat}));
   vi.stubGlobal('fetch', fetchMock);
   render(<MemoryRouter initialEntries={['/chats/7']}><App/></MemoryRouter>);
   expect(await screen.findByText('Project orchestrators')).toBeTruthy();
   expect(await screen.findByText('Project orchestrator · Factory')).toBeTruthy();
   expect(screen.getAllByText('Factory').length).toBeGreaterThan(1);
+  expect(screen.getByText('Current choice is not in the stored model list.')).toBeTruthy();
   fireEvent.click(screen.getByRole('button',{name:'Change model'}));
   fireEvent.keyDown(document, {key:'Escape'});
   expect(screen.queryByLabelText('Chat tool')).toBeNull();
@@ -63,6 +64,9 @@ test('project orchestrator shows its name and saves model settings', async () =>
   fireEvent.click(screen.getByRole('button',{name:'Save'}));
   await waitFor(() => expect(fetchMock.mock.calls.some(([url,o]) => url === '/api/chats/7' && o?.method === 'PATCH' && JSON.parse(o.body).model === 'new')).toBe(true));
   await waitFor(() => expect(screen.queryByLabelText('Chat model')).toBeNull());
+  fireEvent.click(screen.getByRole('button',{name:'Change model'}));
+  fireEvent.click(screen.getByRole('button',{name:'Use role default'}));
+  await waitFor(() => expect(fetchMock.mock.calls.some(([url,o]) => url === '/api/chats/7' && o?.method === 'PATCH' && o.body === JSON.stringify({tool:null,model:null,effort:null}))).toBe(true));
 });
 
 test('inactive chats retain owner waits and archives', async () => {

@@ -512,3 +512,9 @@ header .project-nav { margin-left: auto; min-width: 0; overflow-x: auto; flex-wr
 .ideas-list details summary { padding: var(--space-3) 0; cursor: pointer; }
 .ideas-detail { overflow-wrap: anywhere; }
 @media (max-width: 700px) { .ideas-open .ideas-heading, .ideas-open .ideas-list { display: none; } .ideas-open .desktop-panel { width: 100%; } body:has(.ideas-open) .shell > header { display: none; } }
+.settings-choice { border-bottom: 1px solid var(--rule); padding: var(--space-3) 0; }
+.model-selects { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.model-selects label { min-width: 0; max-width: 100%; flex: 1 1 10rem; }
+.model-selects select { width: 100%; max-width: 100%; }
+.settings-choice input[type=number] { display: block; max-width: 10rem; }
+.chat-settings-panel .model-selects, .phone-chat-menu-panel .model-selects { display: block; }
