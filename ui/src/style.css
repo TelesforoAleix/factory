@@ -518,3 +518,23 @@ header .project-nav { margin-left: auto; min-width: 0; overflow-x: auto; flex-wr
 .model-selects select { width: 100%; max-width: 100%; }
 .settings-choice input[type=number] { display: block; max-width: 10rem; }
 .chat-settings-panel .model-selects, .phone-chat-menu-panel .model-selects { display: block; }
+
+.settings-roles { width: 100%; table-layout: fixed; margin-bottom: var(--space-3); }
+.settings-roles th, .settings-roles td { min-width: 0; padding: var(--space-2); }
+.settings-roles select { min-width: 0; margin: 0; }
+.settings-roles td label { font-size: 0; }
+.settings-roles td select { font-size: 1rem; }
+.settings-roles p { font-size: .85rem; font-weight: normal; }
+.settings-limits { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--space-4); margin-bottom: var(--space-3); }
+.settings-limits .settings-choice { display: grid; grid-template-columns: minmax(0, 1fr) 6rem; align-items: center; gap: var(--space-1) var(--space-3); }
+.settings-limits label { display: contents; }
+.settings-limits input[type=number] { grid-column: 2; grid-row: 1 / 3; margin: 0; }
+.settings-limits small { grid-column: 1; }
+@media (max-width: 600px) {
+  .settings-roles, .settings-roles tbody, .settings-roles tr, .settings-roles th, .settings-roles td { display: block; width: 100%; }
+  .settings-roles thead { display: none; }
+  .settings-roles tr { border-bottom: 1px solid var(--rule); padding: var(--space-2) 0; }
+  .settings-roles th, .settings-roles td { border: 0; }
+  .settings-roles td label { display: grid; grid-template-columns: 5rem minmax(0, 1fr); align-items: center; font-size: 1rem; }
+  .settings-limits { grid-template-columns: minmax(0, 1fr); }
+}
