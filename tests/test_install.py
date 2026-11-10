@@ -20,8 +20,55 @@ from cplane.runner import Runner
 from cplane.stores import FileStore
 from factory_ui import create_app
 from test_stores import pg_store
+from test_runner import setup, claude_start, edit, item, pr_reply
 
 SHA = 'a' * 40
+
+
+@pytest.mark.parametrize('reply_format', ['text', 'fenced-json', 'json'])
+def test_node_step_after_null_merge_is_installable(setup, tmp_path, monkeypatch, reply_format):
+    runner, processes, github = setup
+    monkeypatch.setenv('CPLANE_RUNS', str(runner.runs.parent))
+    monkeypatch.setenv('CPLANE_STATE', str(runner.path))
+    monkeypatch.setenv('CPLANE_INSTALL_REPOS', item(runner)['repo'])
+    monkeypatch.setattr(install_host, 'INSTALL_ROOT', tmp_path)
+    edit(runner, lambda s: s.update(stop_before_merge=False))
+    github.merge.return_value = SHA
+    claude_start(runner)
+    processes.finish('waiting', pr_reply(None))
+    runner.run()
+    github.checks.return_value = 'green', ''
+    runner.run()
+    assert processes.started[-1]['sha'] == SHA
+    assert item(runner)['attention'] is None
+    reply = 'Install the merged commit; ignore reply sha ' + 'b' * 40
+    if reply_format != 'text':
+        reply = json.dumps(dict(branch='ignored', title='ignored', body='ignored',
+                                node_steps='Install the merged commit', sha='b' * 40))
+        if reply_format == 'fenced-json':
+            reply = '```json\n' + reply + '\n```\nHandover details'
+    processes.finish('waiting', reply)
+    runner.run()
+    newest = runner.jobs['voice/W1']
+    assert newest['phase'] == 'node-step'
+    assert newest['sha'] == SHA
+    assert json.loads((Path(newest['run']) / 'job.json').read_text())['phase'] == 'node-step'
+    assert item(runner)['attention']['kind'] == 'node-step'
+    assert main(['--state', str(runner.path), 'install', 'voice/W1']) == 0
+    with monkeypatch.context() as patch:
+        patch.setattr(installation.subprocess, 'run', Mock(return_value=SimpleNamespace(
+            stdout='LoadState=not-found', returncode=0)))
+        start = Mock(return_value=True)
+        patch.setattr(installation, 'start_unit', start)
+        runner.run()
+        start.assert_called_once()
+        assert item(runner)['attention']['kind'] == 'node-step'
+    paths = script_archive(monkeypatch, 'import json; print(json.dumps({"manual": []}))')
+    request = next(installation.pending(state.load(runner.path)))[1]
+    assert install_host.install('voice/W1', request) == {'ok': True, 'commit': SHA, 'manual': []}
+    assert paths == [f'compare/{SHA}...main', f'tarball/{SHA}']
+    github.open.assert_called_once()
+    github.merge.assert_called_once()
 
 
 def node_step(item):
