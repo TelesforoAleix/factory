@@ -503,9 +503,16 @@ header .project-nav { margin-left: auto; min-width: 0; overflow-x: auto; flex-wr
   .library-back { position: absolute; top: 0; left: 0; padding-top: 10px; }
   .phone-document-header h2 { padding: 10px 0 0 90px; min-height: 44px; }
 }
+.ideas-navigation { align-items: center; flex-wrap: wrap; gap: var(--space-3); }
+.ideas-tabs { display: flex; flex-wrap: nowrap; }
+.ideas-tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; white-space: nowrap; }
+.ideas-tabs button[aria-selected=true] { border-bottom-color: var(--signal-mark); }
 .ideas-layout { display: flex; gap: var(--space-4); align-items: flex-start; }
 .ideas-list { flex: 1; min-width: 0; }
 .idea-row { padding: var(--space-3) 0; border-bottom: 1px solid var(--rule); }
+.inbox-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); }
+.inbox-row .idea-open { flex: 1 1 0; min-width: 0; }
+.inbox-row .actions, .inbox-row form { flex-basis: 100%; }
 .idea-row:has(input[type=checkbox]) { display: flex; gap: var(--space-2); align-items: baseline; }
 .idea-open { display: block; text-align: left; padding: 0; border: 0; background: transparent; color: inherit; }
 .idea-open small { display: block; color: var(--secondary); }
