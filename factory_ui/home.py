@@ -58,8 +58,9 @@ def home_data(store, board, clean, view):
     paused_notices = {n.get('chat'): n for n in notices if n.get('event') == 'chat-paused'}
     for n in notices:
         c = by_chat.get(n.get('chat'))
-        decision = n.get('event') == 'owner-check' and c and (not c.get('last_read_at') or c['last_read_at'] < n['at'])
-        paused = n.get('event') == 'chat-paused' and c and c.get('auto_paused') and paused_notices[c['id']] is n
+        unread = c and (not c.get('last_read_at') or c['last_read_at'] < n['at'])
+        decision = n.get('event') == 'owner-check' and unread
+        paused = n.get('event') == 'chat-paused' and unread and c.get('auto_paused') and paused_notices[c['id']] is n
         if decision or paused:
             add('decision', c.get('feature') or str(c['id']), n['at'], project=c.get('project'), chat=c['id'], text=clean(n.get('text', '')))
     waiting = {f['id'] for s in slices if (f := linked.get(s['id'])) and f['stage'] == 'building'

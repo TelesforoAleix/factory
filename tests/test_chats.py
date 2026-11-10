@@ -557,6 +557,33 @@ def test_archive_cli_api_skips_events_without_replay_and_owner_runs(pg_store, ca
     assert pg_store.claim_session_turn()['text'] == 'Fresh automatic event'
 
 
+def test_reading_paused_chat_clears_home_decisions_without_resuming(pg_store):
+    from datetime import timedelta
+    from cplane.times import now
+
+    _, chat = feature_chat(pg_store)
+    sid = chat['id']
+    past = (now() - timedelta(minutes=1)).isoformat()
+    with pg_store.mutation():
+        pg_store.connection.execute('UPDATE cplane_sessions SET auto_paused = true, last_read_at = NULL WHERE id = %s', (sid,))
+        pg_store.append_notices([
+            dict(event='owner-check', at=past, chat=sid, text='Check'),
+            dict(event='chat-paused', at=past, chat=sid, text='Paused'),
+        ])
+    client = create_app(pg_store).test_client()
+    def decisions():
+        return [a['text'] for a in client.get('/api/home').json['attention'] if a['kind'] == 'decision']
+
+    assert decisions() == ['Check', 'Paused']
+    assert client.post(f'/api/chats/{sid}/open', headers={'X-Factory-UI': '1'}).status_code == 200
+    assert decisions() == []
+    assert pg_store.chat_show(sid)['auto_paused']
+    with pg_store.mutation():
+        pg_store.append_notices([dict(event='chat-paused', at=(now() + timedelta(minutes=1)).isoformat(),
+                                      chat=sid, text='Paused again')])
+    assert decisions() == ['Paused again']
+
+
 def test_archive_running_turn_finishes_and_hides_home_marks(pg_store):
     from cplane.times import now
     identifier, chat = feature_chat(pg_store)

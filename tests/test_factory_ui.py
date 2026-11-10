@@ -205,6 +205,35 @@ def test_home_projection_orders_attention_and_discards_stale_stuck(monkeypatch):
     assert client.get('/api/home').get_json()['attention'][0]['installable'] is False
 
 
+def test_home_chat_decisions_follow_read_and_latest_pause():
+    from factory_ui.home import home_data
+
+    chat = dict(id=1, kind='feature', feature='FAC-F1', project='FAC', title='Chat',
+                waiting=False, auto_paused=True, last_read_at=None)
+    notices = [dict(event='owner-check', chat=1, at='2026-01-01T00:00:00Z', text='Check'),
+               dict(event='chat-paused', chat=1, at='2026-01-01T00:01:00Z', text='Paused')]
+
+    class HomeStore:
+        def load(self): return dict(slices=[])
+        def chats(self, **kwargs): return [chat]
+        def notices(self): return list(enumerate(notices))
+        def limit_show(self): return dict(waiting_limit=1)
+
+    def cards():
+        return home_data(HomeStore(), dict(features=[], projects=[]), lambda value: value, None)['attention']
+
+    assert [card['text'] for card in cards()] == ['Check', 'Paused']
+    chat['last_read_at'] = '2026-01-01T00:02:00Z'
+    assert cards() == []
+    assert chat['auto_paused'] is True
+    notices.append(dict(event='chat-paused', chat=1, at='2026-01-01T00:03:00Z', text='Paused again'))
+    assert [card['text'] for card in cards()] == ['Paused again']
+    chat['last_read_at'] = None
+    assert [card['text'] for card in cards()] == ['Check', 'Paused again']
+    chat['auto_paused'] = False
+    assert [card['text'] for card in cards()] == ['Check']
+
+
 def test_chat_responses_include_project_name_and_fallback():
     class ChatStore:
         def library_projects(self):
