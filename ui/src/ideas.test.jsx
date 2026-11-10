@@ -50,3 +50,14 @@ test('phone detail has a back control and hides the list with its workspace clas
   fireEvent.click(screen.getByRole('button',{name:'← Back'}));
   expect(container.querySelector('.ideas-open')).toBeNull();
 });
+
+test('tabs reflect the selected view and switch views', async () => {
+  setup();
+  const inbox = await screen.findByRole('tab', {name:'Inbox', selected:true});
+  const ideas = screen.getByRole('tab', {name:'Ideas', selected:false});
+  expect(screen.getByRole('tablist', {name:'Ideas views'})).toBeTruthy();
+  fireEvent.click(ideas);
+  expect(screen.getByRole('tab', {name:'Ideas', selected:true})).toBeTruthy();
+  expect(inbox.getAttribute('aria-selected')).toBe('false');
+  expect(await screen.findByRole('checkbox', {name:'Select Useful idea'})).toBeTruthy();
+});
