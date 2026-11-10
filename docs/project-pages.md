@@ -116,3 +116,5 @@ including **297 Postgres tests passed**. `npm test`: **56 tests passed** across
 (Vite reports the existing large-chunk advisory). `git diff --check` passed.
 CI `test` and `ui`, owner-node timing and browser verification remain runner/node
 checks; they have not been claimed as completed here.
+
+Settings also shows the stored model list and lets owners queue refreshes for Codex and Claude. Roles choose a tool, model and effort from that list, and Limits saves each capacity separately. Chat model overrides use the same stored choices and can be cleared to the role default; planned and ready slices can select an executor level.

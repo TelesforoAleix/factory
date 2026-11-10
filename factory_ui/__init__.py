@@ -233,11 +233,36 @@ def create_app(store=None):
         except Exception:
             return jsonify(error='State unavailable'), 503
 
+    @app.post('/api/slices/<path:slice_id>/level')
+    def set_slice_level(slice_id):
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict) or set(payload) != {'level'} or payload['level'] not in ('light', 'standard', 'strong'):
+            return jsonify(error='Choose an executor level'), 400
+        try:
+            store = backend()
+            with store.locked():
+                item = next((item for item in store.load()['slices'] if item['id'] == slice_id), None)
+                if item is None:
+                    return jsonify(error='Slice not found'), 404
+                if item['state'] not in ('planned', 'ready'):
+                    return jsonify(error='Level can only change while planned or ready'), 400
+                policy = store.slice_policy(slice_id)
+                store.slice_level(slice_id, payload['level'], policy['overrides'] if policy else {})
+                return jsonify(level=payload['level'], executor={k: clean(v) for k, v in store.slice_executor(item).items()})
+        except state.StateError as error:
+            return jsonify(error=clean(str(error))), 400
+        except Exception:
+            return jsonify(error='State unavailable'), 503
+
     @app.get('/api/slices/<path:slice_id>')
     def slice_detail(slice_id):
         try:
             item = next((item for item in slices() if item['id'] == slice_id), None)
-            return (jsonify(view(item)) if item else (jsonify(error='Slice not found'), 404))
+            if not item:
+                return jsonify(error='Slice not found'), 404
+            store = backend()
+            policy = store.slice_policy(slice_id)
+            return jsonify({**view(item), 'level': policy['level'] if policy else None, 'executor': {k: clean(v) for k, v in store.slice_executor(item).items()}})
         except Exception:
             return jsonify(error='State unavailable'), 503
 
