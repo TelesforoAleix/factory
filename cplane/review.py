@@ -13,11 +13,15 @@ VALIDATOR = Draft202012Validator(
     json.loads(files('schema').joinpath('review.schema.json').read_text()))
 
 
-def validate(answer):
+def validate(answer, *, store=None, job=None):
     if not VALIDATOR.is_valid(answer):
         raise StateError('invalid review: expected pass with title/body or fix with tickets/test_files')
     if answer['verdict'] == 'fix':
         cut.validate_plan({key: answer[key] for key in ('tickets', 'test_files')})
+
+    if store is not None and job is not None:
+        from .run_records import outcome
+        outcome(store, job, verdict=answer['verdict'])
 
 
 def prepare(adapter, previous, copy_id):

@@ -1924,3 +1924,30 @@ def test_stuck_since_detects_idle_and_pending_checks():
     assert stuck_since(item, instant) is None
     item['state'] = 'accepted'
     assert stuck_since(item, instant) is None
+
+
+def test_ci_reads_record_both_heads_without_changing_delivery(setup, monkeypatch):
+    r, _, _ = setup
+    r.run()
+    current = r.data['slices'][0]
+    job = r.jobs[current['id']]
+    job['phase'] = 'pr'
+    current.update(pr=12, attention=None, stop_before_merge=True)
+    store = Mock()
+    monkeypatch.setattr(state, 'postgres', lambda: True)
+    monkeypatch.setattr(state, 'store', lambda _: store)
+    github = GitHub()
+    github.repository = Mock(return_value='example/repo')
+    github.call = Mock(side_effect=[
+        json.dumps(dict(headRefOid='a' * 40, statusCheckRollup=[dict(name='test', conclusion='FAILURE')])),
+        json.dumps(dict(headRefOid='b' * 40, statusCheckRollup=[dict(name='test', conclusion='SUCCESS')]))])
+    r.github = github
+    r.pr_checks(current, job)
+    assert current['attention']['kind'] == 'escalation'
+    current['attention'] = None
+    r.pr_checks(current, job)
+    assert current['attention']['kind'] == 'merge'
+    observations = [call.kwargs['ci'] for call in store.run_record_outcome.call_args_list if 'ci' in call.kwargs]
+    assert observations == [dict(sha='a' * 40, status='red', failing_job='test'),
+                            dict(sha='b' * 40, status='green', failing_job=None)]
+    assert job['phase'] == 'pr'
