@@ -13,7 +13,21 @@ import pytest
 from cplane import state
 from cplane.cli import change_for, main
 from cplane.runner import Git, Runner
-from cplane.stores import FileStore, PostgresStore
+from cplane.stores import PostgresStore
+
+
+def test_store_requires_database_url(synthetic_store, monkeypatch, tmp_path):
+    monkeypatch.delenv('CPLANE_DATABASE_URL', raising=False)
+    with pytest.raises(state.StateError, match='Postgres connection failed'):
+        synthetic_store(tmp_path / 'state.json')
+
+
+def test_store_selects_postgres(synthetic_store, monkeypatch, tmp_path):
+    factory = Mock(return_value=object())
+    monkeypatch.setenv('CPLANE_DATABASE_URL', 'postgresql://synthetic')
+    monkeypatch.setattr('cplane.stores.PostgresStore', factory)
+    assert synthetic_store(tmp_path / 'state.json') is factory.return_value
+    factory.assert_called_once_with('postgresql://synthetic')
 
 
 @pytest.fixture
@@ -46,12 +60,9 @@ def pg_store(monkeypatch, request):
             connection.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(name)))
 
 
-@pytest.fixture(params=['file', 'postgres'])
+@pytest.fixture
 def backend(request, make_state, monkeypatch):
-    monkeypatch.delenv('CPLANE_DATABASE_URL', raising=False)
     path = make_state()
-    if request.param == 'file':
-        return path, FileStore(path)
     pg = request.getfixturevalue('pg_store')
     pg.import_file(path)
     path.unlink()
@@ -344,7 +355,7 @@ def test_runner_uses_stored_brief_and_keeps_resume_copy(pg_store, tmp_path, monk
     from conftest import seed_model_choices
     seed_model_choices(pg_store)
     from datetime import datetime, timezone
-    from test_runner import FakeProcesses, FakeGitHub
+    from test_runner import FakeProcesses, FakeGitHub, assert_prompt
     from cplane.workshop import Workshop
     store = pg_store
     with store.mutation():
@@ -365,9 +376,19 @@ def test_runner_uses_stored_brief_and_keeps_resume_copy(pg_store, tmp_path, monk
                     clock=lambda: datetime(2026, 11, 8, tzinfo=timezone.utc),
                     codex_reader=lambda: 10, claude_reader=lambda: None,
                     runs=tmp_path / 'runs', repos=tmp_path / 'repos')
+    from cplane import fence
+    trusted = fence.trusted_directory
+    monkeypatch.setattr(fence, 'trusted_directory',
+                        lambda path: None if Path(path) == runner.runs else trusted(path))
+    metadata = dict(repo=str(repo), repository='example/repo',
+                    branch='slice/' + created['id'].replace('/', '-'), base='a' * 40)
+    runner.fence = Mock()
+    runner.fence.prepare.return_value = metadata
+    runner.fence.resume.side_effect = lambda previous, session: {
+        key: previous[key] for key in metadata}
     runner.run()
     assert len(processes.started) == 1
-    assert processes.started[0]['prompt'] == brief
+    assert_prompt(processes.started[0], brief)
     assert store.load()['slices'][0]['state'] == 'issued'
     job = runner.jobs[created['id']]
     assert job['brief'] == brief
@@ -381,3 +402,4 @@ def test_runner_uses_stored_brief_and_keeps_resume_copy(pg_store, tmp_path, monk
     assert len(processes.started) == 2
     assert processes.started[-1]['resume'] == 'session-1'
     assert processes.started[-1]['brief'] == brief
+    runner.fence.resume.assert_called_once()

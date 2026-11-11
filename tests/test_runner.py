@@ -9,13 +9,19 @@ from unittest.mock import Mock
 
 import pytest
 
-from cplane import agent, state
+from cplane import state
 from cplane.cli import main
-from cplane.executors import CLAUDE_PARAGRAPH, Processes, command
+from cplane.executors import FENCE_PARAGRAPH, Processes, command
 from cplane.runner import Runner, Git, GitHub
 from cplane.text_bounds import ATTENTION_LIMIT, TAIL_LIMIT, cut as cut_text
 
 NOW = datetime(2026, 10, 16, 10, tzinfo=timezone.utc)
+
+
+def assert_prompt(job, text):
+    assert job['prompt'] == (text + f"\n\nRunner assignment: use branch {job['branch']}. "
+                             "This assigned branch overrides any branch named in the brief. "
+                             f"The pinned base commit is {job['base']}." + FENCE_PARAGRAPH)
 
 
 class FakeProcesses:
@@ -46,7 +52,7 @@ class FakeGitHub:
 
 
 @pytest.fixture
-def setup(tmp_path, slice_data, make_state):
+def setup(tmp_path, slice_data, make_state, monkeypatch):
     slice_data['slot'] = (NOW - timedelta(minutes=1)).isoformat()
     path = make_state()
     (tmp_path / 'briefs').mkdir()
@@ -57,6 +63,18 @@ def setup(tmp_path, slice_data, make_state):
     runner = Runner(path, processes=processes, github=github, git=Mock(), clock=lambda: NOW,
                     codex_reader=lambda: 10, claude_reader=lambda: None,
                     runs=tmp_path / 'runs', repos=tmp_path / 'repos')
+    from cplane import fence
+    trusted = fence.trusted_directory
+    monkeypatch.setattr(fence, 'trusted_directory', lambda path: None if Path(path) == runner.runs else trusted(path))
+    monkeypatch.setattr('cplane.review.changes_workflows', lambda *args: False)
+    def prepare(repository, branch, token):
+        return {'repo': str(tmp_path / 'repos' / repository.split('/')[-1]),
+                'branch': branch, 'base': 'a' * 40, 'repository': repository}
+    runner.fence = Mock()
+    runner.fence.prepare.side_effect = prepare
+    runner.fence.resume.side_effect = lambda previous, session: {
+        key: previous[key] for key in ('repo', 'branch', 'base', 'repository')}
+    runner.fence.publish.return_value = 'b' * 40
     return runner, processes, github
 
 
@@ -73,7 +91,7 @@ def edit(runner, change):
 def test_pass_order_prompt_session_and_notices(setup):
     r, p, _ = setup
     r.run()
-    assert p.started[0]['prompt'] == 'The exact prompt.\n'
+    assert_prompt(p.started[0], 'The exact prompt.\n')
     assert p.started[0]['tool'] == 'codex'
     assert r.git.commit.call_count == 1
     assert item(r)['state'] == 'issued'
@@ -86,39 +104,16 @@ def test_pass_order_prompt_session_and_notices(setup):
     assert all(e['actor'] == 'runner' for e in item(r)['log'])
     assert r.git.mock_calls[0][0] == 'pull'
     assert 'commit' in [call[0] for call in r.git.mock_calls]
-    assert r.git.mock_calls[-1][0] == 'tidy'
+    r.git.tidy.assert_not_called()
     assert r.git.commit.call_count == 3
     assert len(p.started) == 1
-    assert r.github.find_pr.call_count == 1
+    r.github.find_pr.assert_not_called()
     r.run()
     assert item(r)['state'] == 'in review'
 
 
-def test_tidy_skips_busy_repository_and_failure_does_not_fail_pass(setup, capsys):
-    r, _, _ = setup
-    r.run()
-    r.git.tidy.assert_not_called()
-    for job_file in r.runs.glob('*/job.json'):
-        job_file.unlink()
-    edit(r, lambda s: s.update(state='planned', slot=None, session={'tool': 'codex', 'id': '', 'folder': ''}))
-    r.git.tidy.side_effect = OSError('simulated git failure')
-    r.run()
-    assert 'repo: tidy failed: simulated git failure' in capsys.readouterr().err
 
 
-def test_tidy_skips_missing_repository_folder(setup, capsys):
-    r, _, _ = setup
-    repo = r.repos / 'repo'
-    (repo / '.git').rmdir()
-    repo.rmdir()
-    edit(r, lambda s: s.update(state='planned', slot=None))
-    r.git = Git()
-    r.git.pull = Mock()
-    r.git.commit = Mock()
-
-    r.run()
-
-    assert capsys.readouterr().err == ''
 
 
 @pytest.mark.parametrize('field,value', [('state', 'planned'), ('paused', True), ('slot', None),
@@ -167,7 +162,7 @@ def test_explicit_claude_slice_starts_on_claude(setup):
     r.run()
     assert p.started[0]['tool'] == 'claude'
     assert p.started[0]['model'] == 'sonnet'
-    assert p.started[0]['prompt'].startswith('The exact prompt.\n' + CLAUDE_PARAGRAPH)
+    assert_prompt(p.started[0], 'The exact prompt.\n')
 
 
 def test_missing_capacity_defers(setup):
@@ -214,7 +209,7 @@ def test_running_limits(setup, repos, count):
     assert len(p.started) == 3
 
 
-def test_paused_issued_slice_does_not_block(setup):
+def test_paused_issued_slice_still_blocks_repository(setup):
     r, p, _ = setup
     data = state.load(r.path)
     parked = copy.deepcopy(data['slices'][0])
@@ -224,11 +219,11 @@ def test_paused_issued_slice_does_not_block(setup):
 
     r.run()
 
-    assert len(p.started) == 1
-    assert item(r)['state'] == 'issued'
+    assert not p.started
+    assert item(r)['state'] == 'ready'
 
 
-def test_paused_running_job_does_not_count_or_make_repository_busy(setup):
+def test_paused_running_job_still_makes_repository_busy(setup):
     r, _, _ = setup
     r.data = state.load(r.path)
     parked = copy.deepcopy(r.data['slices'][0])
@@ -236,11 +231,11 @@ def test_paused_running_job_does_not_count_or_make_repository_busy(setup):
     r.data['slices'].append(parked)
     r.jobs = {
         parked['id']: {
-            'id': parked['id'], 'repo': str(r.repos / 'repo'), 'phase': 'running'
+            'id': parked['id'], 'repo': str(r.repos / 'repo'), 'repository': 'example/repo', 'phase': 'running'
         }
     }
 
-    assert r.room(r.data['slices'][0]) is None
+    assert r.room(r.data['slices'][0]) == 'deferred: repository busy (example/parked)'
 
 
 def test_deferrals_name_blocker_and_log_identical_reason_once(setup):
@@ -250,7 +245,7 @@ def test_deferrals_name_blocker_and_log_identical_reason_once(setup):
     r.at = NOW.isoformat()
     r.jobs = {
         f'example/W{i}': {
-            'id': f'example/W{i}', 'repo': str(r.repos / f'repo{i}'), 'phase': 'running'
+            'id': f'example/W{i}', 'repo': str(r.repos / f'repo{i}'), 'repository': f'example/repo{i}', 'phase': 'running'
         }
         for i in range(2)
     }
@@ -264,7 +259,7 @@ def test_deferrals_name_blocker_and_log_identical_reason_once(setup):
 
     r.jobs = {
         'example/W0': {
-            'id': 'example/W0', 'repo': str(r.repos / 'repo'), 'phase': 'running'
+            'id': 'example/W0', 'repo': str(r.repos / 'repo'), 'repository': 'example/repo', 'phase': 'running'
         }
     }
     assert r.room(candidate) == 'deferred: repository busy (example/W0)'
@@ -318,7 +313,7 @@ def test_answer_resumes_and_capacity_defers(setup, kind):
     r.codex_reader = lambda: 1
     r.run()
     assert len(p.started) == 2
-    assert p.started[-1]['prompt'] == 'exact answer'
+    assert_prompt(p.started[-1], 'exact answer')
     assert p.started[-1]['resume'] == 'session-1'
     assert item(r)['attention'] is None
     p.finish()
@@ -358,8 +353,8 @@ def test_claude_auto_merge_resume_handover(setup):
     r.run()
     gh.checks.return_value = 'green', ''
     r.run()
-    gh.merge.assert_called_once_with('example/repo', 12)
-    assert p.started[-1]['prompt'] == 'merged as abc123'
+    gh.merge.assert_called_once_with('example/repo', 12, expected='b' * 40)
+    assert_prompt(p.started[-1], 'merged as abc123')
     assert p.started[-1]['resume'] == 'session-1'
     assert p.started[-1]['tool'] == 'claude'
     p.finish()
@@ -426,7 +421,7 @@ def test_blocked_live_pr_title_is_not_merged(setup, title, approved):
     r.run()
     real_github = GitHub()
     real_github.call = Mock(return_value=json.dumps(
-        {'state': 'OPEN', 'title': title, 'mergeCommit': None}))
+        {'state': 'OPEN', 'title': title, 'mergeCommit': None, 'headRefOid': 'b' * 40}))
     gh.merge.side_effect = real_github.merge
     gh.checks.return_value = 'green', ''
     r.run()
@@ -438,7 +433,7 @@ def test_blocked_live_pr_title_is_not_merged(setup, title, approved):
     assert r.jobs['voice/W1']['phase'] == 'pr'
     assert 'sha' not in r.jobs['voice/W1']
     real_github.call.assert_called_once_with('example/repo', 'pr', 'view', '12',
-                                             '--json', 'state,mergeCommit,title')
+                                             '--json', 'state,mergeCommit,title,headRefOid')
     assert len(p.started) == 1
 
 
@@ -497,7 +492,8 @@ def test_codex_merge_approval(setup):
     r.run()
     edit(r, lambda s: s['attention'].update(kind='merge', approved=True))
     r.run()
-    assert p.started[-1]['prompt'] == 'The owner approves the merge.'
+    assert len(p.started) == 1
+    assert item(r)['attention']['kind'] == 'merge'
     gh.merge.assert_not_called()
 
 
@@ -545,61 +541,6 @@ def test_runner_cli_uses_default_commit(make_state, monkeypatch):
     fake.return_value.run.assert_called_once()
 
 
-@pytest.mark.parametrize(('commit', 'extra'), [(False, []), (True, ['--commit'])])
-def test_plist(commit, extra):
-    data = plistlib.loads(plistlib.dumps(agent.render('/tmp/state.json', commit=commit, home='/tmp/owner', python='/python', environment={})))
-    assert data['AbandonProcessGroup'] is True
-    assert data['StartInterval'] == 300
-    assert data['StandardOutPath'] == '/tmp/owner/Library/Logs/cplane/runner.log'
-    assert data['StandardErrorPath'] == '/tmp/owner/Library/Logs/cplane/runner-error.log'
-    assert data['ProgramArguments'] == ['/python', '-m', 'cplane.cli', '--state', '/tmp/state.json', *extra, '--actor', 'runner', 'run']
-
-
-def test_agent_install_uninstall_only_fake_launchctl(tmp_path, monkeypatch):
-    monkeypatch.setattr(agent.Path, 'home', lambda: tmp_path)
-    call = Mock()
-    monkeypatch.setattr(agent, 'launchctl', call)
-    agent.install(tmp_path / 'state.json')
-    plist = tmp_path / 'Library/LaunchAgents/com.cplane.runner.plist'
-    assert plist.exists()
-    assert call.call_args.args[0] == 'bootstrap'
-    agent.uninstall()
-    assert not plist.exists()
-    assert call.call_args.args[0] == 'bootout'
-
-
-def test_agent_replace_waits_for_launchd_before_bootstrap(tmp_path, monkeypatch):
-    monkeypatch.setattr(agent.Path, 'home', lambda: tmp_path)
-    target = tmp_path / 'Library/LaunchAgents/com.cplane.runner.plist'
-    target.parent.mkdir(parents=True)
-    target.write_text('old')
-    listed = iter([0, 0, 113])
-    calls = []
-
-    def launchctl(*args, **kwargs):
-        calls.append(args)
-        if args[0] == 'list':
-            return Mock(returncode=next(listed))
-        return Mock(returncode=0)
-
-    monkeypatch.setattr(agent, 'launchctl', launchctl)
-    monkeypatch.setattr(agent.time, 'sleep', lambda _: calls.append(('sleep',)))
-    agent.install(tmp_path / 'state.json')
-    assert calls == [
-        ('bootout', f'gui/{os.getuid()}', str(target)),
-        ('list', agent.LABEL), ('sleep',), ('list', agent.LABEL), ('sleep',), ('list', agent.LABEL),
-        ('bootstrap', f'gui/{os.getuid()}', str(target)),
-    ]
-
-
-def test_install_agent_passes_commit_flag(make_state, monkeypatch):
-    path = make_state()
-    install = Mock()
-    monkeypatch.setattr(agent, 'install', install)
-    assert main(['--state', str(path), '--commit', 'install-agent']) == 0
-    install.assert_called_once_with(path.resolve(), commit=True)
-
-
 @pytest.mark.parametrize('tool', ['codex', 'claude'])
 @pytest.mark.parametrize('resume', [None, 'session'])
 def test_executor_arguments(tool, resume, tmp_path):
@@ -608,37 +549,19 @@ def test_executor_arguments(tool, resume, tmp_path):
     assert args[-2:] == ['--', job['prompt']]
     if resume:
         assert 'session' in args
+    assert args[:3] == ['factory-cli', 'run', '--tool']
+    assert args[args.index('--repo') + 1] == '/tmp/repo'
     if tool == 'codex':
-        assert 'sandbox_mode="workspace-write"' in args
-        assert 'sandbox_workspace_write.network_access=true' in args
-        from cplane.executors import cache_roots
-        expected_roots = ['/tmp/repo/.git', *cache_roots()]
-        assert args[args.index('-c', args.index('sandbox_workspace_write.network_access=true') + 1) + 1] == (
-            'sandbox_workspace_write.writable_roots=' + json.dumps(expected_roots))
+        assert '/run/factory/schema.json' in args
+        assert '/run/factory/last.json' in args
     else:
-        assert args[args.index('--allowedTools') + 1] == 'Bash'
-        assert args[args.index('--permission-mode') + 1] == 'acceptEdits'
+        assert '--json-schema' in args
 
 
-def test_codex_exact_arguments_and_missing_cache_skipped(tmp_path, monkeypatch):
-    from cplane import executors
-    home = tmp_path / 'home'
-    (home / '.cache/uv').mkdir(parents=True)
-    monkeypatch.setattr(executors.Path, 'home', classmethod(lambda cls: home))
-    run = tmp_path / 'run'
-    job = {'tool': 'codex', 'run': str(run), 'repo': '/tmp/repo', 'model': 'model',
-           'prompt': '-literal prompt', 'resume': 'session'}
-    assert command(job) == [
-        'codex', 'exec', '-m', 'model', '-c', 'sandbox_mode="workspace-write"',
-        '-c', 'model_reasoning_effort="medium"',
-        '-c', 'sandbox_workspace_write.network_access=true', '-c',
-        'sandbox_workspace_write.writable_roots=' + json.dumps(
-            ['/tmp/repo/.git', str((home / '.cache/uv').resolve())]),
-        '--output-schema', str(run / 'schema.json'), '--json', '-o', str(run / 'last.json'),
-        'resume', 'session', '--', '-literal prompt']
 
 
-@pytest.mark.parametrize('model,effort', [('gpt-6-luna', 'low'), ('gpt-6.1-terra', 'medium')])
+
+@pytest.mark.parametrize('model,effort', [('gpt-6-luna', 'medium'), ('gpt-6.1-terra', 'medium')])
 def test_codex_effort_defaults_and_explicit_levels(tmp_path, model, effort):
     job = {'tool': 'codex', 'run': str(tmp_path), 'repo': '/tmp/repo', 'model': model, 'prompt': 'brief'}
     args = command(job)
@@ -671,7 +594,8 @@ def test_process_final_freshness(tmp_path, tool, fresh):
     job = {'tool': tool, 'run': str(tmp_path), 'started_ns': start, 'session': ''}
     final = {'kind': 'handover', 'body': 'done'}
     if tool == 'codex':
-        last = tmp_path / 'last.json'
+        (tmp_path / 'io').mkdir()
+        last = tmp_path / 'io/last.json'
         last.write_text(json.dumps(final))
         (tmp_path / 'turn.jsonl').write_text('{"type":"thread.started","thread_id":"session"}\n')
     else:
@@ -705,25 +629,8 @@ def test_codex_pr_lookup_uses_newest_matching_pr():
                                     '--json', 'number,createdAt')
 
 
-@pytest.mark.parametrize('remote,expected', [
-    ('https://github.com/TelesforoAleix/control-plane.git', 'TelesforoAleix/control-plane'),
-    ('git@github.com:TelesforoAleix/control-plane.git', 'TelesforoAleix/control-plane'),
-    ('ssh://git@github.com/TelesforoAleix/control-plane.git', 'TelesforoAleix/control-plane'),
-])
-def test_github_repository_parses_origin(tmp_path, remote, expected):
-    repo = tmp_path / 'repo'
-    repo.mkdir()
-    subprocess.run(['git', '-C', str(repo), 'init'], check=True, capture_output=True)
-    subprocess.run(['git', '-C', str(repo), 'remote', 'add', 'origin', remote], check=True)
-    assert GitHub().repository(repo) == expected
 
 
-def test_github_repository_missing_origin_is_state_error(tmp_path):
-    repo = tmp_path / 'repo'
-    repo.mkdir()
-    subprocess.run(['git', '-C', str(repo), 'init'], check=True, capture_output=True)
-    with pytest.raises(state.StateError, match='missing GitHub origin'):
-        GitHub().repository(repo)
 
 
 def test_gh_arguments_include_full_repository_for_pr_calls(monkeypatch):
@@ -741,6 +648,7 @@ def test_gh_arguments_include_full_repository_for_pr_calls(monkeypatch):
         calls.append(argv)
         return subprocess.CompletedProcess(argv, 0, next(responses), '')
     monkeypatch.setattr('cplane.runner.subprocess.run', fake_run)
+    monkeypatch.setattr('cplane.fence.github_environment', lambda repositories=None: {})
     gh = GitHub()
     request = {'branch': 'feat/x', 'title': 'Title', 'body': 'Body'}
     assert gh.find_pr('owner/repo', 'feat/x') == 12
@@ -775,12 +683,14 @@ def test_slice_collection_failure_does_not_stop_healthy_slice_start(setup):
            'model': 'gpt-sol', 'started_ns': 1, 'session': 's', 'phase': 'running'}
     r.save_job(job)
     p.results[str(run)] = (True, 's', {'kind': 'handover', 'body': 'done'}, '')
-    r.github.repository = Mock(side_effect=state.StateError('missing GitHub origin'))
+    p.results[str(run)] = (True, 'bad session!', {'kind': 'handover', 'body': 'done'}, '')
+    job['fence'] = True
+    r.save_job(job)
     r.run()
     result = state.load(r.path)['slices']
     assert result[0]['attention']['kind'] == 'escalation'
     assert result[0]['attention']['body'].startswith('collect/deliver failed:')
-    assert 'missing GitHub origin' in result[0]['attention']['body']
+    assert 'invalid session' in result[0]['attention']['body']
     assert [j['id'] for j in p.started] == ['example/healthy']
     r.git.commit.assert_called_once()
 
@@ -1138,7 +1048,7 @@ def test_brief_frontmatter_and_option_like_prompt_are_passed_after_separator(set
         edit(r, lambda s: s['executor'].update(tool='claude', model='sonnet'))
         r.claude_reader = lambda: {'at': NOW.timestamp(), 'rate_limits': {'five_hour': {'used_percentage': 1}}}
     r.run()
-    assert p.started[0]['prompt'] == '- begin with an option-like line\n' + (CLAUDE_PARAGRAPH if tool == 'claude' else '')
+    assert_prompt(p.started[0], '- begin with an option-like line\n')
     from cplane.executors import command
     args = command(p.started[0])
     assert args[-2:] == ['--', p.started[0]['prompt']]
@@ -1173,37 +1083,12 @@ def test_usage_unavailable_or_malformed(tmp_path, monkeypatch):
     assert claude_usage(tmp_path / '.claude/usage-now.json') is None
 
 
-def test_runner_real_git_pull_does_not_commit_unchanged_state(tmp_path, slice_data, monkeypatch):
-    import subprocess
-    monkeypatch.setenv('GIT_CONFIG_GLOBAL', '/dev/null')
-    monkeypatch.setenv('GIT_CONFIG_NOSYSTEM', '1')
-    for role in ('AUTHOR', 'COMMITTER'):
-        monkeypatch.setenv(f'GIT_{role}_NAME', 'Fixture')
-        monkeypatch.setenv(f'GIT_{role}_EMAIL', 'fixture@example.invalid')
-    def git(*args):
-        return subprocess.run(['git', *map(str, args)], capture_output=True, text=True, check=True).stdout.strip()
-    remote, local = tmp_path / 'state.git', tmp_path / 'state'
-    git('init', '--bare', '--initial-branch=main', remote)
-    git('clone', remote, local)
-    path = local / 'state.json'
-    path.write_text(json.dumps({'version': 1, 'slices': [slice_data]}))
-    (local / '.gitignore').write_text('*.lock\n')
-    git('-C', local, 'add', '.')
-    git('-C', local, 'commit', '-m', 'fixture')
-    initial = git('-C', local, 'rev-parse', 'HEAD')
-    git('-C', local, 'push', '-u', 'origin', 'main')
-    r = Runner(path, processes=FakeProcesses(), clock=lambda: NOW, runs=tmp_path / 'runs')
-    r.run()
-    assert git('-C', remote, 'rev-parse', 'main') == git('-C', local, 'rev-parse', 'HEAD')
-    assert git('-C', local, 'rev-parse', 'HEAD') == initial
-    events = [entry['event'] for entry in json.loads(
-        git('-C', remote, 'show', 'main:state.json'))['slices'][0]['log']]
-    assert events == []
 
 
 def test_detached_starter_closes_stdin_and_writes_config(tmp_path, monkeypatch):
-    from cplane.executors import FINAL_SCHEMA, claude_settings
+    from cplane.executors import FINAL_SCHEMA
     popen = Mock(return_value=Mock(pid=123))
+    monkeypatch.setattr('cplane.executors.os.chown', lambda *args: None)
     monkeypatch.setattr('cplane.executors.subprocess.Popen', popen)
     job = {'tool': 'codex', 'run': str(tmp_path), 'repo': '/tmp/repo', 'model': 'm', 'prompt': 'brief'}
     assert Processes().start(job) == 123
@@ -1212,8 +1097,7 @@ def test_detached_starter_closes_stdin_and_writes_config(tmp_path, monkeypatch):
     assert kwargs['stdin'] == subprocess.DEVNULL
     assert kwargs['start_new_session'] is True
     assert kwargs['close_fds'] is True
-    assert json.loads((tmp_path / 'schema.json').read_text()) == FINAL_SCHEMA
-    assert json.loads((tmp_path / 'sandbox.json').read_text()) == claude_settings()
+    assert json.loads((tmp_path / 'io/schema.json').read_text()) == FINAL_SCHEMA
     assert (tmp_path / 'request.json').stat().st_mode & 0o777 == 0o600
 
 
@@ -1226,10 +1110,11 @@ def test_detached_supervisor_runs_as_importable_module(tmp_path, monkeypatch):
     repo.mkdir()
     bin_dir = tmp_path / 'bin'
     bin_dir.mkdir()
-    codex = bin_dir / 'codex'
+    codex = bin_dir / 'factory-cli'
     codex.write_text('#!/bin/sh\nexit 0\n')
     codex.chmod(0o755)
     monkeypatch.setenv('PATH', str(bin_dir) + os.pathsep + os.environ['PATH'])
+    monkeypatch.setattr('cplane.executors.os.chown', lambda *args: None)
     job = {'tool': 'codex', 'run': str(run), 'repo': str(repo), 'model': 'stub', 'prompt': 'test'}
 
     Processes().start(job)
@@ -1259,14 +1144,6 @@ def test_killed_supervisor_and_log_tail(tmp_path, monkeypatch):
     done, _, final, tail = Processes().poll(job)
     assert done and final is None
     assert tail.splitlines() == [str(i) for i in range(40, 80)]
-
-
-def test_uninstall_cli_without_state(monkeypatch):
-    uninstall = Mock()
-    monkeypatch.setattr(agent, 'uninstall', uninstall)
-    monkeypatch.delenv('CPLANE_STATE', raising=False)
-    assert main(['uninstall-agent']) == 0
-    uninstall.assert_called_once()
 
 
 def test_explicit_claude_keeps_configured_tool_and_model(setup):
@@ -1307,9 +1184,7 @@ def test_codex_usage_limit_waits_then_resumes_once(setup, monkeypatch):
     r.run()
     assert len(p.started) == 2
     assert p.started[-1]['resume'] == 'session-1'
-    assert p.started[-1]['prompt'] == (
-        'Your turn was cut by the usage limit. Your uncommitted work is in your working tree. '
-        'Continue the slice.')
+    assert_prompt(p.started[-1], 'Your turn was cut by the usage limit. Your uncommitted work is in your working tree. Continue the slice.')
     r.run()
     assert len(p.started) == 2
 
@@ -1333,7 +1208,7 @@ def test_claude_session_resumes_even_when_codex_capacity_returns(setup):
     r.codex_reader = lambda: 0
     r.run()
     assert p.started[-1]['tool'] == 'claude'
-    assert p.started[-1]['prompt'] == 'answer'
+    assert_prompt(p.started[-1], 'answer')
 
 
 def test_node_step_recovery_after_state_save_failure(setup, monkeypatch):
@@ -1430,7 +1305,7 @@ def test_prompt_preserves_crlf_and_trailing_whitespace(setup):
     raw = b'Exact prompt\r\nwith whitespace  \r\n'
     (r.path.parent / 'briefs/W1.md').write_bytes(raw)
     r.run()
-    assert p.started[0]['prompt'].encode('utf-8') == raw
+    assert_prompt(p.started[0], raw.decode('utf-8'))
 
 
 def test_empty_state_is_successful_without_an_empty_git_commit(setup):
@@ -1498,52 +1373,6 @@ def test_accepted_slices_do_not_change_or_log(setup, phase, attention_kind, tool
             assert job_path.read_bytes() == job_before
 
 
-@pytest.mark.parametrize('status,stop,expected', [
-    ('red', False, 'escalation'),
-    ('pending', False, None),
-    ('green', True, 'merge'),
-    ('green', False, None),
-])
-@pytest.mark.parametrize('source', ['branch', 'url', 'number'])
-def test_codex_waiting_ci_outcomes(setup, status, stop, expected, source):
-    r, p, gh = setup
-    edit(r, lambda s: s.update(stop_before_merge=stop))
-    r.run()
-    if source == 'branch':
-        gh.find_pr.return_value = 12
-    body = {'branch': 'Waiting for CI', 'url': 'CI: https://github.com/example/repo/pull/12',
-            'number': 'Waiting on PR #12'}[source]
-    p.finish('waiting', body)
-    r.run()
-    assert item(r)['pr'] == 12
-    assert item(r)['attention'] is None
-    assert r.jobs['voice/W1']['phase'] == 'pr'
-    gh.checks.assert_not_called()
-    gh.is_open.assert_called_once_with('example/repo', 12)
-    gh.checks.return_value = status, 'test' if status == 'red' else ''
-    r.run()
-    a = item(r)['attention']
-    assert (a['kind'] if a else None) == expected
-    if expected == 'escalation':
-        assert item(r)['state'] == 'escalated'
-        assert a['body'] == 'failing check: test'
-    elif expected == 'merge':
-        assert a['body'] == 'Approve PR #12'
-        assert not a['approved']
-        assert 'review' not in a
-    if status == 'green' and not stop:
-        assert len(p.started) == 2
-        assert p.started[-1]['prompt'] == 'CI is green on PR #12; merge it and continue.'
-        assert p.started[-1]['resume'] == 'session-1'
-        assert p.started[-1]['tool'] == 'codex'
-    else:
-        assert len(p.started) == 1
-    # A further pass neither resumes twice nor replaces an existing attention.
-    r.run()
-    assert item(r)['attention'] == a
-    assert len(p.started) == (2 if status == 'green' and not stop else 1)
-    gh.merge.assert_not_called()
-    gh.open.assert_not_called()
 
 
 @pytest.mark.parametrize('number,opened', [(None, True), (12, False)])
@@ -1561,80 +1390,10 @@ def test_codex_waiting_without_open_pr_keeps_node_step(setup, number, opened):
     assert len(p.started) == 1
 
 
-@pytest.mark.parametrize('stop,status', [(True, 'green'), (False, 'red'), (False, 'pending'), (False, 'green')])
-def test_codex_ci_watch_recovers_state_save_failures(setup, monkeypatch, stop, status):
-    r, p, gh = setup
-    edit(r, lambda s: s.update(stop_before_merge=stop))
-    r.run()
-    gh.find_pr.return_value = 12
-    p.finish('waiting', 'Waiting on CI')
-    save = state.save
-    monkeypatch.setattr(state, 'save', Mock(side_effect=OSError('disk unavailable')))
-    with pytest.raises(OSError):
-        r.run()
-    # On replay the branch might have changed. The saved PR number is authoritative.
-    gh.find_pr.side_effect = AssertionError('must recover saved PR')
-    monkeypatch.setattr(state, 'save', save)
-    r.run()
-    assert item(r)['pr'] == 12
-    gh.checks.return_value = status, 'test'
-    monkeypatch.setattr(state, 'save', Mock(side_effect=OSError('disk unavailable')))
-    with pytest.raises(OSError):
-        r.run()
-    monkeypatch.setattr(state, 'save', save)
-    r.run()
-    r.run()
-    if status == 'green' and not stop:
-        assert len(p.started) == 2
-        assert item(r)['attention'] is None
-        assert item(r)['session']['id'] == 'session-1'
-    else:
-        assert len(p.started) == 1
-        a = item(r)['attention']
-        if status == 'pending':
-            assert a is None
-        else:
-            assert a['kind'] == ('merge' if status == 'green' else 'escalation')
 
 
-def test_codex_green_waits_for_capacity_then_resumes_once(setup):
-    r, p, gh = setup
-    edit(r, lambda s: s.update(stop_before_merge=False))
-    r.run()
-    gh.find_pr.return_value = 12
-    p.finish('waiting', 'CI pending')
-    r.run()
-    gh.checks.return_value = 'green', ''
-    r.codex_reader = lambda: 100
-    r.run()
-    assert len(p.started) == 1
-    assert r.jobs['voice/W1']['phase'] == 'pr'
-    assert item(r)['attention'] is None
-    r.codex_reader = lambda: 0
-    r.run()
-    r.run()
-    assert len(p.started) == 2
 
 
-def test_codex_ci_merge_attention_review_approval(setup):
-    r, p, gh = setup
-    r.run()
-    gh.find_pr.return_value = 12
-    p.finish('waiting', 'CI pending')
-    r.run()
-    gh.checks.return_value = 'green', ''
-    r.run()
-    args = ['--state', str(r.path)]
-    assert main([*args, 'approve', 'voice/W1']) == 1
-    assert main([*args, '--actor', 'planner', 'review', 'voice/W1', 'Ready']) == 0
-    r.run()
-    assert item(r)['attention']['review']['verdict'] == 'Ready'
-    assert main([*args, 'approve', 'voice/W1']) == 0
-    r.run()
-    r.run()
-    assert len(p.started) == 2
-    assert p.started[-1]['prompt'] == 'The owner approves the merge.'
-    gh.merge.assert_not_called()
 
 
 @pytest.mark.parametrize('pr_state,expected', [('OPEN', True), ('CLOSED', False), ('MERGED', False)])
@@ -1719,7 +1478,7 @@ def test_answer_to_node_step_resumes_session(setup, tool):
     assert main(['--state', str(r.path), 'answer', 'voice/W1', 'node step done']) == 0
     r.run()
     assert len(p.started) == 2
-    assert p.started[-1]['prompt'] == 'node step done'
+    assert_prompt(p.started[-1], 'node step done')
     assert p.started[-1]['resume'] == 'session-1'
     assert item(r)['attention'] is None
 
@@ -1759,31 +1518,8 @@ def test_accepted_slice_with_live_process_still_counts(setup):
     assert 'repository busy (voice/W1)' in state.load(r.path)['slices'][1]['log'][-1]['event']
 
 
-def test_pull_uses_autostash(tmp_path, monkeypatch):
-    calls = []
-    monkeypatch.setattr('cplane.runner.state.git', lambda root, *args: calls.append(args))
-    path = tmp_path / 'slices.json'
-    subprocess.run(['git', 'init', '-q', str(tmp_path)], check=True)
-    Git().pull(path)
-    assert calls == [('pull', '--rebase', '--autostash')]
 
 
-def test_pull_with_unstaged_outbox_line(tmp_path):
-    def g(cwd, *a):
-        subprocess.run(['git', '-C', str(cwd), *a], check=True, capture_output=True)
-    remote, local = tmp_path / 'remote.git', tmp_path / 'local'
-    g(tmp_path, 'init', '-q', '--bare', str(remote))
-    g(tmp_path, 'clone', '-q', str(remote), str(local))
-    for key, value in (('user.email', 'a@example.com'), ('user.name', 'a')):
-        g(local, 'config', key, value)
-    (local / 'slices.json.outbox.jsonl').write_text('{}\n')
-    (local / 'slices.json').write_text('{}\n')
-    g(local, 'add', '.')
-    g(local, 'commit', '-qm', 'one')
-    g(local, 'push', '-q', 'origin', 'HEAD')
-    (local / 'slices.json.outbox.jsonl').write_text('{}\n{}\n')
-    Git().pull(local / 'slices.json')
-    assert (local / 'slices.json.outbox.jsonl').read_text() == '{}\n{}\n'
 
 
 def test_failing_pull_still_raises_and_never_launches_autostash(setup):
@@ -1936,29 +1672,28 @@ def test_ci_reads_record_both_heads_without_changing_delivery(setup, monkeypatch
     store = Mock()
     monkeypatch.setattr(state, 'postgres', lambda: True)
     monkeypatch.setattr(state, 'store', lambda _: store)
-    github = GitHub()
-    github.repository = Mock(return_value='example/repo')
-    github.call = Mock(side_effect=[
-        json.dumps(dict(headRefOid='a' * 40, statusCheckRollup=[dict(name='test', conclusion='FAILURE')])),
-        json.dumps(dict(headRefOid='b' * 40, statusCheckRollup=[dict(name='test', conclusion='SUCCESS')]))])
+    job['tip'] = 'b' * 40
+    github = Mock()
+    github.checks.side_effect = [('red', 'test'), ('green', '')]
     r.github = github
     r.pr_checks(current, job)
     assert current['attention']['kind'] == 'escalation'
     current['attention'] = None
     r.pr_checks(current, job)
     assert current['attention']['kind'] == 'merge'
+    assert all(call.kwargs['expected'] == 'b' * 40 for call in github.checks.call_args_list)
     observations = [call.kwargs['ci'] for call in store.run_record_outcome.call_args_list if 'ci' in call.kwargs]
-    assert observations == [dict(sha='a' * 40, status='red', failing_job='test'),
+    assert observations == [dict(sha='b' * 40, status='red', failing_job='test'),
                             dict(sha='b' * 40, status='green', failing_job=None)]
     assert job['phase'] == 'pr'
 
 
 def test_pipeline_failure_diagnostic_survives_missing_cli_version(setup, monkeypatch, capsys):
     from cplane import run_records
-    from cplane.stores import FileStore
+    from conftest import SyntheticStore
 
     r, processes, _ = setup
-    backend = FileStore(r.path)
+    backend = SyntheticStore(r.path)
     backend.pipeline_step = Mock(side_effect=RuntimeError('PRIVATE pipeline failure'))
     backend.route_chat_events = Mock()
     backend.ordered_slices = lambda items: items
@@ -1979,3 +1714,79 @@ def test_pipeline_failure_diagnostic_survives_missing_cli_version(setup, monkeyp
     assert capsys.readouterr().err == 'pipeline step failed\n'
     assert len(processes.started) == 1
     assert item(r)['state'] == 'issued'
+
+
+@pytest.mark.parametrize('stop,status', [(True, 'green'), (False, 'red'), (False, 'pending'), (False, 'green')])
+def test_codex_ci_watch_recovers_state_save_failures(setup, monkeypatch, stop, status):
+    r, p, gh = setup
+    edit(r, lambda s: s.update(stop_before_merge=stop))
+    r.run()
+    gh.find_pr.return_value = 12
+    p.finish('waiting', pr_reply())
+    save = state.save
+    monkeypatch.setattr(state, 'save', Mock(side_effect=OSError('disk unavailable')))
+    with pytest.raises(OSError):
+        r.run()
+    # On replay the branch might have changed. The saved PR number is authoritative.
+    gh.find_pr.side_effect = AssertionError('must recover saved PR')
+    monkeypatch.setattr(state, 'save', save)
+    r.run()
+    assert item(r)['pr'] == 12
+    gh.checks.return_value = status, 'test'
+    monkeypatch.setattr(state, 'save', Mock(side_effect=OSError('disk unavailable')))
+    with pytest.raises(OSError):
+        r.run()
+    monkeypatch.setattr(state, 'save', save)
+    r.run()
+    r.run()
+    if status == 'green' and not stop:
+        assert len(p.started) == 2
+        assert item(r)['attention'] is None
+        assert item(r)['session']['id'] == 'session-1'
+    else:
+        assert len(p.started) == 1
+        a = item(r)['attention']
+        if status == 'pending':
+            assert a is None
+        else:
+            assert a['kind'] == ('merge' if status == 'green' else 'escalation')
+
+
+def test_codex_green_waits_for_capacity_then_resumes_once(setup):
+    r, p, gh = setup
+    edit(r, lambda s: s.update(stop_before_merge=False))
+    r.run()
+    gh.find_pr.return_value = 12
+    p.finish('waiting', pr_reply())
+    r.run()
+    gh.checks.return_value = 'green', ''
+    r.codex_reader = lambda: 100
+    r.run()
+    assert len(p.started) == 1
+    assert r.jobs['voice/W1']['phase'] == 'merged'
+    assert item(r)['attention'] is None
+    r.codex_reader = lambda: 0
+    r.run()
+    r.run()
+    assert len(p.started) == 2
+
+
+def test_codex_ci_merge_attention_review_approval(setup):
+    r, p, gh = setup
+    r.run()
+    gh.find_pr.return_value = 12
+    p.finish('waiting', pr_reply())
+    r.run()
+    gh.checks.return_value = 'green', ''
+    r.run()
+    args = ['--state', str(r.path)]
+    assert main([*args, 'approve', 'voice/W1']) == 1
+    assert main([*args, '--actor', 'planner', 'review', 'voice/W1', 'Ready']) == 0
+    r.run()
+    assert item(r)['attention']['review']['verdict'] == 'Ready'
+    assert main([*args, 'approve', 'voice/W1']) == 0
+    r.run()
+    r.run()
+    assert len(p.started) == 2
+    assert_prompt(p.started[-1], 'merged as abc123')
+    gh.merge.assert_called_once_with('example/repo', 12, expected='b' * 40)

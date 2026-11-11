@@ -222,13 +222,12 @@ def test_every_chat_and_executor_command_passes_effort(tool, effort, tmp_path):
     turn = dict(id=1, text='Synthetic', session=dict(tool=tool, model='synthetic', effort=effort, cli_session_id=None))
     argv = sessions.turn_command(turn, tmp_path, [], tmp_path)
     job = dict(tool=tool, model='synthetic', effort=effort, run=str(tmp_path), repo=str(tmp_path), prompt='Synthetic')
-    for fenced in (False, True):
-        job['fence'] = fenced
-        for args in (argv, command(job)):
-            if tool == 'codex':
-                assert f'model_reasoning_effort="{effort}"' in args
-            else:
-                assert args[args.index('--effort') + 1] == effort
+    job['fence'] = True
+    for args in (argv, command(job)):
+        if tool == 'codex':
+            assert f'model_reasoning_effort="{effort}"' in args
+        else:
+            assert args[args.index('--effort') + 1] == effort
 
 
 def test_slice_level_resolves_at_launch_and_explicit_fields_win(pg_store, tmp_path):
@@ -263,7 +262,6 @@ def test_invalid_limits_are_atomic(pg_store, name, value):
 
 def test_runner_reads_limits_again_and_counts_missing_sessions(pg_store, slice_data, tmp_path):
     runner = Runner(tmp_path / 'state')
-    runner.fenced = True
     runner.jobs = {}
     active = copy.deepcopy(slice_data)
     active['state'] = 'issued'

@@ -335,8 +335,6 @@ def parser():
             sub.add_argument('id', type=int)
         if name == 'mark':
             sub.add_argument('--clear', action='store_true')
-    for command in ("install-agent", "uninstall-agent"):
-        commands.add_parser(command, parents=[common])
     commands.add_parser("prime", parents=[common], help="send one minimal request to Claude and Codex to start their usage windows")
     commands.add_parser("install-primer", parents=[common], help="install the launchd job that runs prime at 06:00, 11:00, 16:00 and 21:00")
     commands.add_parser("uninstall-primer", parents=[common], help="remove the primer launchd job")
@@ -567,10 +565,6 @@ def main(argv=None):
             else:
                 print(primer.wake_plist(), end="")
             return 0
-        if args.command == "uninstall-agent":
-            from .agent import uninstall
-            uninstall()
-            return 0
         if args.command in ("migrate", "import"):
             if not state.postgres():
                 raise state.StateError("this command requires CPLANE_DATABASE_URL")
@@ -598,9 +592,6 @@ def main(argv=None):
                 if outbox:
                     raise state.StateError("export contains notices; provide PATH with cplane export PATH to write state and its outbox")
                 print(payload, end="")
-        elif args.command == "install-agent":
-            from .agent import install
-            install(path.resolve(), commit=getattr(args, "commit", False))
         elif args.command == "run":
             from .runner import Runner
             Runner(path).run()
@@ -663,7 +654,7 @@ def main(argv=None):
             groups = pending(state.load(path))
             print(json.dumps(groups, indent=2, ensure_ascii=False) if args.json else render(groups))
         elif args.command == "show":
-            from .executors import fenced, read_output
+            from .executors import read_output
             item = next((item for item in state.load(path)["slices"] if item["id"] == args.id), None)
             if item is None:
                 raise state.StateError(f"unknown slice: {args.id}")
@@ -672,7 +663,7 @@ def main(argv=None):
                 policy = backend.slice_policy(item['id'])
                 item = dict(item, level=policy['level'] if policy else 'standard',
                             executor=backend.slice_executor(item))
-            default_runs = '/srv/factory/runs' if fenced() else '~/Library/Application Support/cplane/runs'
+            default_runs = '/srv/factory/runs'
             base = Path(os.environ.get('CPLANE_RUNS', default_runs)).expanduser().resolve()
             runs = base / hashlib.sha256(str(path.resolve()).encode()).hexdigest()[:20]
             latest = None

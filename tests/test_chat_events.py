@@ -9,7 +9,7 @@ from cplane.stores import PostgresStore
 from cplane.workshop import Workshop
 from factory_ui import create_app
 from test_stores import pg_store
-from test_runner import setup as runner_setup
+from test_runner import setup as runner_setup, assert_prompt
 from test_pipeline import runner_board
 from test_workshop import context, call, value, refused
 
@@ -222,7 +222,7 @@ def test_runner_handover_wakes_once_and_return_resumes(pg_store, runner_setup, s
     assert len(processes.started) == 1
     runner.run()
     assert len(processes.started) == 2
-    assert processes.started[-1]['prompt'] == 'Fix synthetic validation'
+    assert_prompt(processes.started[-1], 'Fix synthetic validation')
 
 
 def test_runner_question_is_taken_before_phone_notice(pg_store, runner_setup, slice_data):
