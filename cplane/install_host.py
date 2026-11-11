@@ -17,7 +17,7 @@ INSTALL_ROOT = Path('/var/lib/factory/install')
 
 def github(repo, path, *, output=None):
     result = subprocess.run(['gh', 'api', '--hostname', 'github.com', f'repos/{repo}/{path}'],
-                            env=fence.github_environment(), stdout=output or subprocess.PIPE,
+                            env=fence.github_environment([repo]), stdout=output or subprocess.PIPE,
                             stderr=subprocess.DEVNULL)
     if result.returncode:
         raise state.StateError('Install download or verification failed')

@@ -258,6 +258,31 @@ contains this token. Each authenticated delivery call gets it in its environment
 Git obtains it from a helper for that call. Git/gh failure diagnostics are
 suppressed before they can reach state, logs or notices, like database diagnostics.
 
+`CPLANE_GITHUB_AUTH` defaults to `token`, preserving that path. To use a GitHub
+App, set it to `app` and put `CPLANE_GITHUB_APP_ID` and
+`CPLANE_GITHUB_INSTALLATION_ID` in the same private `runner.env`. Place the App's
+RSA private key at `/etc/factory/github-app.pem`, root-owned, regular, mode 0600;
+links are refused. OpenSSL must be installed on the host. No Python dependency
+or credential store is added. Tokens reach `gh` through `GH_TOKEN` and Git through
+the existing `x-access-token` helper; the install host uses the same function.
+Within each process, tokens are cached in memory for the same installation,
+repository scope and key revision, and renewed when five minutes or less remain
+before expiry. The runner's oneshot passes and the separate installer each mint
+their own tokens; there is no cross-process mint limit, shared cache or broker.
+Tokens are never written to disk. Every call still checks the key file.
+App requests explicitly name the delivery repositories from the scheduler state;
+an install request names only its repository. All repositories in a request must
+belong to the installation's single owner. Empty scopes are refused. Install the
+App only on intended delivery repositories with the delivery permissions above.
+The JWT uses RS256, an issue time 60 seconds in the past and an expiry nine minutes
+ahead, as described in [GitHub's JWT documentation](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app).
+The response must name exactly the requested repositories, following
+[GitHub's installation token API](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token-for-a-github-app).
+Never put the key, JWT, installation token or HTTP response in logs or notices.
+The owner reviews credential-path changes before merging. After merging, install
+the merged commit, provision the App and key, configure both ids, then have the
+owner and orchestrator verify one slice delivered as the App.
+
 Use shell-compatible `KEY='value'` lines in `runner.env` (no shell expansions,
 commands or multiline values), so systemd and `factory-cplane` read the same file.
 Configure these keys using the actual private values:

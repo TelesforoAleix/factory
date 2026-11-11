@@ -25,8 +25,18 @@ def host_environment():
             'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_TERMINAL_PROMPT': '0'}
 
 
-def github_environment():
+def github_environment(repositories=None):
     env = host_environment()
+    auth = os.environ.get('CPLANE_GITHUB_AUTH', 'token')
+    if auth == 'app':
+        from . import github_app, state
+        if repositories is None:
+            repositories = [item['repo'] for item in state.load(
+                Path(os.environ['CPLANE_STATE']).expanduser())['slices']]
+        env['GH_TOKEN'] = github_app.installation_token(repositories)
+        return env
+    if auth != 'token':
+        raise StateError('CPLANE_GITHUB_AUTH must be token or app')
     fd = os.open(TOKEN, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     with os.fdopen(fd) as stream:
         info = os.fstat(stream.fileno())
