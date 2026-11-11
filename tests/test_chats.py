@@ -372,9 +372,12 @@ def test_node_step_wakes_only_installable_and_keeps_home_card(pg_store, slice_da
     pg_store.route_chat_events()
     events = [m for m in pg_store.session_messages('factory', chat['id']) if 'Event: node-step' in m['text']]
     assert len(events) == int(installable)
-    cards = create_app(pg_store).test_client().get('/api/home').get_json()['attention']
-    card = next(a for a in cards if a['kind'] == 'install')
-    assert card['installable'] == installable and not card['installing']
+    home = create_app(pg_store).test_client().get('/api/home').get_json()
+    cards = [a for a in home['attention'] if a['kind'] == 'install']
+    assert len(cards) == int(installable)
+    assert home['orchestrator_count'] == int(not installable)
+    if installable:
+        assert cards[0]['installable'] and not cards[0]['installing']
 
 
 def test_install_failure_remains_on_home_and_phone(pg_store, slice_data):
