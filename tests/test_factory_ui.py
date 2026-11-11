@@ -207,6 +207,18 @@ def test_home_projection_orders_attention_and_discards_stale_stuck(monkeypatch):
     item['attention'] = dict(kind='node-step', body='Install', since=old, answer=None, approved=False)
     monkeypatch.setenv('CPLANE_INSTALL_REPOS', 'owner/repo')
     assert client.get('/api/home').get_json()['attention'][0]['installable'] is True
+    from cplane.installation import request_change
+    data = dict(slices=[item])
+    request_change('chat:12')(item, data, now.isoformat())
+    card = client.get('/api/home').get_json()['attention'][0]
+    assert card['kind'] == 'install'
+    assert card['label'] == 'proposed by chat'
+    assert card['installing'] is False
+    request_change('owner')(item, data, now.isoformat())
+    card = client.get('/api/home').get_json()['attention'][0]
+    assert card['label'] is None
+    assert card['installing'] is True
+
     monkeypatch.setenv('CPLANE_INSTALL_REPOS', 'other/repo')
     assert client.get('/api/home').get_json()['attention'][0]['installable'] is False
 
