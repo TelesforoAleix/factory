@@ -1392,3 +1392,45 @@ def test_review_ready_attention_and_pause(ticket_runner, answer, paused, starts)
     attention = state.load(runner.path)['slices'][0]['attention']
     assert (attention is None) is (answer is not None)
     assert submit.call_count == 1
+
+
+@pytest.mark.parametrize('auth', [None, 'token'])
+def test_legacy_token_mode_unchanged(delivery, monkeypatch, auth):
+    from cplane import github_app
+    if auth is None:
+        monkeypatch.delenv('CPLANE_GITHUB_AUTH', raising=False)
+    else:
+        monkeypatch.setenv('CPLANE_GITHUB_AUTH', auth)
+    mint = Mock(side_effect=AssertionError('legacy mode must not mint'))
+    monkeypatch.setattr(github_app, 'installation_token', mint)
+    assert fence.github_environment() == {**fence.host_environment(), 'GH_TOKEN': delivery['secret']}
+    mint.assert_not_called()
+
+
+def test_app_environment_scoped_to_delivery_state(make_state, monkeypatch):
+    from cplane import github_app
+    monkeypatch.setenv('CPLANE_STATE', str(make_state()))
+    monkeypatch.setenv('CPLANE_GITHUB_AUTH', 'app')
+    monkeypatch.setenv('GH_TOKEN', 'untrusted-ambient-token')
+    mint = Mock(return_value='synthetic-installation-token')
+    monkeypatch.setattr(github_app, 'installation_token', mint)
+    env = fence.github_environment()
+    mint.assert_called_once_with(['example/repo'])
+    assert env == {**fence.host_environment(), 'GH_TOKEN': 'synthetic-installation-token'}
+    assert 'CPLANE_GITHUB_APP_ID' not in env
+
+
+def test_unknown_github_auth_is_refused(monkeypatch):
+    monkeypatch.setenv('CPLANE_GITHUB_AUTH', 'typo')
+    with pytest.raises(state.StateError, match='must be token or app'):
+        fence.github_environment()
+
+
+def test_credential_helper_supplies_app_token_only_to_git(monkeypatch):
+    import sys
+    env = {**fence.host_environment(), 'GH_TOKEN': 'synthetic-installation-token'}
+    result = subprocess.run([sys.executable, '-m', 'cplane.fence', 'credential', 'get'],
+                            input='protocol=https\nhost=github.com\n\n', env=env,
+                            text=True, capture_output=True, check=True)
+    assert result.stdout == 'username=x-access-token\npassword=synthetic-installation-token\n'
+    assert result.stderr == ''
