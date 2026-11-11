@@ -625,7 +625,7 @@ def main(argv=None):
             groups = pending(state.load(path))
             print(json.dumps(groups, indent=2, ensure_ascii=False) if args.json else render(groups))
         elif args.command == "show":
-            from .executors import fenced, read_output
+            from .executors import read_output
             item = next((item for item in state.load(path)["slices"] if item["id"] == args.id), None)
             if item is None:
                 raise state.StateError(f"unknown slice: {args.id}")
@@ -634,7 +634,7 @@ def main(argv=None):
                 policy = backend.slice_policy(item['id'])
                 item = dict(item, level=policy['level'] if policy else 'standard',
                             executor=backend.slice_executor(item))
-            default_runs = '/srv/factory/runs' if fenced() else '~/Library/Application Support/cplane/runs'
+            default_runs = '/srv/factory/runs'
             base = Path(os.environ.get('CPLANE_RUNS', default_runs)).expanduser().resolve()
             runs = base / hashlib.sha256(str(path.resolve()).encode()).hexdigest()[:20]
             latest = None

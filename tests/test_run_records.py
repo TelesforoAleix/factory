@@ -134,9 +134,9 @@ def test_commands_and_prompt_privacy(pg_store, capsys):
 
 
 def test_file_store_skip_and_clear_command_error(monkeypatch, tmp_path, capsys):
-    from cplane.stores import FileStore
+    from conftest import SyntheticStore
     monkeypatch.delenv('CPLANE_DATABASE_URL', raising=False)
-    run_records.record(FileStore(tmp_path / 'unused'), turn_key='x', log=tmp_path / 'absent')
+    run_records.record(SyntheticStore(tmp_path / 'unused'), turn_key='x', log=tmp_path / 'absent')
     assert capsys.readouterr().err == ''
     assert main(['run', 'list']) == 1
     assert 'require Postgres' in capsys.readouterr().err
@@ -228,13 +228,12 @@ def test_legacy_slice_call_leaves_outcomes_empty(pg_store, tmp_path):
 @pytest.mark.parametrize('tool,version', [('codex', 'codex-cli-exec 0.162.1\n'),
                                          ('claude', '2.1.318 (Claude Code)\n')])
 @pytest.mark.parametrize('overrides', [{}, {'model': 'synthetic'}])
-@pytest.mark.parametrize('fenced', [False, True])
-def test_launch_captures_policy_hash_and_cli_version(setup, monkeypatch, tool, version, overrides, fenced):
+def test_launch_captures_policy_hash_and_cli_version(setup, monkeypatch, tool, version, overrides):
     import hashlib
     runner, _, _ = setup
     runner.run()
     job = next(iter(runner.jobs.values()))
-    job.update(tool=tool, effort='high', model='synthetic', fence=fenced)
+    job.update(tool=tool, effort='high', model='synthetic', fence=True)
     store = Mock()
     store.slice_policy.return_value = dict(level='strong', overrides=overrides)
     monkeypatch.setattr(state, 'postgres', lambda: True)
@@ -248,9 +247,8 @@ def test_launch_captures_policy_hash_and_cli_version(setup, monkeypatch, tool, v
     assert job['brief_hash'] == hashlib.sha256(job['prompt'].encode()).hexdigest()
     assert job['prompt'] not in str(probe.call_args)
     command = [tool, 'exec' if tool == 'codex' else '-p', '--version']
-    if fenced:
-        command = ['factory-cli', 'run', '--tool', tool, '--repo', job['repo'],
-                   '--run', str(Path(job['run']) / 'version'), '--', *command]
+    command = ['factory-cli', 'run', '--tool', tool, '--repo', job['repo'],
+               '--run', str(Path(job['run']) / 'version'), '--', *command]
     assert probe.call_args.args[0] == command
     store.slice_policy.return_value = None
     run_records.launch_metadata(runner, runner.data['slices'][0], job)

@@ -434,13 +434,12 @@ def test_show_fenced_codex_final_uses_io_without_following_links(make_state, mon
     assert capsys.readouterr().out == 'final: unavailable\n'
 
 
-def test_mode_switch_does_not_run_host_git_in_old_fenced_copy(delivery, make_state, monkeypatch):
+def test_old_unfenced_job_is_not_resumed(delivery, make_state):
     d = delivery
-    monkeypatch.delenv('CPLANE_FENCE')
     path = make_state()
     runner = Runner(path, git=Mock(), github=Mock(), processes=Mock(), runs=d['root'] / 'control')
     (runner.runs / 'synthetic').mkdir(parents=True)
-    job = {**d['job'], 'run': str(runner.runs / 'synthetic'), 'phase': 'ended',
+    job = {**d['job'], 'fence': False, 'run': str(runner.runs / 'synthetic'), 'phase': 'ended',
            'final': dict(kind='handover', body='Synthetic')}
     runner.save_job(job)
     runner.run()
@@ -794,20 +793,6 @@ def test_interrupted_submission_follows_but_does_not_retry(ticket_runner):
     assert submit.call_count == 1
 
 
-def test_tickets_refuse_unfenced_runner(make_state, tmp_path, monkeypatch):
-    monkeypatch.delenv('CPLANE_FENCE', raising=False)
-    path = make_state()
-    data = state.load(path)
-    data['slices'][0].update(flow='tickets', slot='2020-01-01T00:00:00+00:00')
-    state.save(path, data)
-    brief = tmp_path / 'briefs/W1.md'
-    brief.parent.mkdir()
-    brief.write_text('Synthetic')
-    processes = Mock()
-    runner = Runner(path, processes=processes, git=Mock())
-    runner.run()
-    assert 'needs fenced mode' in state.load(path)['slices'][0]['attention']['body']
-    processes.start.assert_not_called()
 
 
 @pytest.mark.parametrize('node_steps', [None, '', '  ', 'Install the merged commit'])
@@ -1275,14 +1260,6 @@ def test_fenced_gh_retries_reads_but_not_writes(delivery, monkeypatch):
     assert run.call_count == 2
 
 
-def test_unfenced_gh_failure_is_not_retried(monkeypatch):
-    monkeypatch.delenv('CPLANE_FENCE', raising=False)
-    run = Mock(return_value=subprocess.CompletedProcess([], 1, '', 'diagnostic'))
-    monkeypatch.setattr(subprocess, 'run', run)
-    with pytest.raises(state.StateError, match='gh: diagnostic'):
-        GitHub().call('example/repo', 'pr', 'view', '1')
-    assert run.call_count == 1
-    assert 'env' not in run.call_args.kwargs
 
 
 def test_read_failure_duration_and_success_resets(delivery, make_state, monkeypatch):

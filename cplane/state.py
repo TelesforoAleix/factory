@@ -4,8 +4,6 @@ from contextvars import ContextVar
 import json
 import os
 from pathlib import Path
-import subprocess
-import tempfile
 from importlib.resources import files
 from datetime import datetime
 
@@ -52,42 +50,6 @@ def _file_load(path):
     return data
 
 
-def git(root, *args):
-    result = subprocess.run(["git", "-C", str(root), *args], text=True, capture_output=True)
-    if result.returncode:
-        raise StateError(f"git {' '.join(args)}: {result.stderr.strip() or result.stdout.strip()}")
-    return result.stdout.strip()
-
-
-def _file_commit(path, outbox, command, slice_id):
-    probe = subprocess.run(["git", "-C", str(path.parent), "rev-parse", "--show-toplevel"], text=True, capture_output=True)
-    if probe.returncode:
-        return
-    root = Path(probe.stdout.strip())
-    paths = [str(path.relative_to(root))]
-    if outbox.exists():
-        paths.append(str(outbox.relative_to(root)))
-    git(root, "add", "--", *paths)
-    # --only keeps unrelated staged changes out of this commit.
-    git(root, "commit", "--only", "-m", f"cplane: {command} {slice_id}", "--", *paths)
-    last_error = None
-    for _ in range(3):
-        try:
-            git(root, "pull", "--rebase")
-        except StateError as error:
-            if (Path(git(root, "rev-parse", "--absolute-git-dir")) / "rebase-merge").exists() or (Path(git(root, "rev-parse", "--absolute-git-dir")) / "rebase-apply").exists():
-                git(root, "rebase", "--abort")
-                raise StateError(f"{error}; rebase aborted, local commit retained") from error
-            last_error = error
-            continue
-        try:
-            git(root, "push")
-            return
-        except StateError as error:
-            last_error = error
-    raise StateError(f"git sync failed after 3 attempts; local commit retained: {last_error}")
-
-
 def update(path, slice_id, command, actor, change, commit=False, *, create=None, event=None):
     with locked(path):
         return update_locked(path, slice_id, command, actor, change, commit,
@@ -116,24 +78,6 @@ def _update_locked(path, slice_id, command, actor, change, commit=False, *, crea
     return warning
 
 
-def _file_save(path, data):
-    """Validate and atomically replace state; caller holds the sidecar lock."""
-    validate(data)
-    payload = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
-    temp = None
-    try:
-        with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, prefix=f".{path.name}.", delete=False) as stream:
-            temp = stream.name
-            os.fchmod(stream.fileno(), path.stat().st_mode & 0o777)
-            stream.write(payload)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temp, path)
-    finally:
-        if temp and os.path.exists(temp):
-            os.unlink(temp)
-
-
 # Public compatibility facade. A locked pass reuses one store/transaction, including
 # nested order mutations. Context-local binding also permits independent writers.
 _ACTIVE = ContextVar("cplane_store", default=None)
@@ -147,8 +91,8 @@ def store(path):
     active = _ACTIVE.get()
     if active is not None:
         return active
-    from .stores import FileStore, PostgresStore
-    return PostgresStore(os.environ["CPLANE_DATABASE_URL"]) if postgres() else FileStore(path)
+    from .stores import PostgresStore
+    return PostgresStore(os.environ.get("CPLANE_DATABASE_URL"))
 
 
 @contextmanager

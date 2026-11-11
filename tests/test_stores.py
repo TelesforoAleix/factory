@@ -13,7 +13,21 @@ import pytest
 from cplane import state
 from cplane.cli import change_for, main
 from cplane.runner import Git, Runner
-from cplane.stores import FileStore, PostgresStore
+from cplane.stores import PostgresStore
+
+
+def test_store_requires_database_url(synthetic_store, monkeypatch, tmp_path):
+    monkeypatch.delenv('CPLANE_DATABASE_URL', raising=False)
+    with pytest.raises(state.StateError, match='Postgres connection failed'):
+        synthetic_store(tmp_path / 'state.json')
+
+
+def test_store_selects_postgres(synthetic_store, monkeypatch, tmp_path):
+    factory = Mock(return_value=object())
+    monkeypatch.setenv('CPLANE_DATABASE_URL', 'postgresql://synthetic')
+    monkeypatch.setattr('cplane.stores.PostgresStore', factory)
+    assert synthetic_store(tmp_path / 'state.json') is factory.return_value
+    factory.assert_called_once_with('postgresql://synthetic')
 
 
 @pytest.fixture
@@ -46,12 +60,9 @@ def pg_store(monkeypatch, request):
             connection.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(name)))
 
 
-@pytest.fixture(params=['file', 'postgres'])
+@pytest.fixture
 def backend(request, make_state, monkeypatch):
-    monkeypatch.delenv('CPLANE_DATABASE_URL', raising=False)
     path = make_state()
-    if request.param == 'file':
-        return path, FileStore(path)
     pg = request.getfixturevalue('pg_store')
     pg.import_file(path)
     path.unlink()
