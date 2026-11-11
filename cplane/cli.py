@@ -140,6 +140,9 @@ def parser():
     slice_parser = commands.add_parser('slice', parents=[common], help='manage linked slice order')
     slice_commands = slice_parser.add_subparsers(dest='slice_command', required=True, parser_class=Parser)
     place = slice_commands.add_parser('place', parents=[common])
+    link = slice_commands.add_parser('link', parents=[common])
+    link.add_argument('id')
+    link.add_argument('--corrects', required=True)
     place.add_argument('id')
     placement = place.add_mutually_exclusive_group(required=True)
     placement.add_argument('--before')
@@ -315,6 +318,8 @@ def parser():
     runs_commands = runs.add_subparsers(dest='runs_command', required=True, parser_class=Parser)
     runs_show = runs_commands.add_parser('show', parents=[common])
     runs_show.add_argument('slice_id')
+    runs_export = runs_commands.add_parser('export', parents=[common])
+    runs_export.add_argument('--since', required=True)
     run = commands.add_parser('run', parents=[common])
     run_commands = run.add_subparsers(dest='run_command', parser_class=Parser)
     for name in ('list', 'show', 'total', 'mark'):
@@ -396,6 +401,15 @@ def main(argv=None):
         if args.command == 'runs':
             if not state.postgres():
                 raise state.StateError('run record commands require Postgres (CPLANE_DATABASE_URL)')
+            if args.runs_command == 'export':
+                from datetime import date, timezone
+                try:
+                    since = datetime.combine(date.fromisoformat(args.since), datetime.min.time(), timezone.utc)
+                except ValueError:
+                    raise state.StateError('--since must be an ISO date (YYYY-MM-DD)') from None
+                for row in state.store(None).run_record_export(since):
+                    print(json.dumps(row, ensure_ascii=False, allow_nan=False))
+                return 0
             print(json.dumps(state.store(None).run_record_list(slice_id=args.slice_id),
                              indent=2, ensure_ascii=False))
             return 0
@@ -520,7 +534,21 @@ def main(argv=None):
             return 0
         if args.command == 'slice':
             if not state.postgres():
-                raise state.StateError('slice placement requires Postgres (CPLANE_DATABASE_URL)')
+                raise state.StateError('slice commands require Postgres (CPLANE_DATABASE_URL)')
+            if args.slice_command == 'link':
+                def link_change(item, data, at):
+                    if args.id == args.corrects:
+                        raise state.StateError('A slice cannot correct itself')
+                    if not any(s['id'] == args.corrects for s in data['slices']):
+                        raise state.StateError('Correction target slice not found')
+                    state.store(None).slice_outcome(args.id, corrects=args.corrects)
+                    return f'{args.id} corrects {args.corrects}', None
+                path = Path(getattr(args, 'state', None) or os.environ.get('CPLANE_STATE')
+                            or 'slices.json').expanduser()
+                state.update(path, args.id, 'slice link', getattr(args, 'actor', 'owner'),
+                             link_change, getattr(args, 'commit', False),
+                             event=f'slice link: corrects {args.corrects}')
+                return 0
             result = state.store(None).slice_place(args.id, before=args.before, after=args.after,
                                                   actor=getattr(args, 'actor', 'owner'))
             print(json.dumps(result))
@@ -694,8 +722,10 @@ def main(argv=None):
                 event = f"state: {args.target}"
                 if args.force:
                     event += f" (forced: {args.reason})"
+            from . import review
+            change = review.planner_change(args) if args.command == 'review' else planner.change_for(args)
             state.update(path, args.id, args.command, getattr(args, "actor", "owner"),
-                         planner.change_for(args), getattr(args, "commit", False),
+                         change, getattr(args, "commit", False),
                          create=(lambda: planner.new_slice(args.id)) if args.command == "add" else None,
                          event=event)
             if note:

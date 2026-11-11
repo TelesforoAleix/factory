@@ -58,3 +58,19 @@ def changes_workflows(adapter, job):
     paths = adapter.git(clean, 'diff', '--name-only', '-z', '--no-renames',
                         job['base'], job['tip'], '--').stdout.split('\0')
     return any(path.startswith('.github/workflows/') for path in paths)
+
+
+def planner_change(args):
+    """Keep accounting and the planner review on the same atomic update path."""
+    from . import planner, state
+    change = planner.change_for(args)
+
+    def apply(item, data, at):
+        result = change(item, data, at)
+        if state.postgres():
+            # Existing free-text reviews remain accepted reviews. The explicit
+            # corrected verdict labels work that needed correction.
+            verdict = 'corrected' if args.verdict == 'corrected' else 'accepted'
+            state.store(None).slice_outcome(item['id'], verdict=verdict)
+        return result
+    return apply

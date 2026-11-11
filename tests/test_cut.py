@@ -160,3 +160,39 @@ def test_invalid_status_command_refuses(monkeypatch, command):
     monkeypatch.setenv('CPLANE_TASK_STATUS', command)
     with pytest.raises(state.StateError, match='JSON argument list'):
         cut.status('voice/W1')
+
+
+def test_poll_records_each_attempt_after_validation(monkeypatch):
+    from unittest.mock import Mock
+    records = [dict(id='id-1', position=1, title='PRIVATE TITLE', status='running', reason=None,
+                    attempt=2, tokens=17, seconds=1.5, cost=0.01, prompt='PRIVATE PROMPT')]
+    store = Mock()
+    monkeypatch.setattr(state, 'postgres', lambda: True)
+    monkeypatch.setattr(state, 'store', lambda _: store)
+    monkeypatch.setenv('CPLANE_TASK_STATUS', '["synthetic-status"]')
+    run = Mock(return_value=subprocess.CompletedProcess([], 0, json.dumps(records), ''))
+    monkeypatch.setattr(cut.subprocess, 'run', run)
+    assert cut.status('voice/W1') == records
+    assert cut.status('voice/W1') == records
+    assert store.task_record_poll.call_count == 2
+    store.task_record_poll.assert_called_with('voice/W1', records)
+    store.task_record_poll.side_effect = RuntimeError('PRIVATE accounting failure')
+    assert cut.status('voice/W1') == records
+
+
+@pytest.mark.parametrize('field,value', [('attempt', 0), ('attempt', True), ('attempt', 1.5),
+    ('tokens', -1), ('tokens', 1.5), ('seconds', float('nan')), ('seconds', float('inf')),
+    ('cost', -0.1), ('cost', 'PRIVATE'), ('tokens', True)])
+def test_invalid_accounting_is_not_recorded(monkeypatch, field, value):
+    from unittest.mock import Mock
+    store = Mock()
+    monkeypatch.setattr(state, 'postgres', lambda: True)
+    monkeypatch.setattr(state, 'store', lambda _: store)
+    monkeypatch.setenv('CPLANE_TASK_STATUS', '["synthetic-status"]')
+    record = dict(id='id-1', position=1, title='PRIVATE', status='running', reason=None)
+    record[field] = value
+    monkeypatch.setattr(cut.subprocess, 'run', Mock(return_value=
+        subprocess.CompletedProcess([], 0, json.dumps([record]), '')))
+    with pytest.raises(state.StateError, match='invalid tickets'):
+        cut.status('voice/W1')
+    store.task_record_poll.assert_not_called()
