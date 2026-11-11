@@ -9,7 +9,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from cplane import agent, state
+from cplane import state
 from cplane.cli import main
 from cplane.executors import CLAUDE_PARAGRAPH, Processes, command
 from cplane.runner import Runner, Git, GitHub
@@ -543,61 +543,6 @@ def test_runner_cli_uses_default_commit(make_state, monkeypatch):
     assert main(['run', '--state', str(path)]) == 0
     fake.assert_called_once_with(path)
     fake.return_value.run.assert_called_once()
-
-
-@pytest.mark.parametrize(('commit', 'extra'), [(False, []), (True, ['--commit'])])
-def test_plist(commit, extra):
-    data = plistlib.loads(plistlib.dumps(agent.render('/tmp/state.json', commit=commit, home='/tmp/owner', python='/python', environment={})))
-    assert data['AbandonProcessGroup'] is True
-    assert data['StartInterval'] == 300
-    assert data['StandardOutPath'] == '/tmp/owner/Library/Logs/cplane/runner.log'
-    assert data['StandardErrorPath'] == '/tmp/owner/Library/Logs/cplane/runner-error.log'
-    assert data['ProgramArguments'] == ['/python', '-m', 'cplane.cli', '--state', '/tmp/state.json', *extra, '--actor', 'runner', 'run']
-
-
-def test_agent_install_uninstall_only_fake_launchctl(tmp_path, monkeypatch):
-    monkeypatch.setattr(agent.Path, 'home', lambda: tmp_path)
-    call = Mock()
-    monkeypatch.setattr(agent, 'launchctl', call)
-    agent.install(tmp_path / 'state.json')
-    plist = tmp_path / 'Library/LaunchAgents/com.cplane.runner.plist'
-    assert plist.exists()
-    assert call.call_args.args[0] == 'bootstrap'
-    agent.uninstall()
-    assert not plist.exists()
-    assert call.call_args.args[0] == 'bootout'
-
-
-def test_agent_replace_waits_for_launchd_before_bootstrap(tmp_path, monkeypatch):
-    monkeypatch.setattr(agent.Path, 'home', lambda: tmp_path)
-    target = tmp_path / 'Library/LaunchAgents/com.cplane.runner.plist'
-    target.parent.mkdir(parents=True)
-    target.write_text('old')
-    listed = iter([0, 0, 113])
-    calls = []
-
-    def launchctl(*args, **kwargs):
-        calls.append(args)
-        if args[0] == 'list':
-            return Mock(returncode=next(listed))
-        return Mock(returncode=0)
-
-    monkeypatch.setattr(agent, 'launchctl', launchctl)
-    monkeypatch.setattr(agent.time, 'sleep', lambda _: calls.append(('sleep',)))
-    agent.install(tmp_path / 'state.json')
-    assert calls == [
-        ('bootout', f'gui/{os.getuid()}', str(target)),
-        ('list', agent.LABEL), ('sleep',), ('list', agent.LABEL), ('sleep',), ('list', agent.LABEL),
-        ('bootstrap', f'gui/{os.getuid()}', str(target)),
-    ]
-
-
-def test_install_agent_passes_commit_flag(make_state, monkeypatch):
-    path = make_state()
-    install = Mock()
-    monkeypatch.setattr(agent, 'install', install)
-    assert main(['--state', str(path), '--commit', 'install-agent']) == 0
-    install.assert_called_once_with(path.resolve(), commit=True)
 
 
 @pytest.mark.parametrize('tool', ['codex', 'claude'])
@@ -1259,14 +1204,6 @@ def test_killed_supervisor_and_log_tail(tmp_path, monkeypatch):
     done, _, final, tail = Processes().poll(job)
     assert done and final is None
     assert tail.splitlines() == [str(i) for i in range(40, 80)]
-
-
-def test_uninstall_cli_without_state(monkeypatch):
-    uninstall = Mock()
-    monkeypatch.setattr(agent, 'uninstall', uninstall)
-    monkeypatch.delenv('CPLANE_STATE', raising=False)
-    assert main(['uninstall-agent']) == 0
-    uninstall.assert_called_once()
 
 
 def test_explicit_claude_keeps_configured_tool_and_model(setup):
