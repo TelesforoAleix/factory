@@ -402,3 +402,117 @@ def test_failed_outcome_write_preserves_runner_attention(setup, monkeypatch, cap
     assert item['attention']['body'] == 'Original runner error'
     assert item['log'][-1]['event'] == 'escalation: Original runner error'
     assert capsys.readouterr().err == 'cplane: run recording failed\n' * 2
+
+
+def test_slice_link_existing_and_future_records(pg_store, make_state, slice_data, capsys):
+    import copy
+    other = copy.deepcopy(slice_data)
+    other['id'] = 'voice/W0'
+    path = make_state([slice_data, other])
+    pg_store.import_file(path)
+    add_record(pg_store, slice_id='voice/W1')
+    assert main(['slice', 'link', 'voice/W1', '--corrects', 'voice/W0', '--actor', 'planner']) == 0
+    first, = pg_store.run_record_list(slice_id='voice/W1')
+    assert first['corrects_slice'] == 'voice/W0'
+    add_record(pg_store, key='slice:future', slice_id='voice/W1')
+    assert all(r['corrects_slice'] == 'voice/W0' for r in pg_store.run_record_list())
+    item = pg_store.load()['slices'][0]
+    assert item['log'][-1]['actor'] == 'planner'
+    assert item['log'][-1]['event'] == 'slice link: corrects voice/W0'
+    assert pg_store.notices()[-1][1]['event'] == 'slice link'
+    before = pg_store.snapshot()
+    assert main(['slice', 'link', 'voice/W1', '--corrects', 'voice/W1']) == 1
+    assert main(['slice', 'link', 'voice/W1', '--corrects', 'missing']) == 1
+    assert pg_store.snapshot() == before
+    assert pg_store.run_record_show(first['id'])['corrects_slice'] == 'voice/W0'
+
+
+@pytest.mark.parametrize('verdict', ['accepted', 'corrected'])
+def test_planner_review_labels_all_slice_records_atomically(pg_store, make_state, verdict, capsys):
+    path = make_state()
+    pg_store.import_file(path)
+    add_record(pg_store, slice_id='voice/W1', verdict='pass')
+    add_record(pg_store, key='slice:next', slice_id='voice/W1', verdict='fix')
+    assert main(['review', 'voice/W1', verdict, '--actor', 'planner']) == 1
+    assert [r['verdict'] for r in pg_store.run_record_list()] == ['pass', 'fix']
+    with pg_store.mutation():
+        data = pg_store.load()
+        data['slices'][0]['attention'] = dict(kind='merge', body='Synthetic',
+            since='2026-11-07T00:00:00+00:00', answer=None, approved=False)
+        pg_store.save(data)
+    assert main(['review', 'voice/W1', verdict, '--actor', 'planner']) == 0
+    assert all(r['verdict'] == verdict for r in pg_store.run_record_list())
+    # A late old-style runner update must not erase the planner verdict.
+    pg_store.run_record_outcome('slice:fixture', verdict='fix')
+    first = pg_store.run_record_list()[0]
+    assert pg_store.run_record_show(first['id'])['verdict'] == verdict
+    assert pg_store.load()['slices'][0]['attention']['review']['verdict'] == verdict
+
+
+def test_export_json_lines_filters_and_omits_prompt(pg_store, capsys):
+    add_record(pg_store, key='slice:old', started_at=datetime(2026, 10, 1, tzinfo=timezone.utc))
+    add_record(pg_store, key='slice:new', prompt='PRIVATE PROMPT', verdict='pass')
+    add_record(pg_store, key='chat:new', kind='chat', prompt='PRIVATE CHAT')
+    pg_store.slice_outcome('factory/B4b', verdict='corrected', corrects='factory/previous')
+    task = dict(id='task-1', position=1, status='failed', reason='check failed',
+                tokens=100, seconds=2.5, cost=0.03, title='PRIVATE TITLE', prompt='PRIVATE TASK')
+    pg_store.task_record_poll('factory/B4b', [task])
+    pg_store.task_record_poll('factory/B4b', [{**task, 'attempt': 2, 'status': 'running', 'reason': None}])
+    pg_store.task_record_poll('factory/B4b', [{**task, 'attempt': 2, 'status': 'done', 'tokens': 120}])
+    pg_store.task_record_poll('factory/old', [{**task, 'id': 'old-task'}])
+    with pg_store.mutation():
+        pg_store.connection.execute(
+            "UPDATE cplane_task_runs SET started_at = '2026-11-07T00:00:00Z'")
+        pg_store.connection.execute(
+            "UPDATE cplane_task_runs SET started_at = '2026-11-06T23:59:59Z' WHERE task_id = 'old-task'")
+    assert main(['runs', 'export', '--since', '2026-11-07']) == 0
+    output = capsys.readouterr().out
+    rows = [json.loads(line) for line in output.splitlines()]
+    assert [r['kind'] for r in rows] == ['slice', 'task', 'task']
+    assert 'PRIVATE' not in output
+    assert all('prompt' not in r and 'title' not in r for r in rows)
+    assert all(r['verdict'] == 'corrected' and r['corrects_slice'] == 'factory/previous' for r in rows)
+    assert [(r['attempt'], r['status'], r['tokens']) for r in rows[1:]] == [(1, 'failed', 100), (2, 'done', 120)]
+    assert rows[1]['seconds'] == 2.5 and rows[1]['cost'] == 0.03
+    assert 'goal' not in rows[1] and 'check_command' not in rows[1]
+    assert main(['runs', 'export', '--since', 'bad date']) == 1
+    assert '--since must be an ISO date' in capsys.readouterr().err
+
+
+def test_planner_accounting_failure_rolls_back_review(pg_store, make_state, monkeypatch):
+    path = make_state()
+    pg_store.import_file(path)
+    with pg_store.mutation():
+        data = pg_store.load()
+        data['slices'][0]['attention'] = dict(kind='merge', body='Synthetic',
+            since='2026-11-07T00:00:00+00:00', answer=None, approved=False)
+        pg_store.save(data)
+    before = pg_store.snapshot()
+    # CLI creates a fresh store, so fail the class method.
+    from cplane.stores import PostgresStore
+    monkeypatch.setattr(PostgresStore, 'slice_outcome', Mock(side_effect=state.StateError('Synthetic failure')))
+    assert main(['review', 'voice/W1', 'accepted']) == 1
+    assert pg_store.snapshot() == before
+
+
+def test_repair_tasks_keep_parent_and_distinct_attempt_identity(pg_store, make_state):
+    pg_store.import_file(make_state())
+    task = dict(id='same-id', position=1, status='done', reason=None)
+    pg_store.task_record_poll('voice/W1', [task])
+    pg_store.task_record_poll('voice/W1/repair', [task])
+    pg_store.slice_outcome('voice/W1', verdict='corrected')
+    rows = pg_store.run_record_export(datetime(1970, 1, 1, tzinfo=timezone.utc))
+    assert len(rows) == 2
+    assert {r['queue_slice'] for r in rows} == {'voice/W1', 'voice/W1/repair'}
+    assert all(r['slice_id'] == 'voice/W1' and r['verdict'] == 'corrected' for r in rows)
+
+
+def test_empty_export_and_optional_task_metrics(pg_store, capsys):
+    assert main(['runs', 'export', '--since', '1970-01-01']) == 0
+    assert capsys.readouterr().out == ''
+    pg_store.task_record_poll('synthetic/slice', [dict(
+        id=7, position=1, title='PRIVATE', status='queued', reason=None)])
+    assert main(['runs', 'export', '--since', '1970-01-01']) == 0
+    row = json.loads(capsys.readouterr().out)
+    assert row['task_id'] == '7' and row['attempt'] == 1
+    assert row['tokens'] is None and row['seconds'] is None and row['cost'] is None

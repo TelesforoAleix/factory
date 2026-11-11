@@ -1,9 +1,11 @@
 """Build queue task files from a validated plan and unmodified brief rules."""
 import json
+import math
 import os
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
+import sys
 from importlib.resources import files
 
 from jsonschema import Draft202012Validator
@@ -157,4 +159,21 @@ def status(slice_id):
                 raise ValueError
     except (ValueError, TypeError):
         raise StateError("status command returned invalid tickets") from None
+    for ticket in tickets:
+        attempt = ticket.get('attempt', 1)
+        if type(attempt) is not int or attempt < 1:
+            raise StateError("status command returned invalid tickets")
+        for field in ('tokens', 'seconds', 'cost'):
+            value = ticket.get(field)
+            if value is not None and (type(value) not in (int, float) or value < 0
+                                      or not math.isfinite(value)
+                                      or field == 'tokens' and type(value) is not int):
+                raise StateError("status command returned invalid tickets")
+    # Every successful poll passes here, including recovery and repair polls.
+    from . import state
+    if state.postgres():
+        try:
+            state.store(None).task_record_poll(slice_id, tickets)
+        except Exception:
+            print('cplane: run recording failed', file=sys.stderr)
     return tickets

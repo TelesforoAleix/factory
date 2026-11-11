@@ -64,6 +64,72 @@ def record(store, *, turn_key, repository=None, feature=None, output=None, log=N
 
 
 class RunRecordStore:
+    def slice_outcome(self, slice_id, *, verdict=None, corrects=None):
+        """Called inside the planner's locked, validated state update."""
+        if verdict is not None and verdict not in ('accepted', 'corrected'):
+            raise StateError('Invalid planner verdict')
+        with self.mutation():
+            self.connection.execute(
+                'INSERT INTO cplane_slice_outcomes (slice_id, verdict, corrects_slice) VALUES (%s, %s, %s) '
+                'ON CONFLICT (slice_id) DO UPDATE SET '
+                'verdict = COALESCE(EXCLUDED.verdict, cplane_slice_outcomes.verdict), '
+                'corrects_slice = COALESCE(EXCLUDED.corrects_slice, cplane_slice_outcomes.corrects_slice)',
+                (slice_id, verdict, corrects))
+            if corrects is not None:
+                self.connection.execute('UPDATE cplane_run_records SET corrects_slice = %s WHERE slice_id = %s',
+                                        (corrects, slice_id))
+
+    def _slice_outcomes(self):
+        return {row[0]: row[1:] for row in self.connection.execute(
+            'SELECT slice_id, verdict, corrects_slice FROM cplane_slice_outcomes')}
+
+    @staticmethod
+    def _apply_slice_outcome(item, outcomes):
+        verdict, corrects = outcomes.get(item['slice_id'], (None, None))
+        if verdict is not None:
+            item['verdict'] = verdict
+        if corrects is not None:
+            item['corrects_slice'] = corrects
+        return item
+
+    def task_record_poll(self, queue_slice, tickets):
+        # Whitelist accounting only: never persist titles, goals, or prompts.
+        with self.mutation():
+            # The runner submits its single repair round as <slice>/repair.
+            # Prefer an exact state ID so a real slice with that name still wins.
+            parent = self.connection.execute(
+                "SELECT id FROM cplane_slices WHERE id = %s OR id || '/repair' = %s "
+                "ORDER BY (id = %s) DESC LIMIT 1", (queue_slice, queue_slice, queue_slice)).fetchone()
+            slice_id = parent[0] if parent else queue_slice
+            for ticket in tickets:
+                self.connection.execute(
+                    'INSERT INTO cplane_task_runs (slice_id, queue_slice, task_id, attempt, position, status, reason, tokens, seconds, cost) '
+                    'VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) '
+                    'ON CONFLICT (queue_slice, task_id, attempt) DO UPDATE SET '
+                    'position = EXCLUDED.position, status = EXCLUDED.status, reason = EXCLUDED.reason, '
+                    'tokens = EXCLUDED.tokens, seconds = EXCLUDED.seconds, cost = EXCLUDED.cost, '
+                    'updated_at = clock_timestamp()',
+                    (slice_id, queue_slice, str(ticket['id']), ticket.get('attempt', 1), ticket['position'],
+                     ticket['status'], cut(ticket['reason'], TEXT_LIMIT) if ticket['reason'] is not None else None,
+                     ticket.get('tokens'), ticket.get('seconds'), ticket.get('cost')))
+
+    def run_record_export(self, since):
+        """One JSON-safe record per slice turn and task attempt; no content columns."""
+        with self.locked():
+            result = [row for row in self.run_record_list()
+                      if row['kind'] == 'slice' and row['started_at'] is not None
+                      and datetime.fromisoformat(row['started_at']) >= since]
+            columns = ('id', 'slice_id', 'queue_slice', 'task_id', 'attempt', 'position', 'status', 'reason',
+                       'tokens', 'seconds', 'cost', 'started_at', 'updated_at')
+            rows = self.connection.execute('SELECT ' + ', '.join(columns) +
+                                           ' FROM cplane_task_runs WHERE started_at >= %s ORDER BY id', (since,))
+            outcomes = self._slice_outcomes()
+            for row in rows:
+                item = self._run_record_dict(columns, row)
+                item.update(kind='task', verdict=None, corrects_slice=None)
+                result.append(self._apply_slice_outcome(item, outcomes))
+            return result
+
     def run_record_add(self, turn_key, *, repository=None, feature=None, **values):
         with self.mutation():
             project = None
@@ -76,6 +142,12 @@ class RunRecordStore:
             if feature:
                 row = self.connection.execute('SELECT id FROM cplane_feature_ids WHERE id = %s', (feature,)).fetchone()
                 feature_id = row[0] if row else None
+            if values.get('slice_id'):
+                link = self.connection.execute(
+                    'SELECT corrects_slice FROM cplane_slice_outcomes WHERE slice_id = %s',
+                    (values['slice_id'],)).fetchone()
+                if link and link[0] is not None:
+                    values['corrects_slice'] = link[0]
             prompt = values.get('prompt')
             values.update(project=project, feature_id=feature_id,
                           prompt=cut(prompt, TEXT_LIMIT) if prompt is not None else None,
@@ -108,6 +180,7 @@ class RunRecordStore:
         # the requested slice or project. Never select private prompt text.
         columns = ('id', *(field for field in FIELDS if field != 'prompt'))
         with self.locked():
+            outcomes = self._slice_outcomes()
             rows = self.connection.execute('SELECT ' + ', '.join(columns) +
                                            ' FROM cplane_run_records ORDER BY id')
             previous = {}
@@ -124,6 +197,7 @@ class RunRecordStore:
                         value = (None if value is None or old is None else
                                  value - old if value >= old else value)
                     tokens[field] = value
+                self._apply_slice_outcome(item, outcomes)
                 item['turn_tokens'] = tokens
                 if item['session_id'] is not None:
                     previous[key] = item
@@ -165,7 +239,8 @@ class RunRecordStore:
                 ' FROM cplane_run_records WHERE id = %s', (identifier,)).fetchone()
             if row is None:
                 raise StateError('Run record not found')
-            return self._run_record_dict(('id', *FIELDS), row)
+            return self._apply_slice_outcome(self._run_record_dict(('id', *FIELDS), row),
+                                             self._slice_outcomes())
 
     def run_record_mark(self, identifier, *, clear=False):
         with self.mutation():
