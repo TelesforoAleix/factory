@@ -740,3 +740,16 @@ def test_intake_account_refuses_privileged_group_before_creating_user(installer,
         module.intake_account()
     lookup.assert_not_called()
     command.assert_not_called()
+
+
+def test_install_github_uses_same_scoped_app_auth(monkeypatch):
+    from cplane import fence, github_app
+    monkeypatch.setenv('CPLANE_GITHUB_AUTH', 'app')
+    mint = Mock(return_value='synthetic-app-token')
+    monkeypatch.setattr(github_app, 'installation_token', mint)
+    run = Mock(return_value=SimpleNamespace(returncode=0, stdout=b'{"ok": true}'))
+    monkeypatch.setattr(install_host.subprocess, 'run', run)
+    assert install_host.github('example/repo', 'compare/sha...main') == {'ok': True}
+    mint.assert_called_once_with(['example/repo'])
+    assert run.call_args.kwargs['env'] == {**fence.host_environment(), 'GH_TOKEN': 'synthetic-app-token'}
+    assert 'synthetic-app-token' not in str(run.call_args.args)
