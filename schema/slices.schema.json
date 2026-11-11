@@ -53,7 +53,7 @@
           "anyOf": [
             {"type": "null"},
             {"type": "object", "additionalProperties": false, "required": ["kind", "body", "since", "answer", "approved"],
-             "properties": {"kind": {"enum": ["question", "escalation", "merge", "node-step", "owner-check"]}, "body": {"type": "string"}, "since": {"$ref": "#/$defs/timestamp"}, "answer": {"type": ["string", "null"]}, "approved": {"type": "boolean"}, "review": {"$ref": "#/$defs/review"}}}
+             "properties": {"kind": {"enum": ["question", "escalation", "merge", "node-step", "owner-check"]}, "body": {"type": "string"}, "since": {"$ref": "#/$defs/timestamp"}, "answer": {"type": ["string", "null"]}, "approved": {"type": "boolean"}, "for": {"enum": ["owner", "planner"]}, "review": {"$ref": "#/$defs/review"}}}
           ]
         },
         "log": {"type": "array", "items": {
