@@ -21,6 +21,7 @@ from . import cut as cutter
 from . import review as reviewer
 from .text_bounds import ATTENTION_LIMIT, LOG_LIMIT, cut, cut_line
 from .times import now
+from .eligibility import eligibility
 
 BOT_EVENTS = frozenset({'question', 'escalation', 'merge', 'owner-check', 'stuck', 'chat-paused', 'testing-review'})
 BOT_ACCEPTED_FIELDS = frozenset({'id', 'repo', 'title', 'state', 'pr', 'feature', 'paused', 'attention'})
@@ -356,23 +357,20 @@ class Runner:
                 pass
         return None
 
-    def room(self, item):
-        active = [j for j in self.jobs.values()
-                  if j['phase'] == 'running']
-        # An issued session whose local run files are missing still occupies a slot.
-        unknown = [s for s in self.data['slices'] if s['id'] not in self.jobs
-                   and s['state'] in ('issued', 'awaiting handover')]
-        running = sorted([j['id'] for j in active] + [s['id'] for s in unknown])
+    def eligibility_data(self, *, resources_only=False):
         limits = state.store(self.path).limit_show() if state.postgres() else dict(executors=2, repository_runs=1)
-        if len(running) >= limits['executors']:
-            return f"deferred: executor limit (running: {', '.join(running)})"
-        repo = item['repo'].casefold()
-        busy = next((j['id'] for j in active
-                     if j.get('repository', '').casefold() == repo), None)
-        if busy is None:
-            busy = next((s['id'] for s in unknown
-                         if s['repo'].casefold() == repo), None)
-        return f'deferred: repository busy ({busy})' if busy and limits['repository_runs'] == 1 else None
+        return {**self.data, '_eligibility': dict(jobs=self.jobs, limits=limits,
+                                                resources_only=resources_only,
+                                                available=None if resources_only else lambda item: self.choose(item) is not None)}
+
+    def room(self, item):
+        result = eligibility(item, self.eligibility_data(resources_only=True))
+        if result['status'] != 'resource busy':
+            return None
+        reason = result['reason']
+        ids = ', '.join(result.get('ids', []))
+        detail = f' (running: {ids})' if reason == 'executor limit' else f' ({ids})' if ids else ''
+        return f'deferred: {reason}{detail}'
 
     def repo(self, item):
         name = item['repo'].split('/')[-1]
@@ -898,7 +896,6 @@ class Runner:
                     job.pop('github_read_failure_since', None)
                     job.pop('github_read_failures', None)
                     self.save_job(job)
-            accepted = {s['id'] for s in self.data['slices'] if s['state'] == 'accepted'}
             by_id = {s['id']: s for s in self.data['slices']}
             start_order = [by_id[key] for key in pipeline_order]
             start_order.extend(s for s in self.data['slices'] if s['id'] not in pipeline_order)
@@ -906,8 +903,13 @@ class Runner:
                 start_order = state.store(self.path).ordered_slices(start_order)
             for item in start_order:
                 if (item['state'] == 'ready' and not item['paused'] and item['slot']
-                        and datetime.fromisoformat(item['slot']) <= self.instant
-                        and all(dep in accepted for dep in item['depends_on'])):
+                        and datetime.fromisoformat(item['slot']) <= self.instant):
+                    result = eligibility(item, self.eligibility_data())
+                    if result['status'] != 'ready':
+                        if result['status'] == 'resource busy':
+                            self.defer(item, 'deferred: capacity unavailable'
+                                       if result['reason'] == 'provider away' else self.room(item))
+                        continue
                     if item.get('brief_id'):
                         try:
                             prompt = state.store(self.path).stored_brief(item['brief_id'])

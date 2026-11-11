@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 from .state import StateError
 from .times import now
+from .eligibility import eligibility
 
 LIMIT_DESCRIPTIONS = {
     'building_limit': 'Stops more features entering Building when its capacity is full.',
@@ -451,7 +452,6 @@ class FeatureStore:
 
             # Reload to retain stage audit entries from feature_stage.
             data = self.load()
-            accepted = {s['id'] for s in data['slices'] if s['state'] == 'accepted'}
             ordered = []
             for feature in self.feature_list(stage='building'):
                 internal = self._feature(feature['id'])
@@ -473,7 +473,7 @@ class FeatureStore:
                         item['paused'] = False
                         self._pipeline_log(internal, item, 'pipeline resume', at)
                     if (item['state'] == 'ready' and not item['paused']
-                            and all(dep in accepted for dep in item['depends_on'])
+                            and eligibility(item, data)['status'] == 'ready'
                             and (item['slot'] is None or datetime.fromisoformat(item['slot']) > datetime.fromisoformat(at))):
                         item['slot'] = at
                         self._pipeline_log(internal, item, 'start', at)
@@ -698,7 +698,7 @@ class FeatureStore:
             return report
 
     def feature_add_slice(self, identifier, title, brief, model, effort, *, depends_on=(),
-                          stop_before_merge=False, actor):
+                          stop_before_merge=False, allowed_files=None, actor):
         from .cut import sections
         from .planner import new_slice
         bounded(title, 'Title')
@@ -738,6 +738,8 @@ class FeatureStore:
                         title=title, state='ready', brief_id=slice_id, flow='cli',
                         executor=dict(tool='codex', model=model, effort=effort),
                         depends_on=list(depends_on), stop_before_merge=stop_before_merge)
+            if allowed_files is not None:
+                item['allowed_files'] = list(allowed_files)
             item['log'].append(dict(at=at, actor=actor, event='add_slice'))
             self.connection.execute(
                 'INSERT INTO cplane_slice_briefs (slice_id, feature, text, actor) VALUES (%s, %s, %s, %s)',
