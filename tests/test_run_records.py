@@ -159,7 +159,7 @@ def test_runner_records_before_applying_final_and_failure_is_harmless(setup, mon
     assert job['phase'] == 'collected'
     values = store.run_record_add.call_args.kwargs
     assert values['skill_version'] == job['skills'] and job['skills']
-    assert values['input_tokens'] == 20 and values['prompt'] == 'The exact prompt.\n'
+    assert values['input_tokens'] == 20 and 'prompt' not in values
     assert values['slice_id'] == item['id'] and values['seconds'] >= 0
     assert capsys.readouterr().err == 'cplane: run recording failed\n'
 
@@ -213,3 +213,192 @@ def test_interrupted_chat_has_null_timing_and_exact_message():
     assert values['outcome'] == 'interrupted'
     assert values['started_at'] is None and values['seconds'] is None
     assert values['input_tokens'] is None
+
+
+def test_legacy_slice_call_leaves_outcomes_empty(pg_store, tmp_path):
+    job = dict(run=str(tmp_path), tool='codex', model='synthetic', prompt='PRIVATE',
+               final=dict(kind='waiting'))
+    (tmp_path / 'turn.jsonl').write_text(codex_log())
+    run_records.slice_record(pg_store, dict(id='factory/old', repo='example/factory'), job)
+    row, = pg_store.run_record_list(slice_id='factory/old')
+    assert all(row[field] is None for field in run_records.OUTCOME_FIELDS)
+    assert pg_store.run_record_show(row['id'])['prompt'] is None
+
+
+@pytest.mark.parametrize('tool,version', [('codex', 'codex-cli-exec 0.162.1\n'),
+                                         ('claude', '2.1.318 (Claude Code)\n')])
+@pytest.mark.parametrize('overrides', [{}, {'model': 'synthetic'}])
+@pytest.mark.parametrize('fenced', [False, True])
+def test_launch_captures_policy_hash_and_cli_version(setup, monkeypatch, tool, version, overrides, fenced):
+    import hashlib
+    runner, _, _ = setup
+    runner.run()
+    job = next(iter(runner.jobs.values()))
+    job.update(tool=tool, effort='high', model='synthetic', fence=fenced)
+    store = Mock()
+    store.slice_policy.return_value = dict(level='strong', overrides=overrides)
+    monkeypatch.setattr(state, 'postgres', lambda: True)
+    monkeypatch.setattr(state, 'store', lambda _: store)
+    probe = Mock(return_value=subprocess.CompletedProcess([], 0, version, ''))
+    monkeypatch.setattr(run_records.subprocess, 'run', probe)
+    run_records.launch_metadata(runner, runner.data['slices'][0], job)
+    assert job['level'] == 'strong'
+    assert job['executor_source'] == ('override' if overrides else 'level')
+    assert job['configuration'] == f"{tool} {version.split()[1] if tool == 'codex' else version.split()[0]} synthetic high"
+    assert job['brief_hash'] == hashlib.sha256(job['prompt'].encode()).hexdigest()
+    assert job['prompt'] not in str(probe.call_args)
+    command = [tool, 'exec' if tool == 'codex' else '-p', '--version']
+    if fenced:
+        command = ['factory-cli', 'run', '--tool', tool, '--repo', job['repo'],
+                   '--run', str(Path(job['run']) / 'version'), '--', *command]
+    assert probe.call_args.args[0] == command
+    store.slice_policy.return_value = None
+    run_records.launch_metadata(runner, runner.data['slices'][0], job)
+    assert job['level'] == 'standard' and job['executor_source'] == 'override'
+
+
+@pytest.mark.parametrize('error', [FileNotFoundError('PRIVATE'), OSError('PRIVATE'),
+                                   subprocess.TimeoutExpired('PRIVATE', 15)])
+def test_unavailable_version_still_captures_launch_identity(setup, monkeypatch, capsys, error):
+    runner, _, _ = setup
+    runner.run()
+    job = next(iter(runner.jobs.values()))
+    store = Mock()
+    store.slice_policy.return_value = dict(level='light', overrides={})
+    monkeypatch.setattr(state, 'postgres', lambda: True)
+    monkeypatch.setattr(state, 'store', lambda _: store)
+    monkeypatch.setattr(run_records.subprocess, 'run', Mock(side_effect=error))
+    run_records.launch_metadata(runner, runner.data['slices'][0], job)
+    assert job['level'] == 'light' and len(job['brief_hash']) == 64
+    assert job.get('configuration') is None
+    assert capsys.readouterr().err == ''
+
+
+def test_ci_red_then_green_keeps_both_in_read_order(pg_store, setup, monkeypatch, capsys):
+    from cplane.runner import GitHub
+    runner, _, _ = setup
+    # Launch using the synthetic file scheduler, then attach only accounting to PG.
+    monkeypatch.setattr(state, 'postgres', lambda: False)
+    runner.run()
+    item = runner.data['slices'][0]
+    job = runner.jobs[item['id']]
+    Path(job['run'], 'turn.jsonl').write_text(codex_log())
+    run_records.slice_record(pg_store, item, job)
+    monkeypatch.setattr(state, 'postgres', lambda: True)
+    monkeypatch.setattr(state, 'store', lambda _: pg_store)
+    github = GitHub()
+    github.repository = Mock(return_value='example/factory')
+    github.call = Mock(side_effect=[json.dumps(dict(headRefOid='a' * 40, statusCheckRollup=[
+        dict(name='test', conclusion='FAILURE')])), json.dumps(dict(headRefOid='b' * 40,
+        statusCheckRollup=[dict(name='test', conclusion='SUCCESS')]))])
+    runner.github = github
+    job['phase'] = 'pr'
+    item.update(pr=12, attention=None, stop_before_merge=True)
+    runner.pr_checks(item, job)
+    assert item['attention']['kind'] == 'escalation'
+    item['attention'] = None
+    runner.pr_checks(item, job)
+    assert item['attention']['kind'] == 'merge'
+    assert main(['runs', 'show', item['id']]) == 0
+    row, = json.loads(capsys.readouterr().out)
+    assert row['ci_result'] == [dict(sha='a' * 40, status='red', failing_job='test'),
+                                dict(sha='b' * 40, status='green', failing_job=None)]
+    assert 'prompt' not in row
+
+
+@pytest.mark.parametrize('verdict', ['pass', 'fix'])
+def test_review_verdict_only_after_validation(pg_store, verdict):
+    from cplane import review
+    add_record(pg_store)
+    job = dict(run='fixture')
+    with pytest.raises(state.StateError):
+        review.validate(dict(verdict='pass'), store=pg_store, job=job)
+    assert pg_store.run_record_list()[0]['verdict'] is None
+    answer = (dict(verdict='pass', title='PRIVATE', body='PRIVATE') if verdict == 'pass' else
+              dict(verdict='fix', tickets=[dict(title='PRIVATE', files=['src.py'],
+                                              change='PRIVATE', check='PRIVATE')],
+                   test_files=['tests/test_src.py']))
+    review.validate(answer, store=pg_store, job=job)
+    assert pg_store.run_record_list()[0]['verdict'] == verdict
+    assert 'PRIVATE' not in json.dumps(pg_store.run_record_list())
+
+
+def test_owner_wait_accumulates_intervals_across_restart(setup, monkeypatch):
+    from datetime import timedelta
+    runner, _, _ = setup
+    runner.run()
+    item = runner.data['slices'][0]
+    job = runner.jobs[item['id']]
+    store = Mock()
+    monkeypatch.setattr(state, 'postgres', lambda: True)
+    monkeypatch.setattr(state, 'store', lambda _: store)
+    start = runner.instant
+    for kind in ('merge', 'node-step', 'question', 'escalation'):
+        item['attention'] = dict(kind=kind, since=runner.instant.isoformat())
+        run_records.owner_wait(runner, item, job)
+        runner.instant += timedelta(seconds=10)
+        run_records.owner_wait(runner, item, job)
+        # Restore precisely the durable job, as a fresh runner would.
+        job = json.loads(Path(job['run'], 'job.json').read_text())
+        run_records.owner_wait(runner, item, job, close=True)
+        item['attention'] = None
+        run_records.owner_wait(runner, item, job)
+    assert job['owner_wait_seconds'] == 40
+    item['attention'] = dict(kind='owner-check', since=start.isoformat())
+    runner.instant += timedelta(seconds=100)
+    run_records.owner_wait(runner, item, job)
+    assert job['owner_wait_seconds'] == 40
+    assert store.run_record_outcome.call_args.kwargs == dict(owner_wait_seconds=40)
+
+
+def test_outcome_failure_is_private_and_harmless(capsys):
+    store = Mock()
+    store.run_record_outcome.side_effect = RuntimeError('PRIVATE')
+    run_records.outcome(store, dict(run='synthetic'), verdict='fix')
+    assert capsys.readouterr().err == 'cplane: run recording failed\n'
+
+
+def test_owner_wait_uses_planner_clear_time(setup, monkeypatch):
+    from datetime import timedelta
+    runner, _, _ = setup
+    runner.run()
+    item = runner.data['slices'][0]
+    job = runner.jobs[item['id']]
+    store = Mock()
+    monkeypatch.setattr(state, 'postgres', lambda: True)
+    monkeypatch.setattr(state, 'store', lambda _: store)
+    start = runner.instant
+    item['attention'] = dict(kind='question', since=start.isoformat())
+    item['log'].append(dict(at=start.isoformat(), actor='planner', event='attention'))
+    run_records.owner_wait(runner, item, job)
+    item['attention'] = None
+    item['log'].append(dict(at=(start + timedelta(seconds=5)).isoformat(),
+                           actor='planner', event='attention'))
+    runner.instant += timedelta(seconds=10)
+    run_records.owner_wait(runner, item, job)
+    assert job['owner_wait_seconds'] == 5
+
+
+def test_outcome_sql_failure_preserves_scheduler_transaction(pg_store, capsys):
+    add_record(pg_store)
+    with state.locked(Path('synthetic.json')) as store:
+        run_records.outcome(store, dict(run='fixture'), verdict='invalid')
+        assert store.load() == dict(version=1, slices=[])
+        run_records.outcome(store, dict(run='fixture'), verdict='pass')
+    assert pg_store.run_record_list()[0]['verdict'] == 'pass'
+    assert capsys.readouterr().err == 'cplane: run recording failed\n'
+
+
+def test_failed_outcome_write_preserves_runner_attention(setup, monkeypatch, capsys):
+    runner, _, _ = setup
+    runner.run()
+    item = runner.data['slices'][0]
+    store = Mock()
+    store.run_record_outcome.side_effect = RuntimeError('PRIVATE recording failure')
+    monkeypatch.setattr(state, 'postgres', lambda: True)
+    monkeypatch.setattr(state, 'store', lambda _: store)
+    runner.attention(item, 'escalation', 'Original runner error')
+    assert item['state'] == 'escalated'
+    assert item['attention']['body'] == 'Original runner error'
+    assert item['log'][-1]['event'] == 'escalation: Original runner error'
+    assert capsys.readouterr().err == 'cplane: run recording failed\n' * 2

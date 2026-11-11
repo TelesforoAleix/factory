@@ -300,7 +300,8 @@ class GitHub:
                 if conclusion not in ('success', 'neutral', 'skipped'):
                     pending = True
             return ('pending' if pending else 'green'), ''
-        info = json.loads(self.call(repo, 'pr', 'view', str(number), '--json', 'statusCheckRollup'))
+        info = json.loads(self.call(repo, 'pr', 'view', str(number), '--json', 'statusCheckRollup,headRefOid'))
+        self.check_sha = info.get('headRefOid')
         pending = False
         rollup = info['statusCheckRollup']
         # A stalled hosted runner is cancelled on one of two runs; the other run may pass.
@@ -363,10 +364,12 @@ class Runner:
             self.log(item, reason)
 
     def attention(self, item, kind, body):
+        run_records.owner_wait(self, item, close=True)
         body = cut(body, ATTENTION_LIMIT)
         item['attention'] = {'kind': kind, 'body': body, 'since': self.at, 'answer': None, 'approved': False}
         if kind == 'escalation':
             item['state'] = 'escalated'
+        run_records.owner_wait(self, item)
         first_line = body.partition('\n')[0]
         self.log(item, f'{kind}: {first_line}', True)
 
@@ -514,6 +517,8 @@ class Runner:
                     job[key] = previous[key]
         if resume and previous and previous.get('sha'):
             job['sha'] = previous['sha']
+        run_records.owner_wait(self, item, close=True)
+        run_records.launch_metadata(self, item, job)
         # Persist intent before starting; an ambiguous handoff reserves a slot.
         if resume and previous and previous.get('noticed') is not None:
             job['noticed'] = previous['noticed']
@@ -733,7 +738,7 @@ class Runner:
             answer = json.loads(match[1]) if match else None
         except ValueError:
             raise state.StateError('invalid review: expected fenced JSON') from None
-        reviewer.validate(answer)
+        run_records.review_record(self, job, answer)
         if answer['verdict'] == 'pass':
             job['request'] = dict(branch=job['branch'], title=answer['title'],
                                   body=answer['body'], node_steps=None)
@@ -810,6 +815,7 @@ class Runner:
         except BlockedPR as error:
             self.attention(item, 'escalation', str(error))
             return
+        run_records.owner_wait(self, item, job, close=True)
         job['phase'], job['sha'] = 'merged', sha
         self.save_job(job)
         self.log(item, f'merged: {sha}', True)
@@ -821,6 +827,7 @@ class Runner:
 
     def deliver(self, item):
         job = self.jobs.get(item['id'])
+        run_records.owner_wait(self, item, job)
         attention = item['attention']
         if job and job['phase'] == 'review-ready':
             if attention and attention['answer'] is not None:
@@ -855,6 +862,7 @@ class Runner:
                 return
             options = {'expected': job['tip']} if self.fenced else {}
             status, failing = self.github.checks(self.github_repo(item), item['pr'], **options)
+            run_records.ci_record(self, item, job, status, failing)
             self.log(item, 'approval checks: ' + status)
             if status == 'red':
                 self.attention(item, 'escalation', 'failing check: ' + failing)
@@ -874,6 +882,7 @@ class Runner:
                           else self.github.open(self.github_repo(item), job['request']))
         options = {'expected': job['tip']} if self.fenced else {}
         status, failing = self.github.checks(self.github_repo(item), item['pr'], **options)
+        run_records.ci_record(self, item, job, status, failing)
         self.log(item, 'checks: ' + status)
         if status == 'red':
             self.attention(item, 'escalation', 'failing check: ' + failing)
@@ -923,6 +932,7 @@ class Runner:
             read_failures, read_successes = set(), set()
             for item in self.data['slices']:
                 read_start = self.github.successful_reads if isinstance(self.github, GitHub) else 0
+                run_records.owner_wait(self, item)
                 if item['state'] == 'accepted':
                     # An accepted slice's finished process must not hold a slot.
                     job = self.jobs.get(item['id'])

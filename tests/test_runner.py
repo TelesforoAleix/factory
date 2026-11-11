@@ -1924,3 +1924,58 @@ def test_stuck_since_detects_idle_and_pending_checks():
     assert stuck_since(item, instant) is None
     item['state'] = 'accepted'
     assert stuck_since(item, instant) is None
+
+
+def test_ci_reads_record_both_heads_without_changing_delivery(setup, monkeypatch):
+    r, _, _ = setup
+    r.run()
+    current = r.data['slices'][0]
+    job = r.jobs[current['id']]
+    job['phase'] = 'pr'
+    current.update(pr=12, attention=None, stop_before_merge=True)
+    store = Mock()
+    monkeypatch.setattr(state, 'postgres', lambda: True)
+    monkeypatch.setattr(state, 'store', lambda _: store)
+    github = GitHub()
+    github.repository = Mock(return_value='example/repo')
+    github.call = Mock(side_effect=[
+        json.dumps(dict(headRefOid='a' * 40, statusCheckRollup=[dict(name='test', conclusion='FAILURE')])),
+        json.dumps(dict(headRefOid='b' * 40, statusCheckRollup=[dict(name='test', conclusion='SUCCESS')]))])
+    r.github = github
+    r.pr_checks(current, job)
+    assert current['attention']['kind'] == 'escalation'
+    current['attention'] = None
+    r.pr_checks(current, job)
+    assert current['attention']['kind'] == 'merge'
+    observations = [call.kwargs['ci'] for call in store.run_record_outcome.call_args_list if 'ci' in call.kwargs]
+    assert observations == [dict(sha='a' * 40, status='red', failing_job='test'),
+                            dict(sha='b' * 40, status='green', failing_job=None)]
+    assert job['phase'] == 'pr'
+
+
+def test_pipeline_failure_diagnostic_survives_missing_cli_version(setup, monkeypatch, capsys):
+    from cplane import run_records
+    from cplane.stores import FileStore
+
+    r, processes, _ = setup
+    backend = FileStore(r.path)
+    backend.pipeline_step = Mock(side_effect=RuntimeError('PRIVATE pipeline failure'))
+    backend.route_chat_events = Mock()
+    backend.ordered_slices = lambda items: items
+    backend.limit_show = lambda: dict(executors=2, repository_runs=1)
+    backend.slice_executor = lambda item: dict(tool='codex', model='synthetic', effort='medium')
+    backend.slice_policy = lambda identifier: None
+    monkeypatch.setattr(state, 'postgres', lambda: True)
+    monkeypatch.setattr(state, 'store', lambda _: backend)
+    original = run_records.subprocess.run
+
+    def missing_cli(args, **kwargs):
+        if args[0] == 'codex':
+            raise FileNotFoundError('PRIVATE missing CLI')
+        return original(args, **kwargs)
+
+    monkeypatch.setattr(run_records.subprocess, 'run', missing_cli)
+    r.run()
+    assert capsys.readouterr().err == 'pipeline step failed\n'
+    assert len(processes.started) == 1
+    assert item(r)['state'] == 'issued'

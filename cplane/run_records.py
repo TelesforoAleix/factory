@@ -1,6 +1,8 @@
 """Best-effort turn accounting; diagnostics never include executor or prompt text."""
 from datetime import datetime, timezone
 import json
+import hashlib
+import re
 import time
 from pathlib import Path
 import subprocess
@@ -11,9 +13,11 @@ from .text_bounds import cut
 from .state import StateError
 
 TOKEN_FIELDS = ('input_tokens', 'cached_tokens', 'cache_write_tokens', 'output_tokens', 'reasoning_tokens')
+OUTCOME_FIELDS = ('level', 'executor_source', 'configuration', 'brief_hash', 'ci_result',
+                  'verdict', 'corrects_slice', 'owner_wait_seconds')
 FIELDS = ('kind', 'project', 'feature_id', 'slice_id', 'session_id', 'tool', 'model', 'effort',
           *TOKEN_FIELDS, 'seconds', 'started_at', 'outcome', 'starting_commit', 'prompt',
-          'prompt_truncated', 'skill_version', 'eval_candidate')
+          'prompt_truncated', 'skill_version', 'eval_candidate', *OUTCOME_FIELDS)
 
 
 def usage(tool, output):
@@ -43,9 +47,9 @@ def starting_commit(repository):
 
 def record(store, *, turn_key, repository=None, feature=None, output=None, log=None, **values):
     """Use a savepoint so a failed insert cannot poison the scheduler transaction."""
-    if not hasattr(store, 'run_record_add'):
-        return
     try:
+        if not hasattr(store, 'run_record_add'):
+            return
         try:
             if log is not None:
                 from .executors import read_output
@@ -77,10 +81,27 @@ class RunRecordStore:
                           prompt=cut(prompt, TEXT_LIMIT) if prompt is not None else None,
                           prompt_truncated=prompt is not None and len(prompt) > TEXT_LIMIT,
                           eval_candidate=False)
+            if values.get('ci_result') is not None:
+                from psycopg.types.json import Jsonb
+                values['ci_result'] = Jsonb(values['ci_result'])
             self.connection.execute(
                 'INSERT INTO cplane_run_records (turn_key, ' + ', '.join(FIELDS) + ') VALUES (' +
                 ', '.join(['%s'] * (len(FIELDS) + 1)) + ') ON CONFLICT (turn_key) DO NOTHING',
                 (turn_key, *(values.get(field) for field in FIELDS)))
+
+    def run_record_outcome(self, turn_key, *, ci=None, **values):
+        if set(values) - set(OUTCOME_FIELDS):
+            raise ValueError('unknown outcome field')
+        from psycopg.types.json import Jsonb
+        with self.mutation():
+            assignments = [f'{field} = %s' for field in values]
+            parameters = list(values.values())
+            if ci is not None:
+                assignments.append("ci_result = COALESCE(ci_result, '[]'::jsonb) || %s")
+                parameters.append(Jsonb([ci]))
+            if assignments:
+                self.connection.execute('UPDATE cplane_run_records SET ' + ', '.join(assignments) +
+                                        ' WHERE turn_key = %s', (*parameters, turn_key))
 
     def run_record_list(self, *, slice_id=None, project=None):
         # Calculate before filtering: a session's previous row may be outside
@@ -170,7 +191,8 @@ def slice_record(store, item, job):
            log=Path(job['run']) / ('turn.jsonl' if job['tool'] == 'codex' else 'claude.json'),
            kind='slice', slice_id=item['id'], session_id=job.get('session') or None,
            tool=job['tool'], model=job.get('model'), effort=job.get('effort'),
-           prompt=job.get('prompt'), starting_commit=job.get('starting_commit'), skill_version=job.get('skills'),
+           starting_commit=job.get('starting_commit'), skill_version=job.get('skills'),
+           **{field: job.get(field) for field in OUTCOME_FIELDS},
            started_at=datetime.fromtimestamp(started / 1e9, timezone.utc) if started else None,
            seconds=max(0, end - started / 1e9) if end is not None and started else None,
            outcome=job.get('final', {}).get('kind') if job.get('final') else 'failed')
@@ -203,3 +225,109 @@ def end_time(job):
     except Exception:
         pass
     return time.time()
+
+
+def outcome(store, job, **values):
+    """Outcome writes have the same best-effort/savepoint boundary as inserts."""
+    try:
+        if not hasattr(store, 'run_record_outcome'):
+            return
+        store.run_record_outcome('slice:' + job['run'], **values)
+    except Exception:
+        print('cplane: run recording failed', file=sys.stderr)
+
+
+def launch_metadata(runner, item, job):
+    """Capture policy and exact prompt identity before the executor starts."""
+    try:
+        from . import state
+        if not state.postgres():
+            return
+        job['brief_hash'] = hashlib.sha256(job['prompt'].encode('utf-8')).hexdigest()
+        job['owner_wait_seconds'] = 0
+        job['configuration'] = None
+        store = state.store(runner.path)
+        policy = store.slice_policy(item['id'])
+        job['level'] = policy['level'] if policy else 'standard'
+        job['executor_source'] = 'override' if not policy or policy['overrides'] else 'level'
+        # Probe only the CLI version, through the same fence used by execution.
+        args = [job['tool'], 'exec' if job['tool'] == 'codex' else '-p', '--version']
+        if job.get('fence'):
+            (Path(job['run']) / 'version').mkdir(mode=0o700, exist_ok=True)
+            args = ['factory-cli', 'run', '--tool', job['tool'], '--repo', job['repo'],
+                    '--run', str(Path(job['run']) / 'version'), '--', *args]
+        try:
+            result = subprocess.run(args, capture_output=True, text=True, timeout=15)
+        except (OSError, subprocess.SubprocessError):
+            # An absent/unresponsive CLI is an unknown version, not a failed
+            # record write. Synthetic runners need no installed executor.
+            return
+        match = re.fullmatch(r'(?:codex(?:-cli)?(?:-exec)? |claude )?(\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?)(?: \(Claude Code\))?\s*',
+                             result.stdout, re.I) if result.returncode == 0 else None
+        if match:
+            job['configuration'] = f"{job['tool']} {match[1]} {job['model']} {job['effort']}"
+    except Exception:
+        print('cplane: run recording failed', file=sys.stderr)
+
+
+def review_record(runner, job, answer):
+    from . import state, review
+    store = None
+    if state.postgres():
+        try:
+            store = state.store(runner.path)
+        except Exception:
+            print('cplane: run recording failed', file=sys.stderr)
+    review.validate(answer, store=store, job=job)
+
+
+def ci_record(runner, item, job, status, failing):
+    from . import state
+    if state.postgres():
+        try:
+            sha = job.get('tip') or getattr(runner.github, 'check_sha', None)
+            outcome(state.store(runner.path), job,
+                    ci=dict(sha=sha if isinstance(sha, str) else None, status=status, failing_job=failing or None))
+        except Exception:
+            print('cplane: run recording failed', file=sys.stderr)
+
+
+def owner_wait(runner, item, job=None, *, close=False):
+    """Attribute attention intervals to the turn that requested owner work.
+
+    The local job keeps an interval cursor; absolute totals make repeated writes
+    and runner restarts harmless. Only totals reach Postgres.
+    """
+    from . import state
+    if not state.postgres():
+        return
+    try:
+        job = job or runner.jobs.get(item['id'])
+        if not job:
+            return
+        now = runner.instant.timestamp()
+        active = job.get('_owner_attention')
+        attention = item.get('attention')
+        current = (attention['since'] if attention and attention['kind'] in
+                   ('merge', 'node-step', 'question', 'escalation') else None)
+        if active and (close or current != active):
+            end = (datetime.fromisoformat(attention['since']).timestamp()
+                   if attention and attention['since'] != active else now)
+            if current is None:
+                changes = [datetime.fromisoformat(entry['at']).timestamp() for entry in item['log']
+                           if entry['event'] == 'attention' and entry['at'] > active]
+                if changes:
+                    end = min(end, min(changes))
+            job['_owner_wait_closed'] = job.get('_owner_wait_closed', 0) + max(
+                0, end - datetime.fromisoformat(active).timestamp())
+            job.pop('_owner_attention', None)
+        if current and not close:
+            job['_owner_attention'] = current
+        total = job.get('_owner_wait_closed', 0)
+        if job.get('_owner_attention'):
+            total += max(0, now - datetime.fromisoformat(job['_owner_attention']).timestamp())
+        job['owner_wait_seconds'] = total
+        outcome(state.store(runner.path), job, owner_wait_seconds=total)
+        runner.save_job(job)
+    except Exception:
+        print('cplane: run recording failed', file=sys.stderr)

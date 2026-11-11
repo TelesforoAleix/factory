@@ -311,6 +311,10 @@ def parser():
     transfer = commands.add_parser("export", parents=[common], help="export state and notices in file format")
     transfer.add_argument("path", nargs="?", help="destination state JSON path (required with notices; otherwise stdout)")
     commands.add_parser("compact", parents=[common], help="bound oversized runner text in state")
+    runs = commands.add_parser('runs', parents=[common])
+    runs_commands = runs.add_subparsers(dest='runs_command', required=True, parser_class=Parser)
+    runs_show = runs_commands.add_parser('show', parents=[common])
+    runs_show.add_argument('slice_id')
     run = commands.add_parser('run', parents=[common])
     run_commands = run.add_subparsers(dest='run_command', parser_class=Parser)
     for name in ('list', 'show', 'total', 'mark'):
@@ -389,6 +393,12 @@ def feature_command(args):
 def main(argv=None):
     args = parser().parse_args(argv)
     try:
+        if args.command == 'runs':
+            if not state.postgres():
+                raise state.StateError('run record commands require Postgres (CPLANE_DATABASE_URL)')
+            print(json.dumps(state.store(None).run_record_list(slice_id=args.slice_id),
+                             indent=2, ensure_ascii=False))
+            return 0
         if args.command == 'run' and args.run_command:
             if not state.postgres():
                 raise state.StateError('run record commands require Postgres (CPLANE_DATABASE_URL)')
