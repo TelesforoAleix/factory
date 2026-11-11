@@ -257,7 +257,9 @@ def test_launch_captures_policy_hash_and_cli_version(setup, monkeypatch, tool, v
     assert job['level'] == 'standard' and job['executor_source'] == 'override'
 
 
-def test_unreadable_version_still_captures_launch_identity(setup, monkeypatch, capsys):
+@pytest.mark.parametrize('error', [FileNotFoundError('PRIVATE'), OSError('PRIVATE'),
+                                   subprocess.TimeoutExpired('PRIVATE', 15)])
+def test_unavailable_version_still_captures_launch_identity(setup, monkeypatch, capsys, error):
     runner, _, _ = setup
     runner.run()
     job = next(iter(runner.jobs.values()))
@@ -265,11 +267,11 @@ def test_unreadable_version_still_captures_launch_identity(setup, monkeypatch, c
     store.slice_policy.return_value = dict(level='light', overrides={})
     monkeypatch.setattr(state, 'postgres', lambda: True)
     monkeypatch.setattr(state, 'store', lambda _: store)
-    monkeypatch.setattr(run_records.subprocess, 'run', Mock(side_effect=OSError('PRIVATE')))
+    monkeypatch.setattr(run_records.subprocess, 'run', Mock(side_effect=error))
     run_records.launch_metadata(runner, runner.data['slices'][0], job)
     assert job['level'] == 'light' and len(job['brief_hash']) == 64
     assert job.get('configuration') is None
-    assert capsys.readouterr().err == 'cplane: run metadata unavailable\n'
+    assert capsys.readouterr().err == ''
 
 
 def test_ci_red_then_green_keeps_both_in_read_order(pg_store, setup, monkeypatch, capsys):
@@ -375,3 +377,28 @@ def test_owner_wait_uses_planner_clear_time(setup, monkeypatch):
     runner.instant += timedelta(seconds=10)
     run_records.owner_wait(runner, item, job)
     assert job['owner_wait_seconds'] == 5
+
+
+def test_outcome_sql_failure_preserves_scheduler_transaction(pg_store, capsys):
+    add_record(pg_store)
+    with state.locked(Path('synthetic.json')) as store:
+        run_records.outcome(store, dict(run='fixture'), verdict='invalid')
+        assert store.load() == dict(version=1, slices=[])
+        run_records.outcome(store, dict(run='fixture'), verdict='pass')
+    assert pg_store.run_record_list()[0]['verdict'] == 'pass'
+    assert capsys.readouterr().err == 'cplane: run recording failed\n'
+
+
+def test_failed_outcome_write_preserves_runner_attention(setup, monkeypatch, capsys):
+    runner, _, _ = setup
+    runner.run()
+    item = runner.data['slices'][0]
+    store = Mock()
+    store.run_record_outcome.side_effect = RuntimeError('PRIVATE recording failure')
+    monkeypatch.setattr(state, 'postgres', lambda: True)
+    monkeypatch.setattr(state, 'store', lambda _: store)
+    runner.attention(item, 'escalation', 'Original runner error')
+    assert item['state'] == 'escalated'
+    assert item['attention']['body'] == 'Original runner error'
+    assert item['log'][-1]['event'] == 'escalation: Original runner error'
+    assert capsys.readouterr().err == 'cplane: run recording failed\n' * 2

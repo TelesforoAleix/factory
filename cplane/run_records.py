@@ -47,9 +47,9 @@ def starting_commit(repository):
 
 def record(store, *, turn_key, repository=None, feature=None, output=None, log=None, **values):
     """Use a savepoint so a failed insert cannot poison the scheduler transaction."""
-    if not hasattr(store, 'run_record_add'):
-        return
     try:
+        if not hasattr(store, 'run_record_add'):
+            return
         try:
             if log is not None:
                 from .executors import read_output
@@ -229,9 +229,9 @@ def end_time(job):
 
 def outcome(store, job, **values):
     """Outcome writes have the same best-effort/savepoint boundary as inserts."""
-    if not hasattr(store, 'run_record_outcome'):
-        return
     try:
+        if not hasattr(store, 'run_record_outcome'):
+            return
         store.run_record_outcome('slice:' + job['run'], **values)
     except Exception:
         print('cplane: run recording failed', file=sys.stderr)
@@ -256,13 +256,18 @@ def launch_metadata(runner, item, job):
             (Path(job['run']) / 'version').mkdir(mode=0o700, exist_ok=True)
             args = ['factory-cli', 'run', '--tool', job['tool'], '--repo', job['repo'],
                     '--run', str(Path(job['run']) / 'version'), '--', *args]
-        result = subprocess.run(args, capture_output=True, text=True, timeout=15)
+        try:
+            result = subprocess.run(args, capture_output=True, text=True, timeout=15)
+        except (OSError, subprocess.SubprocessError):
+            # An absent/unresponsive CLI is an unknown version, not a failed
+            # record write. Synthetic runners need no installed executor.
+            return
         match = re.fullmatch(r'(?:codex(?:-cli)?(?:-exec)? |claude )?(\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?)(?: \(Claude Code\))?\s*',
                              result.stdout, re.I) if result.returncode == 0 else None
         if match:
             job['configuration'] = f"{job['tool']} {match[1]} {job['model']} {job['effort']}"
     except Exception:
-        print('cplane: run metadata unavailable', file=sys.stderr)
+        print('cplane: run recording failed', file=sys.stderr)
 
 
 def review_record(runner, job, answer):
@@ -296,10 +301,10 @@ def owner_wait(runner, item, job=None, *, close=False):
     from . import state
     if not state.postgres():
         return
-    job = job or runner.jobs.get(item['id'])
-    if not job:
-        return
     try:
+        job = job or runner.jobs.get(item['id'])
+        if not job:
+            return
         now = runner.instant.timestamp()
         active = job.get('_owner_attention')
         attention = item.get('attention')
