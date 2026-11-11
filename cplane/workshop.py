@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import socketserver
 import threading
+from uuid import uuid4
 
 from factory_ui.documents import DocumentNotFound
 from .features import bounded
@@ -31,7 +32,11 @@ CHAT_INSTRUCTION = (
     'For node-step, use install_slice once to propose an install when installable; the owner starts it; install failures belong to the owner. '
     'For Testing and owner testing replies, read and follow the testing-review skill. '
     'Raise architecture, scope, contract, security, persistence, '
-    'topology and uncertain acceptance decisions to the owner with a recommendation. '
+    'topology and uncertain acceptance decisions with raise_decision and a recommendation. '
+    'For a received decision, answer_decision only when the brief or recorded decisions settle it; '
+    'otherwise pass it up with raise_decision and its decision id. Always pass owner-only items: '
+    'guard files, secret values, deleting irreplaceable data, money limits, new public endpoints '
+    'and making a repository public. '
     'Never approve merges. Propose installs only through install_slice; never retry a failed install. '
     'A refusal is a boundary; do not bypass it using shell commands.'
 )
@@ -81,8 +86,10 @@ TOOLS = [
          dict(slice=string()), ('slice',)),
     tool('return_slice', 'Send a linked slice in review back to issued with a note.',
          dict(slice=string(), note=string()), ('slice', 'note')),
-    tool('raise_decision', 'Raise a short decision and recommendation to the owner.',
-         dict(text=string(), recommendation=string()), ('text', 'recommendation')),
+    tool('raise_decision', 'Raise a decision up the chat chain; supply decision to pass a held decision on.',
+         dict(text=string(), recommendation=string(), decision=string()), ('text', 'recommendation')),
+    tool('answer_decision', 'Answer a held decision from the brief or recorded decisions; owner-only items must be passed on.',
+         dict(decision=string(), text=string()), ('decision', 'text')),
 ]
 TOOLS += [
     tool('inbox_list', 'Read inbox entries.'),
@@ -266,14 +273,8 @@ class Workshop:
                 item['log'].append(dict(at=at, actor=actor, event=name))
                 self.store.save(data)
                 result = select(item, SLICE_FIELDS)
-            elif name == 'raise_decision':
-                bounded(args['text'], 'Decision text', 2000)
-                bounded(args['recommendation'], 'Recommendation', 2000)
-                at = now().isoformat()
-                self.store.append_notices([dict(at=at, id=actor, event='owner-check', kind='owner-check',
-                    chat=self.chat_id, actor=actor,
-                    text=f"{chat['title']}: {args['text']}\nRecommendation: {args['recommendation']}")])
-                result = dict(raised=True)
+            elif name in ('raise_decision', 'answer_decision'):
+                result = self._decision(chat, name, args)
             elif name == 'add_feature':
                 if chat['kind'] == 'feature':
                     raise StateError('Feature chats cannot add features')
@@ -324,6 +325,72 @@ class Workshop:
                     'INSERT INTO cplane_workshop_writes (chat, operation) VALUES (%s, %s)',
                     (self.chat_id, name))
             return select(result, FEATURE_FIELDS) if isinstance(result, dict) and 'stage' in result else result
+
+    def _decision(self, chat, operation, args):
+        """Only these two tools may deliver decisions across chat boundaries.
+
+        The caller holds the mutation lock: delivery and append-only snapshots
+        commit together, so a concurrent answer/pass cannot use a stale holder.
+        """
+        identifier = args.get('decision')
+        if identifier is not None:
+            bounded(identifier, 'Decision id', 200)
+            row = self.store.connection.execute(
+                "SELECT document FROM cplane_notices WHERE document->>'event' = 'workshop-decision' "
+                "AND document->>'decision' = %s ORDER BY id DESC LIMIT 1", (identifier,)).fetchone()
+            if row is None:
+                raise StateError('Decision not found')
+            record = dict(row[0])
+            if record['status'] == 'closed':
+                raise StateError('Decision is closed')
+            if record['holder'] != self.chat_id:
+                raise StateError('Only the holding chat may act on this decision')
+        else:
+            record = dict(event='workshop-decision', decision=uuid4().hex,
+                          origin=self.chat_id, origin_title=chat['title'], status='open')
+        actor = f'chat:{self.chat_id}'
+        record.update(at=now().isoformat(), actor=actor)
+        if operation == 'answer_decision':
+            bounded(args['text'], 'Answer', 8000)
+            self.store.system_message(record['origin'],
+                f"Decision: {record['decision']}\nAnswer from {chat['title']}: {args['text']}")
+            record.update(status='closed', answer=args['text'])
+            result = dict(answered=True, decision=record['decision'])
+        else:
+            if record['status'] == 'owner':
+                raise StateError('Decision has already reached the owner')
+            bounded(args['text'], 'Decision text', 2000)
+            bounded(args['recommendation'], 'Recommendation', 2000)
+            record.update(text=args['text'], recommendation=args['recommendation'])
+            target = None
+            if chat['kind'] == 'feature':
+                project = self.store._feature(chat['feature'])['project']
+                candidates = self.store.chats(kind='project', project=project)
+            else:
+                candidates = []
+            orchestrators = self.store.chats(kind='orchestrator')
+            if chat['kind'] != 'orchestrator':
+                candidates += orchestrators
+            for candidate in candidates:
+                if (candidate['state'] != 'failed' and not candidate['archived']
+                        and self.store.chat_can_take(candidate['id'])):
+                    target = candidate['id']
+                    break
+            text = (f"Decision: {record['decision']}\n"
+                    f"{record['origin_title']}: {record['text']}\n"
+                    f"Recommendation: {record['recommendation']}")
+            if target is not None:
+                self.store.system_message(target, text)
+                record['holder'] = target
+            else:
+                # Even if automation is paused, the orchestrator handles the
+                # owner's reply once the owner writes there.
+                record.update(status='owner', holder=orchestrators[0]['id'] if orchestrators else self.chat_id)
+                self.store.append_notices([dict(at=record['at'], id=actor, event='owner-check',
+                    kind='owner-check', chat=record['holder'], actor=actor, text=text)])
+            result = dict(raised=True, decision=record['decision'])
+        self.store.append_notices([record])
+        return result
 
 
 class WorkshopServer(AbstractContextManager):

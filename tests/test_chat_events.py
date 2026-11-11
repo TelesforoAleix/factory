@@ -350,3 +350,124 @@ def test_old_queued_owner_slice_event_is_preserved_without_running(context, slic
     assert message['status'] == 'done' and message['text'].endswith('Old event')
     store.system_message(sid, 'Event: testing\nSlice: (feature event)\n\nFeature event')
     assert store.claim_session_turn()['text'].endswith('Feature event')
+
+
+@pytest.mark.parametrize('unavailable', ['missing', 'archived', 'paused', 'failed', 'limit'])
+@pytest.mark.parametrize('level', ['project', 'orchestrator'])
+def test_decision_skips_unavailable_levels(context, unavailable, level):
+    store, workshops, chats, *_ = context
+    skipped = chats[level]
+    with store.mutation():
+        if unavailable == 'missing':
+            store.connection.execute('DELETE FROM cplane_sessions WHERE id = %s', (skipped['id'],))
+        elif unavailable == 'archived':
+            store.connection.execute('UPDATE cplane_sessions SET archived = true WHERE id = %s', (skipped['id'],))
+        elif unavailable == 'paused':
+            store.connection.execute('UPDATE cplane_sessions SET auto_paused = true WHERE id = %s', (skipped['id'],))
+        elif unavailable == 'failed':
+            store.connection.execute("UPDATE cplane_sessions SET state = 'failed' WHERE id = %s", (skipped['id'],))
+        else:
+            store.connection.execute('UPDATE cplane_sessions SET auto_turns = %s WHERE id = %s',
+                                     (store.limit_show()['chat_auto_turns'], skipped['id']))
+    caller = 'feature' if level == 'project' else 'project'
+    identifier = value(call(workshops[caller], 'raise_decision', text='Question', recommendation='A'))['decision']
+    records = [n for _, n in store.notices() if n['event'] == 'workshop-decision']
+    assert records[-1]['decision'] == identifier
+    owners = [n for _, n in store.notices() if n['event'] == 'owner-check']
+    if level == 'project':
+        assert not owners
+        assert records[-1]['holder'] == chats['orchestrator']['id']
+        assert identifier in store.session_messages('homelab', chats['orchestrator']['id'])[-1]['text']
+    else:
+        assert len(owners) == 1 and records[-1]['status'] == 'owner'
+        if unavailable == 'missing':
+            cards = create_app(store).test_client().get('/api/home').json['attention']
+            assert len(cards) == 1 and identifier in cards[0]['text']
+    if unavailable != 'missing':
+        assert not any(identifier in m['text'] for m in store.session_messages(skipped['area'], skipped['id']))
+    if unavailable == 'limit':
+        assert store.chat_show(skipped['id'])['auto_paused']
+        assert len([n for _, n in store.notices() if n['event'] == 'chat-paused']) == 1
+
+
+def test_decision_home_phone_and_owner_reply(context, tmp_path, monkeypatch):
+    import json
+    from cplane.runner import export_bot
+
+    store, workshops, chats, *_ = context
+    export = tmp_path / 'export'
+    export.mkdir(mode=0o700)
+    monkeypatch.setenv('CPLANE_BOT_EXPORT', str(export))
+    monkeypatch.setattr('cplane.fence.trusted_directory', lambda path: None)
+    client = create_app(store).test_client()
+    identifier = value(call(workshops['feature'], 'raise_decision', text='Choose A?', recommendation='Use A'))['decision']
+
+    def cards():
+        return [a for a in client.get('/api/home').json['attention'] if a['kind'] == 'decision']
+
+    def phone():
+        export_bot(None)
+        return [json.loads(line) for line in (export / 'slices.json.outbox.jsonl').read_text().splitlines()]
+
+    assert cards() == [] and phone() == []
+    value(call(workshops['project'], 'raise_decision', decision=identifier, text='Choose A?', recommendation='Use A'))
+    assert cards() == [] and phone() == []
+    value(call(workshops['orchestrator'], 'raise_decision', decision=identifier, text='Choose A?', recommendation='Use A'))
+    assert len(cards()) == len(phone()) == 1
+    assert cards()[0]['chat'] == chats['orchestrator']['id']
+    assert f"{chats['feature']['title']}: Choose A?" in cards()[0]['text']
+    assert identifier in cards()[0]['text']
+    assert phone()[0]['event'] == 'owner-check'
+    store.chat_open(chats['orchestrator']['id'])
+    assert cards() == []
+    # Owner messages use the ordinary queue; the orchestrator closes the decision.
+    store.session_messages('homelab', chats['orchestrator']['id'], 'Use A')
+    value(call(workshops['orchestrator'], 'answer_decision', decision=identifier, text='The owner chose A'))
+    assert len(phone()) == 1
+    assert 'The owner chose A' in store.session_messages('factory', chats['feature']['id'])[-1]['text']
+
+
+def test_decision_delivery_rollback_and_concurrent_answers(context, monkeypatch):
+    store, workshops, chats, *_, documents = context
+    original = store.system_message
+    monkeypatch.setattr(store, 'system_message', lambda *args: (_ for _ in ()).throw(RuntimeError('Synthetic')))
+    before = store.snapshot()
+    refused(call(workshops['feature'], 'raise_decision', text='Question', recommendation='A'), 'Workshop unavailable')
+    assert store.snapshot() == before
+    monkeypatch.setattr(store, 'system_message', original)
+    identifier = value(call(workshops['feature'], 'raise_decision', text='Question', recommendation='A'))['decision']
+
+    def answer(_):
+        return call(Workshop(PostgresStore(store._url), chats['project']['id'], documents),
+                    'answer_decision', decision=identifier, text='Recorded A')
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(answer, range(2)))
+    assert sum(not r['isError'] for r in results) == 1
+    assert sum(identifier in m['text'] for m in store.session_messages('factory', chats['feature']['id'])) == 1
+
+
+def test_all_decision_levels_skipped_still_reach_owner(context):
+    store, workshops, chats, *_ = context
+    with store.mutation():
+        store.connection.execute('UPDATE cplane_sessions SET auto_paused = true WHERE id = ANY(%s)',
+                                 ([chats['project']['id'], chats['orchestrator']['id']],))
+    identifier = value(call(workshops['feature'], 'raise_decision', text='Owner-only choice', recommendation='Wait'))['decision']
+    cards = create_app(store).test_client().get('/api/home').json['attention']
+    assert len(cards) == 1 and cards[0]['chat'] == chats['orchestrator']['id']
+    assert identifier in cards[0]['text'] and chats['feature']['title'] in cards[0]['text']
+    value(call(workshops['orchestrator'], 'answer_decision', decision=identifier, text='Owner said wait'))
+    assert 'Owner said wait' in store.session_messages('factory', chats['feature']['id'])[-1]['text']
+
+
+def test_answer_delivery_failure_keeps_decision_open(context):
+    store, workshops, chats, *_ = context
+    identifier = value(call(workshops['feature'], 'raise_decision', text='Question', recommendation='A'))['decision']
+    with store.mutation():
+        store.connection.execute("UPDATE cplane_sessions SET state = 'failed' WHERE id = %s", (chats['feature']['id'],))
+    before = store.snapshot()
+    refused(call(workshops['project'], 'answer_decision', decision=identifier, text='Recorded A'), 'Chat failed')
+    assert store.snapshot() == before
+    with store.mutation():
+        store.connection.execute("UPDATE cplane_sessions SET state = 'idle' WHERE id = %s", (chats['feature']['id'],))
+    value(call(workshops['project'], 'answer_decision', decision=identifier, text='Recorded A'))
