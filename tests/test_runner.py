@@ -49,6 +49,8 @@ class FakeGitHub:
         self.is_open = Mock(return_value=True)
         self.checks = Mock(return_value=('pending', ''))
         self.merge = Mock(return_value='abc123')
+        self.merge_info = Mock(return_value={})
+        self.update_branch = Mock(return_value='c' * 40)
 
 
 @pytest.fixture
@@ -411,7 +413,9 @@ def test_post_merge_node_step_replays_after_state_save_failure(setup, monkeypatc
 
 
 @pytest.mark.parametrize('title', ['[Blocked] needs input', '[bLoCkEd] needs input',
-                                  'Blocked: needs input', 'BLOCKED: needs input'])
+                                  'Blocked: needs input', 'BLOCKED: needs input',
+                                  'Draft: input', '[Draft] input', 'x DO NOT MERGE',
+                                  'x merge blocker'])
 @pytest.mark.parametrize('approved', [False, True])
 def test_blocked_live_pr_title_is_not_merged(setup, title, approved):
     r, p, gh = setup
@@ -423,17 +427,15 @@ def test_blocked_live_pr_title_is_not_merged(setup, title, approved):
     real_github.call = Mock(return_value=json.dumps(
         {'state': 'OPEN', 'title': title, 'mergeCommit': None, 'headRefOid': 'b' * 40}))
     gh.merge.side_effect = real_github.merge
+    gh.merge_info.side_effect = real_github.merge_info
     gh.checks.return_value = 'green', ''
     r.run()
-    if approved:
-        edit(r, lambda s: s['attention'].update(approved=True))
-        r.run()
     assert item(r)['attention']['kind'] == 'escalation'
-    assert item(r)['attention']['body'] == 'PR titled as blocked; not merged'
+    assert item(r)['attention']['body'] == 'PR marked not for merging'
     assert r.jobs['voice/W1']['phase'] == 'pr'
     assert 'sha' not in r.jobs['voice/W1']
     real_github.call.assert_called_once_with('example/repo', 'pr', 'view', '12',
-                                             '--json', 'state,mergeCommit,title,headRefOid')
+                                             '--json', 'state,mergeCommit,title,body,isDraft,headRefOid,mergeStateStatus,mergeable')
     assert len(p.started) == 1
 
 
@@ -1830,3 +1832,176 @@ def test_runner_dependency_waits_for_merge_and_install(setup, monkeypatch):
     state.save(r.path, data)
     r.run()
     assert [job['id'] for job in processes.started] == ['voice/W1']
+
+
+@pytest.mark.parametrize('metadata', [dict(body='Please DO NOT MERGE this'),
+                                       dict(body='merge blocker: waiting'), dict(isDraft=True)])
+@pytest.mark.parametrize('stop', [False, True])
+def test_not_for_merge_body_and_github_draft_never_get_cards(setup, metadata, stop):
+    r, p, gh = setup
+    edit(r, lambda s: s.update(stop_before_merge=stop))
+    r.run()
+    p.finish('waiting', pr_reply())
+    r.run()
+    live = GitHub()
+    live.call = Mock(return_value=json.dumps(dict(state='OPEN', title='Ordinary title',
+                                                  headRefOid='b' * 40, **metadata)))
+    gh.merge_info.side_effect = live.merge_info
+    gh.checks.return_value = ('green', '')
+    r.run()
+    assert item(r)['attention']['body'] == 'PR marked not for merging'
+    gh.merge.assert_not_called()
+    assert not any(e['event'].startswith('merge:') for e in item(r)['log'])
+
+
+def test_behind_branch_updates_once_then_waits_for_new_head_ci(setup):
+    r, p, gh = setup
+    edit(r, lambda s: s.update(stop_before_merge=False))
+    r.run()
+    p.finish('waiting', pr_reply())
+    r.run()
+    gh.merge_info.return_value = dict(mergeStateStatus='BEHIND', mergeable='MERGEABLE')
+    gh.checks.return_value = ('green', '')
+    r.run()
+    gh.update_branch.assert_called_once_with('example/repo', 12, 'b' * 40)
+    gh.merge.assert_not_called()
+    assert r.jobs['voice/W1']['tip'] == 'c' * 40
+    gh.merge_info.return_value = dict(mergeStateStatus='CLEAN', mergeable='MERGEABLE')
+    gh.checks.return_value = ('pending', '')
+    r.run()
+    gh.checks.assert_called_with('example/repo', 12, expected='c' * 40)
+    gh.merge.assert_not_called()
+    gh.checks.return_value = ('green', '')
+    r.run()
+    gh.merge.assert_called_once_with('example/repo', 12, expected='c' * 40)
+
+
+def test_branch_update_conflict_has_fixed_reason(setup):
+    from cplane.runner import BranchConflict
+    r, p, gh = setup
+    r.run()
+    p.finish('waiting', pr_reply())
+    r.run()
+    gh.merge_info.return_value = dict(mergeStateStatus='BEHIND', mergeable='MERGEABLE')
+    gh.update_branch.side_effect = BranchConflict('PR conflicts with main; needs a new slice from main')
+    r.run()
+    assert item(r)['attention']['body'] == 'PR conflicts with main; needs a new slice from main'
+    gh.merge.assert_not_called()
+
+
+def test_github_update_branch_uses_merge_and_classifies_conflict(monkeypatch):
+    from cplane.runner import BranchConflict
+    gh = GitHub()
+    gh.call = Mock(side_effect=['', '{"state":"OPEN","title":"OK","headRefOid":"new"}'])
+    assert gh.update_branch('example/repo', 12, 'old') == 'new'
+    assert gh.call.call_args_list[0].args == (
+        'example/repo', 'pr', 'update-branch', '12', '--expected-head-oid', 'old')
+    monkeypatch.setattr('cplane.fence.github_environment', lambda _: {})
+    monkeypatch.setattr(subprocess, 'run', Mock(return_value=subprocess.CompletedProcess([], 1, '', 'merge conflict')))
+    with pytest.raises(BranchConflict, match='^PR conflicts with main; needs a new slice from main$'):
+        GitHub().update_branch('example/repo', 12, 'old')
+
+
+def test_rewritten_publish_escalates_once_and_answer_resumes_existing_copy(setup):
+    r, p, gh = setup
+    r.run()
+    original = p.started[-1]
+    p.finish('waiting', pr_reply())
+    reason = 'branch was rewritten; merge main instead of rebasing'
+    r.fence.publish.side_effect = state.StateError(reason)
+    r.run()
+    assert r.jobs['voice/W1']['phase'] == 'publish-blocked'
+    for _ in range(3):
+        r.run()
+    r.fence.publish.assert_called_once()
+    assert sum(e['event'] == 'escalation: ' + reason for e in item(r)['log']) == 1
+    edit(r, lambda s: s['attention'].update(answer='Merge main and continue'))
+    r.run()
+    assert len(p.started) == 2
+    assert p.started[-1]['repo'] == original['repo']
+    assert p.started[-1]['resume'] == 'session-1'
+    r.fence.publish.assert_called_once()
+    gh.open.assert_not_called()
+
+
+@pytest.mark.parametrize('with_job', [False, True])
+def test_answer_without_session_restarts_from_brief(setup, with_job):
+    r, p, _ = setup
+    if with_job:
+        r.run()
+        p.results[p.started[-1]['run']] = (True, '', None, 'start failed')
+        r.run()
+    else:
+        r.fence.prepare.side_effect = OSError('start failed')
+        r.run()
+        r.fence.prepare.side_effect = lambda repo, branch, token: dict(
+            repo=str(r.repos / 'repo'), branch=branch, base='a' * 40, repository=repo)
+    assert not item(r)['session'] or not item(r)['session']['id']
+    edit(r, lambda s: s['attention'].update(answer='Try again'))
+    r.run()
+    assert len(p.started) == (2 if with_job else 1)
+    assert p.started[-1]['resume'] is None
+    assert_prompt(p.started[-1], 'The exact prompt.\n')
+    assert item(r)['attention'] is None
+
+
+@pytest.mark.parametrize('age,expected', [(1800, 0), (1801, 1)])
+def test_usage_probe_refreshes_only_stale_full_usage(setup, monkeypatch, age, expected):
+    r, p, _ = setup
+    used = [99]
+    r.codex_reader = lambda: used[0]
+    monkeypatch.setattr('cplane.runner.codex_report', lambda: ([{'used_percent': 99}], NOW.timestamp() - age))
+    probe = Mock(side_effect=lambda _: used.__setitem__(0, 0))
+    monkeypatch.setattr('cplane.runner.probe_codex_usage', probe)
+    r.run()
+    assert probe.call_count == expected
+    assert len(p.started) == expected
+
+
+def test_usage_probe_hourly_limit_survives_runner_passes(setup, monkeypatch):
+    r, p, _ = setup
+    r.codex_reader = lambda: 99
+    monkeypatch.setattr('cplane.runner.codex_report', lambda: ([{'used_percent': 99}], NOW.timestamp() - 7200))
+    probe = Mock(side_effect=OSError('unavailable'))
+    monkeypatch.setattr('cplane.runner.probe_codex_usage', probe)
+    for minutes in (0, 1, 59, 60):
+        r.clock = lambda: NOW + timedelta(minutes=minutes)
+        r.run()
+        assert probe.call_count == (2 if minutes == 60 else 1)
+    assert not p.started
+
+
+def test_unapproved_merge_card_is_replaced_when_pr_becomes_blocked(setup):
+    from cplane.runner import BlockedPR
+    r, p, gh = setup
+    r.run()
+    p.finish('waiting', pr_reply())
+    r.run()
+    gh.checks.return_value = ('green', '')
+    r.run()
+    assert item(r)['attention']['kind'] == 'merge'
+    gh.merge_info.side_effect = BlockedPR('PR marked not for merging')
+    r.run()
+    assert item(r)['attention']['kind'] == 'escalation'
+    assert item(r)['attention']['body'] == 'PR marked not for merging'
+    gh.merge.assert_not_called()
+
+
+def test_usage_report_age_comes_from_report_not_session_activity(tmp_path):
+    from cplane.runner import codex_report
+    report_time = NOW - timedelta(hours=2)
+    log = tmp_path / 'session.jsonl'
+    log.write_text(json.dumps(dict(timestamp=report_time.isoformat(),
+        payload=dict(rate_limits=dict(primary=dict(used_percent=99))))) + '\n' +
+        json.dumps(dict(timestamp=NOW.isoformat(), payload=dict(type='other activity'))) + '\n')
+    assert codex_report(tmp_path)[1] == report_time.timestamp()
+
+
+def test_usage_observation_outside_run_never_probes(setup, monkeypatch):
+    r, _, _ = setup
+    r.instant, r.jobs = NOW, {}
+    r.codex_reader = lambda: 99
+    probe = Mock(side_effect=AssertionError('read-only observations never start a CLI'))
+    monkeypatch.setattr('cplane.runner.probe_codex_usage', probe)
+    assert r.choose(item(r)) is None
+    probe.assert_not_called()

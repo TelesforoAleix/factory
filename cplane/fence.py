@@ -208,7 +208,12 @@ class Fence:
             raise StateError('GitHub default branch unavailable')
         if match[1] == job['branch']:
             raise StateError('bundle refused: slice branch is now the default branch')
-        self.git(clean, 'push', 'origin', f'{tip}:{expected}', auth=True)
+        result = self.git(clean, 'push', '--porcelain', 'origin', f'{tip}:{expected}',
+                          auth=True, allow_failure=True)
+        if result.returncode:
+            if re.search(r'\[rejected\].*(?:non-fast-forward|fetch first)', result.stdout):
+                raise StateError('branch was rewritten; merge main instead of rebasing')
+            raise StateError('fenced Git operation failed')
         return tip
 
 
