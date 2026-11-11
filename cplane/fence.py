@@ -1,4 +1,5 @@
 """Host side of fenced delivery. Agent copies are data, never Git working directories."""
+import json
 import os
 from pathlib import Path
 import re
@@ -9,6 +10,7 @@ import subprocess
 import sys
 
 from .state import StateError
+from . import deny
 
 ROOT_UID = 0
 CLI_UID = CLI_GID = 21000
@@ -95,6 +97,31 @@ def snapshot_bundle(folder):
 
 
 class Fence:
+    def __init__(self):
+        self.begin_pass()
+
+    def begin_pass(self):
+        self.visibility = {}
+
+    def is_public(self, repo):
+        if repo not in self.visibility:
+            public = True
+            try:
+                result = subprocess.run(
+                    ['gh', 'api', f'repos/{repo}'], cwd='/', capture_output=True,
+                    text=True, env=github_environment([repo]), timeout=30)
+                if result.returncode == 0:
+                    public = json.loads(result.stdout).get('private') is not True
+            except Exception:
+                # Authentication, network and malformed responses all fail closed.
+                pass
+            self.visibility[repo] = public
+        return self.visibility[repo]
+
+    def check_request(self, repo, request):
+        if self.is_public(repo):
+            deny.Check().request(request)
+
     def resume(self, previous, session):
         if not previous or not previous.get('fence'):
             raise StateError('fenced resume metadata unavailable; needs attention')
@@ -136,6 +163,7 @@ class Fence:
                    '-c', 'protocol.file.allow=always', *map(str, args)]
         try:
             result = subprocess.run(command, capture_output=True, text=True,
+                                    encoding='utf-8', errors='surrogateescape',
                                     env=github_environment([repo]) if auth else host_environment())
         except OSError:
             raise StateError('fenced Git could not run') from None
@@ -208,6 +236,10 @@ class Fence:
             raise StateError('GitHub default branch unavailable')
         if match[1] == job['branch']:
             raise StateError('bundle refused: slice branch is now the default branch')
+        if self.is_public(job['repository']):
+            check = deny.Check()
+            check.request(request)
+            check.commits(lambda *args: self.git(clean, *args), job['base'], tip)
         self.git(clean, 'push', 'origin', f'{tip}:{expected}', auth=True)
         return tip
 
