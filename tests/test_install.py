@@ -81,8 +81,12 @@ def test_request_validation_and_global_exclusion(make_state, slice_data):
     other['id'] = 'other/S1'
     path = make_state([node_step(slice_data), node_step(other)])
     assert main(['--state', str(path), '--actor', 'chat:12', 'install', slice_data['id']]) == 0
-    assert list(installation.pending(state.load(path)))[0][0]['log'][0]['actor'] == 'chat:12'
-    assert main(['--state', str(path), 'install', other['id']]) == 1
+    proposed = state.load(path)['slices'][0]['log'][0]
+    assert proposed['actor'] == 'chat:12'
+    assert proposed['event'].startswith('install proposed: ')
+    assert not list(installation.pending(state.load(path)))
+    assert main(['--state', str(path), 'install', other['id']]) == 0
+    assert main(['--state', str(path), 'install', slice_data['id']]) == 1
     assert main(['--state', str(path), '--actor', 'runner', 'install', other['id']]) == 1
     assert not Path('/NEVER-EXECUTE').exists()
 
@@ -358,7 +362,8 @@ def test_postgres_request_route_and_transaction(pg_store, slice_data):
         assert len(pg_store.notices()) == 1
 
 
-def test_pass_only_launches_after_explicit_request(tmp_path, slice_data, make_state, monkeypatch):
+@pytest.mark.parametrize('owner_request', ['cli', 'tap'])
+def test_pass_only_launches_after_explicit_request(tmp_path, slice_data, make_state, monkeypatch, owner_request):
     from test_runner import FakeProcesses, FakeGitHub, NOW
     monkeypatch.setenv('CPLANE_FENCE', '1')
     item = node_step(slice_data)
@@ -383,6 +388,18 @@ def test_pass_only_launches_after_explicit_request(tmp_path, slice_data, make_st
     runner.run()
     assert not launches.exists()
     assert main(['--state', str(path), '--actor', 'chat:21', 'install', item['id']]) == 0
+    runner.run()
+    runner.run()
+    assert not launches.exists()
+    assert not list(installation.pending(state.load(path)))
+    if owner_request == 'cli':
+        assert main(['--state', str(path), 'install', item['id']]) == 0
+        assert main(['--state', str(path), 'install', item['id']]) == 1
+    else:
+        client = create_app(FileStore(path)).test_client()
+        url = '/api/slices/' + item['id'] + '/install'
+        assert client.post(url, headers={'X-Factory-UI': '1'}).status_code == 202
+        assert client.post(url, headers={'X-Factory-UI': '1'}).status_code == 400
     runner.run()
     runner.run()
     assert launches.read_text().count('/usr/local/bin/factory-install') == 1
@@ -740,3 +757,38 @@ def test_intake_account_refuses_privileged_group_before_creating_user(installer,
         module.intake_account()
     lookup.assert_not_called()
     command.assert_not_called()
+
+
+@pytest.mark.parametrize('event,actor', [
+    ('install proposed: ', 'chat:12'),
+    ('install proposed: ', 'owner'),
+    (installation.REQUEST, 'chat:12'),
+])
+def test_process_ignores_proposals_and_legacy_chat_requests(tmp_path, slice_data, monkeypatch, event, actor):
+    item = node_step(slice_data)
+    item['log'].append(dict(at='2026-11-08T00:00:00Z', actor=actor, event=event + 'a' * 32))
+    runner = Runner(tmp_path / 'slices.json', runs=tmp_path / 'runs')
+    runner.data = dict(slices=[item])
+    runner.jobs = {item['id']: dict(phase='node-step', sha=SHA)}
+    command = Mock(side_effect=AssertionError('proposal must not query or start a unit'))
+    monkeypatch.setattr(installation.subprocess, 'run', command)
+    start = Mock()
+    monkeypatch.setattr(installation, 'start_unit', start)
+    installation.process(runner)
+    command.assert_not_called()
+    start.assert_not_called()
+    assert item['attention']['answer'] is None
+    assert not runner.runs.exists()
+
+
+@pytest.mark.parametrize('event', ['install proposed: ', installation.REQUEST])
+def test_chat_proposal_is_once_per_attention_interval(slice_data, event):
+    item = node_step(slice_data)
+    item['log'].append(dict(at='2026-11-08T00:00:00Z', actor='chat:12', event=event + 'a' * 32))
+    assert installation.chat_requested(item)
+    with pytest.raises(state.StateError, match='already has a chat'):
+        installation.request_change('chat:13')(item, dict(slices=[item]), '2026-11-08T00:01:00Z')
+    item['attention']['since'] = '2026-11-08T00:02:00Z'
+    assert not installation.chat_requested(item)
+    installation.request_change('chat:13')(item, dict(slices=[item]), '2026-11-08T00:03:00Z')
+    assert installation.chat_requested(item)

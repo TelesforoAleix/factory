@@ -47,7 +47,7 @@ def pending(data):
         done = {e['event'][len(FINISHED):] for e in item['log'] if e['event'].startswith(FINISHED)}
         for entry in item['log']:
             event = entry['event']
-            if event.startswith(REQUEST) and event[len(REQUEST):] not in done:
+            if entry['actor'] == 'owner' and event.startswith(REQUEST) and event[len(REQUEST):] not in done:
                 yield item, event[len(REQUEST):]
 
 
@@ -62,12 +62,12 @@ def install_failure(attention):
 
 
 def chat_requested(item):
-    """One chat request per attention interval, even after a failed attempt."""
+    """One chat proposal per attention interval, including legacy chat requests."""
     attention = item['attention']
     if not attention:
         return False
     from datetime import datetime
-    return any(e['event'].startswith(REQUEST) and e['actor'].startswith('chat:')
+    return any(e['event'].startswith((REQUEST, 'install proposed: ')) and e['actor'].startswith('chat:')
                and datetime.fromisoformat(e['at']) >= datetime.fromisoformat(attention['since']) for e in item['log'])
 
 
@@ -102,13 +102,14 @@ def request_change(actor):
         if actor != 'owner' and install_failure(attention):
             raise state.StateError('Install failures belong to the owner')
         current = next(pending(data), None)
-        if current and actor == 'owner' and current[0]['id'] == item['id'] and any(
-                e['event'] == REQUEST + current[1] and e['actor'].startswith('chat:') for e in item['log']):
-            return f'Install already requested for {item["id"]}', None
         if current:
             raise state.StateError('an install is already requested or running')
-        item['log'].append({'at': at, 'actor': actor, 'event': REQUEST + uuid.uuid4().hex})
-        return f'Install requested for {item["id"]}', None
+        if actor != 'owner' and chat_requested(item):
+            raise state.StateError('This node step already has a chat install proposal')
+        event = REQUEST if actor == 'owner' else 'install proposed: '
+        item['log'].append({'at': at, 'actor': actor, 'event': event + uuid.uuid4().hex})
+        action = 'requested' if actor == 'owner' else 'proposed'
+        return f'Install {action} for {item["id"]}', None
     return change
 
 

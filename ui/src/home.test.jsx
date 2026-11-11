@@ -3,7 +3,7 @@ import React from 'react';
 import {render, screen, fireEvent, waitFor, cleanup} from '@testing-library/react';
 import {MemoryRouter} from 'react-router-dom';
 import {afterEach, test, expect, vi} from 'vitest';
-import {Home} from './home';
+import {Home, Attention} from './home';
 afterEach(() => {cleanup(); vi.unstubAllGlobals();});
 
 test('Home filters sections and sends a quick answer under the guard', async () => {
@@ -69,4 +69,17 @@ test('Home links new arrivals and ready explorations', async () => {
   render(<MemoryRouter><Home/></MemoryRouter>);
   expect((await screen.findByRole('link',{name:'1 inbox items need routing'})).getAttribute('href')).toBe('/ideas?tab=inbox');
   expect(screen.getByRole('link',{name:'Insight · Exploration ready'}).getAttribute('href')).toBe('/ideas?tab=ideas&idea=8');
+});
+
+
+test('chat proposal labels the install card and leaves the owner Install action available', () => {
+  const act = vi.fn();
+  const item = {kind:'install',id:'factory/IW1',installable:true,installing:false,label:'proposed by chat',text:'Install the merged commit'};
+  render(<MemoryRouter><Attention item={item} act={act}/></MemoryRouter>);
+  expect(screen.getByText('Install · proposed by chat')).toBeTruthy();
+  const install = screen.getByRole('button', {name:'Install'});
+  expect(install.disabled).toBe(false);
+  expect(act).not.toHaveBeenCalled();
+  fireEvent.click(install);
+  expect(act).toHaveBeenCalledExactlyOnceWith('/api/slices/factory/IW1/install', {});
 });

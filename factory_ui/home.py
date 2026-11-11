@@ -3,7 +3,7 @@ import os
 from datetime import datetime, timezone
 
 from cplane.runner import stuck_since
-from cplane.installation import pending, install_failure
+from cplane.installation import pending, install_failure, chat_requested
 from cplane.chats import public_chat_result
 
 
@@ -41,7 +41,8 @@ def home_data(store, board, clean, view):
                     retry_install=a['kind'] == 'node-step' and s['repo'] in allowed,
                     installing=s['id'] in installing)
             elif a['kind'] == 'node-step' and a['answer'] is None:
-                add('install', s['id'], a['since'], **base, installable=s['repo'] in allowed, installing=s['id'] in installing)
+                add('install', s['id'], a['since'], **base, installable=s['repo'] in allowed, installing=s['id'] in installing,
+                    label='proposed by chat' if chat_requested(s) and s['id'] not in installing else None)
             elif a['kind'] in ('question', 'escalation') and a['answer'] is None and not a.get('chat_id'):
                 # Install and runner failures are recognizable from the current escalation.
                 failure = a['kind'] == 'escalation' and (a['body'].startswith('Install ') or ' failed:' in a['body'].split('\n')[0])

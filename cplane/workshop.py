@@ -28,11 +28,11 @@ CHAT_INSTRUCTION = (
     'For a failed check, inspect the failure and answer_slice with a bounded repair direction. '
     'For in review, compare the handover and evidence with the brief; accept_slice when requirements '
     'and validation are met, or return_slice with a concrete note. '
-    'For node-step, use install_slice once when installable; install failures belong to the owner. '
+    'For node-step, use install_slice once to propose an install when installable; the owner starts it; install failures belong to the owner. '
     'For Testing and owner testing replies, read and follow the testing-review skill. '
     'Raise architecture, scope, contract, security, persistence, '
     'topology and uncertain acceptance decisions to the owner with a recommendation. '
-    'Never approve merges. Request installs only through install_slice; never retry a failed install. '
+    'Never approve merges. Propose installs only through install_slice; never retry a failed install. '
     'A refusal is a boundary; do not bypass it using shell commands.'
 )
 
@@ -73,7 +73,7 @@ TOOLS = [
               effort=dict(type='string', enum=['low', 'medium', 'high', 'xhigh', 'max', 'ultra']),
               depends_on=dict(type='array', items=string(), uniqueItems=True),
               stop_before_merge=dict(type='boolean')), ('feature', 'title', 'brief', 'model', 'effort')),
-    tool('install_slice', 'Request the fixed install once for an installable linked open node step.',
+    tool('install_slice', 'Propose the fixed install once for an installable linked open node step. The owner starts it.',
          dict(slice=string()), ('slice',)),
     tool('answer_slice', 'Answer a linked slice question or escalation.',
          dict(slice=string(), text=string()), ('slice', 'text')),
@@ -242,7 +242,7 @@ class Workshop:
                     if not installable(item):
                         raise StateError('Install repository is not installable')
                     if chat_requested(item):
-                        raise StateError('This node step already has a chat install request')
+                        raise StateError('This node step already has a chat install proposal')
                     request_change(actor)(item, data, at)
                 elif name == 'answer_slice':
                     bounded(args['text'], 'Answer', 8000)

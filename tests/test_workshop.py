@@ -520,7 +520,7 @@ def test_add_slice_parallel_numbers_and_atomic_failure(context, monkeypatch):
 @pytest.mark.parametrize('kind', ['feature', 'project', 'orchestrator'])
 def test_install_slice_scope_limits_and_audit(context, slice_data, monkeypatch, kind):
     from copy import deepcopy
-    from cplane.installation import REQUEST, FINISHED
+    from cplane.installation import pending
     store, workshops, chats, own, other, outside, _ = context
     monkeypatch.setenv('CPLANE_INSTALL_REPOS', 'example/repo')
     data = dict(version=1, slices=[])
@@ -539,13 +539,11 @@ def test_install_slice_scope_limits_and_audit(context, slice_data, monkeypatch, 
         value(result)
         saved = store.load()
         target = next(s for s in saved['slices'] if s['id'] == item['id'])
-        request = next(e for e in target['log'] if e['event'].startswith(REQUEST))
+        request = next(e for e in target['log'] if e['event'].startswith('install proposed: '))
         assert request['actor'] == f"chat:{chats[kind]['id']}"
         assert target['log'][-1]['event'] == 'install_slice'
         refused(call(workshops[kind], 'install_slice', slice=item['id']), 'already has a chat')
-        target['log'].append(dict(at=request['at'], actor='runner', event=FINISHED + request['event'][len(REQUEST):]))
-        store.save(saved)
-        refused(call(workshops[kind], 'install_slice', slice=item['id']), 'already has a chat')
+        assert not list(pending(saved))
     with store.locked():
         rows = list(store.connection.execute("SELECT chat FROM cplane_workshop_writes WHERE operation = 'install_slice'"))
         assert len(rows) == (1 if kind == 'feature' else 2 if kind == 'project' else 3)
@@ -619,7 +617,9 @@ def test_install_requests_serialize_and_roll_back(context, slice_data, monkeypat
     with ThreadPoolExecutor(2) as pool:
         results = [f.result(timeout=10) for f in [pool.submit(request), pool.submit(request)]]
     assert sum(not r['isError'] for r in results) == 1
-    assert len(list(pending(store.load()))) == 1
+    saved = store.load()
+    assert not list(pending(saved))
+    assert sum(e['event'].startswith('install proposed: ') for e in saved['slices'][0]['log']) == 1
     with store.locked():
         assert store.connection.execute("SELECT count(*) FROM cplane_workshop_writes WHERE operation = 'install_slice'").fetchone()[0] == 1
 
