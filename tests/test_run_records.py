@@ -230,6 +230,7 @@ def test_legacy_slice_call_leaves_outcomes_empty(pg_store, tmp_path):
 @pytest.mark.parametrize('overrides', [{}, {'model': 'synthetic'}])
 def test_launch_captures_policy_hash_and_cli_version(setup, monkeypatch, tool, version, overrides):
     import hashlib
+    monkeypatch.setenv('CPLANE_FENCE_COMMAND', 'homelab-fence')
     runner, _, _ = setup
     runner.run()
     job = next(iter(runner.jobs.values()))
@@ -247,7 +248,7 @@ def test_launch_captures_policy_hash_and_cli_version(setup, monkeypatch, tool, v
     assert job['brief_hash'] == hashlib.sha256(job['prompt'].encode()).hexdigest()
     assert job['prompt'] not in str(probe.call_args)
     command = [tool, 'exec' if tool == 'codex' else '-p', '--version']
-    command = ['factory-cli', 'run', '--tool', tool, '--repo', job['repo'],
+    command = ['homelab-fence', 'run', '--tool', tool, '--repo', job['repo'],
                '--run', str(Path(job['run']) / 'version'), '--', *command]
     assert probe.call_args.args[0] == command
     store.slice_policy.return_value = None

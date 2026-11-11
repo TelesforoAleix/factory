@@ -380,6 +380,7 @@ def test_socket_cleanup_if_setup_fails(context, tmp_path, monkeypatch):
 
 
 def test_restart_cleans_interrupted_socket(tmp_path, monkeypatch):
+    monkeypatch.setenv('CPLANE_FENCE_COMMAND', 'homelab-fence')
     from cplane import fence
     monkeypatch.setattr(fence, 'ROOT_UID', os.getuid())
     monkeypatch.setattr(sessions, 'RUNS', tmp_path)
@@ -392,7 +393,7 @@ def test_restart_cleans_interrupted_socket(tmp_path, monkeypatch):
         channel.bind(str(path))
     sessions.cleanup_interrupted_turn(dict(id=7))
     assert not path.exists()
-    launch.assert_called_once_with(['factory-cli', 'session-cleanup', '7'], check=True,
+    launch.assert_called_once_with(['homelab-fence', 'session-cleanup', '7'], check=True,
                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     # Missing old run directories are harmless; replaced ancestors are refused.
     sessions.cleanup_interrupted_turn(dict(id=8))

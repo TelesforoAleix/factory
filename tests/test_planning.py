@@ -56,9 +56,9 @@ def delivery(tmp_path, monkeypatch):
             assert f'-i {key}' in ssh
             assert '-o IdentitiesOnly=yes' in ssh
             assert f'-o UserKnownHostsFile={planning.KNOWN_HOSTS}' in ssh
-        if args[0] == 'factory-cli':
+        if args[0] == os.environ.get('CPLANE_FENCE_COMMAND', 'factory-cli'):
             assert not ssh
-        if args[0] == 'factory-cli':
+        if args[0] == os.environ.get('CPLANE_FENCE_COMMAND', 'factory-cli'):
             assert args[1] == 'bundle'
             if selected[0]:
                 shutil.copyfile(selected[0], run / 'io/branch.bundle')
@@ -101,10 +101,12 @@ def publish(d):
     return d['adapter'].deliver(d['copy'], d['run'])
 
 
-def test_delivery_no_hooks_credentials_or_replay(delivery, caplog):
+def test_delivery_no_hooks_credentials_or_replay(delivery, caplog, monkeypatch):
+    monkeypatch.setenv('CPLANE_FENCE_COMMAND', 'homelab-fence')
     d = delivery
     tip = commit(d)
     assert publish(d) == [tip]
+    assert any(args[:2] == ['homelab-fence', 'bundle'] for args, _ in d['calls'])
     assert d['git'](d['remote'], 'rev-parse', 'main') == tip
     assert publish(d) == []
     tip2 = commit(d, 'next.md', 'next\n')

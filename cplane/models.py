@@ -7,6 +7,7 @@ import subprocess
 import uuid
 
 from .roles import EFFORTS, TOOLS
+from . import fence
 from .state import StateError
 
 ALIASES = ('fable', 'opus', 'sonnet', 'haiku')
@@ -66,7 +67,7 @@ def refresh_catalog(tool):
             output = run_root / str(uuid.uuid4())
             output.mkdir(mode=0o700)
             result = subprocess.run(
-                ['factory-cli', 'run', '--tool', tool, '--repo', str(folder),
+                [fence.fence_command(), 'run', '--tool', tool, '--repo', str(folder),
                  '--run', str(output), '--session-turn', str(turn_id), '--', *command],
                 stdin=subprocess.DEVNULL, capture_output=True, text=True,
                 timeout=1260, env=host_environment())
@@ -77,7 +78,7 @@ def refresh_catalog(tool):
     finally:
         # The wrapper cleans up normal turns and its own timeout. Also cover an
         # interrupted/killed wrapper before touching an agent-owned workspace.
-        subprocess.run(['factory-cli', 'session-cleanup', str(turn_id)], check=True,
+        subprocess.run([fence.fence_command(), 'session-cleanup', str(turn_id)], check=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                        env=host_environment())
         shutil.rmtree(folder)
@@ -94,7 +95,7 @@ def recover_catalog_runs():
         if not re.fullmatch('[0-9a-f]{32}', token):
             continue
         turn_id = (1 << 128) + int(token, 16)
-        subprocess.run(['factory-cli', 'session-cleanup', str(turn_id)], check=True,
+        subprocess.run([fence.fence_command(), 'session-cleanup', str(turn_id)], check=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                        env=host_environment())
         folder = WORK_ROOT / run_root.name
