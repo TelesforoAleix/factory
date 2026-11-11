@@ -289,3 +289,23 @@ def test_stored_brief_export_symlinks_refused(publication, tmp_path, level):
         adapter.publish(items, False)
     assert not (outside / 'target.md').exists()
     assert not any('push' in args for args, _ in calls)
+
+
+def test_imported_row_updates_title_repository_and_horizon():
+    items = features()
+    items[0]['title'] = 'New \\ title | line\nnext'
+    items[0]['repository'] = 'new-repo'
+    items[0]['stage'] = 'building'
+    expected = TABLE.replace(
+        '| **Synthetic** [link](https://example.invalid) `code` | idea | lab | factory | later |',
+        '| New \\\\ title \\| line next | idea | lab | new-repo | now |')
+    assert generated_table(TABLE, items) == expected
+
+
+def test_imported_row_tracks_feature_and_project_changes(pg_store):
+    pg_store.feature_import_backlog(TABLE)
+    item = next(f for f in pg_store.feature_list() if f['project'] == 'FAC')
+    pg_store.feature_title(item['id'], 'Renamed | feature')
+    pg_store.feature_move(item['id'], 'LAB')
+    result = generated_table(TABLE, pg_store.feature_export_snapshot())
+    assert '| Renamed \\| feature | idea | lab | homelab-v2 | later |' in result
