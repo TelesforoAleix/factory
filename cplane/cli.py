@@ -299,6 +299,7 @@ def parser():
     attention.add_argument("--kind", choices=planner.KINDS)
     attention.add_argument("--body")
     attention.add_argument("--clear", action="store_true")
+    attention.add_argument("--for", dest="recipient", choices=("owner", "planner"))
     review = commands.add_parser("review", parents=[common], help="record a planner review of merge attention")
     review.add_argument("id")
     review.add_argument("verdict")

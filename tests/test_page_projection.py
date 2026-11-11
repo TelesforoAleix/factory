@@ -46,7 +46,14 @@ def test_lists_are_bounded_and_detail_keeps_sections_and_slices(pg_store, slice_
     assert client.get('/api/pipeline/' + features[0]['id']).json['id'] == moved['id']
     home = client.get('/api/home').json
     assert home['running'][0]['feature'] == moved['id']
+    assert home['attention'] == []
+    assert home['orchestrator_count'] == 1
+    data = pg_store.load()
+    data['slices'][0]['attention']['for'] = 'owner'
+    pg_store.save(data)
+    home = client.get('/api/home').json
     assert home['attention'][0]['project'] == 'LAB'
+    assert home['orchestrator_count'] == 0
 
 
 def test_cards_do_not_read_heavy_state_or_usage(pg_store, monkeypatch):

@@ -97,6 +97,16 @@ def change_for(args):
             first_line = args.verdict.split("\n", 1)[0].rstrip("\r")
             return f"Reviewed {item['id']}: {first_line}", None
         elif args.command == "attention":
+            if args.recipient is not None:
+                if args.clear or args.kind is not None or args.body is not None:
+                    raise StateError("--for cannot be combined with --clear, --kind or --body")
+                attention = item["attention"]
+                if (not attention or attention["kind"] not in ("merge", "node-step", "question", "escalation")
+                        or (attention["kind"] == "merge" and attention["approved"])
+                        or (attention["kind"] != "merge" and attention["answer"] is not None)):
+                    raise StateError(f"{item['id']} has no open attention")
+                attention["for"] = args.recipient
+                return f"Attention recipient: {item['id']} ({args.recipient})", None
             if args.clear:
                 if args.kind is not None or args.body is not None:
                     raise StateError("--clear cannot be combined with --kind or --body")

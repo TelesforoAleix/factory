@@ -88,6 +88,11 @@ def test_api_sections_scoping_and_guard(pg_store, slice_data):
     data = client.get('/api/projects/FAC').json
     assert data['stages']['building'] == data['stages']['testing'] == data['stages']['next'] == 1
     assert len(data['features']) == 3
+    assert data['attention'] == []
+    saved = pg_store.load()
+    saved['slices'][0]['attention']['for'] = 'owner'
+    pg_store.save(saved)
+    data = client.get('/api/projects/FAC').json
     assert [a['id'] for a in data['attention']] == ['demo/S0']
     assert [r['id'] for r in data['running']] == ['demo/S0']
     assert data['chats'][0]['kind'] == 'project'

@@ -83,3 +83,10 @@ test('chat proposal labels the install card and leaves the owner Install action 
   fireEvent.click(install);
   expect(act).toHaveBeenCalledExactlyOnceWith('/api/slices/factory/IW1/install', {});
 });
+
+test('shows the orchestrator count only when nonzero', async () => {
+  const data = {projects:[], features:[], running:[], chats:[], attention:[], orchestrator_count:3};
+  global.fetch = vi.fn(async url => ({ok:true, json:async () => url === '/api/home' ? data : []}));
+  render(<MemoryRouter><Home /></MemoryRouter>);
+  expect(await screen.findByText('With the orchestrator: 3')).toBeTruthy();
+});
