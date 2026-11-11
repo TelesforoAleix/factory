@@ -11,6 +11,7 @@ import subprocess
 
 from . import state
 from . import planner
+from .eligibility import eligibility, observed, satisfied
 from .times import LOCAL, parse_when
 from .text_bounds import ATTENTION_LIMIT, LOG_LIMIT, cut
 
@@ -26,8 +27,8 @@ def change_for(command, argument=None):
         if command in ("slot", "start"):
             if item["state"] != "ready":
                 raise state.StateError(f"{item['id']} is not ready")
-            accepted = {s["id"] for s in data["slices"] if s["state"] == "accepted"}
-            unmet = [key for key in item["depends_on"] if key not in accepted]
+            completed = {s["id"] for s in data["slices"] if satisfied(s)}
+            unmet = [key for key in item["depends_on"] if key not in completed]
             if unmet:
                 warning = "unmet dependencies: " + ", ".join(unmet)
             item["slot"] = at if command == "start" else parse_when(argument)
@@ -260,6 +261,8 @@ def parser():
             command.add_argument('--' + field)
     view = commands.add_parser("pending", parents=[common], help="show pending slices")
     view.add_argument("--json", action="store_true", help="output grouped JSON")
+    why = commands.add_parser("why", parents=[common], help="explain slice eligibility")
+    why.add_argument("id")
     show = commands.add_parser("show", parents=[common], help="show one complete slice")
     show.add_argument("id")
     show.add_argument("--json", action="store_true", help="output slice JSON")
@@ -287,6 +290,7 @@ def parser():
         if command == "add":
             sub.add_argument("--level", choices=("light", "standard", "strong"), default="standard")
         sub.add_argument("--stop-before-merge", action=argparse.BooleanOptionalAction, default=argparse.SUPPRESS)
+        sub.add_argument("--allowed-files", nargs="*", default=argparse.SUPPRESS, metavar="GLOB")
         sub.add_argument("--depends-on", nargs="*", action="extend", default=argparse.SUPPRESS, metavar="ID")
     move = commands.add_parser("state", parents=[common], help="move a slice between planning states")
     move.add_argument("id")
@@ -653,6 +657,14 @@ def main(argv=None):
         elif args.command == "pending":
             groups = pending(state.load(path))
             print(json.dumps(groups, indent=2, ensure_ascii=False) if args.json else render(groups))
+        elif args.command == "why":
+            with state.locked(path) as backend:
+                data = backend.load()
+                item = next((s for s in data['slices'] if s['id'] == args.id), None)
+                if item is None:
+                    raise state.StateError(f"unknown slice: {args.id}")
+                limits = backend.limit_show() if state.postgres() else None
+                print(json.dumps(eligibility(item, observed(data, path, limits=limits)), ensure_ascii=False))
         elif args.command == "show":
             from .executors import read_output
             item = next((item for item in state.load(path)["slices"] if item["id"] == args.id), None)
@@ -716,6 +728,14 @@ def main(argv=None):
                     event += f" (forced: {args.reason})"
             from . import review
             change = review.planner_change(args) if args.command == 'review' else planner.change_for(args)
+            if args.command in ('add', 'edit') and hasattr(args, 'allowed_files'):
+                base_change = change
+                def change(item, data, at):
+                    if args.command == 'edit' and item['state'] in ('issued', 'awaiting handover'):
+                        raise state.StateError(f"{item['id']} is {item['state']}; only --title and --depends-on may be edited")
+                    result = base_change(item, data, at)
+                    item['allowed_files'] = args.allowed_files
+                    return result
             state.update(path, args.id, args.command, getattr(args, "actor", "owner"),
                          change, getattr(args, "commit", False),
                          create=(lambda: planner.new_slice(args.id)) if args.command == "add" else None,

@@ -117,3 +117,56 @@ def test_place_after_fixed_and_atomic_failure(pg_store, slice_data, monkeypatch)
 def test_movable_uses_issuance_evidence(slice_data, fields, expected):
     from cplane.features import slice_movable
     assert slice_movable(dict(slice_data, **fields)) is expected
+
+
+def test_allowed_files_database_projection_and_board_eligibility(pg_store, slice_data, monkeypatch):
+    from cplane.runner import Runner
+    monkeypatch.setattr(Runner, 'choose', lambda *args: ('codex', 'synthetic'))
+    feature, items = group(pg_store, slice_data, ('escalated', 'ready'))
+    items[0].update(allowed_files=['first/**'], attention=dict(
+        kind='question', body='Decision', since='2026-11-01T00:00:00Z', answer=None, approved=False))
+    items[1]['allowed_files'] = ['second/**']
+    pg_store.save(dict(version=1, slices=items))
+    with pg_store.locked():
+        assert list(pg_store.connection.execute(
+            'SELECT allowed_files FROM cplane_slices ORDER BY position')) == [(['first/**'],), (['second/**'],)]
+    pg_store.save(pg_store.load())
+    response = create_app(pg_store).test_client().get('/api/pipeline/' + feature)
+    assert response.status_code == 200
+    projected = response.get_json()['slices']
+    assert projected[0]['eligibility']['status'] == 'waiting for a decision'
+    assert projected[1]['eligibility'] == dict(status='ready')
+    assert 'allowed_files' not in projected[0]  # File scopes need not leak to the board.
+    items[1].pop('allowed_files')
+    pg_store.save(dict(version=1, slices=items))
+    with pg_store.locked():
+        assert pg_store.connection.execute(
+            "SELECT allowed_files FROM cplane_slices WHERE id = 'test/1'").fetchone()[0] is None
+
+
+def test_pipeline_uses_merged_installed_dependencies(pg_store, slice_data, monkeypatch):
+    feature, items = group(pg_store, slice_data, ('in review', 'ready'))
+    monkeypatch.setenv('CPLANE_INSTALL_REPOS', slice_data['repo'])
+    items[0]['log'] = [dict(at='2026-11-01T00:00:00Z', actor='runner', event='merged: abc')]
+    items[1].update(depends_on=[items[0]['id']], slot=None)
+    pg_store.save(dict(version=1, slices=items))
+    pg_store.pipeline_step('2026-11-01T00:00:01Z')
+    assert pg_store.load()['slices'][1]['slot'] is None
+    items = pg_store.load()['slices']
+    items[0]['log'].append(dict(at='2026-11-01T00:00:02Z', actor='runner', event='Installed abc'))
+    pg_store.save(dict(version=1, slices=items))
+    pg_store.pipeline_step('2026-11-01T00:00:03Z')
+    assert pg_store.load()['slices'][1]['slot'] == '2026-11-01T00:00:03Z'
+
+
+def test_feature_add_slice_keeps_scope_without_logging_content(pg_store, monkeypatch):
+    monkeypatch.setattr(type(pg_store), 'model_choice', lambda self, tool, model, effort: model)
+    with pg_store.mutation():
+        pg_store.connection.execute("UPDATE cplane_projects SET repository = 'example/repo' WHERE key = 'FAC'")
+    feature = pg_store.feature_add('FAC', 'Scope', stage='grilling')['id']
+    item = pg_store.feature_add_slice(feature, 'Scoped work',
+                                    '# Synthetic task\n\n## Fixed decisions\nKeep the contract.\n',
+                                    'synthetic', 'high', allowed_files=['src/**'], actor='chat:1')
+    assert item['allowed_files'] == ['src/**']
+    assert pg_store.load()['slices'][0]['allowed_files'] == ['src/**']
+    assert all('src/**' not in entry['event'] for entry in item['log'])

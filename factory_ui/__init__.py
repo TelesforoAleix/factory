@@ -70,11 +70,15 @@ def create_app(store=None):
         return backend().load()['slices']
 
     def board_data(identifier=None):
-        data = backend().feature_board(identifier)
+        from cplane.eligibility import eligibility, observed
+        store = backend()
+        data = store.feature_board(identifier)
+        snapshot = (observed(store.load(), limits=store.limit_show())
+                    if any(f['slices'] for f in data['features']) else None)
         for item in data['features']:
             item['title'] = clean(item['title'])
             item['sections'] = [{**section, 'name': clean(section['name']), 'text': clean(section['text'])} for section in item['sections']]
-            item['slices'] = [slice_summary(s) for s in item['slices']]
+            item['slices'] = [dict(slice_summary(s), eligibility=eligibility(s, snapshot)) for s in item['slices']]
             item.pop('backlog', None)
             item['project_name'] = next((clean(p['name']) for p in data['projects'] if p['key'] == item['project']), item['project'])
         for project in data['projects']:

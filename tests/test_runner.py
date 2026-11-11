@@ -499,12 +499,13 @@ def test_codex_merge_approval(setup):
 
 def test_resume_obeys_repository_limit(setup):
     r, p, _ = setup
+    edit(r, lambda s: s.update(allowed_files=['first/**']))
     r.run()
     p.finish('question')
     r.run()
     data = state.load(r.path)
     second = copy.deepcopy(data['slices'][0])
-    second.update(id='example/W2', state='ready', session=None, attention=None)
+    second.update(id='example/W2', state='ready', session=None, attention=None, allowed_files=['second/**'])
     data['slices'].append(second)
     state.save(r.path, data)
     r.run()
@@ -1790,3 +1791,42 @@ def test_codex_ci_merge_attention_review_approval(setup):
     assert len(p.started) == 2
     assert_prompt(p.started[-1], 'merged as abc123')
     gh.merge.assert_called_once_with('example/repo', 12, expected='b' * 40)
+
+
+@pytest.mark.parametrize('blocked_state', ['issued', 'escalated', 'awaiting handover'])
+def test_ended_attention_allows_unrelated_scope_in_same_repository(setup, blocked_state):
+    r, processes, _ = setup
+    edit(r, lambda s: s.update(allowed_files=['first/**']))
+    r.run()
+    processes.finish('question', 'Synthetic decision')
+    r.run()
+    data = state.load(r.path)
+    first = data['slices'][0]
+    first['state'] = blocked_state
+    second = dict(copy.deepcopy(first), id='voice/W2', state='ready', session=None,
+                  attention=None, log=[], allowed_files=['second/**'])
+    data['slices'].append(second)
+    state.save(r.path, data)
+    r.run()
+    assert [job['id'] for job in processes.started] == ['voice/W1', 'voice/W2']
+    assert item(r)['attention']['answer'] is None
+
+
+def test_runner_dependency_waits_for_merge_and_install(setup, monkeypatch):
+    r, processes, _ = setup
+    monkeypatch.setenv('CPLANE_INSTALL_REPOS', 'example/repo')
+    dependency = dict(copy.deepcopy(item(r)), id='voice/dependency', state='in review',
+                      allowed_files=['dependency/**'])
+    current = dict(item(r), depends_on=[dependency['id']], allowed_files=['work/**'])
+    data = dict(version=1, slices=[current, dependency])
+    state.save(r.path, data)
+    r.run()
+    assert not processes.started
+    dependency['log'].append(dict(at=NOW.isoformat(), actor='runner', event='merged: abc123'))
+    state.save(r.path, data)
+    r.run()
+    assert not processes.started
+    dependency['log'].append(dict(at=NOW.isoformat(), actor='runner', event='Installed abc123'))
+    state.save(r.path, data)
+    r.run()
+    assert [job['id'] for job in processes.started] == ['voice/W1']
