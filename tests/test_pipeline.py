@@ -542,12 +542,12 @@ def test_pipeline_park_blocks_pr_progress_until_return(pg_store, runner_setup, s
     r, p, github = runner_setup
     feature = runner_board(pg_store, r, slice_data, [('building', {})])[0]
     r.run()
-    p.finish(kind='waiting', body='Waiting on CI')
-    # An existing PR follows the normal unfenced Codex route.
-    data = pg_store.load()
-    data['slices'][0]['pr'] = 12
-    pg_store.save(data)
+    request = dict(branch=p.started[-1]['branch'], title='Synthetic PR',
+                   body='Synthetic change', node_steps=None)
+    p.finish(kind='waiting', body='```json\n' + json.dumps(request) + '\n```')
     r.run()
+    assert pg_store.load()['slices'][0]['pr'] == 12
+    r.fence.publish.assert_called_once()
     pg_store.feature_stage(feature, 'parked')
     github.checks.return_value = ('green', '')
     r.run()

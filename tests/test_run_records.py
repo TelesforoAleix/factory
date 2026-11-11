@@ -285,12 +285,17 @@ def test_ci_red_then_green_keeps_both_in_read_order(pg_store, setup, monkeypatch
     monkeypatch.setattr(state, 'postgres', lambda: True)
     monkeypatch.setattr(state, 'store', lambda _: pg_store)
     github = GitHub()
-    github.repository = Mock(return_value='example/factory')
-    github.call = Mock(side_effect=[json.dumps(dict(headRefOid='a' * 40, statusCheckRollup=[
-        dict(name='test', conclusion='FAILURE')])), json.dumps(dict(headRefOid='b' * 40,
-        statusCheckRollup=[dict(name='test', conclusion='SUCCESS')]))])
+    tip = 'a' * 40
+    github.call = Mock(side_effect=[
+        json.dumps(dict(headRefOid=tip)),
+        json.dumps(dict(workflow_runs=[dict(id=1, status='completed')])),
+        json.dumps(dict(jobs=[dict(name='test', status='completed', conclusion='failure')])),
+        json.dumps(dict(headRefOid=tip)),
+        json.dumps(dict(workflow_runs=[dict(id=2, status='completed')])),
+        json.dumps(dict(jobs=[dict(name='test', status='completed', conclusion='success')])),
+    ])
     runner.github = github
-    job['phase'] = 'pr'
+    job.update(phase='pr', tip=tip)
     item.update(pr=12, attention=None, stop_before_merge=True)
     runner.pr_checks(item, job)
     assert item['attention']['kind'] == 'escalation'
@@ -299,8 +304,8 @@ def test_ci_red_then_green_keeps_both_in_read_order(pg_store, setup, monkeypatch
     assert item['attention']['kind'] == 'merge'
     assert main(['runs', 'show', item['id']]) == 0
     row, = json.loads(capsys.readouterr().out)
-    assert row['ci_result'] == [dict(sha='a' * 40, status='red', failing_job='test'),
-                                dict(sha='b' * 40, status='green', failing_job=None)]
+    assert row['ci_result'] == [dict(sha=tip, status='red', failing_job='test'),
+                                dict(sha=tip, status='green', failing_job=None)]
     assert 'prompt' not in row
 
 
