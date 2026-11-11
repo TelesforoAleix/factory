@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import stat
 import subprocess
+import threading
 import time
 import urllib.request
 
@@ -14,6 +15,8 @@ from .state import StateError
 
 KEY = Path('/etc/factory/github-app.pem')
 ROOT_UID = 0
+_TOKENS = {}
+_TOKEN_LOCK = threading.Lock()
 
 
 def encoded(value):
@@ -72,7 +75,7 @@ def repositories_checked(repositories):
 
 
 def installation_token(repositories):
-    """Validate configuration and key before issuing a repository-scoped token."""
+    """Reuse tokens in this process, renewing within five minutes of expiry."""
     try:
         repos = repositories_checked(repositories)
         app_id = os.environ['CPLANE_GITHUB_APP_ID']
@@ -85,7 +88,17 @@ def installation_token(repositories):
             if (not stat.S_ISREG(info.st_mode) or info.st_uid != ROOT_UID
                     or stat.S_IMODE(info.st_mode) != 0o600):
                 raise StateError('GitHub App key must be a root-owned regular file with mode 0600')
-            return mint(key.fileno(), app_id, installation_id, repos, time.time())[0]
+            # Keep distinct scopes, installations and key revisions isolated. A
+            # fork must mint its own token rather than use its parent's cache.
+            context = (os.getpid(), app_id, installation_id, repos, info.st_dev,
+                       info.st_ino, info.st_mtime_ns, info.st_ctime_ns)
+            with _TOKEN_LOCK:
+                now = time.time()
+                cached = _TOKENS.get(context)
+                if cached is None or cached[1] <= now + 300:
+                    cached = mint(key.fileno(), app_id, installation_id, repos, now)
+                    _TOKENS[context] = cached
+                return cached[0]
     except StateError:
         raise
     except Exception:

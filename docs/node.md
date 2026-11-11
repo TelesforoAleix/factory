@@ -265,6 +265,11 @@ RSA private key at `/etc/factory/github-app.pem`, root-owned, regular, mode 0600
 links are refused. OpenSSL must be installed on the host. No Python dependency
 or credential store is added. Tokens reach `gh` through `GH_TOKEN` and Git through
 the existing `x-access-token` helper; the install host uses the same function.
+Within each process, tokens are cached in memory for the same installation,
+repository scope and key revision, and renewed when five minutes or less remain
+before expiry. The runner's oneshot passes and the separate installer each mint
+their own tokens; there is no cross-process mint limit, shared cache or broker.
+Tokens are never written to disk. Every call still checks the key file.
 App requests explicitly name the delivery repositories from the scheduler state;
 an install request names only its repository. All repositories in a request must
 belong to the installation's single owner. Empty scopes are refused. Install the

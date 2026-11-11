@@ -17,6 +17,7 @@ REPOS = ('example/one', 'example/two')
 
 @pytest.fixture
 def key(tmp_path, monkeypatch):
+    monkeypatch.setattr(app, '_TOKENS', {})
     path = tmp_path / 'fake-app.pem'
     subprocess.run(['openssl', 'genpkey', '-algorithm', 'RSA', '-pkeyopt',
                     'rsa_keygen_bits:2048', '-out', str(path)], check=True, capture_output=True)
@@ -114,3 +115,100 @@ def test_refuse_invalid_response(key, monkeypatch, changes):
     monkeypatch.setattr(app.urllib.request, 'build_opener', Mock(return_value=opener))
     with pytest.raises(state.StateError, match='response is invalid'):
         app.installation_token(REPOS)
+
+
+def test_token_reused_until_five_minutes_remain(key, monkeypatch):
+    opener = Mock()
+    opener.open.side_effect = [response(), response('renewed-token', NOW + 6900)]
+    monkeypatch.setattr(app.urllib.request, 'build_opener', Mock(return_value=opener))
+    assert app.installation_token(REPOS) == 'synthetic-token'
+    for elapsed in (0, 60, 3000, 3299):
+        monkeypatch.setattr(app.time, 'time', lambda: NOW + elapsed)
+        assert app.installation_token(reversed(REPOS)) == 'synthetic-token'
+    assert opener.open.call_count == 1
+    monkeypatch.setattr(app.time, 'time', lambda: NOW + 3300)
+    assert app.installation_token(REPOS) == 'renewed-token'
+    assert app.installation_token(REPOS) == 'renewed-token'
+    assert opener.open.call_count == 2
+
+
+@pytest.mark.parametrize('elapsed', [3301, 3601])
+def test_renew_after_idle_time_near_or_past_expiry(key, monkeypatch, elapsed):
+    mint = Mock(side_effect=[('first', NOW + 3600), ('renewed', NOW + elapsed + 3600)])
+    monkeypatch.setattr(app, 'mint', mint)
+    assert app.installation_token(REPOS) == 'first'
+    monkeypatch.setattr(app.time, 'time', lambda: NOW + elapsed)
+    assert app.installation_token(REPOS) == 'renewed'
+    assert mint.call_count == 2
+
+
+def test_cache_does_not_expand_or_mix_repository_scopes(key, monkeypatch):
+    mint = Mock(side_effect=[('both-repos', NOW + 3600), ('one-repo', NOW + 3600)])
+    monkeypatch.setattr(app, 'mint', mint)
+    assert app.installation_token(REPOS) == 'both-repos'
+    assert app.installation_token(['example/one']) == 'one-repo'
+    assert app.installation_token(REPOS) == 'both-repos'
+    assert mint.call_count == 2
+    assert mint.call_args.args[3] == ('example/one',)
+
+
+@pytest.mark.parametrize('changed', ['app_id', 'installation_id', 'key', 'process'])
+def test_changed_auth_context_mints_separately(key, monkeypatch, changed):
+    mint = Mock(side_effect=[('first', NOW + 3600), ('new-context', NOW + 3600)])
+    monkeypatch.setattr(app, 'mint', mint)
+    assert app.installation_token(REPOS) == 'first'
+    if changed == 'app_id':
+        monkeypatch.setenv('CPLANE_GITHUB_APP_ID', '789')
+    elif changed == 'installation_id':
+        monkeypatch.setenv('CPLANE_GITHUB_INSTALLATION_ID', '789')
+    elif changed == 'key':
+        replacement = key.with_suffix('.replacement')
+        replacement.write_bytes(key.read_bytes())
+        replacement.chmod(0o600)
+        replacement.replace(key)
+    else:
+        pid = os.getpid()
+        monkeypatch.setattr(app.os, 'getpid', lambda: pid + 1)
+    assert app.installation_token(REPOS) == 'new-context'
+    assert mint.call_count == 2
+
+
+def test_key_check_still_applies_to_cached_token(key, monkeypatch):
+    mint = Mock(return_value=('first', NOW + 3600))
+    monkeypatch.setattr(app, 'mint', mint)
+    assert app.installation_token(REPOS) == 'first'
+    key.chmod(0o644)
+    with pytest.raises(state.StateError, match='mode 0600'):
+        app.installation_token(REPOS)
+    assert mint.call_count == 1
+
+
+def test_failed_renewal_does_not_return_old_token_or_cache_error(key, monkeypatch, capsys):
+    mint = Mock(side_effect=[('first', NOW + 3600), ValueError('synthetic-secret'),
+                             ('renewed', NOW + 6900)])
+    monkeypatch.setattr(app, 'mint', mint)
+    assert app.installation_token(REPOS) == 'first'
+    monkeypatch.setattr(app.time, 'time', lambda: NOW + 3300)
+    with pytest.raises(state.StateError, match='GitHub App authentication failed') as error:
+        app.installation_token(REPOS)
+    assert 'synthetic-secret' not in str(error.value)
+    assert app.installation_token(REPOS) == 'renewed'
+    assert mint.call_count == 3
+    assert capsys.readouterr() == ('', '')
+
+
+def test_concurrent_calls_share_one_mint(key, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    mint = Mock(return_value=('shared', NOW + 3600))
+    monkeypatch.setattr(app, 'mint', mint)
+    barrier = Barrier(4)
+
+    def fetch(_):
+        barrier.wait(timeout=10)
+        return app.installation_token(REPOS)
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        assert list(pool.map(fetch, range(4))) == ['shared'] * 4
+    mint.assert_called_once()
