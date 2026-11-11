@@ -113,13 +113,24 @@ def generated_table(text, features):
     for feature in imported:
         data = feature['backlog']
         row = data['row']
+        values = data['cells']
+        title = feature['title']
+        changes = {}
+        if title != values[0].strip():
+            changes[0] = title.replace('\\', '\\\\').replace('|', '\\|').replace('\n', ' ').replace('\r', ' ')
+        repository = feature.get('repository')
+        if repository is not None and repository != values[3].strip():
+            changes[3] = repository
         if feature['stage'] != data['stage']:
-            # Locate the original horizon by lengths, preserving all surrounding whitespace.
-            values = data['cells']
-            prefix = row.find(values[0]) if values[0] else 1
-            offset = prefix + sum(len(c) + 1 for c in values[:4])
-            old = values[4]
-            replacement = re.sub(r'\S.*\S|\S', HORIZONS[feature['stage']], old, count=1)
+            changes[4] = HORIZONS[feature['stage']]
+        prefix = row.find(values[0]) if values[0] else 1
+        for index in sorted(changes, reverse=True):
+            offset = prefix + sum(len(c) + 1 for c in values[:index])
+            old = values[index]
+            if old.strip():
+                replacement = re.sub(r'\S.*\S|\S', lambda _: changes[index], old, count=1)
+            else:
+                replacement = old + changes[index]
             row = row[:offset] + replacement + row[offset + len(old):]
         rendered.append(row)
     for feature in other:

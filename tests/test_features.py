@@ -220,3 +220,25 @@ def test_close_requires_owner_and_nonempty_reason(pg_store):
         with pytest.raises(StateError, match='Reason'):
             pg_store.feature_close(item['id'], reason)
     assert pg_store.feature_show(item['id'])['stage'] == 'shortlist'
+
+
+def test_parked_features_return_to_source_or_shortlist(pg_store):
+    store = pg_store
+    added = store.feature_add('FAC', 'Parked directly', stage='parked')
+    assert added['parked_from'] == 'shortlist'
+    assert store.feature_stage(added['id'], 'shortlist')['stage'] == 'shortlist'
+
+    legacy = store.feature_add('FAC', 'Legacy parked', stage='parked')
+    with store.mutation():
+        store.connection.execute('UPDATE cplane_features SET parked_from = NULL WHERE id = %s', (legacy['id'],))
+    assert 'shortlist' in store.feature_board(legacy['id'])['features'][0]['moves']
+    with pytest.raises(StateError, match='Return to the stage'):
+        store.feature_stage(legacy['id'], 'grilling')
+    assert store.feature_stage(legacy['id'], 'shortlist')['stage'] == 'shortlist'
+
+    store.feature_stage(legacy['id'], 'grilling')
+    store.feature_stage(legacy['id'], 'parked')
+    assert store.feature_show(legacy['id'])['parked_from'] == 'grilling'
+    with pytest.raises(StateError, match='Return to the stage'):
+        store.feature_stage(legacy['id'], 'shortlist')
+    assert store.feature_stage(legacy['id'], 'grilling')['stage'] == 'grilling'

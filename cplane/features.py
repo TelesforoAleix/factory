@@ -162,8 +162,9 @@ class FeatureStore:
         with self.mutation():
             identifier = self._feature_number(project)
             feature = self.connection.execute(
-                'INSERT INTO cplane_features (id, project, title, stage, position) VALUES (%s, %s, %s, %s, %s) RETURNING feature',
-                (identifier, project, title, stage, self._feature_position(stage))).fetchone()[0]
+                'INSERT INTO cplane_features (id, project, title, stage, position, parked_from) VALUES (%s, %s, %s, %s, %s, %s) RETURNING feature',
+                (identifier, project, title, stage, self._feature_position(stage),
+                 'shortlist' if stage == 'parked' else None)).fetchone()[0]
             self.connection.execute('INSERT INTO cplane_feature_ids VALUES (%s, %s)', (identifier, feature))
             self._feature_chat_stage(self._feature(identifier), stage)
             self._feature_event(feature, f'add {identifier}', actor)
@@ -240,7 +241,7 @@ class FeatureStore:
                     if target == item['stage']:
                         continue
                     source = item['stage']
-                    allowed = (target == item['parked_from'] if source == 'parked' else
+                    allowed = (target == (item['parked_from'] or 'shortlist') if source == 'parked' else
                                target == 'parked' or 'owner' in MOVES.get((source, target), ()))
                     if not allowed:
                         continue
@@ -365,7 +366,7 @@ class FeatureStore:
             source = item['stage']
             linked = self._linked_slices(item['feature'])
             if source == 'parked':
-                if stage != item['parked_from']:
+                if stage != (item['parked_from'] or 'shortlist'):
                     raise StateError('Return to the stage this feature left')
                 allowed = ('owner', 'chat')
             elif stage == 'parked':
