@@ -7,8 +7,8 @@ the owner can do when it is done and what it leaves out. Keep one concern per
 feature: two outcomes joined by "and" are two features. Slices follow the same
 title rule and have a one-sentence goal.
 
-Use this skill before workshop `add_slice`. Resolve architecture, scope, contract,
-security, persistence and topology decisions with the owner before cutting work.
+Use this skill before workshop `add_slice`. Raise architecture, scope, contract,
+security, persistence and topology decisions with `raise_decision` before cutting work.
 Only add work within the feature's agreed scope.
 
 Write a self-contained Markdown brief: the executor has only its target repository
@@ -25,7 +25,7 @@ Include these sections:
 - Validation: split commands and expected evidence into before merge and after
   merge. Put required post-merge node work in `node_steps` in the waiting reply.
 - Git: a PR, the required green checks and who approves the merge.
-- Escalation: decisions that must return to the owner.
+- Escalation: decisions that must return through `raise_decision`.
 - Handover: changed files, behavior, local choices, validation results,
   compatibility/security notes, unresolved issues and repository state.
 
@@ -37,3 +37,11 @@ fit in 64 KiB. Read the result and dependencies before adding subsequent work.
 A stored brief is immutable. Correct it by adding a new slice, never by rewriting
 an issued brief. This operation does not approve merges, run installs or give the
 executor workshop access.
+
+Raise decisions with `raise_decision` and a recommendation. When you receive a
+decision, use `answer_decision(decision, text)` only when the brief or recorded
+decisions settle it. Otherwise pass it on with `raise_decision`, supplying its
+`decision` id, text and recommendation. Owner-only items are always passed on,
+never answered by a chat: a guard file, a secret’s value, deleting irreplaceable
+data, a money limit, a new public endpoint or a repository made public. When the
+owner answers in the orchestrator chat, close that decision with `answer_decision`.

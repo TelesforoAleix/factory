@@ -120,23 +120,79 @@ def test_cap_counts_refusals_and_is_per_turn(context):
     value(call(Workshop(store, chats['feature']['id'], documents), 'board'))
 
 
-def test_owner_decision_and_noop_audit(context):
+def test_decision_chain_and_noop_audit(context):
     store, workshops, chats, own, _, _, _ = context
-    for kind, workshop in workshops.items():
-        assert value(call(workshop, 'raise_decision', text='Choose this?', recommendation='Use A')) == {'raised': True}
+    identifier = value(call(workshops['feature'], 'raise_decision', text='Choose this?', recommendation='Use A'))['decision']
+    for kind in ('project', 'orchestrator'):
+        messages = store.session_messages(chats[kind]['area'], chats[kind]['id'])
+        message = messages[-1]
+        assert message['role'] == 'system' and message['automatic'] and message['status'] == 'queued'
+        for text in (identifier, chats['feature']['title'], 'Choose this?', 'Use A'):
+            assert text in message['text']
+        assert not any(n['event'] == 'owner-check' for _, n in store.notices())
+        assert value(call(workshops[kind], 'raise_decision', decision=identifier,
+                          text='Choose this?', recommendation='Use A')) == dict(raised=True, decision=identifier)
+    notices = [n for _, n in store.notices() if n['event'] == 'owner-check']
+    assert len(notices) == 1
+    notice = notices[0]
+    assert notice['chat'] == chats['orchestrator']['id']
+    assert notice['actor'] == f"chat:{chats['orchestrator']['id']}"
+    assert notice['kind'] == 'owner-check' and notice['at']
+    assert f"{chats['feature']['title']}: Choose this?" in notice['text']
+    refused(call(workshops['orchestrator'], 'raise_decision', decision=identifier,
+                 text='Duplicate?', recommendation='No'), 'already reached the owner')
     value(call(workshops['feature'], 'save_section', feature=own, section='Design', text='A'))
     value(call(workshops['feature'], 'save_section', feature=own, section='Design', text='A'))
     assert len(store.feature_history(own)) == 1
-    notices = [notice for _, notice in store.notices()]
-    assert len(notices) == 3
-    for notice, chat in zip(notices, chats.values()):
-        # chats and workshops share insertion order.
-        assert notice['event'] == notice['kind'] == 'owner-check'
-        assert notice['chat'] == chat['id'] and notice['actor'] == f"chat:{chat['id']}"
-        assert notice['text'] == f"{chat['title']}: Choose this?\nRecommendation: Use A"
-        assert notice['at']
     with store.locked():
         assert store.connection.execute('SELECT count(*) FROM cplane_workshop_writes').fetchone()[0] == 5
+
+
+@pytest.mark.parametrize('answer_at', ['project', 'orchestrator', 'owner'])
+def test_decision_answer_returns_to_first_chat_and_closes(context, answer_at):
+    store, workshops, chats, *_ = context
+    identifier = value(call(workshops['feature'], 'raise_decision', text='Question', recommendation='A'))['decision']
+    for kind in ('feature', 'orchestrator'):
+        refused(call(workshops[kind], 'answer_decision', decision=identifier, text='Intruder'), 'holding chat')
+        refused(call(workshops[kind], 'raise_decision', decision=identifier,
+                     text='Intruder', recommendation='No'), 'holding chat')
+    if answer_at != 'project':
+        value(call(workshops['project'], 'raise_decision', decision=identifier,
+                   text='More context', recommendation='A'))
+    if answer_at == 'owner':
+        value(call(workshops['orchestrator'], 'raise_decision', decision=identifier,
+                   text='Owner choice', recommendation='A'))
+    holder = workshops['project' if answer_at == 'project' else 'orchestrator']
+    assert value(call(holder, 'answer_decision', decision=identifier, text='Use recorded A')) == dict(answered=True, decision=identifier)
+    message = store.session_messages('factory', chats['feature']['id'])[-1]
+    assert message['role'] == 'system' and message['automatic'] and message['status'] == 'queued'
+    assert identifier in message['text'] and 'Use recorded A' in message['text']
+    before = store.snapshot()
+    refused(call(holder, 'answer_decision', decision=identifier, text='Again'), 'closed')
+    refused(call(holder, 'raise_decision', decision=identifier, text='Again', recommendation='A'), 'closed')
+    assert store.snapshot() == before
+
+
+@pytest.mark.parametrize('operation', ['answer_decision', 'raise_decision'])
+def test_unknown_decision_refused(context, operation):
+    store, workshops, *_ = context
+    before = store.snapshot()
+    args = dict(decision='unknown', text='Question')
+    if operation == 'raise_decision':
+        args['recommendation'] = 'A'
+    refused(call(workshops['project'], operation, **args), 'Decision not found')
+    assert store.snapshot() == before
+
+
+@pytest.mark.parametrize('kind', ['feature', 'project', 'orchestrator'])
+def test_new_decision_starts_at_callers_level(context, kind):
+    store, workshops, chats, *_ = context
+    identifier = value(call(workshops[kind], 'raise_decision', text='Question', recommendation='A'))['decision']
+    record = store.notices()[-1][1]
+    assert record['decision'] == identifier and record['origin'] == chats[kind]['id']
+    expected = {'feature': 'project', 'project': 'orchestrator', 'orchestrator': 'orchestrator'}[kind]
+    assert record['holder'] == chats[expected]['id']
+    assert record['status'] == ('owner' if kind == 'orchestrator' else 'open')
 
 
 def test_all_reads_exclude_private_metadata(context, slice_data):
@@ -654,3 +710,15 @@ def test_review_read_has_install_evidence_and_handovers(context, slice_data, mon
     assert read['installation'] == dict(installable=True, status='finished')
     assert any('Synthetic handover' in text for text in read['handovers'])
     assert 'log' not in read and 'attention' not in read
+
+
+def test_decision_follows_current_project_after_transfer(context):
+    store, workshops, chats, own, *_, documents = context
+    moved = store.feature_move(own, 'LAB')
+    project = store.create_project_chat('LAB')
+    identifier = value(call(workshops['feature'], 'raise_decision', text='Transferred question', recommendation='A'))['decision']
+    assert store.notices()[-1][1]['holder'] == project['id']
+    refused(call(workshops['project'], 'answer_decision', decision=identifier, text='Old project'), 'holding chat')
+    value(call(Workshop(store, project['id'], documents), 'answer_decision', decision=identifier, text='Recorded A'))
+    assert store.chat_show(chats['feature']['id'])['feature'] == moved['id']
+    assert 'Recorded A' in store.session_messages('factory', chats['feature']['id'])[-1]['text']

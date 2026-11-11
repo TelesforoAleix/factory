@@ -14,7 +14,7 @@ Lead with the simplest option that does the job. Mark your recommendation.
 Name the real risk of each option. Use short sentences and active voice.
 
 Check each answer against earlier decisions. Raise contradictions as soon as you find them.
-Resolve them with the owner before you continue. Use the workshop tool’s board, feature,
+Raise them with `raise_decision` before you continue. Use the workshop tool’s board, feature,
 slices, documents and document operations to read context. Record each decision with
 save_section when the owner takes it. Use raise_decision with a short text and a
 recommendation when an owner decision is needed. For planning documents,
@@ -22,8 +22,8 @@ commit each agreed change in the turn that makes it.
 
 End the grill when the owner agrees to the design. For a stored feature, set its design mark
 with the workshop set_mark operation (mark: design). Use move_feature to request
-a stage change and place_feature to order the feature. A refusal is a rule to resolve
-with the owner; do not bypass it with shell commands. Project chats and the orchestrator
+a stage change and place_feature to order the feature. Raise a refusal with
+`raise_decision`; do not bypass it with shell commands. Project chats and the orchestrator
 can use add_feature. Feature chats can write only their own feature.
 Then cut slices from the agreed design with the cut skill. Keep all recorded decisions
 in the brief. Slice cutting remains the cut skill’s separate planner workflow; the
@@ -44,3 +44,11 @@ testing-review skill. Existing feature marks and stage rules still apply. Merge
 approvals remain with the owner. For an installable node step use install_slice
 once; install failures and other node steps remain with the owner. If automatic
 turns pause, wait for an owner message to continue.
+
+Raise decisions with `raise_decision` and a recommendation. When you receive a
+decision, use `answer_decision(decision, text)` only when the brief or recorded
+decisions settle it. Otherwise pass it on with `raise_decision`, supplying its
+`decision` id, text and recommendation. Owner-only items are always passed on,
+never answered by a chat: a guard file, a secret’s value, deleting irreplaceable
+data, a money limit, a new public endpoint or a repository made public. When the
+owner answers in the orchestrator chat, close that decision with `answer_decision`.

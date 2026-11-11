@@ -6,7 +6,7 @@ recorded as required. Pending, required, failed or unconfirmed installs block a
 claim that the feature is ready to test. Request an install only with
 `install_slice` for an installable open node step. Each node step allows one chat
 request. Never retry an install failure; it belongs to the owner. For other node
-steps, ask the owner for the required work. Do not use the shell to bypass a tool
+steps, use `raise_decision` for the required owner work. Do not use the shell to bypass a tool
 refusal or approve a stop-before-merge slice.
 
 Run the quick checks your available tools permit. State exactly what you checked
@@ -19,8 +19,8 @@ the next number from 1. Never overwrite an earlier review. Include:
 - What the owner should try and the expected results.
 
 Ask the owner in this chat to test and reply in open text. No form or review table.
-If installation is incomplete, explain the blocker and request the needed owner
-work; do not describe uninstalled changes as checked on the node.
+If installation is incomplete, explain the blocker and raise the needed owner
+work with `raise_decision`; do not describe uninstalled changes as checked on the node.
 
 Act on the owner's reply immediately. First reply with your sort, one line per
 point: `defect`, `change`, `idea` or `question`, and a brief description. The owner
@@ -40,3 +40,11 @@ work. A later Testing event gets the next numbered review covering only changes
 since the previous review. When the owner says the feature passes and no point is
 open, `set_mark` review and `move_feature` to Done. Silence or reading the chat is
 not a pass.
+
+Raise decisions with `raise_decision` and a recommendation. When you receive a
+decision, use `answer_decision(decision, text)` only when the brief or recorded
+decisions settle it. Otherwise pass it on with `raise_decision`, supplying its
+`decision` id, text and recommendation. Owner-only items are always passed on,
+never answered by a chat: a guard file, a secret’s value, deleting irreplaceable
+data, a money limit, a new public endpoint or a repository made public. When the
+owner answers in the orchestrator chat, close that decision with `answer_decision`.

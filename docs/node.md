@@ -1332,8 +1332,8 @@ Unexpected host failures return a fixed message; store refusals retain their
 short sentence.
 
 The operations are `board`, `feature`, `slices`, `documents`, `document`,
-`save_section`, `set_mark`, `move_feature`, `place_feature`, `add_feature`, `add_slice` and
-`raise_decision`. `move_feature` takes exactly one of `stage` or `project`;
+`save_section`, `set_mark`, `move_feature`, `place_feature`, `add_feature`, `add_slice`,
+`raise_decision` and `answer_decision`. `move_feature` takes exactly one of `stage` or `project`;
 `add_feature` starts in Shortlist. A feature chat may change only its stable linked
 feature, including through aliases after project transfers. A project chat may
 change only features in its current project and cannot transfer one outside it.
@@ -1348,10 +1348,26 @@ Nothing deletes, and there is no slice-executor attachment.
 Every write uses the store's locked transaction path as `chat:<id>`, with current
 chat links and scope checked under the same lock. Existing feature transition,
 mark and placement rules apply. Feature revisions/events retain their usual
-audit, and the new audit records even successful no-op writes. `raise_decision`
-stores an `owner-check` phone notice with chat ID, actor, time, chat title, text
-and recommendation. The existing runner bot export delivers these notices;
-there is no new Home screen in this change.
+audit, and the new audit records even successful no-op writes. `raise_decision(text,
+recommendation, decision?)` sends a new decision from feature to its current
+project chat, from project to Development Orchestrator, and from orchestrator to
+the owner. Missing, archived, failed, paused or automatic-turn-limited levels
+are skipped immediately. A relay is one automatic system message naming the
+decision id, first chat's title, text and recommendation. Only a decision reaching
+the owner appends an `owner-check` notice for Home and the phone; it names the
+first chat and links to the orchestrator for the owner's reply (the caller if
+no orchestrator exists). Existing notices
+and `chat-paused` cards retain their behavior.
+
+Only the current holding chat may pass a decision up with `raise_decision` and
+its id, or close it with `answer_decision(decision, text)`. An answer is a system
+message to the first chat, including after several relays. Closed decisions
+refuse further answers and passes; decisions at the owner cannot be passed again.
+The orchestrator uses `answer_decision` when the owner replies. Chats answer only
+from the brief or recorded decisions; owner-only items always pass on. Decision
+snapshots use the existing notices log with event `workshop-decision`, ignored
+by Home and the phone export allowlist. Delivery, holder validation and snapshots
+share the store transaction; no table, migration or state-v1 change is needed.
 
 The image pins were checked with `codex --version` (0.162.1) and
 `claude --version` (2.1.318). Codex receives the server before `resume`, if any:
@@ -1420,8 +1436,8 @@ Delivery and attention ownership commit together under the scheduler lock.
 Ownership is stored on the delivery record and joined onto the attention
 projection as `chat_id`; the version 1 state document and its schema stay unchanged.
 Home omits questions/escalations taken by a chat. Runner question/escalation
-phone notices are suppressed when the event is taken; owner decisions raised by
-`raise_decision` continue to reach Home and the phone. Previously exported phone
+phone notices are suppressed when the event is taken. Only decisions that reach
+the owner through `raise_decision` appear on Home and the phone; chat relays do not. Previously exported phone
 history is never rewritten. Pending events survive restarts and remain queued
 when their responsible chat is paused, failed or archived.
 
