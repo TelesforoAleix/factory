@@ -10,6 +10,7 @@ import tempfile
 import time
 from .executors import fenced
 
+from . import fence
 from .state import StateError
 
 LABEL = 'com.cplane.primer'
@@ -96,7 +97,7 @@ def request(name, args):
             command = ([name, '-p', '--model', 'haiku', '--', 'Reply with: ok'] if name == 'claude'
                        else [name, 'exec', '-m', 'gpt-6-luna', '--skip-git-repo-check', '--', 'Reply with: ok'])
             try:
-                result = subprocess.run(['factory-cli', 'run', '--tool', name, '--repo', work,
+                result = subprocess.run([fence.fence_command(), 'run', '--tool', name, '--repo', work,
                                          '--run', output, '--', *command], cwd='/',
                                         stdin=subprocess.DEVNULL, capture_output=True, timeout=TIMEOUT,
                                         env=host_environment())

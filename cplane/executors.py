@@ -7,6 +7,7 @@ import stat
 import sys
 import time
 
+from . import fence
 from .text_bounds import TAIL_LIMIT, cut, failure_tail
 
 FINAL_SCHEMA = {
@@ -59,7 +60,7 @@ def command(job):
                 '--json-schema', json.dumps(FINAL_SCHEMA)]
         if job.get('resume'):
             args += ['--resume', job['resume']]
-    return ['factory-cli', 'run', '--tool', job['tool'], '--repo', job['repo'],
+    return [fence.fence_command(), 'run', '--tool', job['tool'], '--repo', job['repo'],
             '--run', str(folder / 'io'), '--', *args, '--', job['prompt']]
 
 
@@ -76,7 +77,7 @@ class Processes:
         # The supervisor is outside the CLI process group and closes all terminal FDs.
         with (folder / 'supervisor.log').open('ab') as log:
             os.fchmod(log.fileno(), 0o600)
-            options = {'env': {k: os.environ[k] for k in ('PATH', 'LANG', 'PYTHONPATH')
+            options = {'env': {k: os.environ[k] for k in ('PATH', 'LANG', 'PYTHONPATH', 'CPLANE_FENCE_COMMAND')
                                if k in os.environ}}
             proc = subprocess.Popen([sys.executable, '-m', 'cplane.executors', str(folder)],
                                     stdin=subprocess.DEVNULL, stdout=log, stderr=log,

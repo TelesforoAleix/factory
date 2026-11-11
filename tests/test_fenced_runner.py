@@ -104,7 +104,7 @@ def delivery(tmp_path, monkeypatch):
         calls.append((list(map(str, args)), kwargs))
         assert secret not in str(args)
         assert Path(kwargs.get('cwd', '/')) != work
-        if args[0] == 'factory-cli':
+        if args[0] == os.environ.get('CPLANE_FENCE_COMMAND', 'factory-cli'):
             assert args[1] == 'bundle'
             assert args[args.index('--repo') + 1] == str(work)
             output = Path(args[args.index('--run') + 1])
@@ -150,9 +150,11 @@ def test_prepare_initializes_a_new_clean_clone_and_pins_default_base(delivery, m
     assert d['secret'] not in (work / '.git/config').read_text()
 
 
-def test_real_bundle_delivery_never_runs_host_git_in_hostile_copy(delivery, capsys):
+def test_real_bundle_delivery_never_runs_host_git_in_hostile_copy(delivery, capsys, monkeypatch):
+    monkeypatch.setenv('CPLANE_FENCE_COMMAND', 'homelab-fence')
     d = delivery
     assert d['adapter'].publish(d['job'], request(d['job'])) == d['tip']
+    assert any(args[:2] == ['homelab-fence', 'bundle'] for args, _ in d['calls'])
     assert d['g'](d['remote'], 'rev-parse', 'refs/heads/' + d['job']['branch']) == d['tip']
     Git().tidy(d['work'])
     with pytest.raises(state.StateError, match='host branch read refused'):
@@ -243,11 +245,12 @@ def test_git_failure_cannot_put_token_in_attention_logs_or_notices(delivery, mak
 
 @pytest.mark.parametrize('tool', ['codex', 'claude'])
 @pytest.mark.parametrize('resume', [None, 'saved-session'])
-def test_every_fenced_executor_command_uses_factory_cli(tmp_path, tool, resume):
+def test_every_fenced_executor_command_uses_factory_cli(tmp_path, tool, resume, monkeypatch):
+    monkeypatch.setenv('CPLANE_FENCE_COMMAND', 'homelab-fence')
     job = dict(tool=tool, run=str(tmp_path), repo='/srv/factory/work/copy', model='synthetic',
                prompt='-literal prompt', resume=resume, fence=True)
     args = command(job)
-    assert args[:9] == ['factory-cli', 'run', '--tool', tool, '--repo', job['repo'],
+    assert args[:9] == ['homelab-fence', 'run', '--tool', tool, '--repo', job['repo'],
                         '--run', str(tmp_path / 'io'), '--']
     assert args[9] == tool
     assert args[-2:] == ['--', '-literal prompt']
@@ -262,6 +265,7 @@ def test_every_fenced_executor_command_uses_factory_cli(tmp_path, tool, resume):
 @pytest.mark.parametrize('tool', ['codex', 'claude'])
 def test_fenced_supervisor_collects_session_and_final_from_run_folder(tmp_path, monkeypatch, tool):
     folder = tmp_path.resolve()
+    monkeypatch.setenv('CPLANE_FENCE_COMMAND', 'homelab-fence')
     monkeypatch.setattr(executors.os, 'chown', Mock())
     monkeypatch.setattr(executors.subprocess, 'Popen', Mock(return_value=Mock(pid=123)))
     job = dict(tool=tool, run=str(folder), repo='/untrusted/repo', model='synthetic',
@@ -270,10 +274,11 @@ def test_fenced_supervisor_collects_session_and_final_from_run_folder(tmp_path, 
     assert (folder / 'request.json').stat().st_mode & 0o777 == 0o600
     assert not (folder / 'io/request.json').exists()
     assert 'GH_TOKEN' not in executors.subprocess.Popen.call_args.kwargs['env']
+    assert executors.subprocess.Popen.call_args.kwargs['env']['CPLANE_FENCE_COMMAND'] == 'homelab-fence'
     final = dict(kind='waiting', body='synthetic')
 
     def run(args, **kwargs):
-        assert args[:2] == ['factory-cli', 'run']
+        assert args[:2] == ['homelab-fence', 'run']
         assert kwargs['cwd'] == str(folder)
         if tool == 'codex':
             kwargs['stdout'].write(b'{"type":"thread.started","thread_id":"saved-session"}\n')
@@ -541,12 +546,13 @@ def test_fenced_primer_never_starts_cli_on_host(delivery, monkeypatch):
     from cplane import primer
     d = delivery
     monkeypatch.setenv('CPLANE_RUNS', str(d['root'] / 'runs'))
+    monkeypatch.setenv('CPLANE_FENCE_COMMAND', 'homelab-fence')
     run = Mock(return_value=subprocess.CompletedProcess([], 0, b'', b''))
     monkeypatch.setattr(subprocess, 'run', run)
     assert primer.prime()
     assert run.call_count == 2
     for call in run.call_args_list:
-        assert call.args[0][:2] == ['factory-cli', 'run']
+        assert call.args[0][:2] == ['homelab-fence', 'run']
         assert 'GH_TOKEN' not in call.kwargs['env']
 
 

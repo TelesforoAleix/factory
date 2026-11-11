@@ -21,6 +21,7 @@ from . import run_records, skills
 from .workshop import WorkshopServer, KINDS as WORKSHOP_KINDS
 from factory_ui.documents import Documents
 from .planning import Planning
+from . import fence
 from .state import StateError
 from .stores import PostgresStore, REPOSITORY
 
@@ -217,7 +218,7 @@ def workspace(session):
 def turn_command(turn, folder, paths, run):
     session = turn['session']
     tool = session['tool']
-    args = ['factory-cli', 'run', '--tool', tool, '--repo', str(folder), '--run', str(run),
+    args = [fence.fence_command(), 'run', '--tool', tool, '--repo', str(folder), '--run', str(run),
             '--session-turn', str(turn['id'])]
     for path in paths:
         args += ['--read-only-path', str(path)]
@@ -338,7 +339,7 @@ def _execute_turn(turn, store, accounting):
 
 
 def cleanup_interrupted_turn(turn):
-    subprocess.run(['factory-cli', 'session-cleanup', str(turn['id'])], check=True,
+    subprocess.run([fence.fence_command(), 'session-cleanup', str(turn['id'])], check=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     run = RUNS / f'session-turn-{turn["id"]}'
     if run.exists():

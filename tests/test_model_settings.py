@@ -426,3 +426,33 @@ def test_role_change_during_turn_waits_until_next_claim(pg_store):
     second = pg_store.claim_session_turn()
     assert (second['session']['tool'], second['session']['effort']) == ('claude', 'high')
     assert second['session']['cli_session_id'] is None
+
+
+def test_configured_fence_command_for_catalog_and_recovery(programs, tmp_path, monkeypatch):
+    from cplane import fence
+    monkeypatch.setenv('CPLANE_FENCE_COMMAND', 'homelab-fence')
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, json.dumps(CODEX), '')
+
+    monkeypatch.setattr(models.subprocess, 'run', run)
+    assert models.refresh_catalog('codex')
+    assert [call[:2] for call in calls] == [
+        ['homelab-fence', 'run'], ['homelab-fence', 'session-cleanup']]
+    token = 'a' * 32
+    (fence.WORK_ROOT / ('models-' + token)).mkdir()
+    (sessions.RUNS / ('models-' + token)).mkdir()
+    models.recover_catalog_runs()
+    assert calls[-1][:2] == ['homelab-fence', 'session-cleanup']
+
+
+def test_fence_command_defaults_and_rolls_back(monkeypatch):
+    from cplane import fence
+    monkeypatch.delenv('CPLANE_FENCE_COMMAND', raising=False)
+    assert fence.fence_command() == 'factory-cli'
+    monkeypatch.setenv('CPLANE_FENCE_COMMAND', 'homelab-fence')
+    assert fence.fence_command() == 'homelab-fence'
+    monkeypatch.delenv('CPLANE_FENCE_COMMAND')
+    assert fence.fence_command() == 'factory-cli'

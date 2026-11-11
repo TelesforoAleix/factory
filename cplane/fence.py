@@ -18,6 +18,10 @@ LOGIN_ROOT = Path('/srv/factory/logins')
 TOKEN = Path('/etc/factory/github-token')
 
 
+def fence_command():
+    return os.environ.get('CPLANE_FENCE_COMMAND', 'factory-cli')
+
+
 def host_environment():
     # A credential is added only for the one authenticated git/gh call.
     return {**{key: os.environ[key] for key in ('PATH', 'LANG', 'PYTHONPATH') if key in os.environ},
@@ -180,7 +184,7 @@ class Fence:
             raise StateError('bundle refused: branch is not the slice branch or is the default branch')
         clean = self.clean(job['repository'])
         folder = trusted_directory(Path(job['run']))
-        result = subprocess.run(['factory-cli', 'bundle', '--repo', job['repo'],
+        result = subprocess.run([fence_command(), 'bundle', '--repo', job['repo'],
                                  '--run', str(folder / 'io'), '--branch', job['branch']],
                                 cwd=folder, capture_output=True, env=host_environment())
         if result.returncode:

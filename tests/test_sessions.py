@@ -173,10 +173,11 @@ def test_resume_rejects_link_without_host_write(tmp_path, monkeypatch, resume_id
 
 @pytest.mark.parametrize('tool', ['codex', 'claude'])
 @pytest.mark.parametrize('resume', [None, 'saved-id'])
-def test_one_message_and_resume(tool, resume, tmp_path):
+def test_one_message_and_resume(tool, resume, tmp_path, monkeypatch):
+    monkeypatch.setenv('CPLANE_FENCE_COMMAND', 'homelab-fence')
     turn = dict(id=7, text='literal $(false)', session=dict(tool=tool, model='synthetic', effort='medium', cli_session_id=resume))
     args = sessions.turn_command(turn, tmp_path, [tmp_path / 'repos/name'], tmp_path / 'run')
-    assert args[:2] == ['factory-cli', 'run']
+    assert args[:2] == ['homelab-fence', 'run']
     assert args[-1] == turn['text']
     assert args[args.index('--read-only-path') + 1] == str(tmp_path / 'repos/name')
     assert (('--resume' if tool == 'claude' else 'resume') in args) == bool(resume)
