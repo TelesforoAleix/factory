@@ -5,6 +5,7 @@ import io
 import json
 import os
 import subprocess
+import urllib.error
 from unittest.mock import Mock
 
 import pytest
@@ -104,6 +105,23 @@ def test_failures_do_not_expose_credentials(key, monkeypatch, capsys):
     with pytest.raises(state.StateError) as error:
         app.installation_token(REPOS)
     assert str(error.value) == 'GitHub App authentication failed'
+    assert capsys.readouterr() == ('', '')
+
+
+@pytest.mark.parametrize('status', [401, 403, 404, 422])
+def test_refused_token_request_names_repository_without_http_details(key, monkeypatch, capsys, status):
+    opener = Mock()
+    opener.open.side_effect = urllib.error.HTTPError(
+        'https://api.github.com/synthetic-secret', status, 'synthetic-secret',
+        {'Authorization': 'synthetic-secret'}, io.BytesIO(b'synthetic-secret'))
+    monkeypatch.setattr(app.urllib.request, 'build_opener', Mock(return_value=opener))
+    with pytest.raises(state.StateError) as error:
+        app.installation_token(['example/uninstalled'])
+    assert str(error.value) == (
+        'GitHub App token request refused for example/uninstalled; '
+        'the App may not be installed there')
+    assert error.value.__suppress_context__
+    assert not app._TOKENS
     assert capsys.readouterr() == ('', '')
 
 

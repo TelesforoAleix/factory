@@ -238,7 +238,7 @@ class GitHub:
         return f'{match.group(1)}/{match.group(2)}'
 
     def call(self, repo, *args):
-        options = {'env': fence.github_environment(), 'cwd': '/'} if fenced() else {}
+        options = {'env': fence.github_environment([repo]), 'cwd': '/'} if fenced() else {}
         command = ['gh', *args] if args and args[0] == 'api' else ['gh', *args, '-R', repo]
         read = args[:2] in (('pr', 'view'), ('pr', 'list')) or args[:1] == ('api',)
         attempts = 3 if fenced() and read else 1

@@ -1404,20 +1404,63 @@ def test_legacy_token_mode_unchanged(delivery, monkeypatch, auth):
     mint = Mock(side_effect=AssertionError('legacy mode must not mint'))
     monkeypatch.setattr(github_app, 'installation_token', mint)
     assert fence.github_environment() == {**fence.host_environment(), 'GH_TOKEN': delivery['secret']}
+    assert fence.github_environment(['example/repo']) == {
+        **fence.host_environment(), 'GH_TOKEN': delivery['secret']}
     mint.assert_not_called()
 
 
-def test_app_environment_scoped_to_delivery_state(make_state, monkeypatch):
+def test_app_environment_ignores_old_state_repositories(make_state, slice_data, monkeypatch):
     from cplane import github_app
-    monkeypatch.setenv('CPLANE_STATE', str(make_state()))
+    items = [slice_data, dict(slice_data, id='old/W1', repo='med-ask', state='accepted'),
+             dict(slice_data, id='foreign/W1', repo='foreign/other', state='accepted')]
+    monkeypatch.setenv('CPLANE_STATE', str(make_state(items)))
+    monkeypatch.setattr(state, 'load', Mock(side_effect=AssertionError('must not read state')))
     monkeypatch.setenv('CPLANE_GITHUB_AUTH', 'app')
     monkeypatch.setenv('GH_TOKEN', 'untrusted-ambient-token')
     mint = Mock(return_value='synthetic-installation-token')
     monkeypatch.setattr(github_app, 'installation_token', mint)
-    env = fence.github_environment()
+    env = fence.github_environment(['example/repo'])
     mint.assert_called_once_with(['example/repo'])
     assert env == {**fence.host_environment(), 'GH_TOKEN': 'synthetic-installation-token'}
     assert 'CPLANE_GITHUB_APP_ID' not in env
+
+
+@pytest.mark.parametrize('repositories', [None, []])
+def test_app_environment_requires_repository(monkeypatch, repositories):
+    from cplane import github_app
+    monkeypatch.setenv('CPLANE_GITHUB_AUTH', 'app')
+    monkeypatch.delenv('CPLANE_STATE', raising=False)
+    mint = Mock()
+    monkeypatch.setattr(github_app, 'installation_token', mint)
+    with pytest.raises(state.StateError) as error:
+        fence.github_environment(repositories)
+    assert str(error.value) == 'GitHub App needs the repository of the call'
+    mint.assert_not_called()
+
+
+@pytest.mark.parametrize('repo', ['example/repo', 'another/project.git'])
+@pytest.mark.parametrize('operation', ['gh', 'git'])
+def test_authenticated_calls_request_only_their_repository(tmp_path, monkeypatch, repo, operation):
+    from cplane import github_app
+    monkeypatch.setenv('CPLANE_FENCE', '1')
+    monkeypatch.setenv('CPLANE_GITHUB_AUTH', 'app')
+    monkeypatch.delenv('CPLANE_STATE', raising=False)
+    mint = Mock(return_value='synthetic-installation-token')
+    monkeypatch.setattr(github_app, 'installation_token', mint)
+    run = Mock(return_value=subprocess.CompletedProcess([], 0, 'ok', ''))
+    monkeypatch.setattr(subprocess, 'run', run)
+    if operation == 'gh':
+        assert GitHub().call(repo, 'pr', 'view', '1') == 'ok'
+    else:
+        monkeypatch.setattr(fence, 'CLEAN_ROOT', tmp_path)
+        monkeypatch.setattr(fence, 'ROOT_UID', os.getuid())
+        owner, name = repo.split('/')
+        clean = tmp_path / owner / (name + '.git')
+        clean.mkdir(parents=True, mode=0o700)
+        fence.Fence().git(clean, 'fetch', 'origin', auth=True)
+    mint.assert_called_once_with([repo])
+    assert run.call_args.kwargs['env'] == {
+        **fence.host_environment(), 'GH_TOKEN': 'synthetic-installation-token'}
 
 
 def test_unknown_github_auth_is_refused(monkeypatch):

@@ -9,6 +9,7 @@ import stat
 import subprocess
 import threading
 import time
+import urllib.error
 import urllib.request
 
 from .state import StateError
@@ -101,6 +102,9 @@ def installation_token(repositories):
                 return cached[0]
     except StateError:
         raise
+    except urllib.error.HTTPError:
+        raise StateError(f'GitHub App token request refused for {", ".join(repos)}; '
+                         'the App may not be installed there') from None
     except Exception:
         # Neither HTTP bodies, OpenSSL diagnostics nor exception details are safe.
         raise StateError('GitHub App authentication failed') from None

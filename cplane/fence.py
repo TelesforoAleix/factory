@@ -29,10 +29,9 @@ def github_environment(repositories=None):
     env = host_environment()
     auth = os.environ.get('CPLANE_GITHUB_AUTH', 'token')
     if auth == 'app':
-        from . import github_app, state
-        if repositories is None:
-            repositories = [item['repo'] for item in state.load(
-                Path(os.environ['CPLANE_STATE']).expanduser())['slices']]
+        from . import github_app
+        if not repositories:
+            raise StateError('GitHub App needs the repository of the call')
         env['GH_TOKEN'] = github_app.installation_token(repositories)
         return env
     if auth != 'token':
@@ -128,11 +127,12 @@ class Fence:
         if not clean.is_relative_to(CLEAN_ROOT) or clean == CLEAN_ROOT:
             raise StateError('host Git refused outside clean clones')
         trusted_directory(clean)
+        repo = clean.parent.name + '/' + clean.name.removesuffix('.git')
         command = ['git', '-C', str(clean), *git_options(),
                    '-c', 'protocol.file.allow=always', *map(str, args)]
         try:
             result = subprocess.run(command, capture_output=True, text=True,
-                                    env=github_environment() if auth else host_environment())
+                                    env=github_environment([repo]) if auth else host_environment())
         except OSError:
             raise StateError('fenced Git could not run') from None
         if result.returncode and not allow_failure:
