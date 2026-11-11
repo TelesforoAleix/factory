@@ -12,7 +12,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from cplane import executors, fence, state
+from cplane import deny, executors, fence, state
 from cplane.executors import Processes, command
 from cplane.runner import Git, GitHub, Runner
 
@@ -38,6 +38,11 @@ def delivery(tmp_path, monkeypatch):
     token.write_text(secret)
     token.chmod(0o600)
     monkeypatch.setattr(fence, 'TOKEN', token)
+    deny_list = tmp_path / 'deny-list'
+    deny_list.write_text('# synthetic list\n')
+    deny_list.chmod(0o600)
+    monkeypatch.setattr(deny, 'DENY_LIST', deny_list)
+    monkeypatch.setattr(deny, 'ROOT_UID', os.getuid())
     real_run = subprocess.run
 
     def g(cwd, *args):
@@ -105,6 +110,9 @@ def delivery(tmp_path, monkeypatch):
         calls.append((list(map(str, args)), kwargs))
         assert secret not in str(args)
         assert Path(kwargs.get('cwd', '/')) != work
+        if args[:2] == ['gh', 'api']:
+            assert kwargs['env']['GH_TOKEN'] == secret
+            return subprocess.CompletedProcess(args, 0, '{"private": false}', '')
         if args[0] == os.environ.get('CPLANE_FENCE_COMMAND', 'factory-cli'):
             assert args[1] == 'bundle'
             assert args[args.index('--repo') + 1] == str(work)
@@ -118,7 +126,8 @@ def delivery(tmp_path, monkeypatch):
     monkeypatch.setattr(subprocess, 'run', run)
     return dict(adapter=adapter, job=job, tip=tip, base=base, work=work, clean=clean,
                 remote=remote, marker=marker, calls=calls, secret=secret, selection=selection,
-                g=g, folder=folder, root=tmp_path, real_run=real_run)
+                g=g, folder=folder, root=tmp_path, real_run=real_run, deny_list=deny_list,
+                bundles=bundles)
 
 
 def request(job):
@@ -1608,3 +1617,112 @@ def test_classes_use_base_policy_and_include_deleted_paths(delivery, operation):
     d['adapter'].git(d['clean'], 'fetch', 'origin', 'refs/heads/policy-test')
     assert classes.changes(d['adapter'], {**d['job'], 'base': base, 'tip': tip}) == expected
     assert not d['marker'].exists()
+@pytest.mark.parametrize('location', [
+    'diff', 'commit message', 'PR body', 'PR title', 'branch name', 'earlier commit',
+    'binary diff', 'renamed file', 'private filename', 'non-UTF8 filename',
+    'merge resolution', 'canary'])
+def test_public_delivery_blocks_private_content_before_push(delivery, make_state, location, capsys):
+    d = delivery
+    planted = 'SYNTHETIC-PRIVATE-PHRASE'
+    d['deny_list'].write_text(planted.lower() + '\n')
+    job = d['job']
+    req = request(job)
+
+    def git(*args):
+        return d['g'](d['work'], '-c', 'core.hooksPath=/dev/null',
+                      '-c', 'core.fsmonitor=false', *args)
+
+    if location in ('diff', 'earlier commit', 'binary diff', 'canary', 'merge resolution'):
+        content = deny.CANARY if location == 'canary' else planted
+        if location == 'merge resolution':
+            git('checkout', '-b', 'side')
+            (d['work'] / 'side').write_text('side\n')
+            git('add', '.')
+            git('commit', '-m', 'side')
+            git('checkout', job['branch'])
+            git('merge', '--no-ff', '--no-commit', 'side')
+        (d['work'] / 'README').write_text('safe\n' + content + ('\0' if location == 'binary diff' else '') + '\n')
+        git('add', '.')
+        git('commit', '-m', 'synthetic addition')
+        if location == 'earlier commit':
+            (d['work'] / 'README').write_text('safe\n')
+            git('add', '.')
+            git('commit', '-m', 'synthetic removal')
+    elif location in ('renamed file', 'private filename', 'non-UTF8 filename'):
+        filename = {'renamed file': 'renamed\tfile', 'private filename': planted,
+                    'non-UTF8 filename': os.fsdecode(b'bad-\xff')}[location]
+        git('mv', 'README', filename)
+        (d['work'] / filename).write_text(planted + '\n')
+        git('add', '.')
+        git('commit', '-m', 'rename')
+    elif location == 'commit message':
+        git('commit', '--allow-empty', '-m', 'prefix ' + planted + ' suffix')
+    elif location == 'branch name':
+        job['branch'] = 'slice/' + planted
+        req['branch'] = job['branch']
+        git('branch', '-m', job['branch'])
+    else:
+        req['body' if location == 'PR body' else 'title'] = 'prefix ' + planted + ' suffix'
+    git('bundle', 'create', d['bundles']['good'], 'HEAD', 'refs/heads/' + job['branch'])
+    # Only delivery calls count; synthetic fixture setup uses offline Git.
+    d['calls'].clear()
+    runner = Runner(make_state(), git=Mock(), github=Mock(), runs=d['root'] / 'control')
+    runner.at = datetime.now(timezone.utc).isoformat()
+    item = state.load(runner.path)['slices'][0]
+    job['final'] = dict(kind='waiting', body='```json\n' + json.dumps(req) + '\n```')
+    runner.jobs = {item['id']: job}
+    try:
+        runner.apply_final(item, job)
+    except state.StateError:
+        runner.slice_failure(item, 'collect/deliver')
+    attention = item['attention']
+    assert attention['kind'] == 'escalation'
+    assert 'private-content check:' in attention['body']
+    if location in ('diff', 'earlier commit', 'binary diff', 'merge resolution', 'canary'):
+        assert "'README':2" in attention['body']
+    elif location == 'renamed file':
+        assert "renamed\\tfile':1" in attention['body']
+    elif location == 'private filename':
+        assert 'file ' in attention['body']
+    elif location == 'non-UTF8 filename':
+        assert 'bad-\\udcff' in attention['body']
+    else:
+        assert location in attention['body']
+    assert planted.casefold() not in json.dumps(item['log']).casefold()
+    assert planted.casefold() not in attention['body'].casefold()
+    assert deny.CANARY not in attention['body']
+    runner.github.open.assert_not_called()
+    assert not any('push' in args for args, _ in d['calls'])
+    assert planted not in str(capsys.readouterr())
+    assert not d['marker'].exists()
+
+
+def test_missing_list_stops_public_push(delivery):
+    d = delivery
+    d['deny_list'].unlink()
+    with pytest.raises(deny.Denied, match='deny-list unavailable'):
+        d['adapter'].publish(d['job'], request(d['job']))
+    assert not any('push' in args for args, _ in d['calls'])
+
+
+def test_private_repository_skips_content_and_list_checks(delivery, monkeypatch):
+    d = delivery
+    d['deny_list'].unlink()
+    original_run = subprocess.run
+
+    def run(args, **kwargs):
+        if args[:2] == ['gh', 'api']:
+            assert kwargs['env']['GH_TOKEN'] == d['secret']
+            return subprocess.CompletedProcess(args, 0, '{"private": true}', '')
+        return original_run(args, **kwargs)
+
+    monkeypatch.setattr(subprocess, 'run', run)
+    req = request(d['job'])
+    req['body'] = deny.CANARY
+    assert d['adapter'].publish(d['job'], req) == d['tip']
+    assert not any('rev-list' in args for args, _ in d['calls'])
+    # The PR send point shares the same private visibility decision.
+    runner = Runner(d['root'] / 'state.json', github=Mock())
+    runner.fence = d['adapter']
+    runner.github.open.return_value = 42
+    assert runner.open_pr('example/repo', req) == 42

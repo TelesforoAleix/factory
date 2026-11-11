@@ -408,12 +408,21 @@ class Runner:
         self.log(item, f'{kind}: {first_line}', True)
 
     def slice_failure(self, item, stage):
+        if isinstance(sys.exception(), fence.deny.Denied):
+            self.attention(item, 'escalation', str(sys.exception()))
+            return
         lines = traceback.format_exc().strip().splitlines()
         summary = f'{stage} failed: {lines[-1] if lines else "unknown error"}'
         self.attention(item, 'escalation', summary + ('\n' + '\n'.join(lines[-8:]) if lines else ''))
 
     def github_repo(self, item):
         return item['repo']
+
+    def open_pr(self, repo, request):
+        # All runner PR sends, including review and recovery, use the same gate
+        # and per-pass visibility cache as bundle delivery.
+        self.fence.check_request(repo, request)
+        return self.github.open(repo, request)
 
     def save_job(self, job):
         atomic_json(Path(job['run']) / 'job.json', job)
@@ -751,7 +760,7 @@ class Runner:
                     return
                 job['request'], job['phase'] = request, 'pr'
                 self.save_job(job)
-                item['pr'] = self.github.open(self.github_repo(item), request)
+                item['pr'] = self.open_pr(self.github_repo(item), request)
                 self.log(item, f'opened PR: {item["pr"]}', True)
         else:
             self.attention(item, 'node-step', final['body'])
@@ -774,7 +783,7 @@ class Runner:
                                   body=answer['body'], node_steps=None)
             job['phase'] = 'pr'
             self.save_job(job)
-            item['pr'] = self.github.open(self.github_repo(item), job['request'])
+            item['pr'] = self.open_pr(self.github_repo(item), job['request'])
             self.log(item, f'opened PR: {item["pr"]}', True)
         elif job.get('repair'):
             self.ticket_attention(item, 'escalation', 'slice review still needs fixes after repair:\n' + json.dumps(answer))
@@ -944,7 +953,7 @@ class Runner:
             return
         # Recover PR number if creation succeeded but saving state did not.
         if item['pr'] is None:
-            item['pr'] = self.github.open(self.github_repo(item), job['request'])
+            item['pr'] = self.open_pr(self.github_repo(item), job['request'])
         if item['attention']:
             self.merge_ready(item, job)
             return
@@ -1001,6 +1010,7 @@ class Runner:
             self._usage_probe_allowed = False
 
     def _run_pass(self):
+        self.fence.begin_pass()
         with state.locked(self.path):
             self.git.pull(self.path)
             orders_changed = self.orders.collect(self)
