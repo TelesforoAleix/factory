@@ -220,7 +220,9 @@ def test_home_projection_orders_attention_and_discards_stale_stuck(monkeypatch):
     assert card['installing'] is True
 
     monkeypatch.setenv('CPLANE_INSTALL_REPOS', 'other/repo')
-    assert client.get('/api/home').get_json()['attention'][0]['installable'] is False
+    result = client.get('/api/home').get_json()
+    assert result['attention'] == []
+    assert result['orchestrator_count'] == 1
 
 
 def test_home_chat_decisions_follow_read_and_latest_pause():
@@ -327,3 +329,36 @@ def test_slice_level_changes_only_before_issue_and_preserves_overrides():
     store.state = 'issued'
     assert client.post('/api/slices/demo/one/level', headers=headers, json={'level': 'standard'}).status_code == 400
     assert client.post('/api/slices/demo/one/level', headers=headers, json={'level': 'bad'}).status_code == 400
+
+
+def test_home_counts_only_owner_attention_for_waiting_limit(monkeypatch):
+    from cplane import planner
+    from factory_ui.home import home_data
+    monkeypatch.setenv('CPLANE_INSTALL_REPOS', 'owner/repo')
+    items = []
+    features = []
+    for number, (kind, body, repo) in enumerate([
+        ('escalation', 'failing check: test', 'owner/repo'),
+        ('escalation', 'missing brief', 'owner/repo'),
+        ('node-step', 'Manual work', 'other/repo'),
+        ('node-step', 'Install', 'owner/repo'),
+    ]):
+        item = planner.new_slice(f'demo/{number}')
+        item.update(repo=repo, feature_id=f'F{number}', state='in review', title='Slice')
+        item['attention'] = dict(kind=kind, body=body, since='2026-01-01T00:00:00+00:00', answer=None, approved=False)
+        items.append(item)
+        features.append(dict(id=f'F{number}', project='P', stage='building'))
+    class Store:
+        def load(self): return {'slices': items}
+        def chats(self, **kwargs): return []
+        def notices(self): return []
+        def limit_show(self): return {'waiting_limit': 2}
+    def home(): return home_data(Store(), {'features': features, 'projects': []}, lambda x: x, None)
+    result = home()
+    assert result['orchestrator_count'] == 3
+    assert [a['kind'] for a in result['attention']] == ['install']
+    items[0]['attention']['for'] = 'owner'
+    result = home()
+    assert result['orchestrator_count'] == 2
+    assert {a['kind'] for a in result['attention']} == {'install', 'question', 'limit'}
+    assert next(a for a in result['attention'] if a['kind'] == 'limit')['text'] == 'Waiting limit full (2/2)'

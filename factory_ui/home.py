@@ -3,6 +3,7 @@ import os
 from datetime import datetime, timezone
 
 from cplane.runner import stuck_since
+from cplane.attention import recipient
 from cplane.installation import pending, install_failure, chat_requested
 from cplane.chats import public_chat_result
 
@@ -20,6 +21,8 @@ def home_data(store, board, clean, view):
     allowed = os.environ.get('CPLANE_INSTALL_REPOS', '').split(',')
     installing = {s['id'] for s, _ in pending(data)}
     attention = []
+    orchestrator_count = 0
+    owner_waiting = []
 
     def add(kind, identifier, since, **fields):
         attention.append(dict(kind=kind, id=identifier, since=since, **fields))
@@ -31,7 +34,13 @@ def home_data(store, board, clean, view):
         project = f['project'] if f else None
         chat = feature_chats.get(f['id']) if f else None
         a = owned.get(s['id'], s['attention']) if owned is not None else (store.chat_attention(s) if hasattr(store, 'chat_attention') else s['attention'])
-        if a and s['state'] != 'accepted':
+        open_item = (a and s['state'] != 'accepted' and
+                     ((a['kind'] == 'merge' and not a['approved']) or
+                      (a['kind'] in ('node-step', 'question', 'escalation') and a['answer'] is None)))
+        if open_item and recipient(s, a) == 'planner':
+            orchestrator_count += 1
+        if open_item and recipient(s, a) == 'owner':
+            owner_waiting.append((s, a))
             base = dict(project=project, title=clean(s['title']), text=clean(a['body']),
                         feature=f['id'] if f else None, chat=chat['id'] if chat else None)
             if a['kind'] == 'merge' and not a['approved'] and a.get('review'):
@@ -43,7 +52,7 @@ def home_data(store, board, clean, view):
             elif a['kind'] == 'node-step' and a['answer'] is None:
                 add('install', s['id'], a['since'], **base, installable=s['repo'] in allowed, installing=s['id'] in installing,
                     label='proposed by chat' if chat_requested(s) and s['id'] not in installing else None)
-            elif a['kind'] in ('question', 'escalation') and a['answer'] is None and not a.get('chat_id'):
+            elif a['kind'] in ('question', 'escalation') and a['answer'] is None:
                 # Install and runner failures are recognizable from the current escalation.
                 failure = a['kind'] == 'escalation' and (a['body'].startswith('Install ') or ' failed:' in a['body'].split('\n')[0])
                 add('failure' if failure else 'question', s['id'], a['since'], **base)
@@ -51,7 +60,7 @@ def home_data(store, board, clean, view):
         stalled = stuck_since(s, datetime.now(timezone.utc))
         if approval_wait and stalled and stalled[1] == 'no new log activity':
             stalled = None
-        if stalled:
+        if stalled and not (open_item and recipient(s, a) == 'planner'):
             since, reason = stalled
             if (s['id'], since.isoformat(), reason) in stuck_notices:
                 add('stuck', s['id'], since.isoformat(), project=project, title=clean(s['title']), text=reason)
@@ -66,12 +75,11 @@ def home_data(store, board, clean, view):
         paused = n.get('event') == 'chat-paused' and unread and c.get('auto_paused') and paused_notices[c['id']] is n
         if decision or paused:
             add('decision', c.get('feature') or str(c['id']), n['at'], project=c.get('project'), chat=c['id'], text=clean(n.get('text', '')))
-    waiting = {f['id'] for s in slices if (f := linked.get(s['id'])) and f['stage'] == 'building'
-               and s['attention'] and s['attention']['answer'] is None}
+    waiting = {f['id'] for s, a in owner_waiting if (f := linked.get(s['id'])) and f['stage'] == 'building'}
     limits = store.limit_show()
     if len(waiting) >= limits['waiting_limit']:
-        since = min((s['attention']['since'] for s in slices if linked.get(s['id'])
-                     and linked[s['id']]['id'] in waiting and s['attention'] and s['attention']['answer'] is None), default=None)
+        since = min((a['since'] for s, a in owner_waiting if linked.get(s['id'])
+                     and linked[s['id']]['id'] in waiting), default=None)
         add('limit', 'pipeline', since, project=None, text=f"Waiting limit full ({len(waiting)}/{limits['waiting_limit']})")
     if hasattr(store, 'testing_review_waits'):
         attention.extend({**a, 'title': clean(a['title']), 'text': clean(a['text'])} for a in store.testing_review_waits())
@@ -87,5 +95,5 @@ def home_data(store, board, clean, view):
     by_project = {c['project']: c for c in chats if c['kind'] == 'project'}
     quick_chats.extend(dict(id=by_project[p['key']]['id'], title=clean(p['name']))
                        for p in board['projects'] if p.get('active', True) and p['key'] in by_project)
-    return dict(quick_chats=quick_chats, projects=board['projects'], features=features, attention=attention, running=running,
+    return dict(quick_chats=quick_chats, projects=board['projects'], features=features, attention=attention, orchestrator_count=orchestrator_count, running=running,
                 chats=[{k: clean(v) if k == 'title' else v for k, v in c.items() if k in ('id', 'title', 'project', 'feature', 'waiting')} for c in chats if c['waiting']])
