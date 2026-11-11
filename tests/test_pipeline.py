@@ -131,9 +131,9 @@ def test_parked_return_and_ready_gate(pg_store, slice_data):
         pg_store.feature_stage(identifier, 'ready')
     linked(pg_store, slice_data, identifier)
     assert pg_store.feature_stage(identifier, 'ready')['parked_from'] is None
-    fresh = pg_store.feature_add('FAC', 'No return stage', stage='parked')['id']
-    with pytest.raises(StateError, match='stage this feature left'):
-        pg_store.feature_stage(fresh, 'shortlist')
+    fresh = pg_store.feature_add('FAC', 'No return stage', stage='parked')
+    assert fresh['parked_from'] == 'shortlist'
+    assert pg_store.feature_stage(fresh['id'], 'shortlist')['stage'] == 'shortlist'
 
 
 def test_global_order_and_placing(pg_store):
