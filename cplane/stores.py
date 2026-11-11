@@ -1,9 +1,7 @@
 """Storage implementations; the state module remains the public command facade."""
-from contextlib import contextmanager, nullcontext
-import fcntl
+from contextlib import contextmanager
 from importlib.resources import files
 import json
-import os
 import re
 from pathlib import Path
 from typing import Protocol, ContextManager
@@ -29,52 +27,6 @@ class Store(Protocol):
     def snapshot(self): ...
     def size(self) -> int: ...
     def commit(self, command, slice_id) -> None: ...
-
-
-class FileStore:
-    def __init__(self, path):
-        self.path = Path(path).expanduser().resolve()
-        self.outbox = Path(str(self.path) + '.outbox.jsonl')
-
-    @contextmanager
-    def locked(self):
-        # Stable inode: the state file itself is replaced on every save.
-        with Path(str(self.path) + '.lock').open('a') as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
-            yield self
-
-    def mutation(self):
-        return nullcontext()
-
-    def load(self):
-        return state._file_load(self.path)
-
-    def save(self, data, notices=()):
-        state._file_save(self.path, data)
-        self.append_notices(notices)
-
-    def append_notices(self, notices, *, ensure_ascii=False):
-        if not notices:
-            return
-        with self.outbox.open('a') as stream:
-            for notice in notices:
-                stream.write(json.dumps(notice, ensure_ascii=ensure_ascii) + '\n')
-            stream.flush()
-            os.fsync(stream.fileno())
-
-    def notices(self, after=0):
-        if not self.outbox.exists():
-            return []
-        return [(i, json.loads(line)) for i, line in enumerate(self.outbox.read_text().splitlines(), 1) if i > after]
-
-    def snapshot(self):
-        return self.path.read_bytes(), self.outbox.read_bytes() if self.outbox.exists() else None
-
-    def size(self):
-        return self.path.stat().st_size
-
-    def commit(self, command, slice_id):
-        state._file_commit(self.path, self.outbox, command, slice_id)
 
 
 # One scheduler per database. All writers and runner passes take this same
@@ -218,8 +170,10 @@ class PostgresStore(ModelStore, RoleStore, InboxStore, FeatureStore, RunRecordSt
                     self.connection.execute('INSERT INTO cplane_migrations VALUES (%s)', (migration.name,))
 
     def import_file(self, path):
-        source = FileStore(path)
-        data, notices = source.load(), source.notices()
+        path = Path(path).expanduser().resolve()
+        data = state._file_load(path)
+        outbox = Path(str(path) + ".outbox.jsonl")
+        notices = [(i, json.loads(line)) for i, line in enumerate(outbox.read_text().splitlines(), 1)] if outbox.exists() else []
         with self.mutation():
             if self.connection.execute('SELECT EXISTS (SELECT 1 FROM cplane_slices) OR EXISTS (SELECT 1 FROM cplane_notices)').fetchone()[0]:
                 raise state.StateError('import requires an empty database')

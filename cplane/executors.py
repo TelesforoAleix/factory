@@ -15,16 +15,7 @@ FINAL_SCHEMA = {
     "properties": {"kind": {"type": "string", "enum": ["handover", "question", "escalation", "waiting"]},
                    "body": {"type": "string"}},
 }
-CLAUDE_SETTINGS = {"sandbox": {
-    "enabled": True, "autoAllowBashIfSandboxed": True, "allowUnsandboxedCommands": False,
-    "network": {"allowedDomains": ["github.com", "api.github.com", "*.githubusercontent.com",
-                                  "codeload.github.com", "pypi.org", "files.pythonhosted.org", "registry.npmjs.org"]},
-}}
-CLAUDE_PARAGRAPH = '''\n\nGitHub steps: gh and ssh do not work in your sandbox; git push does. Push your branch and end with kind "waiting". Its body must begin with a fenced JSON block containing {"branch": "your branch", "title": "PR title", "body": "PR description", "node_steps": null}. Set node_steps to text instead of null if work on the owner node is needed after merging. The runner opens the PR, checks CI, obtains any required merge approval, and merges it. It resumes you with "merged as <sha>"; then write your handover.'''
-FENCE_PARAGRAPH = CLAUDE_PARAGRAPH.replace(
-    'gh and ssh do not work in your sandbox; git push does. Push your branch',
-    'there is no GitHub credential in this container and nothing can be pushed from inside. '
-    'Commit your work on the assigned branch')
+FENCE_PARAGRAPH = '\n\nGitHub steps: there is no GitHub credential in this container and nothing can be pushed from inside. Commit your work on the assigned branch and end with kind "waiting". Its body must begin with a fenced JSON block containing {"branch": "your branch", "title": "PR title", "body": "PR description", "node_steps": null}. Set node_steps to text instead of null if work on the owner node is needed after merging. The runner opens the PR, checks CI, obtains any required merge approval, and merges it. It resumes you with "merged as <sha>"; then write your handover.'
 
 
 def fenced():
@@ -54,74 +45,39 @@ def atomic_json(path, data):
     temp.replace(path)
 
 
-def cache_roots():
-    home = Path.home()
-    return [str((home / path).resolve()) for path in ('.cache/uv', '.npm')
-            if (home / path).is_dir()]
-
-
-def claude_settings():
-    settings = json.loads(json.dumps(CLAUDE_SETTINGS))
-    settings['sandbox']['filesystem'] = {'allowWrite': cache_roots()}
-    return settings
-
-
 def command(job):
     folder = Path(job['run'])
-    if job.get('fence') or fenced():
-        if job['tool'] == 'codex':
-            args = ['codex', 'exec', '-m', job['model'], '-c',
-                    f'model_reasoning_effort="{job.get("effort", "medium")}"',
-                    '--output-schema', '/run/factory/schema.json', '--json',
-                    '-o', '/run/factory/last.json']
-            if job.get('resume'):
-                args += ['resume', job['resume']]
-        else:
-            args = ['claude', '-p', '--model', job['model'], '--effort', job.get('effort', 'medium'), '--output-format', 'json',
-                    '--json-schema', json.dumps(FINAL_SCHEMA)]
-            if job.get('resume'):
-                args += ['--resume', job['resume']]
-        return ['factory-cli', 'run', '--tool', job['tool'], '--repo', job['repo'],
-                '--run', str(folder / 'io'), '--', *args, '--', job['prompt']]
     if job['tool'] == 'codex':
-        args = ['codex', 'exec', '-m', job['model'], '-c', 'sandbox_mode="workspace-write"',
-                '-c', f'model_reasoning_effort="{job.get("effort", "low" if "luna" in job["model"].lower() else "medium")}"',
-                '-c', 'sandbox_workspace_write.network_access=true',
-                '-c', 'sandbox_workspace_write.writable_roots=' + json.dumps(
-                    [str(Path(job['repo']) / '.git'), *cache_roots()]),
-                '--output-schema', str(folder / 'schema.json'), '--json', '-o', str(folder / 'last.json')]
+        args = ['codex', 'exec', '-m', job['model'], '-c',
+                f'model_reasoning_effort="{job.get("effort", "medium")}"',
+                '--output-schema', '/run/factory/schema.json', '--json',
+                '-o', '/run/factory/last.json']
         if job.get('resume'):
             args += ['resume', job['resume']]
-        return args + ['--', job['prompt']]
-    args = ['claude', '-p', '--model', job['model'], '--effort', job.get('effort', 'medium'), '--settings', str(folder / 'sandbox.json'),
-            '--permission-mode', 'acceptEdits', '--allowedTools', 'Bash', '--output-format', 'json',
-            '--json-schema', json.dumps(FINAL_SCHEMA)]
-    if job.get('resume'):
-        args += ['--resume', job['resume']]
-    return args + ['--', job['prompt']]
+    else:
+        args = ['claude', '-p', '--model', job['model'], '--effort', job.get('effort', 'medium'), '--output-format', 'json',
+                '--json-schema', json.dumps(FINAL_SCHEMA)]
+        if job.get('resume'):
+            args += ['--resume', job['resume']]
+    return ['factory-cli', 'run', '--tool', job['tool'], '--repo', job['repo'],
+            '--run', str(folder / 'io'), '--', *args, '--', job['prompt']]
 
 
 class Processes:
     def start(self, job):
-        if fenced():
-            job['fence'] = True
+        job['fence'] = True
         folder = Path(job['run'])
-        if job.get('fence'):
-            output = folder / 'io'
-            output.mkdir(mode=0o700)
-            atomic_json(output / 'schema.json', FINAL_SCHEMA)
-            os.chmod(output / 'schema.json', 0o444)
-            os.chown(output, 21000, 21000)
-        else:
-            atomic_json(folder / 'schema.json', FINAL_SCHEMA)
-            atomic_json(folder / 'sandbox.json', claude_settings())
+        output = folder / 'io'
+        output.mkdir(mode=0o700)
+        atomic_json(output / 'schema.json', FINAL_SCHEMA)
+        os.chmod(output / 'schema.json', 0o444)
+        os.chown(output, 21000, 21000)
         atomic_json(folder / 'request.json', job)
         # The supervisor is outside the CLI process group and closes all terminal FDs.
         with (folder / 'supervisor.log').open('ab') as log:
-            if job.get('fence'):
-                os.fchmod(log.fileno(), 0o600)
+            os.fchmod(log.fileno(), 0o600)
             options = {'env': {k: os.environ[k] for k in ('PATH', 'LANG', 'PYTHONPATH')
-                               if k in os.environ}} if job.get('fence') else {}
+                               if k in os.environ}}
             proc = subprocess.Popen([sys.executable, '-m', 'cplane.executors', str(folder)],
                                     stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                                     start_new_session=True, close_fds=True, **options)
@@ -142,10 +98,10 @@ class Processes:
                             session = event['thread_id']
                     except (ValueError, KeyError):
                         continue
-            last = folder / 'io/last.json' if job.get('fence') else folder / 'last.json'
+            last = folder / 'io/last.json'
             if last.exists() and last.stat().st_mtime_ns > job['started_ns']:
                 try:
-                    final = json.loads(read_output(last) if job.get('fence') else last.read_text())
+                    final = json.loads(read_output(last))
                 except ValueError:
                     pass
         else:
@@ -207,10 +163,9 @@ def supervise(folder):
     code = 1
     try:
         with logfile.open('ab') as log, (folder / 'stderr.log').open('ab') as errors:
-            if job.get('fence'):
-                os.fchmod(log.fileno(), 0o600)
-                os.fchmod(errors.fileno(), 0o600)
-            code = subprocess.run(command(job), cwd=str(folder) if job.get('fence') else job['repo'], stdin=subprocess.DEVNULL,
+            os.fchmod(log.fileno(), 0o600)
+            os.fchmod(errors.fileno(), 0o600)
+            code = subprocess.run(command(job), cwd=str(folder), stdin=subprocess.DEVNULL,
                                   stdout=log, stderr=errors, close_fds=True).returncode
     except Exception as error:
         with logfile.open('a') as log:

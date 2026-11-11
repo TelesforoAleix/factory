@@ -53,7 +53,7 @@ def test_store_errors_do_not_expose_details():
 
 def test_owner_actions_use_cli_rules_and_locked_store(tmp_path):
     from cplane import planner, state
-    from cplane.stores import FileStore
+    from conftest import SyntheticStore
 
     item = planner.new_slice('demo/one')
     item.update(repo='owner/repo', feature='demo', title='Demo', brief='brief.md',
@@ -62,8 +62,8 @@ def test_owner_actions_use_cli_rules_and_locked_store(tmp_path):
                          'answer': None, 'approved': False}
     path = tmp_path / 'state.json'
     path.touch()
-    state._file_save(path, {'version': 1, 'slices': [item]})
-    store = FileStore(path)
+    SyntheticStore(path).save({'version': 1, 'slices': [item]})
+    store = SyntheticStore(path)
     client = create_app(store).test_client()
     headers = {'X-Factory-UI': '1'}
     url = '/api/actions/'
@@ -84,15 +84,15 @@ def test_owner_actions_use_cli_rules_and_locked_store(tmp_path):
 
 def test_answer_and_start_refusal(tmp_path):
     from cplane import planner, state
-    from cplane.stores import FileStore
+    from conftest import SyntheticStore
     item = planner.new_slice('demo/two')
     item.update(repo='owner/repo', feature='demo', title='Demo')
     item['attention'] = {'kind': 'question', 'body': 'What next?',
                          'since': '2026-01-01T00:00:00+00:00', 'answer': None, 'approved': False}
     path = tmp_path / 'state.json'
     path.touch()
-    state._file_save(path, {'version': 1, 'slices': [item]})
-    store = FileStore(path)
+    SyntheticStore(path).save({'version': 1, 'slices': [item]})
+    store = SyntheticStore(path)
     client = create_app(store).test_client()
     headers = {'X-Factory-UI': '1'}
     assert client.post('/api/actions/start/demo/two', json={}, headers=headers).status_code == 400

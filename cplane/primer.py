@@ -10,7 +10,7 @@ import tempfile
 import time
 from .executors import fenced
 
-from .agent import launchctl
+from .state import StateError
 
 LABEL = 'com.cplane.primer'
 WAKE_LABEL = 'com.cplane.primer-wake'
@@ -18,6 +18,15 @@ TIMEOUT = 120
 TIMES = ((6, 0), (11, 0), (16, 0), (21, 0))
 WAKE_TIMES = ('05:59', '10:59', '15:59', '20:59')
 MAX_WAKE_AGE = 600
+
+
+def launchctl(*args, missing_ok=False):
+    result = subprocess.run(['launchctl', *args], capture_output=True, text=True)
+    if result.returncode and not missing_ok:
+        raise StateError('launchctl: ' + (result.stderr.strip() or result.stdout.strip()))
+    return result
+
+
 REQUESTS = (
     ('claude', ['claude', '-p', '--model', 'haiku', 'Reply with: ok']),
     ('codex', ['codex', 'exec', '-m', 'gpt-6-luna', '--skip-git-repo-check', '-s', 'read-only', 'Reply with: ok']),

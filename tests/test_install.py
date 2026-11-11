@@ -17,7 +17,7 @@ import pytest
 from cplane import installation, install_host, state
 from cplane.cli import main
 from cplane.runner import Runner
-from cplane.stores import FileStore
+from conftest import SyntheticStore
 from factory_ui import create_app
 from test_stores import pg_store
 from test_runner import setup, claude_start, edit, item, pr_reply
@@ -101,7 +101,7 @@ def test_requires_open_node_step(make_state, slice_data):
 
 def test_site_guard_and_request(make_state, slice_data):
     path = make_state([node_step(slice_data)])
-    client = create_app(FileStore(path)).test_client()
+    client = create_app(SyntheticStore(path)).test_client()
     url = '/api/slices/' + slice_data['id'] + '/install'
     assert client.post(url).status_code == 403
     assert client.post(url, headers={'X-Factory-UI': '1'}).status_code == 202
@@ -396,7 +396,7 @@ def test_pass_only_launches_after_explicit_request(tmp_path, slice_data, make_st
         assert main(['--state', str(path), 'install', item['id']]) == 0
         assert main(['--state', str(path), 'install', item['id']]) == 1
     else:
-        client = create_app(FileStore(path)).test_client()
+        client = create_app(SyntheticStore(path)).test_client()
         url = '/api/slices/' + item['id'] + '/install'
         assert client.post(url, headers={'X-Factory-UI': '1'}).status_code == 202
         assert client.post(url, headers={'X-Factory-UI': '1'}).status_code == 400

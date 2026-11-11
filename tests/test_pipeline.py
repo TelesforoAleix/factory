@@ -285,16 +285,16 @@ def test_import_still_bypasses_move_gates(pg_store):
 
 
 def test_optional_link_file_roundtrip(make_state, slice_data, monkeypatch, tmp_path):
-    from cplane.stores import FileStore
+    from conftest import SyntheticStore
     monkeypatch.delenv('CPLANE_DATABASE_URL', raising=False)
     path = make_state()
-    original = FileStore(path).load()
+    original = SyntheticStore(path).load()
     assert 'feature_id' not in original['slices'][0]
     slice_data['feature_id'] = 'FAC-F1'
     path = make_state([slice_data])
     destination = tmp_path / 'export.json'
     assert main(['--state', str(path), 'export', str(destination)]) == 0
-    exported = FileStore(destination).load()
+    exported = SyntheticStore(destination).load()
     assert exported['version'] == 1
     assert exported['slices'][0]['feature_id'] == 'FAC-F1'
 
@@ -542,12 +542,12 @@ def test_pipeline_park_blocks_pr_progress_until_return(pg_store, runner_setup, s
     r, p, github = runner_setup
     feature = runner_board(pg_store, r, slice_data, [('building', {})])[0]
     r.run()
-    p.finish(kind='waiting', body='Waiting on CI')
-    # An existing PR follows the normal unfenced Codex route.
-    data = pg_store.load()
-    data['slices'][0]['pr'] = 12
-    pg_store.save(data)
+    request = dict(branch=p.started[-1]['branch'], title='Synthetic PR',
+                   body='Synthetic change', node_steps=None)
+    p.finish(kind='waiting', body='```json\n' + json.dumps(request) + '\n```')
     r.run()
+    assert pg_store.load()['slices'][0]['pr'] == 12
+    r.fence.publish.assert_called_once()
     pg_store.feature_stage(feature, 'parked')
     github.checks.return_value = ('green', '')
     r.run()

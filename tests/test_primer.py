@@ -10,6 +10,34 @@ from cplane.cli import main
 SECRET = 'SECRET-RESPONSE-TEXT'
 
 
+def test_launchctl_preserves_arguments_and_errors(monkeypatch):
+    calls = []
+    def run(args, **kwargs):
+        calls.append((args, kwargs))
+        return subprocess.CompletedProcess(args, 1, '', 'failed')
+    monkeypatch.setattr(primer.subprocess, 'run', run)
+    with pytest.raises(primer.StateError, match='launchctl: failed'):
+        primer.launchctl('bootstrap', 'gui/123', 'job.plist')
+    assert calls == [(['launchctl', 'bootstrap', 'gui/123', 'job.plist'],
+                      {'capture_output': True, 'text': True})]
+    assert primer.launchctl('list', 'job', missing_ok=True).returncode == 1
+
+
+def test_install_and_uninstall_call_launchctl(tmp_path, monkeypatch):
+    monkeypatch.setattr(primer.Path, 'home', lambda: tmp_path)
+    calls = []
+    monkeypatch.setattr(primer, 'launchctl', lambda *args, **kwargs: calls.append((args, kwargs)))
+    path = tmp_path / 'Library/LaunchAgents' / (primer.LABEL + '.plist')
+    primer.install()
+    assert path.exists()
+    primer.uninstall()
+    assert not path.exists()
+    assert calls == [
+        (('bootstrap', f'gui/{os.getuid()}', str(path)), {}),
+        (('bootout', f'gui/{os.getuid()}', str(path)), {'missing_ok': True}),
+    ]
+
+
 def fake(folder, name, body):
     path = folder / name
     path.write_text('#!/bin/sh\n' + body)
