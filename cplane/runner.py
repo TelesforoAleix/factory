@@ -62,7 +62,7 @@ def export_bot(path):
         with state.locked(path) as backend:
             data, notices = backend.load(), backend.notices()
             data['slices'] = [{key: value for key, value in item.items()
-                               if (key in BOT_ACCEPTED_FIELDS if item['state'] == 'accepted'
+                               if (key in BOT_ACCEPTED_FIELDS if item['state'] in ('accepted', 'dropped')
                                    else key != 'log')}
                               for item in data['slices']]
             payload = json.dumps(data, indent=2, ensure_ascii=False) + '\n'
@@ -1039,7 +1039,7 @@ class Runner:
             for item in self.data['slices']:
                 read_start = self.github.successful_reads if isinstance(self.github, GitHub) else 0
                 run_records.owner_wait(self, item)
-                if item['state'] == 'accepted':
+                if item['state'] in ('accepted', 'dropped'):
                     # An accepted slice's finished process must not hold a slot.
                     job = self.jobs.get(item['id'])
                     if job and job['phase'] == 'running':
@@ -1093,7 +1093,7 @@ class Runner:
             installation.process(self)
             for item in self.data['slices']:
                 read_start = self.github.successful_reads if isinstance(self.github, GitHub) else 0
-                if item['state'] != 'accepted' and item['id'] not in read_failures:
+                if item['state'] not in ('accepted', 'dropped') and item['id'] not in read_failures:
                     try:
                         self.deliver(item)
                     except GitHubReadError:

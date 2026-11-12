@@ -242,3 +242,14 @@ def test_parked_features_return_to_source_or_shortlist(pg_store):
     with pytest.raises(StateError, match='Return to the stage'):
         store.feature_stage(legacy['id'], 'shortlist')
     assert store.feature_stage(legacy['id'], 'grilling')['stage'] == 'grilling'
+
+
+def test_dropped_slice_count_is_not_open(pg_store, slice_data):
+    feature = pg_store.feature_add('FAC', 'Dropped slice', stage='building')['id']
+    slice_data.update(feature_id=feature, state='dropped', attention=dict(
+        kind='question', body='?', since='2026-10-15T12:00:00+02:00', answer=None, approved=False))
+    pg_store.save(dict(version=1, slices=[slice_data]))
+    card = next(c for c in pg_store.feature_cards()['features'] if c['id'] == feature)
+    assert card['slice_counts']['dropped'] == 1
+    assert card['open_attention'] == 0
+    assert not card['waiting']

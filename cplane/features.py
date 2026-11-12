@@ -293,8 +293,8 @@ class FeatureStore:
             for identifier, title, project, stage, position, parked, since in rows:
                 group = linked.get(identifier, [])
                 counts = {state: sum(s['state'] == state for s in group) for state in
-                          ('planned', 'researching', 'ready', 'issued', 'awaiting handover', 'in review', 'accepted', 'escalated')}
-                open_items = [s for s in group if s['state'] != 'accepted' and s['attention'] and (
+                          ('planned', 'researching', 'ready', 'issued', 'awaiting handover', 'in review', 'accepted', 'escalated', 'dropped')}
+                open_items = [s for s in group if s['state'] not in ('accepted', 'dropped') and s['attention'] and (
                     s['attention']['kind'] == 'owner-check' or
                     s['attention']['kind'] == 'merge' and not s['attention']['approved'] or
                     s['attention']['kind'] in ('question', 'escalation', 'node-step') and s['attention']['answer'] is None)]
@@ -430,12 +430,12 @@ class FeatureStore:
                 return [s for s in self.ordered_slices(data['slices']) if s.get('feature_id') in aliases]
 
             def waiting(slices):
-                return any(s['attention'] and s['attention']['answer'] is None for s in slices)
+                return any(s['state'] not in ('accepted', 'dropped') and s['attention'] and s['attention']['answer'] is None for s in slices)
 
             data = self.load()
             building = [self._feature(f['id']) for f in self.feature_list(stage='building')]
             groups = [linked(f, data) for f in building]
-            active = sum(any(s['state'] != 'accepted' for s in group) and not waiting(group)
+            active = sum(any(s['state'] not in ('accepted', 'dropped') for s in group) and not waiting(group)
                          for group in groups)
             stopped = sum(waiting(group) for group in groups)
             limits = self.limit_show()
@@ -447,7 +447,7 @@ class FeatureStore:
                 if not group:
                     continue
                 self.feature_stage(feature['id'], 'building', actor='runner')
-                active += bool(any(s['state'] != 'accepted' for s in group) and not waiting(group))
+                active += bool(any(s['state'] not in ('accepted', 'dropped') for s in group) and not waiting(group))
                 stopped += bool(waiting(group))
 
             # Reload to retain stage audit entries from feature_stage.
@@ -456,7 +456,7 @@ class FeatureStore:
             for feature in self.feature_list(stage='building'):
                 internal = self._feature(feature['id'])
                 group = linked(internal, data)
-                if group and all(s['state'] == 'accepted' for s in group):
+                if group and all(s['state'] in ('accepted', 'dropped') for s in group):
                     # Save accumulated slots/logs before the nested move loads them.
                     self.save(data)
                     self.feature_stage(feature['id'], 'testing', actor='runner')

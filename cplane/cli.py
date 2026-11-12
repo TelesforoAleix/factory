@@ -67,7 +67,7 @@ def pending(data):
             or (attention["kind"] in ANSWERABLE and attention["answer"] is None)
             or attention["kind"] == "owner-check"
         )
-        if item["state"] == "accepted":
+        if item["state"] in ("accepted", "dropped"):
             continue
         if unresolved or item["state"] in ("in review", "escalated"):
             key = "needs attention"
@@ -315,6 +315,10 @@ def parser():
         sub.add_argument("id")
         if command in ("slot", "answer"):
             sub.add_argument("value", metavar="when" if command == "slot" else "text")
+    installed = commands.add_parser("installed", parents=[common], help="record a hand install")
+    installed.add_argument("id")
+    installed.add_argument("sha")
+    installed.add_argument("--note")
     commands.add_parser("migrate", parents=[common], help="apply Postgres migrations")
     transfer = commands.add_parser("import", parents=[common], help="import state and its outbox into empty Postgres")
     transfer.add_argument("path", help="source state JSON path")
@@ -738,6 +742,22 @@ def main(argv=None):
                         result = runs_path(path) / 'installs' / (request + '.json')
                         if result.exists():
                             print(f'install {request}: ' + result.read_text())
+        elif args.command == "installed":
+            from .installation import installable
+            actor = getattr(args, "actor", "owner")
+            if actor != "owner" and not re.fullmatch(r"chat:[A-Za-z0-9_-]+", actor):
+                raise state.StateError("installed actor must be owner or chat:<id>")
+            def record_install(item, data, at):
+                if installable(item):
+                    raise state.StateError("installable repositories must use cplane install")
+                if not re.fullmatch(r"[0-9a-fA-F]{40}", args.sha) or not any(
+                        entry['event'] == 'merged: ' + args.sha for entry in item['log']):
+                    raise state.StateError("no matching full merge sha")
+                event = f"Installed {args.sha}. By hand" + (f": {args.note}" if args.note else ".")
+                item['log'].append(dict(at=at, actor=actor, event=event))
+                return None, None
+            state.update(path, args.id, args.command, actor, record_install,
+                         getattr(args, "commit", False), event="hand install recorded")
         elif args.command in ("add", "edit", "state", "attention", "review"):
             event = note = None
             if args.command == "state":
@@ -746,6 +766,20 @@ def main(argv=None):
                     event += f" (forced: {args.reason})"
             from . import review
             change = review.planner_change(args) if args.command == 'review' else planner.change_for(args)
+            if args.command == 'state' and args.target == 'dropped':
+                base_change = change
+                def change(item, data, at):
+                    from .executors import Processes
+                    from .installation import runs_path
+                    for job_file in runs_path(path).glob('*/job.json'):
+                        try:
+                            job = json.loads(job_file.read_text())
+                            if (job['id'] == item['id'] and job['phase'] == 'running'
+                                    and not Processes().poll(job)[0]):
+                                raise state.StateError(f"{item['id']} has a live executor")
+                        except (OSError, ValueError, KeyError, TypeError) as error:
+                            raise state.StateError(f"cannot verify executor status: {job_file}") from error
+                    return base_change(item, data, at)
             if args.command in ('add', 'edit') and hasattr(args, 'allowed_files'):
                 base_change = change
                 def change(item, data, at):
