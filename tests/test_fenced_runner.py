@@ -1738,3 +1738,125 @@ def test_private_repository_skips_content_and_list_checks(delivery, monkeypatch)
     runner.fence = d['adapter']
     runner.github.open.return_value = 42
     assert runner.open_pr('example/repo', req) == 42
+
+
+def test_app_login_failure_retries_and_escalates_after_continuous_failure(delivery, make_state, monkeypatch):
+    from cplane import github_app
+    d = delivery
+    path = make_state()
+    data = state.load(path)
+    item = data['slices'][0]
+    item.update(state='issued', pr=12, session=dict(tool='codex', id='synthetic-session', folder=str(d['work'])))
+    item['log'].append(dict(at=datetime.now(timezone.utc).isoformat(), actor='runner', event='collected turn: turn-1'))
+    state.save(path, data)
+    runner = Runner(path, git=Mock(), runs=d['root'] / 'control')
+    folder = runner.runs / 'turn-1'
+    folder.mkdir(parents=True)
+    job = d['job']
+    job.update(run=str(folder), phase='pr', tip=d['tip'], request=request(job))
+    runner.save_job(job)
+    failing = [True]
+    calls = []
+    def environment(repositories):
+        calls.append(repositories)
+        if failing[0]:
+            raise github_app.GitHubAppTransientError('GitHub App login failed')
+        return {}
+    monkeypatch.setattr(fence, 'github_environment', environment)
+    def run(args, **kwargs):
+        result = {'state': 'OPEN', 'title': 'Synthetic PR', 'headRefOid': d['tip']} if args[1:3] == ['pr', 'view'] else {'workflow_runs': []}
+        return subprocess.CompletedProcess(args, 0, json.dumps(result), '')
+    monkeypatch.setattr(subprocess, 'run', run)
+    start = datetime.now(timezone.utc)
+    current = [start]
+    runner.clock = lambda: current[0]
+    runner.run()
+    saved = state.load(path)['slices'][0]
+    assert saved['state'] == 'issued' and saved['attention'] is None
+    assert saved['log'][-1]['event'] == 'checks: pending'
+    assert json.loads((folder / 'job.json').read_text())['github_read_failure_since'] == start.isoformat()
+    failing[0] = False
+    current[0] += timedelta(minutes=1)
+    runner.run()
+    assert len(calls) >= 2
+    assert 'github_read_failure_since' not in json.loads((folder / 'job.json').read_text())
+    failing[0] = True
+    runner.run()
+    current[0] += timedelta(minutes=25)
+    runner.run()
+    saved = state.load(path)['slices'][0]
+    assert saved['state'] == 'escalated'
+    assert saved['attention']['body'] == 'GitHub App login failed continuously for 25 minutes'
+
+
+def test_app_login_after_external_call_escalates_without_retry(delivery, make_state, monkeypatch):
+    from cplane import github_app
+    d = delivery
+    path = make_state()
+    data = state.load(path)
+    item = data['slices'][0]
+    item.update(state='issued', pr=12, session=dict(tool='codex', id='synthetic-session', folder=str(d['work'])))
+    item['log'].append(dict(at=datetime.now(timezone.utc).isoformat(), actor='runner', event='collected turn: turn-1'))
+    state.save(path, data)
+    runner = Runner(path, git=Mock(), runs=d['root'] / 'control')
+    folder = runner.runs / 'turn-1'
+    folder.mkdir(parents=True)
+    job = d['job']
+    job.update(run=str(folder), phase='pr', tip=d['tip'], request=request(job))
+    runner.save_job(job)
+    monkeypatch.setattr(fence, 'github_environment', Mock(side_effect=[{}, github_app.GitHubAppTransientError('GitHub App login failed')]))
+    monkeypatch.setattr(subprocess, 'run', Mock(return_value=subprocess.CompletedProcess([], 0, json.dumps(
+        {'state': 'OPEN', 'title': 'Synthetic PR', 'headRefOid': d['tip']}), '')))
+    runner.run()
+    saved = state.load(path)['slices'][0]
+    assert saved['state'] == 'escalated'
+    assert 'GitHub App login failed' in saved['attention']['body']
+    assert 'github_read_failure_since' not in json.loads((folder / 'job.json').read_text())
+
+
+def test_app_refusal_escalates_immediately(delivery, make_state, monkeypatch):
+    d = delivery
+    path = make_state()
+    data = state.load(path)
+    item = data['slices'][0]
+    item.update(state='issued', pr=12, session=dict(tool='codex', id='synthetic-session', folder=str(d['work'])))
+    item['log'].append(dict(at=datetime.now(timezone.utc).isoformat(), actor='runner', event='collected turn: turn-1'))
+    state.save(path, data)
+    runner = Runner(path, git=Mock(), runs=d['root'] / 'control')
+    folder = runner.runs / 'turn-1'
+    folder.mkdir(parents=True)
+    job = d['job']
+    job.update(run=str(folder), phase='pr', tip=d['tip'], request=request(job))
+    runner.save_job(job)
+    monkeypatch.setattr(fence, 'github_environment', Mock(side_effect=state.StateError('GitHub App token request refused')))
+    runner.run()
+    saved = state.load(path)['slices'][0]
+    assert saved['state'] == 'escalated'
+    assert 'GitHub App token request refused' in saved['attention']['body']
+
+
+def test_delivery_app_login_retry_clears_on_success(delivery, make_state, monkeypatch):
+    from cplane import github_app
+    d = delivery
+    path = make_state()
+    data = state.load(path)
+    item = data['slices'][0]
+    item.update(state='issued', session=dict(tool='codex', id='synthetic-session', folder=str(d['work'])))
+    item['log'].append(dict(at=datetime.now(timezone.utc).isoformat(), actor='runner', event='collected turn: turn-1'))
+    state.save(path, data)
+    runner = Runner(path, git=Mock(), runs=d['root'] / 'control')
+    folder = runner.runs / 'turn-1'
+    folder.mkdir(parents=True)
+    job = d['job']
+    job.update(run=str(folder), phase='collected')
+    runner.save_job(job)
+    monkeypatch.setenv('CPLANE_GITHUB_AUTH', 'app')
+    mint = Mock(side_effect=[github_app.GitHubAppTransientError('GitHub App login failed'), 'synthetic-token'])
+    monkeypatch.setattr(github_app, 'installation_token', mint)
+    monkeypatch.setattr(runner, 'deliver', lambda item: fence.github_environment([item['repo']]))
+    runner.run()
+    assert state.load(path)['slices'][0]['state'] == 'issued'
+    assert 'github_read_failure_since' in json.loads((folder / 'job.json').read_text())
+    runner.run()
+    assert mint.call_count == 2
+    assert 'github_read_failure_since' not in json.loads((folder / 'job.json').read_text())

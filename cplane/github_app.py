@@ -20,6 +20,10 @@ _TOKENS = {}
 _TOKEN_LOCK = threading.Lock()
 
 
+class GitHubAppTransientError(StateError):
+    """Token request failed before an HTTP answer or returned a server error."""
+
+
 def encoded(value):
     return base64.urlsafe_b64encode(value).rstrip(b'=').decode('ascii')
 
@@ -54,7 +58,15 @@ def mint(fd, app_id, installation_id, repositories, now):
         method='POST')
     # No redirects or ambient proxy credentials for this credential exchange.
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
-    with opener.open(request, timeout=30) as response:
+    try:
+        response = opener.open(request, timeout=30)
+    except urllib.error.HTTPError as error:
+        if 500 <= error.code < 600:
+            raise GitHubAppTransientError('GitHub App login failed') from None
+        raise
+    except Exception:
+        raise GitHubAppTransientError('GitHub App login failed') from None
+    with response:
         data = json.load(response)
     token = data['token']
     expiry = datetime.fromisoformat(data['expires_at'].replace('Z', '+00:00'))

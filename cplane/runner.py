@@ -23,6 +23,7 @@ from . import state
 from .orders import Collector
 from .executors import Processes, atomic_json, FENCE_PARAGRAPH
 from . import fence
+from . import github_app
 from . import cut as cutter
 from . import review as reviewer
 from .text_bounds import ATTENTION_LIMIT, LOG_LIMIT, cut, cut_line
@@ -368,6 +369,7 @@ class GitHub:
         read = args[:2] in (('pr', 'view'), ('pr', 'list')) or (args[:1] == ('api',) and not update)
         attempts = 3 if read else 1
         for attempt in range(attempts):
+            fence.record_github_call()
             result = subprocess.run(command, text=True, capture_output=True, **options)
             if not result.returncode:
                 if read:
@@ -1145,9 +1147,10 @@ class Runner:
                 if previous is None or previous['started_ns'] < job['started_ns']:
                     self.jobs[job['id']] = job
             self._usage_probe_allowed = True
-            read_failures, read_successes = set(), set()
+            read_failures, read_successes, login_failures, login_successes = set(), set(), set(), set()
             for item in self.data['slices']:
                 read_start = self.github.successful_reads if isinstance(self.github, GitHub) else 0
+                login_start = fence.github_logins.get()
                 run_records.owner_wait(self, item)
                 if item['state'] in ('accepted', 'dropped'):
                     # An accepted slice's finished process must not hold a slot.
@@ -1159,6 +1162,7 @@ class Runner:
                     continue
                 if item.get('flow', 'cli') == 'tickets' and 'CPLANE_TASK_SUBMIT' not in os.environ:
                     continue
+                fence.github_calls.set(0)
                 try:
                     job = self.jobs.get(item['id'])
                     if job:
@@ -1194,38 +1198,60 @@ class Runner:
                             self.collect(item, job)
                         if phase_before == 'pr':
                             self.pr_checks(item, job)
+                except github_app.GitHubAppTransientError:
+                    if fence.github_calls.get():
+                        self.slice_failure(item, 'collect/deliver')
+                    else:
+                        read_failures.add(item['id'])
+                        login_failures.add(item['id'])
                 except GitHubReadError:
                     read_failures.add(item['id'])
                 except Exception:
                     self.slice_failure(item, 'collect/deliver')
                 finally:
+                    if fence.github_logins.get() > login_start:
+                        login_successes.add(item['id'])
                     if isinstance(self.github, GitHub) and self.github.successful_reads > read_start:
                         read_successes.add(item['id'])
             from . import installation
             installation.process(self)
             for item in self.data['slices']:
                 read_start = self.github.successful_reads if isinstance(self.github, GitHub) else 0
+                login_start = fence.github_logins.get()
                 if item['state'] not in ('accepted', 'dropped') and item['id'] not in read_failures:
+                    fence.github_calls.set(0)
                     try:
                         self.deliver(item)
+                    except github_app.GitHubAppTransientError:
+                        if fence.github_calls.get():
+                            self.slice_failure(item, 'delivery')
+                        else:
+                            read_failures.add(item['id'])
+                            login_failures.add(item['id'])
                     except GitHubReadError:
                         read_failures.add(item['id'])
                     except Exception:
                         self.slice_failure(item, 'delivery')
                     finally:
+                        if fence.github_logins.get() > login_start:
+                            login_successes.add(item['id'])
                         if isinstance(self.github, GitHub) and self.github.successful_reads > read_start:
                             read_successes.add(item['id'])
                 job = self.jobs.get(item['id'])
                 if job and item['id'] in read_failures:
                     job.setdefault('github_read_failure_since', self.at)
+                    job['github_read_failure_kind'] = 'login' if item['id'] in login_failures else 'read'
                     job.pop('github_read_failures', None)
                     self.save_job(job)
                     self.log(item, 'checks: pending')
                     if self.instant - datetime.fromisoformat(job['github_read_failure_since']) >= timedelta(seconds=1500):
-                        self.attention(item, 'escalation', 'GitHub reads failed continuously for 25 minutes')
-                elif job and item['id'] in read_successes and (job.get('github_read_failure_since')
-                                                              or job.get('github_read_failures')):
+                        self.attention(item, 'escalation', ('GitHub App login' if item['id'] in login_failures
+                                                            else 'GitHub reads') + ' failed continuously for 25 minutes')
+                elif (job and (item['id'] in read_successes or (item['id'] in login_successes
+                             and job.get('github_read_failure_kind') == 'login'))
+                      and (job.get('github_read_failure_since') or job.get('github_read_failures'))):
                     job.pop('github_read_failure_since', None)
+                    job.pop('github_read_failure_kind', None)
                     job.pop('github_read_failures', None)
                     self.save_job(job)
             by_id = {s['id']: s for s in self.data['slices']}

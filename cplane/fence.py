@@ -1,4 +1,5 @@
 """Host side of fenced delivery. Agent copies are data, never Git working directories."""
+from contextvars import ContextVar
 import json
 import os
 from pathlib import Path
@@ -10,7 +11,7 @@ import subprocess
 import sys
 
 from .state import StateError
-from . import deny
+from . import deny, github_app
 
 ROOT_UID = 0
 CLI_UID = CLI_GID = 21000
@@ -63,6 +64,14 @@ def host_environment():
             'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_TERMINAL_PROMPT': '0'}
 
 
+github_calls = ContextVar('github_calls', default=0)
+github_logins = ContextVar('github_logins', default=0)
+
+
+def record_github_call():
+    github_calls.set(github_calls.get() + 1)
+
+
 def github_environment(repositories=None):
     env = host_environment()
     auth = os.environ.get('CPLANE_GITHUB_AUTH', 'token')
@@ -71,6 +80,7 @@ def github_environment(repositories=None):
         if not repositories:
             raise StateError('GitHub App needs the repository of the call')
         env['GH_TOKEN'] = github_app.installation_token(repositories)
+        github_logins.set(github_logins.get() + 1)
         return env
     if auth != 'token':
         raise StateError('CPLANE_GITHUB_AUTH must be token or app')
@@ -139,11 +149,15 @@ class Fence:
         if repo not in self.visibility:
             public = True
             try:
+                env = github_environment([repo])
+                record_github_call()
                 result = subprocess.run(
                     ['gh', 'api', f'repos/{repo}'], cwd='/', capture_output=True,
-                    text=True, env=github_environment([repo]), timeout=30)
+                    text=True, env=env, timeout=30)
                 if result.returncode == 0:
                     public = json.loads(result.stdout).get('private') is not True
+            except github_app.GitHubAppTransientError:
+                raise
             except Exception:
                 # Authentication, network and malformed responses all fail closed.
                 pass
@@ -194,9 +208,11 @@ class Fence:
         command = ['git', '-C', str(clean), *git_options(),
                    '-c', 'protocol.file.allow=always', *map(str, args)]
         try:
+            env = github_environment([repo]) if auth else host_environment()
+            if auth:
+                record_github_call()
             result = subprocess.run(command, capture_output=True, text=True,
-                                    encoding='utf-8', errors='surrogateescape',
-                                    env=github_environment([repo]) if auth else host_environment())
+                                    encoding='utf-8', errors='surrogateescape', env=env)
         except OSError:
             raise StateError('fenced Git could not run') from None
         if result.returncode and not allow_failure:
