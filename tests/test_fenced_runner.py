@@ -666,6 +666,7 @@ def test_fenced_full_runner_delivery_approval_resume_and_handover(delivery, make
 
 @pytest.fixture
 def ticket_runner(delivery, make_state, monkeypatch):
+    monkeypatch.setenv('CPLANE_TASK_SUBMIT', '["synthetic-submit"]')
     from cplane import cut
     d = delivery
     path = make_state()
