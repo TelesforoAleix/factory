@@ -13,6 +13,13 @@ from .stores import PostgresStore
 
 MAX_REQUEST = 23 * 1024 * 1024
 SOCKET = "/run/factory-intake/intake.sock"
+_GID_SETTING = os.environ.get("CPLANE_INTAKE_GID")
+if _GID_SETTING is not None:
+    if not _GID_SETTING.isascii() or not _GID_SETTING.isdecimal() or int(_GID_SETTING) <= 0:
+        raise ValueError("CPLANE_INTAKE_GID must be a positive integer")
+    GID = int(_GID_SETTING)
+else:
+    GID = None
 
 
 def decode_arrival(value):
@@ -78,7 +85,7 @@ class IntakeServer(socketserver.UnixStreamServer):
 
 
 def main():
-    gid = grp.getgrnam("factory-intake").gr_gid
+    gid = GID if GID is not None else grp.getgrnam("factory-intake").gr_gid
     path = Path(SOCKET)
     # Systemd creates the service-owned parent, group-traversable and never group-writable.
     path.unlink(missing_ok=True)

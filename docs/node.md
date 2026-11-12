@@ -2125,9 +2125,9 @@ not execute arbitrary CLI commands or the runner's scheduler through imports.
 | `PATH`, `LANG`, `PYTHONPATH` | image/default inherited `PATH` and `LANG` if present; `PYTHONPATH` unset | `fence.host_environment` forwards only present values |
 | `GH_TOKEN` | generated in the authenticated Git child's environment; no deployed value | `python -m cplane.fence credential get` returns the scoped token to Git |
 
-`BRIEFS`, `RUNS`, `UI_DOCS`, `WORK_ROOT` and the lock path in sessions are
-constants, so a `CPLANE_RUNS` setting cannot repair the session write conflicts
-listed below. Default authentication and planning credential gaps remain explicit
+`BRIEFS` and `WORK_ROOT` in sessions remain fixed. `CPLANE_SESSION_RUNS`,
+`CPLANE_UI_DOCS` and `CPLANE_SESSIONS_LOCK` configure the session paths;
+`CPLANE_RUNS` remains the separate runner setting. Default authentication and planning credential gaps remain explicit
 cutover prerequisites; no extra secret bind is introduced here.
 
 **Runner** (`cplane --actor runner run --every 60`, delivery and scheduled jobs):
@@ -2201,33 +2201,35 @@ cplane migrate
 
 ### Application prerequisites before cutover
 
-This compose contract alone cannot run the present application successfully.
-The required source review found these incompatibilities, which require a
-separate reviewed application/image change or an explicit scope decision:
+This compose contract alone cannot run the application successfully. The following
+settings retain the existing host defaults until explicitly set:
 
-- `factory_ui.serve` binds `127.0.0.1` inside the container. Published bridge
-  traffic requires the server to listen on the container interface; the host
-  publication must remain loopback-only.
-- Intake resolves the named `factory-intake` group. The current service image
-  does not create it, although compose sets the correct numeric GID.
-- Sessions opens `/run/factory-sessions.lock`, which is on the read-only root.
-  It also creates turn folders under the read-only runs mount, accesses clean
-  clones absent from its mounts, and stages document exports and `.ui-docs.lock`
-  in `/var/lib/factory`, outside the ui-docs bind. Exchanging the mounted ui-docs
-  directory itself is incompatible with the current export algorithm.
+| Setting | Default | Container prerequisite addressed |
+| --- | --- | --- |
+| `FACTORY_UI_HOST` | `127.0.0.1` | Bind the UI to the container interface; host publication must remain loopback-only. |
+| `CPLANE_INTAKE_GID` | unset (look up `factory-intake`) | Use the numeric socket group without a named group in the image. |
+| `CPLANE_SESSIONS_LOCK` | `/run/factory-sessions.lock` | Place the supervisor lock on a writable bind. |
+| `CPLANE_SESSION_RUNS` | `/srv/factory/runs` | Place turn and model probe folders on a writable runs bind; use `/srv/factory/runs/sessions` at cutover. |
+| `CPLANE_UI_DOCS` | `/var/lib/factory/ui-docs` | Configure the same document root for UI and sessions, with staging and the lock in its parent. |
+
+These settings do not change the compose contract. Before cutover, the following
+remain open:
+
+- Sessions needs clean clones in its mounts. Its document export exchanges the
+  document directory, so the writable bind must accommodate that exchange and
+  the sibling staging directory and lock.
 - Sessions and runner still enforce root-owned trusted directories and change
-  workspace ownership to UID 21000. Their new unprivileged UIDs and empty
-  capability sets cannot perform those operations. Sessions also uses GitHub
-  authentication and planning read credentials beyond its decided secret set.
+  workspace ownership to UID 21000. Their unprivileged UIDs and empty capability
+  sets cannot perform those operations. Sessions also uses GitHub authentication
+  and planning read credentials beyond its decided secret set.
 - The image contains neither the current `factory-cli` executable nor clients
   for the mounted launcher/deployer sockets. Existing fence resumes also inspect
   login state that is deliberately absent from these service mounts.
 
 Resolve these interfaces within the containment decisions before installing the
-file. This slice does not add mounts, capabilities, users, networks, ports or
-application changes to work around them. Static compose tests validate the
-reviewed boundary; they do not prove runtime readiness. The owner still reviews
-the guard file on GitHub before any merge or eventual manual installation.
+file. Static compose tests validate the reviewed boundary; they do not prove
+runtime readiness. The owner still reviews the guard file on GitHub before any
+merge or eventual manual installation.
 
 ### Factory launcher socket switch
 
