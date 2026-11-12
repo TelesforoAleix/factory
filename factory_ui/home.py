@@ -72,9 +72,17 @@ def home_data(store, board, clean, view):
                   and (not c.get('last_read_at')
                        or datetime.fromisoformat(c['last_read_at']) < datetime.fromisoformat(n['at'])))
         decision = n.get('event') == 'owner-check' and unread
-        paused = n.get('event') == 'chat-paused' and unread and c.get('auto_paused') and paused_notices[c['id']] is n
+        needs_help = c and c['kind'] in ('project', 'orchestrator')
+        paused = (n.get('event') == 'chat-paused' and c and c.get('auto_paused')
+                  and (needs_help or unread) and paused_notices[c['id']] is n)
         if decision or paused:
-            add('decision', c.get('feature') or str(c['id']), n['at'], project=c.get('project'), chat=c['id'], text=clean(n.get('text', '')))
+            fields = dict(text=clean(n.get('text', '')))
+            if paused:
+                fields['reactivate'] = True
+                if needs_help:
+                    fields.update(title=f"{clean(c['title'])} needs help",
+                                  text='Chat paused after automatic turns; reactivate to continue.')
+            add('decision', c.get('feature') or str(c['id']), n['at'], project=c.get('project'), chat=c['id'], **fields)
     waiting = {f['id'] for s, a in owner_waiting if (f := linked.get(s['id'])) and f['stage'] == 'building'}
     limits = store.limit_show()
     if len(waiting) >= limits['waiting_limit']:

@@ -236,6 +236,17 @@ class PostgresStore(ModelStore, RoleStore, InboxStore, FeatureStore, RunRecordSt
                 (session_id,))
             return [dict(id=r[0], role=r[1], text=r[2], status=r[3], time=r[4].isoformat(), automatic=r[5]) for r in rows]
 
+    def chat_reactivate(self, chat_id):
+        """Owner action: reset automation without adding or claiming a message."""
+        from .times import now
+        with self.mutation():
+            self.chat_show(chat_id)
+            self.connection.execute(
+                'UPDATE cplane_sessions SET auto_turns = 0, auto_paused = false WHERE id = %s', (chat_id,))
+            self.append_notices([dict(at=now().isoformat(), id=f'chat:{chat_id}', chat=chat_id,
+                                      event='chat-reactivated', actor='owner')])
+            return self.chat_show(chat_id)
+
     def document_notes(self, document, text=None):
         with self.mutation():
             if text is not None:

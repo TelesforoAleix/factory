@@ -1,3 +1,4 @@
+import pytest
 from factory_ui import create_app
 
 
@@ -362,3 +363,31 @@ def test_home_counts_only_owner_attention_for_waiting_limit(monkeypatch):
     assert result['orchestrator_count'] == 2
     assert {a['kind'] for a in result['attention']} == {'install', 'question', 'limit'}
     assert next(a for a in result['attention'] if a['kind'] == 'limit')['text'] == 'Waiting limit full (2/2)'
+
+
+@pytest.mark.parametrize('kind', ['project', 'orchestrator'])
+def test_paused_lead_chat_has_one_needs_help_card_until_reactivated(kind):
+    from factory_ui.home import home_data
+
+    chat = dict(id=1, kind=kind, project='FAC' if kind == 'project' else None,
+                title='Lead chat', waiting=False, auto_paused=True,
+                last_read_at='2026-01-01T00:03:00Z')
+    notices = [dict(event='chat-paused', chat=1, at='2026-01-01T00:01:00Z', text='Old pause'),
+               dict(event='chat-paused', chat=1, at='2026-01-01T00:02:00Z', text='Write a message')]
+
+    class HomeStore:
+        def load(self): return dict(slices=[])
+        def chats(self, **kwargs): return [chat]
+        def notices(self): return list(enumerate(notices))
+        def limit_show(self): return dict(waiting_limit=1)
+
+    def cards():
+        return home_data(HomeStore(), dict(features=[], projects=[]), lambda value: value, None)['attention']
+
+    card, = cards()
+    assert card['title'] == 'Lead chat needs help'
+    assert card['chat'] == 1 and card['reactivate'] is True
+    assert card['since'] == notices[-1]['at']
+    assert 'write a message' not in card['text'].lower()
+    chat['auto_paused'] = False
+    assert cards() == []

@@ -1351,13 +1351,20 @@ mark and placement rules apply. Feature revisions/events retain their usual
 audit, and the new audit records even successful no-op writes. `raise_decision(text,
 recommendation, decision?)` sends a new decision from feature to its current
 project chat, from project to Development Orchestrator, and from orchestrator to
-the owner. Missing, archived, failed, paused or automatic-turn-limited levels
-are skipped immediately. A relay is one automatic system message naming the
-decision id, first chat's title, text and recommendation. Only a decision reaching
-the owner appends an `owner-check` notice for Home and the phone; it names the
+the owner. Missing, archived or failed levels are skipped immediately. Paused
+or automatic-turn-limited project and orchestrator chats still receive the
+decision and become its holder; the automatic message waits until reactivation.
+A relay is one automatic system message naming the decision id, first chat's
+title, text and recommendation. Only a decision reaching the owner appends an `owner-check` notice for Home and the phone; it names the
 first chat and links to the orchestrator for the owner's reply (the caller if
-no orchestrator exists). Existing notices
-and `chat-paused` cards retain their behavior.
+no orchestrator exists). A paused project or orchestrator has one Home pause card,
+`<chat title> needs help`, with Reactivate and Open chat actions; opening it does
+not dismiss the pause card. Feature pause cards retain their existing text and
+read behavior and also offer Reactivate. The owner-only
+`POST /api/chats/<id>/reactivate` requires `X-Factory-UI: 1`, resets `auto_turns`
+to zero and clears `auto_paused`, and logs actor `owner`. It sends no message
+and starts no turn itself; queued automatic messages can then run as usual,
+and the pause card disappears. No workshop tool can reactivate a chat.
 
 Only the current holding chat may pass a decision up with `raise_decision` and
 its id, or close it with `answer_decision(decision, text)`. An answer is a system
