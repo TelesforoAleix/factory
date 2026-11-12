@@ -11,6 +11,7 @@ from cplane.stores import PostgresStore
 from cplane.features import slice_movable
 from .documents import Documents, DocumentNotFound
 
+DOCUMENT_ROOT = Path(os.environ.get('CPLANE_UI_DOCS', '/var/lib/factory/ui-docs'))
 DIST = Path(__file__).resolve().parent.parent / 'ui' / 'dist'
 
 
@@ -56,7 +57,7 @@ def slice_summary(item):
 def create_app(store=None):
     app = Flask(__name__, static_folder=None)
     app.config['STORE'] = store
-    app.config['DOCUMENT_ROOT'] = Path('/var/lib/factory/ui-docs')
+    app.config['DOCUMENT_ROOT'] = DOCUMENT_ROOT
 
     @app.before_request
     def guard_mutations():

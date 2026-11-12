@@ -26,7 +26,8 @@ from .state import StateError, database_url
 from .stores import PostgresStore, REPOSITORY
 
 BRIEFS = Path('/srv/factory/briefs')
-RUNS = Path('/srv/factory/runs')
+RUNS = Path(os.environ.get('CPLANE_SESSION_RUNS', '/srv/factory/runs'))
+LOCK = Path(os.environ.get('CPLANE_SESSIONS_LOCK', '/run/factory-sessions.lock'))
 LOG = logging.getLogger(__name__)
 HOMELAB_INSTRUCTION = (
     'A change to planning/ reaches main only when it is committed there with '
@@ -59,7 +60,7 @@ def export_tree(clone, destination, ref, *, markdown_only=False):
         return archive.pax_headers.get('comment')
 
 
-UI_DOCS = Path('/var/lib/factory/ui-docs')
+UI_DOCS = Path(os.environ.get('CPLANE_UI_DOCS', '/var/lib/factory/ui-docs'))
 
 
 class DocumentExporter:
@@ -350,7 +351,7 @@ def main():
     logging.basicConfig(level=logging.INFO)
     url = database_url()
     # One supervisor on the node; DB claims additionally serialize capacity checks.
-    with open('/run/factory-sessions.lock', 'w') as lock:
+    with open(LOCK, 'w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         store = PostgresStore(url)
         from .models import recover_catalog_runs
