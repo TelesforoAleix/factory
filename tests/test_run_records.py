@@ -520,3 +520,54 @@ def test_empty_export_and_optional_task_metrics(pg_store, capsys):
     row = json.loads(capsys.readouterr().out)
     assert row['task_id'] == '7' and row['attempt'] == 1
     assert row['tokens'] is None and row['seconds'] is None and row['cost'] is None
+
+
+@pytest.mark.parametrize('change_class', [1, 2, 4])
+def test_runner_records_change_class_before_merge_or_approval(pg_store, setup, monkeypatch, change_class):
+    runner, _, gh = setup
+    monkeypatch.setattr(state, 'postgres', lambda: False)
+    runner.run()
+    item = runner.data['slices'][0]
+    job = runner.jobs[item['id']]
+    Path(job['run'], 'turn.jsonl').write_text(codex_log())
+    run_records.slice_record(pg_store, item, job)
+    assert pg_store.run_record_list()[0]['change_class'] is None
+    monkeypatch.setattr(state, 'postgres', lambda: True)
+    monkeypatch.setattr(state, 'store', lambda _: pg_store)
+    guards = ['guard/key'] if change_class == 4 else []
+    monkeypatch.setattr('cplane.classes.changes', lambda *args: (change_class, guards))
+    item.update(pr=12, attention=None, stop_before_merge=False)
+    job.update(phase='pr', tip='b' * 40, request=dict(node_steps=None))
+    gh.checks.return_value = ('green', '')
+    runner.pr_checks(item, job)
+    row, = pg_store.run_record_list()
+    assert row['change_class'] == change_class
+    assert job['change_class'] == change_class
+    if guards:
+        assert item['attention']['kind'] == 'merge'
+        gh.merge.assert_not_called()
+    else:
+        gh.merge.assert_called_once_with('example/repo', 12, expected='b' * 40)
+    assert 'guard/key' not in json.dumps(row)
+
+
+def test_change_class_migration_is_additive_and_repeatable(pg_store):
+    from importlib.resources import files
+    add_record(pg_store)
+    migration = files('cplane').joinpath('migrations/025_change_class.sql').read_text()
+    with pg_store.mutation():
+        pg_store.connection.execute(migration)
+    row, = pg_store.run_record_list()
+    assert row['change_class'] is None
+    pg_store.run_record_outcome('slice:fixture', change_class=2)
+    with pg_store.mutation():
+        pg_store.connection.execute(migration)
+    assert pg_store.run_record_list()[0]['change_class'] == 2
+
+
+def test_class_record_store_failure_is_private_and_harmless(setup, monkeypatch, capsys):
+    runner, _, _ = setup
+    monkeypatch.setattr(state, 'postgres', lambda: True)
+    monkeypatch.setattr(state, 'store', Mock(side_effect=RuntimeError('PRIVATE')))
+    run_records.class_record(runner, dict(run='synthetic'), 2)
+    assert capsys.readouterr().err == 'cplane: run recording failed\n'

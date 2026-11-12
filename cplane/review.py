@@ -53,13 +53,6 @@ def prepare(adapter, previous, copy_id):
             'repo': str(copy), 'tip': tip}
 
 
-def changes_workflows(adapter, job):
-    clean = adapter.clean(job['repository'])
-    paths = adapter.git(clean, 'diff', '--name-only', '-z', '--no-renames',
-                        job['base'], job['tip'], '--').stdout.split('\0')
-    return any(path.startswith('.github/workflows/') for path in paths)
-
-
 def planner_change(args):
     """Keep accounting and the planner review on the same atomic update path."""
     from . import planner, state

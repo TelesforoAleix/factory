@@ -1866,3 +1866,13 @@ For a waiting Codex slice at 99% or higher with usage older than 30 minutes, the
 After a Codex usage cut, the runner uses a future reset from a report window at 99% or higher, otherwise the message time in UTC, otherwise a 60-minute wait.
 Answered attention on a ready, issued or escalated slice without a session starts again from the original brief when capacity is available, using the same start path as a scheduled slice.
 The synthetic repair/review test uses increasing logical start timestamps so wall-clock adjustments cannot select an older fake turn; validate with 20 consecutive standalone pytest invocations, without retries.
+
+Before merging, the runner classes changed paths using the target repository's
+`.github/change-classes` at the slice's pinned base commit. The highest matching
+class wins; unmatched paths are class 1. SQL, migrations, dependency and lock
+files are at least class 2. Missing or invalid tables default to class 4 for
+`.github/**`, `node/**`, any `Dockerfile` or `compose.yaml`, and class 2 elsewhere;
+`.github/**` always requires class 4 even with a table. Class 4 raises an owner
+merge card listing up to 20 guard paths and a remaining count. Classes 1 and 2
+merge with green CI; the nullable run-record `change_class` records the decision.
+A brief's `stop_before_merge` can require approval for any class.

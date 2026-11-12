@@ -14,6 +14,7 @@ import traceback
 import uuid
 
 from . import run_records
+from . import classes
 from . import state
 from .orders import Collector
 from .executors import Processes, atomic_json, FENCE_PARAGRAPH
@@ -855,14 +856,24 @@ class Runner:
             return False
         return True
 
-    def merge(self, item, job):
-        if not self.merge_ready(item, job):
+    def merge(self, item, job, *, ready=False):
+        if not ready and not self.merge_ready(item, job):
             return
-        if reviewer.changes_workflows(self.fence, job):
-            approval = item['attention']
-            if not (approval and approval['kind'] == 'merge' and approval['approved']):
-                self.attention(item, 'merge', f'Approve PR #{item["pr"]}: workflow changes')
-                return
+        change_class, guards = classes.changes(self.fence, job)
+        job['change_class'] = change_class
+        self.save_job(job)
+        run_records.class_record(self, job, change_class)
+        approval = item['attention']
+        if (guards or item['stop_before_merge']) and not (
+                approval and approval['kind'] == 'merge' and approval['approved']):
+            body = f'Approve PR #{item["pr"]}'
+            if guards:
+                body += ': class 4 paths\n' + '\n'.join(
+                    json.dumps(path, ensure_ascii=False) for path in guards[:20])
+                if len(guards) > 20:
+                    body += f'\n{len(guards) - 20} more class 4 paths'
+            self.attention(item, 'merge', body)
+            return
         options = {'expected': job['tip']}
         try:
             sha = self.github.merge(self.github_repo(item), item['pr'], **options)
@@ -949,10 +960,7 @@ class Runner:
         if status == 'red':
             self.attention(item, 'escalation', 'failing check: ' + failing)
         elif status == 'green':
-            if item['stop_before_merge']:
-                self.attention(item, 'merge', f'Approve PR #{item["pr"]}')
-            else:
-                self.merge(item, job)
+            self.merge(item, job, ready=True)
 
     def start(self, item):
         reason = self.room(item)
