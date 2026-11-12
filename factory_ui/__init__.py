@@ -78,7 +78,11 @@ def create_app(store=None):
         for item in data['features']:
             item['title'] = clean(item['title'])
             item['sections'] = [{**section, 'name': clean(section['name']), 'text': clean(section['text'])} for section in item['sections']]
-            item['slices'] = [dict(slice_summary(s), eligibility=eligibility(s, snapshot)) for s in item['slices']]
+            item['slices'] = [dict(slice_summary(s), eligibility=eligibility(s, snapshot),
+                                   depends_on=s['depends_on'],
+                                   dependants=[other['id'] for other in snapshot['slices']
+                                               if s['id'] in other['depends_on']])
+                              for s in item['slices']]
             item.pop('backlog', None)
             item['project_name'] = next((clean(p['name']) for p in data['projects'] if p['key'] == item['project']), item['project'])
         for project in data['projects']:

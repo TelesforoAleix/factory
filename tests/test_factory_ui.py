@@ -391,3 +391,23 @@ def test_paused_lead_chat_has_one_needs_help_card_until_reactivated(kind):
     assert 'write a message' not in card['text'].lower()
     chat['auto_paused'] = False
     assert cards() == []
+
+
+def test_board_slice_relationships_include_other_features(monkeypatch):
+    from cplane import planner
+    from cplane import eligibility as scheduling
+    one = planner.new_slice('demo/one')
+    two = planner.new_slice('demo/two')
+    one.update(title='One', repo='demo', state='ready')
+    two.update(title='Two', repo='demo', state='ready', depends_on=['demo/one'])
+    class BoardStore:
+        def load(self): return {'slices': [one, two]}
+        def limit_show(self): return {'executors': 2, 'repository_runs': 1}
+        def feature_board(self, identifier=None):
+            return {'projects': [{'key': 'P', 'name': 'Project'}], 'features': [
+                {'id': 'P-F1', 'project': 'P', 'title': 'Feature', 'sections': [], 'slices': [one]}]}
+    monkeypatch.setattr(scheduling, 'observed', lambda data, **kwargs: data)
+    item = create_app(BoardStore()).test_client().get('/api/pipeline/P-F1').json['slices'][0]
+    assert item['depends_on'] == []
+    assert item['dependants'] == ['demo/two']
+    assert item['eligibility']['status'] == 'ready'

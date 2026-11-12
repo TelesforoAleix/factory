@@ -74,3 +74,12 @@ test('Settings links inactive projects and creates active projects with guarded 
   expect(screen.getByRole('switch',{name:'Active Synthetic'}).checked).toBe(true);
   expect(fetcher).toHaveBeenCalledWith('/api/projects',expect.objectContaining({method:'POST',headers:expect.objectContaining({'X-Factory-UI':'1'}),body:JSON.stringify({key:'SYN',name:'Synthetic'})}));
 });
+
+test('ready next lists only ready slices from project feature details', async () => {
+  const d = data();
+  vi.stubGlobal('fetch',vi.fn(async url => response(url.startsWith('/api/pipeline/') ? {slices:url.endsWith('FAC-F1') ? [{id:'demo/ready',title:'Ready item',eligibility:{status:'ready'}},{id:'demo/wait',title:'Waiting item',eligibility:{status:'blocked'}}] : []} : d)));
+  page();
+  const link = await screen.findByRole('link',{name:'Ready item · demo/ready'});
+  expect(link.getAttribute('href')).toBe('/factory/slices/demo/ready');
+  expect(screen.queryByText('Waiting item')).toBeNull();
+});

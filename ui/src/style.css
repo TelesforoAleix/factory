@@ -558,3 +558,12 @@ header .project-nav { margin-left: auto; min-width: 0; overflow-x: auto; flex-wr
   white-space: nowrap;
   border: 0;
 }
+
+.eligibility-chip { display: inline-block; margin: .3rem .4rem; padding: .15rem .5rem; border: 1px solid var(--rule); border-radius: var(--radius-control); font-size: 12px; }
+.eligibility-chip.ready { border-color: var(--signal-mark); }
+.eligibility-chip.waiting { background: var(--surface); color: var(--secondary); }
+.slice-waiting { border-left: 3px solid var(--rule); padding-left: .5rem; }
+.slice-open { text-align: left; }
+.slice-panel { position: fixed; z-index: 20; right: 0; top: 0; bottom: 0; width: min(440px, 100vw); overflow: auto; padding: var(--space-5); background: var(--background); border-left: 1px solid var(--rule); box-shadow: 0 4px 16px #0002; }
+.slice-panel section { border-top: 1px solid var(--rule); margin-top: var(--space-4); }
+@media (max-width: 700px) { .slice-panel { width: 100%; } }
