@@ -1,6 +1,10 @@
 """One locked scheduling pass. Adapters keep external effects fakeable."""
 from datetime import datetime, timedelta, timezone
 import hashlib
+from contextlib import redirect_stdout, redirect_stderr
+import io
+import math
+import signal
 import json
 import os
 from pathlib import Path
@@ -87,6 +91,94 @@ def export_bot(path):
                         os.unlink(name)
     except Exception:
         print('cplane: bot export failed', file=sys.stderr)
+
+
+def daily_export(path, day):
+    """Publish the same private state/outbox pair and rotation as factory-export."""
+    directory = os.environ.get('CPLANE_EXPORT_DIR')
+    if not directory or not Path(directory).is_dir():
+        raise state.StateError('Export directory unavailable')
+    folder = Path(directory)
+    names = []
+    try:
+        # Finish both private temporary files before publishing either one.
+        with state.locked(path) as backend:
+            payload = json.dumps(backend.load(), indent=2, ensure_ascii=False) + '\n'
+            outbox = ''.join(json.dumps(notice, ensure_ascii=False) + '\n'
+                             for _, notice in backend.notices())
+        for content in (payload, outbox):
+            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=folder,
+                                             prefix='.factory-export.', delete=False) as stream:
+                names.append(Path(stream.name))
+                os.fchmod(stream.fileno(), 0o600)
+                stream.write(content)
+        destination = folder / f'factory-{day.isoformat()}.json'
+        os.replace(names[1], Path(str(destination) + '.outbox.jsonl'))
+        os.replace(names[0], destination)
+        exports = sorted((p for p in folder.iterdir() if p.is_file() and re.fullmatch(
+            r'factory-[0-9]{4}-[0-9]{2}-[0-9]{2}\.json', p.name)), reverse=True)
+        for old in exports[7:]:
+            old.unlink()
+            Path(str(old) + '.outbox.jsonl').unlink(missing_ok=True)
+    finally:
+        for name in names:
+            name.unlink(missing_ok=True)
+
+
+def hourly_export(path):
+    from .feature_export import export
+    # Match the timer wrapper: neither success output nor private diagnostics.
+    with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+        export(state.store(path).feature_export_snapshot())
+
+
+class _StopLoop(BaseException):
+    pass
+
+
+def run_loop(path, every, *, clock=None, wait=time.sleep, pass_once=None,
+             daily=daily_export, hourly=hourly_export):
+    """Run sequential passes and wall-clock jobs, restoring signal handlers on exit."""
+    if not math.isfinite(every) or every <= 0:
+        raise state.StateError('--every must be a positive finite number of seconds')
+    clock = clock or (lambda: datetime.now().astimezone())
+    pass_once = pass_once or (lambda: Runner(path).run())
+    last_day = last_hour = None
+
+    def stop(signum, frame):
+        # Unwind an active pass so locks/transactions close just as on timer stop.
+        raise _StopLoop
+
+    previous = {}
+    try:
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            previous[sig] = signal.signal(sig, stop)
+        while True:
+            try:
+                pass_once()
+            except Exception:
+                print('cplane: run failed', file=sys.stderr)
+            instant = clock()
+            day = instant.date()
+            hour = (day, instant.hour)
+            if (instant.hour, instant.minute) >= (3, 45) and day != last_day:
+                last_day = day
+                try:
+                    daily(path, day)
+                except Exception:
+                    print('cplane: daily export failed', file=sys.stderr)
+            if hour != last_hour:
+                last_hour = hour
+                try:
+                    hourly(path)
+                except Exception:
+                    print('Factory feature export failed', file=sys.stderr)
+            wait(every)
+    except _StopLoop:
+        pass
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
 
 
 def codex_usage(folder=None):
@@ -900,6 +992,8 @@ class Runner:
             self.save_job(job)
 
     def deliver(self, item):
+        if item.get('flow', 'cli') == 'tickets' and 'CPLANE_TASK_SUBMIT' not in os.environ:
+            return
         job = self.jobs.get(item['id'])
         run_records.owner_wait(self, item, job)
         attention = item['attention']
@@ -972,6 +1066,8 @@ class Runner:
             self.merge(item, job, ready=True)
 
     def start(self, item):
+        if item.get('flow', 'cli') == 'tickets' and 'CPLANE_TASK_SUBMIT' not in os.environ:
+            return
         reason = self.room(item)
         if reason or self.choose(item) is None:
             self.defer(item, reason or 'deferred: capacity unavailable')
@@ -1046,6 +1142,8 @@ class Runner:
                         # In memory only: the accepted slice's files stay as they are.
                         if self.processes.poll(job)[0]:
                             job['phase'] = 'collected'
+                    continue
+                if item.get('flow', 'cli') == 'tickets' and 'CPLANE_TASK_SUBMIT' not in os.environ:
                     continue
                 try:
                     job = self.jobs.get(item['id'])

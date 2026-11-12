@@ -230,3 +230,61 @@ def test_concurrent_calls_share_one_mint(key, monkeypatch):
     with ThreadPoolExecutor(max_workers=4) as pool:
         assert list(pool.map(fetch, range(4))) == ['shared'] * 4
     mint.assert_called_once()
+
+
+@pytest.mark.parametrize(('owner', 'mode', 'accepted'), [
+    (0, 0o600, True), (21000, 0o400, True), (21000, 0o600, False),
+    (21000, 0o440, False), (21000, 0o444, False), (21001, 0o400, False),
+    (0, 0o400, False), (0, 0o640, False), (21000, 0o1400, False),
+])
+def test_key_owner_mode_contract(key, monkeypatch, owner, mode, accepted):
+    from types import SimpleNamespace
+    info = os.stat(key)
+    monkeypatch.setattr(app, 'ROOT_UID', 0)
+    monkeypatch.setattr(app.os, 'geteuid', lambda: 21000)
+    monkeypatch.setattr(app.os, 'fstat', lambda fd: SimpleNamespace(
+        st_uid=owner, st_mode=0o100000 | mode, st_dev=info.st_dev, st_ino=info.st_ino,
+        st_mtime_ns=info.st_mtime_ns, st_ctime_ns=info.st_ctime_ns))
+    mint = Mock(return_value=('synthetic', NOW + 3600))
+    monkeypatch.setattr(app, 'mint', mint)
+    if accepted:
+        assert app.installation_token(REPOS) == 'synthetic'
+    else:
+        with pytest.raises(state.StateError, match='root-owned regular file with mode 0600'):
+            app.installation_token(REPOS)
+        mint.assert_not_called()
+
+
+@pytest.mark.parametrize('override', [False, True])
+def test_key_path_setting(key, monkeypatch, override):
+    configured = key.with_name('mounted-key')
+    configured.write_bytes(key.read_bytes())
+    configured.chmod(0o400)
+    monkeypatch.delenv('CPLANE_GITHUB_APP_KEY', raising=False)
+    if override:
+        monkeypatch.setenv('CPLANE_GITHUB_APP_KEY', str(configured))
+    real_open = os.open
+    opened = []
+    def record(path, flags):
+        opened.append(path)
+        return real_open(path, flags)
+    monkeypatch.setattr(app.os, 'open', record)
+    monkeypatch.setattr(app, 'mint', Mock(return_value=('synthetic', NOW + 3600)))
+    assert app.installation_token(REPOS) == 'synthetic'
+    assert opened == [str(configured) if override else key]
+
+
+def test_default_key_path():
+    assert str(app.KEY) == '/etc/factory/github-app.pem'
+
+
+def test_override_key_link_refused(key, monkeypatch):
+    key.chmod(0o400)
+    link = key.with_name('link')
+    link.symlink_to(key)
+    monkeypatch.setenv('CPLANE_GITHUB_APP_KEY', str(link))
+    mint = Mock()
+    monkeypatch.setattr(app, 'mint', mint)
+    with pytest.raises(state.StateError, match='GitHub App authentication failed'):
+        app.installation_token(REPOS)
+    mint.assert_not_called()

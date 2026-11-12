@@ -83,11 +83,12 @@ def installation_token(repositories):
         installation_id = os.environ['CPLANE_GITHUB_INSTALLATION_ID']
         if not all(re.fullmatch(r'[1-9][0-9]*', value) for value in (app_id, installation_id)):
             raise StateError('GitHub App ids must be positive integers')
-        fd = os.open(KEY, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        fd = os.open(os.environ.get('CPLANE_GITHUB_APP_KEY', KEY), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         with os.fdopen(fd, 'rb') as key:
             info = os.fstat(key.fileno())
-            if (not stat.S_ISREG(info.st_mode) or info.st_uid != ROOT_UID
-                    or stat.S_IMODE(info.st_mode) != 0o600):
+            if (not stat.S_ISREG(info.st_mode) or not (
+                    (info.st_uid == ROOT_UID and stat.S_IMODE(info.st_mode) == 0o600)
+                    or (info.st_uid == os.geteuid() and stat.S_IMODE(info.st_mode) == 0o400))):
                 raise StateError('GitHub App key must be a root-owned regular file with mode 0600')
             # Keep distinct scopes, installations and key revisions isolated. A
             # fork must mint its own token rather than use its parent's cache.

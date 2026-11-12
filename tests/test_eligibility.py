@@ -204,3 +204,15 @@ def test_merge_after_last_start_frees_files(slice_data, events, free):
                  log=[event(e) for e in events])
     result = eligibility(slice_data, data(slice_data, other, jobs={other['id']: dict(phase='ended')}))
     assert result['status'] == ('ready' if free else 'resource busy')
+
+
+@pytest.mark.parametrize('enabled', [False, True])
+def test_tickets_flow_gate(slice_data, monkeypatch, enabled):
+    monkeypatch.delenv('CPLANE_TASK_SUBMIT', raising=False)
+    if enabled:
+        monkeypatch.setenv('CPLANE_TASK_SUBMIT', '["synthetic-submit"]')
+    item = dict(slice_data, flow='tickets')
+    answer = eligibility(item, data(item))
+    assert answer == (dict(status='ready') if enabled else
+                      dict(status='waiting for a decision', reason='tickets flow off'))
+    assert eligibility(slice_data, data(slice_data)) == dict(status='ready')

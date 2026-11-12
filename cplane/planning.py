@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 
 from . import fence
@@ -31,10 +32,12 @@ class Planning:
         env = fence.host_environment()
         if network:
             # Only the push receives the write identity, in its private environment.
-            key = WRITE_KEY if network == 'push' else READ_KEY
+            key = (os.environ.get('CPLANE_PLANNING_WRITE_KEY', WRITE_KEY) if network == 'push'
+                   else os.environ.get('CPLANE_BRIEFS_KEY', READ_KEY))
+            hosts = os.environ.get('CPLANE_BRIEFS_KNOWN_HOSTS', KNOWN_HOSTS)
             env['GIT_SSH_COMMAND'] = (
-                f'ssh -F /dev/null -i {key} -o IdentitiesOnly=yes -o BatchMode=yes '
-                f'-o StrictHostKeyChecking=yes -o UserKnownHostsFile={KNOWN_HOSTS}')
+                f'ssh -F /dev/null -i {shlex.quote(str(key))} -o IdentitiesOnly=yes -o BatchMode=yes '
+                f'-o StrictHostKeyChecking=yes -o UserKnownHostsFile={shlex.quote(str(hosts))}')
         result = subprocess.run(
             ['git', '-C', str(self.clean), *fence.git_options(),
              '-c', 'protocol.file.allow=always', '-c', 'user.name=Factory',

@@ -83,8 +83,23 @@ def _update_locked(path, slice_id, command, actor, change, commit=False, *, crea
 _ACTIVE = ContextVar("cplane_store", default=None)
 
 
+def database_url():
+    """Resolve the service's database credential without disclosing it in errors."""
+    if 'CPLANE_DATABASE_URL_FILE' not in os.environ:
+        return os.environ.get('CPLANE_DATABASE_URL')
+    if 'CPLANE_DATABASE_URL' in os.environ:
+        raise StateError('Set only one database URL setting')
+    try:
+        value = Path(os.environ['CPLANE_DATABASE_URL_FILE']).read_text().strip()
+    except (OSError, UnicodeError, ValueError):
+        raise StateError('Database URL file unavailable or invalid') from None
+    if not value:
+        raise StateError('Database URL file unavailable or invalid')
+    return value
+
+
 def postgres():
-    return "CPLANE_DATABASE_URL" in os.environ
+    return database_url() is not None
 
 
 def store(path):
@@ -92,7 +107,7 @@ def store(path):
     if active is not None:
         return active
     from .stores import PostgresStore
-    return PostgresStore(os.environ.get("CPLANE_DATABASE_URL"))
+    return PostgresStore(database_url())
 
 
 @contextmanager

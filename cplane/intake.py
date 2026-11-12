@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 import socketserver
 from .inbox import TOTAL_LIMIT
-from .state import StateError
+from .state import StateError, database_url
 from .stores import PostgresStore
 
 MAX_REQUEST = 23 * 1024 * 1024
@@ -83,7 +83,7 @@ def main():
     # Systemd creates the service-owned parent, group-traversable and never group-writable.
     path.unlink(missing_ok=True)
     with IntakeServer(
-        path, lambda: PostgresStore(os.environ.get("CPLANE_DATABASE_URL")), gid
+        path, lambda: PostgresStore(database_url()), gid
     ) as server:
         server.serve_forever()
 

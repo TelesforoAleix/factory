@@ -2080,3 +2080,38 @@ def test_guard_card_names_at_most_twenty_paths_and_approval_merges(setup, monkey
     r.launch = Mock()
     r.deliver(current)
     gh.merge.assert_called_once_with('example/repo', 12, expected='b' * 40)
+
+
+@pytest.mark.parametrize('enabled', [False, True])
+def test_ticket_start_gate(setup, monkeypatch, enabled):
+    r, processes, _ = setup
+    monkeypatch.delenv('CPLANE_TASK_SUBMIT', raising=False)
+    if enabled:
+        monkeypatch.setenv('CPLANE_TASK_SUBMIT', '["synthetic-submit"]')
+    edit(r, lambda s: s.update(flow='tickets'))
+    launch = Mock()
+    monkeypatch.setattr(r, 'launch', launch)
+    r.run()
+    assert launch.call_count == int(enabled)
+    assert not processes.started
+
+
+def test_ticket_resume_and_submission_gate(setup, monkeypatch):
+    r, processes, _ = setup
+    r.run()
+    assert len(processes.started) == 1
+    monkeypatch.delenv('CPLANE_TASK_SUBMIT', raising=False)
+    edit(r, lambda s: s.update(flow='tickets'))
+    collect, submit = Mock(), Mock()
+    monkeypatch.setattr(r, 'collect', collect)
+    monkeypatch.setattr(r, 'submit_tickets', submit)
+    # A cut result must remain untouched while the host interface is off.
+    job = r.jobs['voice/W1']
+    job['phase'] = 'cut-ready'
+    r.save_job(job)
+    launch = Mock()
+    monkeypatch.setattr(r, 'launch', launch)
+    r.run()
+    collect.assert_not_called()
+    submit.assert_not_called()
+    launch.assert_not_called()

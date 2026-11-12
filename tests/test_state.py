@@ -106,3 +106,39 @@ def test_stored_brief_identity_is_unambiguous(slice_data, brief_id, file_brief):
     slice_data.update(id='FAC-F1-S1', brief_id=brief_id, brief=file_brief)
     with pytest.raises(state.StateError, match='stored brief'):
         state.validate(dict(version=1, slices=[slice_data]))
+
+
+@pytest.mark.parametrize('source', ['variable', 'file', 'both', 'empty', 'missing', 'unset'])
+def test_database_url_settings(tmp_path, monkeypatch, source):
+    monkeypatch.delenv('CPLANE_DATABASE_URL', raising=False)
+    monkeypatch.delenv('CPLANE_DATABASE_URL_FILE', raising=False)
+    secret = 'postgresql://synthetic:private@example.invalid/test'
+    path = tmp_path / 'database-url'
+    path.write_text(' \n' + secret + '\n ' if source != 'empty' else ' \n')
+    if source in ('variable', 'both'):
+        monkeypatch.setenv('CPLANE_DATABASE_URL', secret)
+    if source in ('file', 'both', 'empty', 'missing'):
+        monkeypatch.setenv('CPLANE_DATABASE_URL_FILE', str(path))
+    if source == 'missing':
+        path.unlink()
+    if source in ('both', 'empty', 'missing'):
+        for resolve in (state.database_url, state.postgres):
+            with pytest.raises(state.StateError) as error:
+                resolve()
+            assert secret not in str(error.value)
+            assert str(path) not in str(error.value)
+    else:
+        assert state.database_url() == (None if source == 'unset' else secret)
+        assert state.postgres() == (source != 'unset')
+
+
+def test_store_uses_file_url(tmp_path, monkeypatch, synthetic_store):
+    from unittest.mock import Mock
+    path = tmp_path / 'url'
+    path.write_text(' postgresql://synthetic \n')
+    monkeypatch.delenv('CPLANE_DATABASE_URL', raising=False)
+    monkeypatch.setenv('CPLANE_DATABASE_URL_FILE', str(path))
+    factory = Mock()
+    monkeypatch.setattr('cplane.stores.PostgresStore', factory)
+    synthetic_store(None)
+    factory.assert_called_once_with('postgresql://synthetic')
