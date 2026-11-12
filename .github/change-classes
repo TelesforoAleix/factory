@@ -1,0 +1,28 @@
+# .github/change-classes — read by the runner before a merge and by the deployer before an install.
+# <class> <pattern>; the highest class of every matching line wins; no match is class 1.
+# Patterns are gitignore-style, from the repository's root.
+4 /.github/**
+4 /node/**
+4 **/Dockerfile
+4 **/compose.yaml
+4 /cplane/install_host.py
+4 /cplane/installation.py
+2 /cplane/migrations/**
+2 /schema/**
+2 /pyproject.toml
+2 /uv.lock
+2 /ui/package.json
+2 /ui/package-lock.json
+2 /history/requirements.txt
+2 /cplane/runner.py
+2 /cplane/fence.py
+2 /cplane/executors.py
+2 /cplane/sessions.py
+2 /cplane/launcher.py
+2 /cplane/review.py
+2 /cplane/cut.py
+2 /cplane/classes.py
+2 /cplane/deny.py
+2 /cplane/github_app.py
+2 /cplane/eligibility.py
+2 /skills/**
