@@ -1856,5 +1856,5 @@ Runner refuses GitHub drafts, title prefixes `[Blocked]`, `blocked:`, `Draft:`, 
 Runner updates mergeable branches reported behind their base through `gh pr update-branch` (merge commit), pins the new head and waits for CI; update conflicts escalate as `PR conflicts with main; needs a new slice from main`.
 A non-fast-forward publish escalates once as `branch was rewritten; merge main instead of rebasing`; an answer resumes the same executor copy without retrying the push first.
 For a waiting Codex slice at 99% or higher with usage older than 30 minutes, the runner probes Luna at low effort at most hourly, rereads capacity, discards probe output and workspace, and retains only usage windows from the probe rollout.
-Answered attention without a session starts again from the original brief when capacity is available, using the same start path as a scheduled slice.
+Answered attention on a ready, issued or escalated slice without a session starts again from the original brief when capacity is available, using the same start path as a scheduled slice.
 The synthetic repair/review test uses increasing logical start timestamps so wall-clock adjustments cannot select an older fake turn; validate with 20 consecutive standalone pytest invocations, without retries.

@@ -248,6 +248,16 @@ class GitHubReadError(state.StateError):
     pass
 
 
+def check_merge_info(info, expected=None):
+    if expected and info['headRefOid'] != expected:
+        raise state.StateError('PR head differs from delivered bundle')
+    if info.get('state') != 'MERGED' and (
+            info.get('isDraft') or re.match(r'(?:\[blocked\]|blocked:|draft:|\[draft\])', info.get('title', ''), re.I)
+            or re.search(r'DO NOT MERGE|MERGE BLOCKER',
+                         info.get('title', '') + '\n' + (info.get('body') or ''), re.I)):
+        raise BlockedPR('PR marked not for merging')
+
+
 class GitHub:
     successful_reads = 0
 
@@ -293,7 +303,9 @@ class GitHub:
 
     def checks(self, repo, number, expected=None):
         if expected:
-            info = json.loads(self.call(repo, 'pr', 'view', str(number), '--json', 'headRefOid'))
+            info = json.loads(self.call(repo, 'pr', 'view', str(number), '--json',
+                                       'headRefOid,state,title,body,isDraft,mergeStateStatus,mergeable'))
+            self.check_info = info
             if info['headRefOid'] != expected:
                 raise state.StateError('PR head differs from delivered bundle')
             info = json.loads(self.call(repo, 'api', f'repos/{repo}/actions/runs?head_sha={expected}&per_page=100'))
@@ -341,13 +353,7 @@ class GitHub:
     def merge_info(self, repo, number, expected=None):
         info = json.loads(self.call(repo, 'pr', 'view', str(number), '--json',
                                    'state,mergeCommit,title,body,isDraft,headRefOid,mergeStateStatus,mergeable'))
-        if expected and info['headRefOid'] != expected:
-            raise state.StateError('PR head differs from delivered bundle')
-        if info['state'] != 'MERGED' and (
-                info.get('isDraft') or re.match(r'(?:\[blocked\]|blocked:|draft:|\[draft\])', info.get('title', ''), re.I)
-                or re.search(r'DO NOT MERGE|MERGE BLOCKER',
-                             info.get('title', '') + '\n' + (info.get('body') or ''), re.I)):
-            raise BlockedPR('PR marked not for merging')
+        check_merge_info(info, expected)
         return info
 
     def update_branch(self, repo, number, expected):
@@ -825,9 +831,12 @@ class Runner:
         self.log(item, f"cut-submit: skills {job['skills']}")
         self.log(item, f'Submitted {len(ids)} tickets: ' + json.dumps(ids), True)
 
-    def merge_ready(self, item, job):
+    def merge_ready(self, item, job, info=None):
         try:
-            info = self.github.merge_info(self.github_repo(item), item['pr'], expected=job['tip'])
+            if info is None:
+                info = self.github.merge_info(self.github_repo(item), item['pr'], expected=job['tip'])
+            else:
+                check_merge_info(info, job['tip'])
             if job.get('updated_head'):
                 clean = self.fence.clean(job['repository'])
                 self.fence.git(clean, 'fetch', '--no-tags', 'origin',
@@ -890,7 +899,8 @@ class Runner:
             return
         if attention and attention['answer'] is not None:
             if not item['session'] or not item['session']['id']:
-                self.start(item)
+                if item['state'] in ('ready', 'issued', 'escalated'):
+                    self.start(item)
             elif not job:
                 self.defer(item, 'deferred: session unavailable')
             else:
@@ -923,12 +933,18 @@ class Runner:
         # Recover PR number if creation succeeded but saving state did not.
         if item['pr'] is None:
             item['pr'] = self.github.open(self.github_repo(item), job['request'])
-        if not self.merge_ready(item, job) or item['attention']:
+        if item['attention']:
+            self.merge_ready(item, job)
             return
         options = {'expected': job['tip']}
         status, failing = self.github.checks(self.github_repo(item), item['pr'], **options)
         run_records.ci_record(self, item, job, status, failing)
         self.log(item, 'checks: ' + status)
+        # The head read used for CI also carries live merge metadata. Reuse that
+        # same observation instead of inserting another read before CI history.
+        info = getattr(self.github, 'check_info', None)
+        if not self.merge_ready(item, job, info if isinstance(info, dict) else None):
+            return
         if status == 'red':
             self.attention(item, 'escalation', 'failing check: ' + failing)
         elif status == 'green':

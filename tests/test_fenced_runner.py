@@ -339,7 +339,8 @@ def test_fenced_checks_bind_to_delivered_head():
     gh.call = Mock(return_value='{"headRefOid":"other"}')
     with pytest.raises(state.StateError, match='PR head differs'):
         gh.checks('example/repo', 1, expected='tip')
-    gh.call.assert_called_once_with('example/repo', 'pr', 'view', '1', '--json', 'headRefOid')
+    gh.call.assert_called_once_with('example/repo', 'pr', 'view', '1', '--json',
+                                    'headRefOid,state,title,body,isDraft,mergeStateStatus,mergeable')
 
 
 @pytest.mark.parametrize('runs,jobs,expected', [
@@ -1545,7 +1546,8 @@ def test_github_updated_head_is_fetched_in_clean_clone_before_merge(delivery, ma
     job = dict(d['job'], phase='pr', tip=d['tip'], request=request(d['job']))
     runner.pr_checks(item, job)
     assert job['updated_head'] and job['tip'] == updated
-    gh.checks.assert_not_called()
+    gh.checks.assert_called_once_with('example/repo', 12, expected=d['tip'])
+    gh.checks.reset_mock()
     assert d['adapter'].git(d['clean'], 'cat-file', '-e', updated, allow_failure=True).returncode
     runner.pr_checks(item, job)
     assert 'updated_head' not in job

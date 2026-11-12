@@ -2005,3 +2005,42 @@ def test_usage_observation_outside_run_never_probes(setup, monkeypatch):
     monkeypatch.setattr('cplane.runner.probe_codex_usage', probe)
     assert r.choose(item(r)) is None
     probe.assert_not_called()
+
+
+@pytest.mark.parametrize('slice_state', ['planned', 'researching', 'in review'])
+def test_answer_without_session_does_not_start_inactive_slice(setup, slice_state):
+    r, p, _ = setup
+    attention = dict(kind='question', body='Planning question', since=NOW.isoformat(),
+                     answer='Answered', approved=False)
+    edit(r, lambda s: s.update(state=slice_state, attention=attention))
+    r.run()
+    assert not p.started
+    assert item(r)['state'] == slice_state
+    assert item(r)['attention'] == attention
+
+
+@pytest.mark.parametrize('metadata', [dict(title='Draft: wait'), dict(body='MERGE BLOCKER'),
+                                       dict(isDraft=True)])
+def test_check_head_read_also_guards_merge_cards(setup, metadata):
+    r, _, _ = setup
+    r.run()
+    candidate = r.data['slices'][0]
+    job = r.jobs[candidate['id']]
+    tip = 'a' * 40
+    candidate.update(pr=12, attention=None, stop_before_merge=True)
+    job.update(phase='pr', tip=tip)
+    gh = GitHub()
+    live = dict(headRefOid=tip, state='OPEN', title='Ordinary PR', body='', isDraft=False,
+                mergeStateStatus='CLEAN', mergeable='MERGEABLE')
+    live.update(metadata)
+    gh.call = Mock(side_effect=[json.dumps(live),
+        json.dumps(dict(workflow_runs=[dict(id=1, status='completed')])),
+        json.dumps(dict(jobs=[dict(name='test', status='completed', conclusion='success')]))])
+    r.github = gh
+    r.pr_checks(candidate, job)
+    assert candidate['attention']['kind'] == 'escalation'
+    assert candidate['attention']['body'] == 'PR marked not for merging'
+    assert gh.call.call_count == 3
+    fields = gh.call.call_args_list[0].args[-1].split(',')
+    assert {'headRefOid', 'title', 'body', 'isDraft', 'mergeStateStatus', 'mergeable'} <= set(fields)
+    assert not any(e['event'].startswith('merge:') for e in candidate['log'])
