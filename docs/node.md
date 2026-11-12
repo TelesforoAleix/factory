@@ -14,7 +14,7 @@ rebuild. No secret belongs in either build context or image layer.
 The root `Dockerfile` builds one image for Workshop (`python -m factory_ui.serve`,
 port 8300), intake (`python -m cplane.intake`), sessions
 (`python -m cplane.sessions`) and the scheduler pass (`cplane --actor runner run`).
-The later compose file chooses the command; the image has no mode-selecting
+The root compose file chooses the command; the image has no mode-selecting
 entry point and defaults to `cplane --help`.
 
 Build it with `docker build -t factory:local .`. Two stages use
@@ -34,9 +34,9 @@ root, tmpfs `/tmp` and no capabilities, and reports the image size in bytes.
 
 Nothing on the node uses this image yet. Existing systemd services and all
 `node/` files are unchanged; there is no installation or other node step after
-this merge. A later slice supplies compose, the service UID, host state mounts
-and the platform deployer integration. Workshop still binds to loopback under
-its existing command; container networking belongs to that later slice.
+this merge. The root compose file below defines the future service UIDs, mounts
+and networks; application prerequisites still need resolving before cutover.
+Workshop still binds to loopback under its existing command.
 The Dockerfile and CI workflow require the owner's GitHub review before merge.
 
 ## Install after merge
@@ -1958,3 +1958,137 @@ the container cutover until a later run interface accepts submissions.
 Nothing on today's node changes until a later slice supplies the new settings
 and loop command. Install with no new setting; the timers and services keep
 working. Existing export scripts and systemd timers under `node/` are unchanged.
+
+## Four contained Factory services (cutover contract)
+
+The root `compose.yaml` describes the service cutover. Nothing on the node uses
+this file until that cutover. The owner reviews and manually copies it beside the
+platform deployer's installed application manifest. The deployer uses its
+installed Dockerfile and compose file, builds from the selected commit, and passes
+only `HOMELAB_DEPLOY_TAG`. Every service uses
+`homelab-deployer-factory:${HOMELAB_DEPLOY_TAG:?commit required}`.
+The fence's separate `node/compose.yaml` and existing systemd units are unchanged.
+There is no node installation step after this merge.
+
+Services appear in this order so the deployer's health and migration commands run
+in `ui`:
+
+| Service | UID:GID | Command | Supplementary socket groups |
+| --- | --- | --- | --- |
+| `ui` | 992:978 | `python -m factory_ui.serve` | none |
+| `intake` | 991:977 | `python -m cplane.intake` | none |
+| `sessions` | 21011:21011 | `python -m cplane.sessions` | homelab-launch (976) |
+| `runner` | 21010:21010 | `cplane --actor runner run --every 60` | homelab-launch (976), homelab-deploy (975) |
+
+At cutover, create the two new service accounts `factory-sessions` 21011:21011
+and `factory-runner` 21010:21010. These are distinct from fence agent UID/GID
+21000:21000 and proxy UID 21001. Every service has a read-only root, tmpfs `/tmp`,
+all capabilities dropped, no-new-privileges, journald logging and
+`restart: unless-stopped`. UI, intake and sessions each have 512 MiB memory and
+128 PIDs; runner has 1 GiB and 256 PIDs. These limits cover service processes;
+the launcher's fence limits remain separate.
+
+All four services join only the external Docker network `homelab_default`.
+Their database URL files must name the platform database at host `postgres`.
+Only UI publishes a port, `127.0.0.1:8300:8300`, preserving Tailscale's host
+loopback endpoint. No service receives Docker access, host networking, devices or
+additional capabilities.
+
+Each host bind uses the identical container path and refuses to create a missing
+host path. Prepare paths and socket permissions before cutover:
+
+| Service | Read-only binds | Read-write binds |
+| --- | --- | --- |
+| `ui` | `/var/lib/factory/ui-docs` | none |
+| `intake` | none | `/run/factory-intake` |
+| `sessions` | `/srv/factory/briefs`, `/srv/factory/runs` | `/srv/factory/work`, `/var/lib/factory/ui-docs`, `/run/homelab-launcher.sock` |
+| `runner` | none | `/srv/factory/briefs`, `/srv/factory/runs`, `/srv/factory/work`, `/srv/factory/clean`, `/srv/factory/exports`, `/srv/factory/bot-export`, `/srv/homelab/factory-state`, `/run/homelab-launcher.sock`, `/run/homelab-deployer.sock` |
+
+The runner anchors metadata at `/srv/factory/briefs/slices.json`, uses
+`/srv/factory/runs`, sends the daily export to `/srv/homelab/factory-state`, and
+sets `CPLANE_BOT_EXPORT=/srv/factory/bot-export`. The additional exports mount is
+reserved by the cutover contract. No private state or export data belongs in Git.
+
+Each secret is an individual read-only bind from
+`/etc/factory/secrets/<service>/<name>` to `/run/secrets/<name>`, owned by that
+service's UID with mode 0400. Parent directories must allow the owning service to
+traverse them. Never mount an entire secret folder or share one service's source
+file with another service. Even copies of the database URL and planning write key
+have separate service-owned source paths.
+
+| Services | File name | Environment path setting |
+| --- | --- | --- |
+| all four | `database-url` | `CPLANE_DATABASE_URL_FILE` |
+| runner | `github-app.pem` | `CPLANE_GITHUB_APP_KEY` |
+| runner | `briefs-key` | `CPLANE_BRIEFS_KEY` |
+| runner | `briefs-known-hosts` | `CPLANE_BRIEFS_KNOWN_HOSTS` |
+| runner, sessions | `planning-write-key` | `CPLANE_PLANNING_WRITE_KEY` |
+| runner | `deny-list` | `CPLANE_DENY_LIST` |
+
+The compose environment contains paths and non-secret mode settings only.
+Runner selects GitHub App authentication. Its App/installation IDs and planning
+remote configuration still need a reviewed non-secret configuration interface
+before cutover; this file does not guess their values.
+
+UI and runner both read the same optional `factory-tickets.env`, placed by the
+owner beside the **installed** compose file. It may contain only
+`CPLANE_TASK_SUBMIT`, with the owner's existing JSON argument list, and must
+contain no credentials or other secrets. Compose 2.24 or later is needed for
+`env_file.required: false`. Absence leaves the setting unset in both services,
+which preserves the owner's disabled tickets flow at cutover. Do not set it to
+an empty string as a substitute for absence: eligibility tests presence. Never
+configure this setting on just one of these services. Compose consumes this
+configuration file; it is not another container bind mount. No private env file
+is added to the repository.
+
+Every healthcheck uses Python from the service image, without curl, wget or a
+shell. UI fetches its root page; intake connects to the Unix socket without
+submitting an arrival. Sessions and runner check PID 1 exists and execute
+`SELECT 1` using their own database URL file with a five-second connection timeout.
+Those two checks establish process/database availability, not scheduling progress
+or successful agent turns. Checks run every 30 seconds with a ten-second timeout,
+three retries and a twenty-second startup period.
+
+The deployer's manifest health command, executed inside the first service, is
+exactly the UI compose health command:
+
+```sh
+python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8300/', timeout=5).read()"
+```
+
+After taking its database dump, the deployer runs this migration command in a
+**new container of `ui`**, with UI's own database URL file mounted:
+
+```sh
+cplane migrate
+```
+
+### Application prerequisites before cutover
+
+This compose contract alone cannot run the present application successfully.
+The required source review found these incompatibilities, which require a
+separate reviewed application/image change or an explicit scope decision:
+
+- `factory_ui.serve` binds `127.0.0.1` inside the container. Published bridge
+  traffic requires the server to listen on the container interface; the host
+  publication must remain loopback-only.
+- Intake resolves the named `factory-intake` group. The current service image
+  does not create it, although compose sets the correct numeric GID.
+- Sessions opens `/run/factory-sessions.lock`, which is on the read-only root.
+  It also creates turn folders under the read-only runs mount, accesses clean
+  clones absent from its mounts, and stages document exports and `.ui-docs.lock`
+  in `/var/lib/factory`, outside the ui-docs bind. Exchanging the mounted ui-docs
+  directory itself is incompatible with the current export algorithm.
+- Sessions and runner still enforce root-owned trusted directories and change
+  workspace ownership to UID 21000. Their new unprivileged UIDs and empty
+  capability sets cannot perform those operations. Sessions also uses GitHub
+  authentication and planning read credentials beyond its decided secret set.
+- The image contains neither the current `factory-cli` executable nor clients
+  for the mounted launcher/deployer sockets. Existing fence resumes also inspect
+  login state that is deliberately absent from these service mounts.
+
+Resolve these interfaces within the containment decisions before installing the
+file. This slice does not add mounts, capabilities, users, networks, ports or
+application changes to work around them. Static compose tests validate the
+reviewed boundary; they do not prove runtime readiness. The owner still reviews
+the guard file on GitHub before any merge or eventual manual installation.
