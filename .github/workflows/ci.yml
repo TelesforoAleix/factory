@@ -6,6 +6,25 @@ on:
 permissions:
   contents: read
 jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t factory:ci .
+      - name: Smoke checks with a read-only filesystem
+        run: |
+          docker run --rm --user 65534:65534 --read-only --tmpfs /tmp \
+            --cap-drop ALL --security-opt no-new-privileges --network none \
+            factory:ci sh -ec '
+              cplane --help
+              python -c "import factory_ui, cplane.sessions, cplane.intake"
+              git --version
+              ssh -V
+              gh --version
+              test -f ui/dist/index.html
+            '
+      - name: Image size in bytes
+        run: docker image inspect factory:ci --format '{{.Size}}'
   test:
     runs-on: ubuntu-latest
     services:

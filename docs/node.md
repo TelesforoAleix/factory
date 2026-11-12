@@ -9,6 +9,36 @@ The image contains Claude Code **2.1.318**, codex-cli **0.162.1**, git, Python 3
 and uv 0.11.18. CLI versions are fixed; base-image tags and OS packages update on
 rebuild. No secret belongs in either build context or image layer.
 
+## Factory service image (build only)
+
+The root `Dockerfile` builds one image for Workshop (`python -m factory_ui.serve`,
+port 8300), intake (`python -m cplane.intake`), sessions
+(`python -m cplane.sessions`) and the scheduler pass (`cplane --actor runner run`).
+The later compose file chooses the command; the image has no mode-selecting
+entry point and defaults to `cplane --help`.
+
+Build it with `docker build -t factory:local .`. Two stages use
+`node:22.23.5-bookworm-slim` to run `npm ci && npm run build` and
+`python:3.13.18-slim-bookworm` with uv 0.11.18 to run
+`uv sync --frozen --no-dev`. The final image contains the Python application,
+locked production dependencies, built `ui/dist`, git, openssh-client, libpq5 and
+GitHub CLI 2.103.3. The gh executable comes from the official release with a
+pinned SHA256 checksum for amd64 or arm64. Debian packages update on rebuild.
+
+The build context allows only application inputs and excludes private state,
+environment files, keys, credentials, deny lists, Git history and `node/`.
+The image defaults to UID/GID 65534:65534, disables Python bytecode writes and
+places HOME and caches under `/tmp`. CI's `image` job builds it, checks CLI help,
+imports, tool versions and `ui/dist/index.html` as UID 65534 with a read-only
+root, tmpfs `/tmp` and no capabilities, and reports the image size in bytes.
+
+Nothing on the node uses this image yet. Existing systemd services and all
+`node/` files are unchanged; there is no installation or other node step after
+this merge. A later slice supplies compose, the service UID, host state mounts
+and the platform deployer integration. Workshop still binds to loopback under
+its existing command; container networking belongs to that later slice.
+The Dockerfile and CI workflow require the owner's GitHub review before merge.
+
 ## Install after merge
 
 The orchestrator runs these commands on Ubuntu from a reviewed Factory checkout.
