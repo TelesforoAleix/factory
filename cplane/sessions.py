@@ -22,7 +22,7 @@ from .workshop import WorkshopServer, KINDS as WORKSHOP_KINDS
 from factory_ui.documents import Documents
 from .planning import Planning
 from . import fence
-from .state import StateError
+from .state import StateError, database_url
 from .stores import PostgresStore, REPOSITORY
 
 BRIEFS = Path('/srv/factory/briefs')
@@ -351,7 +351,7 @@ def cleanup_interrupted_turn(turn):
 
 def main():
     logging.basicConfig(level=logging.INFO)
-    url = os.environ.get('CPLANE_DATABASE_URL')
+    url = database_url()
     # One supervisor on the node; DB claims additionally serialize capacity checks.
     with open('/run/factory-sessions.lock', 'w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)

@@ -301,3 +301,41 @@ def test_turn_records_pushes_or_delivery_refusal(tmp_path, monkeypatch, notice):
     assert args.args[2] == 'synthetic'
     assert args.kwargs == ({'delivery_notice': notice} if notice else {'planning_commits': ['a' * 40]})
     assert 'failed' not in args.kwargs
+
+
+@pytest.mark.parametrize('override', [False, True])
+@pytest.mark.parametrize('network', ['fetch', 'push'])
+def test_planning_secret_settings(tmp_path, monkeypatch, override, network):
+    import shlex
+    from unittest.mock import Mock
+    root = tmp_path / 'clean'
+    root.mkdir(mode=0o700)
+    monkeypatch.setattr(fence, 'CLEAN_ROOT', root)
+    monkeypatch.setattr(fence, 'ROOT_UID', os.getuid())
+    adapter = planning.Planning(dict(id=1))
+    adapter.clean.mkdir(mode=0o700)
+    settings = dict(CPLANE_BRIEFS_KEY=planning.READ_KEY,
+                    CPLANE_PLANNING_WRITE_KEY=planning.WRITE_KEY,
+                    CPLANE_BRIEFS_KNOWN_HOSTS=planning.KNOWN_HOSTS)
+    for name in settings:
+        monkeypatch.delenv(name, raising=False)
+        if override:
+            monkeypatch.setenv(name, str(tmp_path / (name + " quote's space")))
+    execute = Mock(return_value=subprocess.CompletedProcess([], 0, '', ''))
+    monkeypatch.setattr(planning.subprocess, 'run', execute)
+    adapter.git(network, network=network)
+    ssh = shlex.split(execute.call_args.kwargs['env']['GIT_SSH_COMMAND'])
+    key_setting = 'CPLANE_PLANNING_WRITE_KEY' if network == 'push' else 'CPLANE_BRIEFS_KEY'
+    expected_key = os.environ[key_setting] if override else str(settings[key_setting])
+    expected_hosts = os.environ['CPLANE_BRIEFS_KNOWN_HOSTS'] if override else str(planning.KNOWN_HOSTS)
+    assert ssh[ssh.index('-i') + 1] == expected_key
+    assert 'UserKnownHostsFile=' + expected_hosts in ssh
+    assert 'StrictHostKeyChecking=yes' in ssh
+    other = 'CPLANE_BRIEFS_KEY' if network == 'push' else 'CPLANE_PLANNING_WRITE_KEY'
+    assert (os.environ[other] if override else str(settings[other])) not in ssh
+
+
+def test_default_planning_paths():
+    assert str(planning.READ_KEY) == '/etc/factory/briefs-key/id_ed25519'
+    assert str(planning.WRITE_KEY) == '/etc/factory/planning-write-key/id_ed25519'
+    assert str(planning.KNOWN_HOSTS) == '/etc/factory/briefs-key/known_hosts'

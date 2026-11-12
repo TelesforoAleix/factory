@@ -100,6 +100,8 @@ def eligibility(item, data):
     """Return a JSON explanation: status, with reason/ids/for where relevant."""
     if item['state'] == 'dropped':
         return dict(status='dropped')
+    if item.get('flow', 'cli') == 'tickets' and 'CPLANE_TASK_SUBMIT' not in os.environ:
+        return dict(status='waiting for a decision', reason='tickets flow off')
     context = data.get('_eligibility', {})
     resources_only = context.get('resources_only', False)
     if not resources_only:

@@ -1908,3 +1908,53 @@ merge with green CI; the nullable run-record `change_class` records the decision
 A brief's `stop_before_merge` can require approval for any class.
 
 The Postgres-backed runner sends a daily `digest` notice on its first pass at or after 07:00 Copenhagen time, covering the preceding 24 elapsed hours. `cplane digest` prints the latest scheduled digest without writing a notice; `cplane digest --date YYYY-MM-DD` selects the local date of its 07:00 boundary. Counts identify slices without including titles or attention bodies. Task spend is shown only when every recorded task attempt in the window has a known cost; other run costs are not available in the records.
+
+## Service secret files and the runner loop
+
+A later service cutover can supply each service's database URL in its own
+read-only secret file with `CPLANE_DATABASE_URL_FILE`. The file is read with
+surrounding whitespace stripped; an empty, unreadable or missing file fails
+without displaying the URL. Set either this setting or `CPLANE_DATABASE_URL`,
+never both. Without the file setting, the existing variable works as before.
+Workshop, intake, sessions and the scheduler use the same resolver.
+
+These path settings select the other service files:
+
+| Setting | Default |
+| --- | --- |
+| `CPLANE_GITHUB_APP_KEY` | `/etc/factory/github-app.pem` |
+| `CPLANE_BRIEFS_KEY` | `/etc/factory/briefs-key/id_ed25519` |
+| `CPLANE_BRIEFS_KNOWN_HOSTS` | `/etc/factory/briefs-key/known_hosts` |
+| `CPLANE_PLANNING_WRITE_KEY` | `/etc/factory/planning-write-key/id_ed25519` |
+| `CPLANE_DENY_LIST` | `/etc/homelab/deny-list` |
+
+The App key and deny list must be regular files opened without following a
+symlink: either root-owned mode 0600, or owned by the service's effective UID
+mode 0400. Other owners and modes are refused, including any group/world read
+permission. The deny canary and content checks are unchanged. The later service
+containers use a fixed non-root UID and separate read-only secret mounts; no
+secret belongs in an environment file.
+
+`cplane --actor runner run --every 60` keeps one process alive, running sequential
+passes with a 60-second wait after each pass and its jobs. SIGTERM and SIGINT
+stop the loop, unwinding any active pass and releasing its transaction and locks.
+A pass failure emits a safe message and the loop continues. Without `--every`,
+`run` still performs one pass and does not run the two scheduled export jobs.
+
+In loop mode, the first pass finishing after 03:45 local time each day exports
+into the existing `CPLANE_EXPORT_DIR` (which must already exist), using
+`factory-YYYY-MM-DD.json` and `.json.outbox.jsonl`, mode 0600, and retaining the
+seven newest dated pairs. The first completed pass in each local clock hour
+also runs `feature export` without output. Each job is attempted once per due
+period; failures emit a content-free line and retry at the next daily/hourly
+due time. Scheduling is process-local, so restarting the loop can repeat an
+export in the same period.
+
+When `CPLANE_TASK_SUBMIT` is unset, tickets slices are not started or resumed,
+and eligibility reports `tickets flow off`. Setting the existing JSON argument
+list preserves the host submission flow. The owner has disabled that flow from
+the container cutover until a later run interface accepts submissions.
+
+Nothing on today's node changes until a later slice supplies the new settings
+and loop command. Install with no new setting; the timers and services keep
+working. Existing export scripts and systemd timers under `node/` are unchanged.

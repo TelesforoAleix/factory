@@ -332,6 +332,7 @@ def parser():
     runs_export = runs_commands.add_parser('export', parents=[common])
     runs_export.add_argument('--since', required=True)
     run = commands.add_parser('run', parents=[common])
+    run.add_argument('--every', type=float, metavar='SECONDS', help='repeat passes and scheduled exports')
     run_commands = run.add_subparsers(dest='run_command', parser_class=Parser)
     for name in ('list', 'show', 'total', 'mark'):
         sub = run_commands.add_parser(name, parents=[common])
@@ -619,8 +620,11 @@ def main(argv=None):
                     raise state.StateError("export contains notices; provide PATH with cplane export PATH to write state and its outbox")
                 print(payload, end="")
         elif args.command == "run":
-            from .runner import Runner
-            Runner(path).run()
+            from .runner import Runner, run_loop
+            if args.every is None:
+                Runner(path).run()
+            else:
+                run_loop(path, args.every)
         elif args.command == "compact":
             path = path.resolve()
             with state.locked(path):

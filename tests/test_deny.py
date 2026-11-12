@@ -106,3 +106,46 @@ def test_pr_send_checks_metadata_before_any_github_write(deny_list, tmp_path):
     with pytest.raises(deny.Denied, match='PR body'):
         runner.open_pr('example/repo', {'branch': 'slice/test', 'title': 'title', 'body': 'PRIVATE EXAMPLE'})
     runner.github.open.assert_not_called()
+
+
+@pytest.mark.parametrize(('owner', 'mode', 'accepted'), [
+    (0, 0o600, True), (21000, 0o400, True), (21000, 0o600, False),
+    (21000, 0o440, False), (21000, 0o444, False), (21001, 0o400, False),
+    (0, 0o400, False), (0, 0o640, False), (21000, 0o1400, False),
+])
+def test_deny_owner_mode_contract(deny_list, monkeypatch, owner, mode, accepted):
+    from types import SimpleNamespace
+    monkeypatch.setattr(deny, 'ROOT_UID', 0)
+    monkeypatch.setattr(deny.os, 'geteuid', lambda: 21000)
+    monkeypatch.setattr(deny.os, 'fstat', lambda fd: SimpleNamespace(
+        st_uid=owner, st_mode=0o100000 | mode))
+    if accepted:
+        assert deny.patterns() == (deny.CANARY.casefold(), 'private example')
+    else:
+        with pytest.raises(deny.Denied, match='deny-list unavailable or invalid'):
+            deny.patterns()
+
+
+@pytest.mark.parametrize('override', [False, True])
+def test_deny_path_setting(deny_list, monkeypatch, override):
+    configured = deny_list.with_name('mounted-list')
+    configured.write_text('Mounted Synthetic\n')
+    configured.chmod(0o400)
+    monkeypatch.delenv('CPLANE_DENY_LIST', raising=False)
+    if override:
+        monkeypatch.setenv('CPLANE_DENY_LIST', str(configured))
+    assert deny.patterns() == (deny.CANARY.casefold(),
+                              'mounted synthetic' if override else 'private example')
+
+
+def test_default_deny_path():
+    assert str(deny.DENY_LIST) == '/etc/homelab/deny-list'
+
+
+def test_override_deny_link_refused(deny_list, monkeypatch):
+    deny_list.chmod(0o400)
+    link = deny_list.with_name('link')
+    link.symlink_to(deny_list)
+    monkeypatch.setenv('CPLANE_DENY_LIST', str(link))
+    with pytest.raises(deny.Denied, match='deny-list unavailable or invalid'):
+        deny.patterns()

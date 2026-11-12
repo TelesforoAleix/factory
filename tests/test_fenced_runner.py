@@ -666,6 +666,7 @@ def test_fenced_full_runner_delivery_approval_resume_and_handover(delivery, make
 
 @pytest.fixture
 def ticket_runner(delivery, make_state, monkeypatch):
+    monkeypatch.setenv('CPLANE_TASK_SUBMIT', '["synthetic-submit"]')
     from cplane import cut
     d = delivery
     path = make_state()
@@ -1070,7 +1071,8 @@ def test_invalid_review_never_submits_or_opens_pr(ticket_runner, answer):
     ('.github/workflows/test.yml', 4), ('guard/key', 4),
     ('source.py', 1), ('cplane/runner.py', 2), ('query.sql', 2), ('uv.lock', 2),
 ])
-def test_change_classes_merge_in_both_flows(delivery, make_state, flow, changed_path, expected):
+def test_change_classes_merge_in_both_flows(delivery, make_state, flow, changed_path, expected, monkeypatch):
+    monkeypatch.setenv('CPLANE_TASK_SUBMIT', '["synthetic-submit"]')
     d = delivery
     # Build commits only in the synthetic seed, never in an agent copy.
     seed = d['root'] / 'workflow-seed'

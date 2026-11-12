@@ -64,7 +64,7 @@ def create_app(store=None):
             return 'Required request header missing', 403
 
     def backend():
-        return app.config['STORE'] or PostgresStore(os.environ.get('CPLANE_DATABASE_URL'))
+        return app.config['STORE'] or PostgresStore(state.database_url())
 
     def slices():
         return backend().load()['slices']

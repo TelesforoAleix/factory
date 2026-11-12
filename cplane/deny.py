@@ -18,11 +18,12 @@ class Denied(StateError):
 
 def patterns():
     try:
-        fd = os.open(DENY_LIST, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        fd = os.open(os.environ.get('CPLANE_DENY_LIST', DENY_LIST), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         with os.fdopen(fd, encoding='utf-8') as stream:
             info = os.fstat(stream.fileno())
-            if (not stat.S_ISREG(info.st_mode) or info.st_uid != ROOT_UID
-                    or stat.S_IMODE(info.st_mode) != 0o600):
+            if (not stat.S_ISREG(info.st_mode) or not (
+                    (info.st_uid == ROOT_UID and stat.S_IMODE(info.st_mode) == 0o600)
+                    or (info.st_uid == os.geteuid() and stat.S_IMODE(info.st_mode) == 0o400))):
                 raise ValueError
             lines = stream.read().splitlines()
     except (OSError, UnicodeError, ValueError):
