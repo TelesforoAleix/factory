@@ -1135,13 +1135,13 @@ class Runner:
             from . import digest
             local = self.instant.astimezone(digest.LOCAL)
             day = local.date()
-            if local >= digest.boundary(day) and not any(
+            if state.postgres() and hasattr(state.store(self.path), 'run_record_list') and local >= digest.boundary(day) and not any(
                     n.get('event') == 'digest' and n.get('date') == day.isoformat()
                     for _, n in previous_notices):
                 end = digest.boundary(day)
                 backend = state.store(self.path)
                 records = (backend.run_record_list() + [r for r in backend.run_record_export(
-                    end.astimezone(timezone.utc) - timedelta(hours=24)) if r['kind'] == 'task']) if state.postgres() else []
+                    end.astimezone(timezone.utc) - timedelta(hours=24)) if r['kind'] == 'task'])
                 self.notices.append(dict(at=self.at, id='digest', event='digest', date=day.isoformat(),
                                          text=digest.build(self.data, records, end)))
             changed = json.dumps(self.data, ensure_ascii=False, separators=(',', ':')) != state_before

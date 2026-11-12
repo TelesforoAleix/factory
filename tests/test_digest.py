@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta
-import json
 from unittest.mock import Mock
 
 from cplane import digest, state
@@ -35,10 +34,19 @@ def test_digest_counts_and_content():
     assert 'spend' not in digest.build(data, records, end)
 
 
-def test_runner_daily_notice_and_cli_read_only(tmp_path, make_state, slice_data, capsys):
+def test_runner_daily_notice_and_cli_read_only(tmp_path, make_state, slice_data, capsys, monkeypatch):
     slice_data['state'] = 'planned'
     slice_data['slot'] = None
     path = make_state()
+    from conftest import SyntheticStore
+    backend = SyntheticStore(path)
+    backend.pipeline_step = lambda at: []
+    backend.route_chat_events = lambda: None
+    backend.ordered_slices = lambda items: items
+    backend.run_record_list = lambda: []
+    backend.run_record_export = lambda since: []
+    monkeypatch.setattr(state, 'store', lambda path: backend)
+    monkeypatch.setattr(state, 'postgres', lambda: True)
     clock = [datetime(2026, 10, 16, 6, 59, tzinfo=LOCAL)]
     def make_runner():
         return Runner(path, git=Mock(), clock=lambda: clock[0], runs=tmp_path / 'runs',
