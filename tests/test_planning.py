@@ -246,10 +246,13 @@ def test_failed_delivery_step_has_safe_notice(delivery, monkeypatch, caplog, ste
     assert 'secret git' not in caplog.text
 
 
-def test_homelab_workspace_git_copy_and_resume(delivery, monkeypatch):
+@pytest.mark.parametrize('shared_gid', [0, 1001, 21000], ids=['root-group', 'ci-group', 'fence-group'])
+def test_homelab_workspace_git_copy_and_resume(delivery, monkeypatch, shared_gid):
     from unittest.mock import Mock
     d = delivery
     shutil.rmtree(d['adapter'].clean)
+    # Exercise the fixture's substituted fence group independently of the host gid.
+    monkeypatch.setattr(fence, 'CLI_GID', shared_gid)
     work = d['root'] / 'work'
     work.mkdir(mode=0o700)
     monkeypatch.setattr(sessions, 'WORK_ROOT', work)
@@ -264,7 +267,7 @@ def test_homelab_workspace_git_copy_and_resume(delivery, monkeypatch):
         if path == work / 'session-1':
             values = list(info)
             values[4] = os.geteuid()
-            values[5] = 21000
+            values[5] = fence.CLI_GID
             return os.stat_result(values)
         return info
 
@@ -272,6 +275,8 @@ def test_homelab_workspace_git_copy_and_resume(delivery, monkeypatch):
     session = dict(id=1, area='homelab', cli_session_id=None, repositories=[])
     folder, paths = sessions.workspace(session)
     assert paths == []
+    sessions.os.chown.assert_called_with(folder, -1, shared_gid)
+    assert sessions.session_directory(folder.lstat())
     assert (folder / 'planning/.git').is_dir()
     assert not (folder / 'planning/.git/hooks').exists()
     assert not (folder / 'planning/.git/objects/info/alternates').exists()
