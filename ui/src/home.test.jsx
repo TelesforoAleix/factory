@@ -36,7 +36,7 @@ test('Testing review links to chat and requested install remains an owner action
 
 test.each([false, true])('feature blocks start open on desktop and folded on phone (%s)', async phone => {
   vi.stubGlobal('matchMedia', () => ({matches:phone, addEventListener:vi.fn(), removeEventListener:vi.fn()}));
-  const data = {projects:[],features:[{id:'N',title:'Queued',stage:'next'}],attention:[{kind:'failure',id:'bad',text:'Problem'}],chats:[],running:[{kind:'chat',id:7,title:'Planning',project:'P'}],building:[{id:'F1',title:'Feature',done:0,total:1,slices:[{id:'S1',title:'Working',state:'issued'}]}],unlinked:[{id:'S2',title:'Unlinked',state:'ready',no_feature:'Maintenance'}]};
+  const data = {projects:[],features:[{id:'N',title:'Queued',stage:'next'}],attention:[{kind:'failure',id:'bad',text:'Problem'}],chats:[],running_now:[{kind:'chat',id:7,title:'Planning',project:'P'}],building:[{id:'F1',title:'Feature',done:0,total:1,slices:[{id:'S1',title:'Working',state:'issued'}]}],unlinked:[{id:'S2',title:'Unlinked',state:'ready',no_feature:'Maintenance'}]};
   vi.stubGlobal('fetch', async url => ({ok:true,json:async () => url === '/api/home' ? data : []}));
   const {container} = render(<MemoryRouter><Home/></MemoryRouter>);
   await screen.findByText('Problem');

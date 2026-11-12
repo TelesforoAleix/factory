@@ -110,22 +110,23 @@ def home_data(store, board, clean, view):
         if s['state'] == 'issued':
             f = linked.get(s['id'])
             issued = next((e['at'] for e in reversed(s['log']) if e['event'] in ('started', 'resumed', 'issued', 'state: issued')), s['log'][0]['at'] if s['log'] else None)
-            running.append(dict(kind='slice', id=s['id'], title=clean(s['title']), feature=f['id'] if f else clean(s['feature']), project=f['project'] if f else None, since=issued))
+            running.append(dict(id=s['id'], title=clean(s['title']), feature=f['id'] if f else clean(s['feature']), project=f['project'] if f else None, since=issued))
+    running_now = [dict(item, kind='slice') for item in running]
     for s, request in pending(data):
         f = linked.get(s['id'])
         since = next(e['at'] for e in s['log'] if e['actor'] == 'owner' and e['event'] == REQUEST + request)
-        running.append(dict(kind='install', id=s['id'], title=clean(s['title']), project=f['project'] if f else None, since=since))
+        running_now.append(dict(kind='install', id=s['id'], title=clean(s['title']), project=f['project'] if f else None, since=since))
     if hasattr(store, 'connection'):
         # Message time is the persisted enqueue time; run records can supply a later start.
-        rows = store.connection.execute("SELECT m.session, m.time, (SELECT max(r.started_at) FROM cplane_task_runs r WHERE r.kind = 'chat' AND r.session_id = m.session::text AND r.started_at >= m.time) FROM cplane_session_messages m JOIN cplane_sessions s ON s.id = m.session WHERE m.status = 'running' AND s.area = 'factory'")
+        rows = store.connection.execute("SELECT m.session, m.time, (SELECT max(r.started_at) FROM cplane_run_records r WHERE r.kind = 'chat' AND r.session_id = m.session::text AND r.started_at >= m.time) FROM cplane_session_messages m JOIN cplane_sessions s ON s.id = m.session WHERE m.status = 'running' AND s.area = 'factory'")
         all_chats = {c['id']: c for c in public_chat_result(store.chats())}
         for chat_id, queued, started in rows:
             c = all_chats.get(chat_id)
             if c:
-                running.append(dict(kind='chat', id=chat_id, title=clean(c['title']), project=c.get('project'), since=(started or queued).isoformat()))
+                running_now.append(dict(kind='chat', id=chat_id, title=clean(c['title']), project=c.get('project'), since=(started or queued).isoformat()))
     quick_chats = [dict(id=c['id'], title='Development Orchestrator') for c in chats if c['kind'] == 'orchestrator']
     by_project = {c['project']: c for c in chats if c['kind'] == 'project'}
     quick_chats.extend(dict(id=by_project[p['key']]['id'], title=clean(p['name']))
                        for p in board['projects'] if p.get('active', True) and p['key'] in by_project)
-    return dict(quick_chats=quick_chats, projects=board['projects'], features=features, attention=attention, orchestrator_count=orchestrator_count, running=running, building=building, unlinked=unlinked,
+    return dict(quick_chats=quick_chats, projects=board['projects'], features=features, attention=attention, orchestrator_count=orchestrator_count, running=running, running_now=running_now, building=building, unlinked=unlinked,
                 chats=[{k: clean(v) if k == 'title' else v for k, v in c.items() if k in ('id', 'title', 'project', 'feature', 'waiting')} for c in chats if c['waiting']])
