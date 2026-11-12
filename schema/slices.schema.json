@@ -24,7 +24,7 @@
         "id": {"$ref": "#/$defs/id"},
         "repo": {"type": "string"}, "feature": {"type": "string"}, "title": {"type": "string"},
         "feature_id": {"type": "string", "minLength": 1},
-        "state": {"enum": ["planned", "researching", "ready", "issued", "awaiting handover", "in review", "accepted", "escalated"]},
+        "state": {"enum": ["planned", "researching", "ready", "issued", "awaiting handover", "in review", "accepted", "escalated", "dropped"]},
         "flow": {"enum": ["cli", "tickets"], "default": "cli"},
         "brief": {"type": ["string", "null"]},
         "brief_id": {"type": "string", "minLength": 1},

@@ -27,3 +27,13 @@ Keys are permanent and unique; adding creates an active project with its chat.
 Names allow 1–60 characters and About allows up to 600. URLs must use HTTPS;
 pass an empty URL to remove it. See [Project pages](project-pages.md) for usage
 accounting, validation and installation.
+
+## Slice housekeeping
+
+```sh
+cplane state SLICE dropped --actor owner  # Pause issued or awaiting-handover slices first.
+cplane install SLICE --actor owner
+cplane installed SLICE FULL_MERGE_SHA --note 'Installed by hand' --actor owner
+```
+
+Use `installed` for repositories outside `CPLANE_INSTALL_REPOS` after installing the exact merged commit by hand. Answer any node-step attention separately.

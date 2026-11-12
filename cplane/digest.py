@@ -46,7 +46,7 @@ def build(data, records, end):
             if event.startswith('merge: Approve PR #') and ': class 4 paths' in event:
                 groups['Guard stops'].add(identifier)
         attention = item.get('attention')
-        if item.get('state') != 'accepted' and attention:
+        if item.get('state') not in ('accepted', 'dropped') and attention:
             kind = attention['kind']
             if ((kind == 'merge' and not attention.get('approved')) or
                 (kind in ('question', 'escalation', 'node-step') and attention.get('answer') is None) or

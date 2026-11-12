@@ -325,3 +325,106 @@ def test_flow_add_edit_and_issued_guard(make_state):
     state.save(path, data)
     assert cli.main(prefix + ['edit', 'voice/W1', '--flow', 'tickets']) == 1
     assert state.load(path)['slices'][0]['flow'] == 'cli'
+
+
+@pytest.mark.parametrize('source', STATES + ('dropped',))
+@pytest.mark.parametrize('paused', [False, True])
+def test_dropped_transitions(make_state, slice_data, source, paused):
+    slice_data.update(state=source, paused=paused)
+    path = make_state()
+    before = path.read_bytes()
+    allowed = source not in ('accepted', 'dropped') and (paused or source not in ('issued', 'awaiting handover'))
+    assert invoke(path, 'state', 'voice/W1', 'dropped', '--actor', 'planner') == (0 if allowed else 1)
+    if allowed:
+        item = load(path)['slices'][0]
+        assert item['state'] == 'dropped'
+        assert item['log'][-1]['event'] == 'state: dropped'
+        assert item['log'][-1]['actor'] == 'planner'
+    else:
+        assert path.read_bytes() == before
+
+
+def test_hand_install_recording(make_state, slice_data, monkeypatch):
+    from cplane.eligibility import satisfied
+    from cplane.installation import review_status
+    from cplane.digest import build
+    from datetime import timedelta, timezone
+    sha = 'a' * 40
+    slice_data['state'] = 'awaiting handover'
+    slice_data['attention'] = dict(kind='node-step', body='install', since='2026-10-15T12:00:00+02:00', answer=None, approved=False)
+    path = make_state()
+    monkeypatch.delenv('CPLANE_INSTALL_REPOS', raising=False)
+    assert invoke(path, 'installed', 'voice/W1', sha) == 1
+    slice_data['log'] = [dict(at='2026-10-15T12:00:00+02:00', actor='runner', event='merged: ' + sha)]
+    path = make_state()
+    assert invoke(path, 'installed', 'voice/W1', 'b' * 40) == 1
+    assert invoke(path, 'installed', 'voice/W1', sha, '--actor', 'planner') == 1
+    monkeypatch.setenv('CPLANE_INSTALL_REPOS', slice_data['repo'])
+    assert invoke(path, 'installed', 'voice/W1', sha) == 1
+    monkeypatch.delenv('CPLANE_INSTALL_REPOS')
+    assert invoke(path, 'installed', 'voice/W1', sha, '--note', 'verified', '--actor', 'chat:123') == 0
+    item = load(path)['slices'][0]
+    install = next(e for e in item['log'] if e['event'].startswith('Installed '))
+    assert install['event'] == f'Installed {sha}. By hand: verified'
+    assert install['actor'] == 'chat:123'
+    assert item['attention']['answer'] is None
+    monkeypatch.setenv('CPLANE_INSTALL_REPOS', item['repo'])
+    assert satisfied(item)
+    monkeypatch.delenv('CPLANE_INSTALL_REPOS')
+    end = datetime.fromisoformat(install['at']).astimezone(timezone.utc) + timedelta(seconds=1)
+    assert 'Installed: 1 (voice/W1)' in build({'slices': [item]}, [], end)
+    assert invoke(path, 'answer', 'voice/W1', 'Done') == 0
+    assert review_status(load(path)['slices'][0])['status'] == 'finished'
+
+
+def test_dropped_refuses_live_executor_even_when_paused(make_state, slice_data, monkeypatch, tmp_path):
+    from cplane.installation import runs_path
+    slice_data.update(state='issued', paused=True)
+    path = make_state()
+    jobdir = runs_path(path) / 'turn'
+    jobdir.mkdir(parents=True)
+    (jobdir / 'job.json').write_text(json.dumps(dict(id='voice/W1', phase='running',
+        run=str(jobdir), tool='codex', started_ns=0)))
+    before = path.read_bytes()
+    assert invoke(path, 'state', 'voice/W1', 'dropped') == 1
+    assert path.read_bytes() == before
+
+
+def test_dropped_skips_pending_runner_and_uses_minimal_bot_export(make_state, slice_data, monkeypatch, tmp_path):
+    from unittest.mock import Mock
+    from cplane.cli import pending
+    from cplane.runner import BOT_ACCEPTED_FIELDS, Runner, export_bot
+    slice_data.update(state='dropped', attention=dict(kind='question', body='?',
+                      since='2026-10-15T12:00:00+02:00', answer=None, approved=False))
+    path = make_state()
+    assert all(not group for group in pending(load(path)).values())
+    folder = tmp_path / 'export'
+    folder.mkdir()
+    monkeypatch.setenv('CPLANE_BOT_EXPORT', str(folder))
+    monkeypatch.setattr('cplane.fence.trusted_directory', lambda folder: None)
+    export_bot(path)
+    exported = json.loads((folder / 'slices.json').read_text())['slices'][0]
+    assert set(exported) == set(slice_data) & BOT_ACCEPTED_FIELDS
+    runner = Runner(path, git=Mock(), orders=Mock(collect=Mock(return_value=False)))
+    runner.deliver = Mock()
+    runner.collect = Mock()
+    runner.run()
+    runner.deliver.assert_not_called()
+    runner.collect.assert_not_called()
+
+
+def test_dropped_cannot_be_forced_back_to_planned(make_state, slice_data):
+    slice_data['state'] = 'dropped'
+    path = make_state()
+    before = path.read_bytes()
+    assert invoke(path, 'state', 'voice/W1', 'planned', '--force', '--reason', 'reset') == 1
+    assert path.read_bytes() == before
+
+
+def test_hand_install_without_note(make_state, slice_data, monkeypatch):
+    monkeypatch.delenv('CPLANE_INSTALL_REPOS', raising=False)
+    sha = 'f' * 40
+    slice_data['log'] = [{'at': '2026-10-15T12:00:00+02:00', 'actor': 'runner', 'event': 'merged: ' + sha}]
+    path = make_state()
+    assert invoke(path, 'installed', 'voice/W1', sha) == 0
+    assert any(entry['event'] == f'Installed {sha}. By hand.' for entry in load(path)['slices'][0]['log'])

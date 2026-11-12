@@ -12,7 +12,11 @@ TRANSITIONS = {
     "escalated": {"issued"},
     "in review": {"accepted", "issued"},
     "accepted": set(),
+    "dropped": set(),
 }
+for _source in TRANSITIONS.keys() - {"accepted", "dropped"}:
+    TRANSITIONS[_source].add("dropped")
+
 KINDS = ("question", "escalation", "merge", "node-step", "owner-check")
 FIELDS = ("flow", "repo", "feature", "feature_id", "title", "brief", "stop_before_merge", "depends_on")
 
@@ -67,6 +71,8 @@ def change_for(args):
                 item["executor"].update(executor)
         elif args.command == "state":
             target = args.target
+            if item["state"] == "dropped":
+                raise StateError(f"{item['id']} is dropped and cannot transition")
             if args.force:
                 if target != "planned" or not args.reason or not args.reason.strip():
                     raise StateError("--force requires target planned and a nonempty --reason")
@@ -75,6 +81,8 @@ def change_for(args):
                     raise StateError("--reason requires --force")
                 if target not in TRANSITIONS[item["state"]]:
                     raise StateError(f"cannot move {item['id']} from {item['state']} to {target}: transition is not allowed")
+            if target == "dropped" and item["state"] in ("issued", "awaiting handover") and not item["paused"]:
+                raise StateError(f"{item['id']} must be paused before dropping")
             if target == "ready" and item["brief"] is None and not item.get("brief_id"):
                 raise StateError(f"{item['id']} needs a brief before ready")
             if args.session is not None:

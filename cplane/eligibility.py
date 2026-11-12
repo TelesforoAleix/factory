@@ -14,6 +14,8 @@ from .installation import installable, runs_path
 
 
 def satisfied(item):
+    if item['state'] == 'dropped':
+        return False
     if item['state'] == 'accepted':
         return True
     events = [entry['event'] for entry in item['log']]
@@ -84,8 +86,20 @@ def overlaps(left, right):
     return not a or not b or any(patterns_overlap(x, y) for x in a for y in b)
 
 
+def merged_since_start(item):
+    for entry in reversed(item['log']):
+        event = entry['event']
+        if event.startswith('merged: ') and event.removeprefix('merged: ').strip():
+            return True
+        if event == 'started':
+            return False
+    return False
+
+
 def eligibility(item, data):
     """Return a JSON explanation: status, with reason/ids/for where relevant."""
+    if item['state'] == 'dropped':
+        return dict(status='dropped')
     context = data.get('_eligibility', {})
     resources_only = context.get('resources_only', False)
     if not resources_only:
@@ -134,7 +148,7 @@ def eligibility(item, data):
         return dict(status='resource busy', reason='repository busy', ids=sorted(busy))
     conflicting = [s['id'] for s in data['slices'] if s['id'] != item['id']
                    and s['state'] in ('issued', 'awaiting handover', 'escalated')
-                   and overlaps(item, s)]
+                   and not merged_since_start(s) and overlaps(item, s)]
     if conflicting:
         return dict(status='resource busy', reason='overlapping files', ids=conflicting)
     available = context.get('available')

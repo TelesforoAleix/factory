@@ -183,3 +183,24 @@ def test_live_and_answered_sessions_explain_current_run(slice_data):
     assert eligibility(item, snapshot)['status'] == 'waiting for a test or approval'
     job['phase'] = 'merged'
     assert eligibility(item, snapshot) == dict(status='ready')
+
+
+def test_dropped_is_terminal_and_never_satisfies_dependency(slice_data, monkeypatch):
+    monkeypatch.delenv('CPLANE_INSTALL_REPOS', raising=False)
+    dropped = dict(slice_data, id='test/dropped', state='dropped', paused=True,
+                   log=[event('merged: abc')], attention=dict(kind='question', body='?',
+                   since='2026-11-01T00:00:00Z', answer=None, approved=False))
+    dependent = dict(slice_data, depends_on=[dropped['id']])
+    assert eligibility(dropped, data(dropped)) == {'status': 'dropped'}
+    assert not satisfied(dropped)
+    assert eligibility(dependent, data(dependent, dropped)) == {'status': 'blocked', 'ids': [dropped['id']]}
+
+
+@pytest.mark.parametrize('events,free', [([], False), (['started'], False),
+    (['started', 'merged: abc'], True), (['merged: abc', 'started'], False),
+    (['merged: '], False)])
+def test_merge_after_last_start_frees_files(slice_data, events, free):
+    other = dict(slice_data, id='test/other', state='awaiting handover',
+                 log=[event(e) for e in events])
+    result = eligibility(slice_data, data(slice_data, other, jobs={other['id']: dict(phase='ended')}))
+    assert result['status'] == ('ready' if free else 'resource busy')
