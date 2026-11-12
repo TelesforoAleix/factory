@@ -50,7 +50,7 @@ def test_start(make_state):
 def test_effort_add_edit_and_show(make_state, capsys):
     path = make_state([])
     assert main(["--state", str(path), "add", "--id", "voice/W2", "--repo", "example/repo",
-                 "--feature", "example", "--title", "Second", "--effort", "xhigh"]) == 0
+                 "--feature", "example", "--title", "Second", "--effort", "xhigh", "--no-feature", "One-off"]) == 0
     item = load(path)["slices"][0]
     assert item["executor"]["effort"] == "xhigh"
     assert main(["--state", str(path), "edit", "voice/W2", "--effort", "low"]) == 0

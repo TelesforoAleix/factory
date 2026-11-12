@@ -487,6 +487,7 @@ def test_add_slice_scope_and_audit(context, kind):
         created = value(result)
         assert created['id'] == f'{target}-S1'
         item = next(s for s in store.load()['slices'] if s['id'] == created['id'])
+        assert item['feature_id'] == target
         assert item['state'] == 'ready' and item['flow'] == 'cli'
         assert item['brief'] is None and item['brief_id'] == item['id']
         assert item['slot'] is None and item['session'] is None
@@ -565,6 +566,7 @@ def test_add_slice_dependencies_identity_and_immutable_brief(context):
     store.feature_stage(other, 'grilling')
     refused(call(workshops['project'], 'add_slice', **slice_args(other, depends_on=[first['id']])), 'same feature')
     assert main(['edit', first['id'], '--brief', 'replacement.md']) == 1
+    assert main(['edit', first['id'], '--no-feature', 'One-off']) == 1
     assert store.stored_brief(first['id']) == BRIEF
     read = value(call(workshops['feature'], 'slices', feature=own))
     assert read[0]['brief_text'] == BRIEF

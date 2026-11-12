@@ -27,6 +27,7 @@ def offset_timestamp(value):
 
 
 SCHEMA = json.loads(files("schema").joinpath("slices.schema.json").read_text())
+SCHEMA['$defs']['slice']['properties']['no_feature'] = {'type': 'string', 'minLength': 1, 'maxLength': 200}
 VALIDATOR = Draft202012Validator(SCHEMA, format_checker=formats)
 
 

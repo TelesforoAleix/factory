@@ -18,7 +18,7 @@ for _source in TRANSITIONS.keys() - {"accepted", "dropped"}:
     TRANSITIONS[_source].add("dropped")
 
 KINDS = ("question", "escalation", "merge", "node-step", "owner-check")
-FIELDS = ("flow", "repo", "feature", "feature_id", "title", "brief", "stop_before_merge", "depends_on")
+FIELDS = ("flow", "repo", "feature", "feature_id", "no_feature", "title", "brief", "stop_before_merge", "depends_on")
 
 
 def new_slice(slice_id):
@@ -38,12 +38,24 @@ def change_for(args):
             if (args.command == "edit" and item["state"] in ("issued", "awaiting handover")
                     and (set(values) - {"title", "depends_on"} or executor)):
                 raise StateError(f"{item['id']} is {item['state']}; only --title and --depends-on may be edited")
-            if 'feature_id' in values:
+            if 'no_feature' in values:
+                from .features import bounded
+                bounded(values['no_feature'], 'No-feature reason')
+            feature_id = values.get('feature_id', item.get('feature_id')) if 'no_feature' not in values else None
+            if feature_id:
                 if not state.postgres():
-                    raise StateError('Setting feature_id requires Postgres (CPLANE_DATABASE_URL)')
+                    raise StateError('Validating feature_id requires Postgres (CPLANE_DATABASE_URL)')
                 # Runs inside state.update's locked transaction; keep the supplied alias.
-                state.store(None)._feature(values['feature_id'])
-            if item.get('brief_id') and set(values) & {'brief', 'id', 'repo', 'feature_id'}:
+                state.store(None)._feature(feature_id)
+            if 'no_feature' in values:
+                item.pop('feature_id', None)
+            elif 'feature_id' in values:
+                if not values['feature_id']:
+                    raise StateError('Removing a feature requires --no-feature REASON')
+                item.pop('no_feature', None)
+            if not values.get('feature_id', item.get('feature_id')) and not values.get('no_feature', item.get('no_feature')):
+                raise StateError('A slice requires --feature-id or --no-feature REASON')
+            if item.get('brief_id') and set(values) & {'brief', 'id', 'repo', 'feature_id', 'no_feature'}:
                 raise StateError('Stored brief identity and repository are immutable; create a new slice')
             if state.postgres() and (args.command == 'add' or executor or 'id' in values):
                 backend = state.store(None)

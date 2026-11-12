@@ -4,7 +4,7 @@ from cplane.cli import main, parser
 from cplane.state import load
 from cplane.roles import DEFAULT_LEVELS
 
-ADD = ['add', '--id', 'new/W2', '--repo', 'example/repo', '--feature', 'f', '--title', 'T']
+ADD = ['add', '--id', 'new/W2', '--repo', 'example/repo', '--feature', 'f', '--title', 'T', '--no-feature', 'One-off']
 
 @pytest.mark.parametrize('level', ['light', 'standard', 'strong'])
 def test_file_level_snapshot_and_no_external_command(make_state, tmp_path, monkeypatch, level):
