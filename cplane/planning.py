@@ -73,7 +73,7 @@ class Planning:
             return []
         # The supervisor permits just one active turn per session. This clone is
         # dedicated to that session, so other sessions cannot alter its refs/index.
-        result = subprocess.run([fence.fence_command(), 'bundle', '--repo', str(copy),
+        result = subprocess.run([*fence.fence_command(), 'bundle', '--repo', str(copy),
                                  '--run', str(run / 'io'), '--branch', self.branch],
                                 cwd=run, capture_output=True, env=fence.host_environment())
         if result.returncode:

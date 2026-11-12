@@ -16,7 +16,7 @@ import tempfile
 import tarfile
 import time
 
-from .fence import Fence, trusted_directory, host_environment, WORK_ROOT
+from .fence import Fence, trusted_directory, host_environment, WORK_ROOT, own
 from . import run_records, skills
 from .workshop import WorkshopServer, KINDS as WORKSHOP_KINDS
 from factory_ui.documents import Documents
@@ -191,10 +191,7 @@ def workspace(session):
         skills.install(folder, session.get('skill_names') if session.get('skill_names') is not None else sorted(skills.DEFAULTS))
         # Chown planning only, while workspace remains root-owned and inaccessible.
         if session.get('area') == 'homelab':
-            for directory, folders, files in os.walk(folder / 'planning', followlinks=False):
-                for name in [*folders, *files]:
-                    os.chown(Path(directory) / name, 21000, 21000, follow_symlinks=False)
-            os.chown(folder / 'planning', 21000, 21000)
+            own(folder / 'planning', 'work', recursive=True)
         os.chown(folder, 21000, 21000)
     paths = []
     for repository in session['repositories']:
@@ -218,7 +215,7 @@ def workspace(session):
 def turn_command(turn, folder, paths, run):
     session = turn['session']
     tool = session['tool']
-    args = [fence.fence_command(), 'run', '--tool', tool, '--repo', str(folder), '--run', str(run),
+    args = [*fence.fence_command(), 'run', '--tool', tool, '--repo', str(folder), '--run', str(run),
             '--session-turn', str(turn['id'])]
     for path in paths:
         args += ['--read-only-path', str(path)]
@@ -315,7 +312,7 @@ def _execute_turn(turn, store, accounting):
         if turn['session'].get('area') == 'homelab':
             io_folder = run / 'io'
             io_folder.mkdir(mode=0o700)
-            os.chown(io_folder, 21000, 21000)
+            fence.own(io_folder, 'run')
             try:
                 commits = Planning(turn['session']).deliver(folder / 'planning', run)
             except (StateError, OSError) as error:
@@ -339,7 +336,7 @@ def _execute_turn(turn, store, accounting):
 
 
 def cleanup_interrupted_turn(turn):
-    subprocess.run([fence.fence_command(), 'session-cleanup', str(turn['id'])], check=True,
+    subprocess.run([*fence.fence_command(), 'session-cleanup', str(turn['id'])], check=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     run = RUNS / f'session-turn-{turn["id"]}'
     if run.exists():

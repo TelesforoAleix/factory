@@ -21,12 +21,38 @@ TOKEN = Path('/etc/factory/github-token')
 
 
 def fence_command():
-    return os.environ.get('CPLANE_FENCE_COMMAND', 'factory-cli')
+    if socket_enabled():
+        return [sys.executable, '-m', 'cplane.launcher']
+    return [os.environ.get('CPLANE_FENCE_COMMAND', 'factory-cli')]
+
+
+def socket_enabled():
+    return os.environ.get('CPLANE_FENCE_COMMAND') == 'socket'
+
+
+def own(path, role, *, recursive=False):
+    if socket_enabled():
+        from .launcher import manage
+        manage('own', role, path)
+        return
+    if recursive:
+        for directory, folders, files in os.walk(path, followlinks=False):
+            for name in [*folders, *files]:
+                os.chown(Path(directory) / name, CLI_UID, CLI_GID, follow_symlinks=False)
+    os.chown(path, CLI_UID, CLI_GID)
+
+
+def remove(path, role):
+    if socket_enabled():
+        from .launcher import manage
+        manage('remove', role, path)
+    else:
+        shutil.rmtree(path)
 
 
 def host_environment():
     # A credential is added only for the one authenticated git/gh call.
-    return {**{key: os.environ[key] for key in ('PATH', 'LANG', 'PYTHONPATH') if key in os.environ},
+    return {**{key: os.environ[key] for key in ('PATH', 'LANG', 'PYTHONPATH', 'CPLANE_LAUNCHER_SOCKET') if key in os.environ},
             'HOME': '/nonexistent', 'GIT_CONFIG_NOSYSTEM': '1',
             'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_TERMINAL_PROMPT': '0'}
 
@@ -200,10 +226,7 @@ class Fence:
                  '--config', 'user.name=Factory', '--config', 'user.email=factory@localhost',
                  str(clean), str(copy))
         copy.chmod(0o700)
-        for directory, folders, files in os.walk(copy, followlinks=False):
-            for name in [*folders, *files]:
-                os.chown(Path(directory) / name, CLI_UID, CLI_GID, follow_symlinks=False)
-        os.chown(copy, CLI_UID, CLI_GID)
+        own(copy, 'work', recursive=True)
         return {'repo': str(copy), 'repository': repo, 'branch': branch,
                 'base': base, 'default': default}
 
@@ -212,7 +235,7 @@ class Fence:
             raise StateError('bundle refused: branch is not the slice branch or is the default branch')
         clean = self.clean(job['repository'])
         folder = trusted_directory(Path(job['run']))
-        result = subprocess.run([fence_command(), 'bundle', '--repo', job['repo'],
+        result = subprocess.run([*fence_command(), 'bundle', '--repo', job['repo'],
                                  '--run', str(folder / 'io'), '--branch', job['branch']],
                                 cwd=folder, capture_output=True, env=host_environment())
         if result.returncode:

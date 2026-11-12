@@ -49,6 +49,20 @@ def catalog(tool, run):
     return rows
 
 
+def cleanup_runs(commands):
+    """Attempt every stop before allowing deletion of the probe workspace."""
+    failure = None
+    for command in commands:
+        try:
+            subprocess.run([*fence.fence_command(), *command], check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           env=fence.host_environment())
+        except (OSError, subprocess.SubprocessError) as error:
+            failure = failure or error
+    if failure is not None:
+        raise failure
+
+
 def refresh_catalog(tool):
     """Use the chat execution boundary, user, login mounts and host environment."""
     from . import sessions
@@ -59,16 +73,21 @@ def refresh_catalog(tool):
     folder = WORK_ROOT / ('models-' + token)
     run_root = sessions.RUNS / ('models-' + token)
     folder.mkdir(mode=0o700)
-    os.chown(folder, 21000, 21000)
+    fence.own(folder, 'work')
     run_root.mkdir(mode=0o700)
     turn_id = (1 << 128) + int(token, 16)  # Disjoint from Postgres bigint chat IDs.
+    started = []
     try:
         def run(command):
             output = run_root / str(uuid.uuid4())
             output.mkdir(mode=0o700)
+            run_id = f'models-{token}-{output.name}'
+            options = (['--run-id', run_id] if fence.socket_enabled()
+                       else ['--session-turn', str(turn_id)])
+            started.append(run_id)
             result = subprocess.run(
-                [fence.fence_command(), 'run', '--tool', tool, '--repo', str(folder),
-                 '--run', str(output), '--session-turn', str(turn_id), '--', *command],
+                [*fence.fence_command(), 'run', '--tool', tool, '--repo', str(folder),
+                 '--run', str(output), *options, '--', *command],
                 stdin=subprocess.DEVNULL, capture_output=True, text=True,
                 timeout=1260, env=host_environment())
             if result.returncode:
@@ -78,16 +97,16 @@ def refresh_catalog(tool):
     finally:
         # The wrapper cleans up normal turns and its own timeout. Also cover an
         # interrupted/killed wrapper before touching an agent-owned workspace.
-        subprocess.run([fence.fence_command(), 'session-cleanup', str(turn_id)], check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                       env=host_environment())
-        shutil.rmtree(folder)
+        cleanups = ([['stop', run_id] for run_id in started] if fence.socket_enabled()
+                    else [['session-cleanup', str(turn_id)]])
+        cleanup_runs(cleanups)
+        fence.remove(folder, 'work')
         shutil.rmtree(run_root)
 
 
 def recover_catalog_runs():
     from . import sessions
-    from .fence import WORK_ROOT, trusted_directory, host_environment
+    from .fence import WORK_ROOT, trusted_directory
     trusted_directory(sessions.RUNS)
     trusted_directory(WORK_ROOT)
     for run_root in sessions.RUNS.glob('models-*'):
@@ -95,12 +114,14 @@ def recover_catalog_runs():
         if not re.fullmatch('[0-9a-f]{32}', token):
             continue
         turn_id = (1 << 128) + int(token, 16)
-        subprocess.run([fence.fence_command(), 'session-cleanup', str(turn_id)], check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                       env=host_environment())
+        cleanups = ([['stop', f'models-{token}-{output.name}']
+                     for output in sorted(run_root.iterdir())
+                     if output.is_dir() and not output.is_symlink()] if fence.socket_enabled()
+                    else [['session-cleanup', str(turn_id)]])
+        cleanup_runs(cleanups)
         folder = WORK_ROOT / run_root.name
         if folder.exists():
-            shutil.rmtree(folder)
+            fence.remove(folder, 'work')
         shutil.rmtree(run_root)
 
 

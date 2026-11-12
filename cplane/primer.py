@@ -1,4 +1,5 @@
 """Start the Codex and Claude usage windows on a schedule, and install the launchd jobs for it."""
+from contextlib import contextmanager
 from datetime import datetime
 import os
 from pathlib import Path
@@ -84,20 +85,34 @@ def idle_seconds():
     return int(match.group(1)) / 1e9 if match else None
 
 
+@contextmanager
+def warmup_directory(root, role):
+    if not fence.socket_enabled():
+        with tempfile.TemporaryDirectory(prefix='prime-', dir=root) as folder:
+            yield folder
+        return
+    folder = tempfile.mkdtemp(prefix='prime-', dir=root)
+    try:
+        yield folder
+    finally:
+        # A launcher refusal must not fall back to host traversal of agent data.
+        fence.remove(folder, role)
+
+
 def request(name, args):
     if fenced():
-        from .fence import WORK_ROOT, CLI_UID, CLI_GID, host_environment
+        from .fence import WORK_ROOT, host_environment
         runs = Path(os.environ.get('CPLANE_RUNS', '/srv/factory/runs'))
-        with tempfile.TemporaryDirectory(prefix='prime-', dir=WORK_ROOT) as work, \
-                tempfile.TemporaryDirectory(prefix='prime-', dir=runs) as output:
+        with warmup_directory(WORK_ROOT, 'work') as work, \
+                warmup_directory(runs, 'run') as output:
             for folder in (work, output):
                 os.chmod(folder, 0o700)
-                os.chown(folder, CLI_UID, CLI_GID)
+                fence.own(folder, 'work' if folder == work else 'run')
             # Keep the warm-up CLI inside exactly the same fence as slice turns.
             command = ([name, '-p', '--model', 'haiku', '--', 'Reply with: ok'] if name == 'claude'
                        else [name, 'exec', '-m', 'gpt-6-luna', '--skip-git-repo-check', '--', 'Reply with: ok'])
             try:
-                result = subprocess.run([fence.fence_command(), 'run', '--tool', name, '--repo', work,
+                result = subprocess.run([*fence.fence_command(), 'run', '--tool', name, '--repo', work,
                                          '--run', output, '--', *command], cwd='/',
                                         stdin=subprocess.DEVNULL, capture_output=True, timeout=TIMEOUT,
                                         env=host_environment())
