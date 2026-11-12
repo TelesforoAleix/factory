@@ -1,7 +1,10 @@
 """Synthetic path policies; no executor content or private state."""
+import os
+import subprocess
+
 import pytest
 
-from cplane import classes
+from cplane import classes, fence
 
 
 @pytest.mark.parametrize('path,expected', [
@@ -65,3 +68,111 @@ def test_deleted_files_keep_path_class_without_content_floor():
 def test_negation_cannot_cancel_another_lines_class():
     assert classes.classify(['guard/key'], '4 /guard/**\n2 !/guard/**') == (4, ['guard/key'])
     assert classes.classify(['plain.py'], '4 !/guard/**') == (1, [])
+
+
+@pytest.fixture
+def merged_pr(tmp_path, monkeypatch):
+    """A real fenced clean clone with stale main and a PR that merged new main."""
+    monkeypatch.setenv('GIT_CONFIG_GLOBAL', '/dev/null')
+    monkeypatch.setenv('GIT_CONFIG_NOSYSTEM', '1')
+    monkeypatch.setenv('CPLANE_GITHUB_AUTH', 'token')
+    for role in ('AUTHOR', 'COMMITTER'):
+        monkeypatch.setenv(f'GIT_{role}_NAME', 'Synthetic')
+        monkeypatch.setenv(f'GIT_{role}_EMAIL', 'synthetic@example.invalid')
+    monkeypatch.setattr(fence, 'ROOT_UID', os.getuid())
+    root = tmp_path / 'clean'
+    root.mkdir(mode=0o700)
+    monkeypatch.setattr(fence, 'CLEAN_ROOT', root)
+    token = tmp_path / 'token'
+    token.write_text('synthetic-test-token')
+    token.chmod(0o600)
+    monkeypatch.setattr(fence, 'TOKEN', token)
+
+    def git(repo, *args):
+        return subprocess.run(['git', '-C', str(repo), *map(str, args)],
+                              check=True, capture_output=True, text=True).stdout.strip()
+
+    repo = tmp_path / 'remote'
+    repo.mkdir()
+    git(repo, 'init', '--initial-branch=main', '--template=')
+    (repo / '.github').mkdir()
+    (repo / '.github/change-classes').write_text('4 /guard/**\n')
+    (repo / 'guard').mkdir()
+    (repo / 'guard/main').write_text('base\n')
+    (repo / 'guard/own').write_text('base\n')
+    git(repo, 'add', '.')
+    git(repo, 'commit', '-m', 'base policy and guards')
+    base = git(repo, 'rev-parse', 'HEAD')
+    adapter = fence.Fence()
+    clean = adapter.clean('example/repo')
+    git(tmp_path, 'clone', '--bare', repo, clean)
+    adapter.git(clean, 'fetch', 'origin', '+refs/heads/*:refs/remotes/origin/*')
+
+    git(repo, 'checkout', '-b', 'pr')
+    (repo / 'feature.py').write_text('feature\n')
+    git(repo, 'add', '.')
+    git(repo, 'commit', '-m', 'PR feature')
+    git(repo, 'checkout', 'main')
+    (repo / 'guard/main').write_text('main change\n')
+    git(repo, 'add', '.')
+    git(repo, 'commit', '-m', 'another PR changes a guard')
+    git(repo, 'checkout', 'pr')
+    git(repo, 'merge', '--no-edit', 'main')
+    job = dict(repository='example/repo', base=base)
+
+    def import_tip():
+        job['tip'] = git(repo, 'rev-parse', 'HEAD')
+        adapter.git(clean, 'fetch', 'origin', 'refs/heads/pr')
+
+    import_tip()
+    assert git(clean, 'rev-parse', 'origin/main') == base
+    return adapter, job, repo, clean, git, import_tip
+
+
+def test_changes_exclude_guard_inherited_from_merged_main(merged_pr):
+    adapter, job, _, _, _, _ = merged_pr
+    assert classes.changes(adapter, job) == (1, [])
+
+
+def test_changes_keep_pr_guard_and_policy_at_pinned_base(merged_pr):
+    adapter, job, repo, _, git, import_tip = merged_pr
+    (repo / 'guard/own').write_text('PR change\n')
+    (repo / '.github/change-classes').unlink()
+    git(repo, 'add', '.')
+    git(repo, 'commit', '-m', 'PR changes guard and removes policy')
+    import_tip()
+    assert classes.changes(adapter, job) == (4, ['.github/change-classes', 'guard/own'])
+
+
+def test_changes_keep_guard_reverted_by_pr(merged_pr):
+    adapter, job, repo, _, git, import_tip = merged_pr
+    git(repo, 'checkout', job['base'], '--', 'guard/main')
+    git(repo, 'commit', '-m', 'PR reverts main guard change')
+    import_tip()
+    assert classes.changes(adapter, job) == (4, ['guard/main'])
+
+
+def test_changes_fall_back_to_base_when_fetch_fails(merged_pr, tmp_path):
+    adapter, job, _, clean, git, _ = merged_pr
+    # Even a cached current main must not be trusted after a failed fetch.
+    adapter.git(clean, 'fetch', 'origin', '+refs/heads/*:refs/remotes/origin/*')
+    git(clean, 'remote', 'set-url', 'origin', tmp_path / 'missing.git')
+    assert classes.changes(adapter, job) == (4, ['guard/main'])
+
+
+def test_changes_fall_back_to_base_when_fetch_credentials_are_unavailable(merged_pr):
+    adapter, job, _, clean, _, _ = merged_pr
+    adapter.git(clean, 'fetch', 'origin', '+refs/heads/*:refs/remotes/origin/*')
+    fence.TOKEN.unlink()
+    assert classes.changes(adapter, job) == (4, ['guard/main'])
+
+
+def test_changes_fall_back_to_base_when_merge_base_is_unavailable(merged_pr):
+    adapter, job, repo, _, git, _ = merged_pr
+    git(repo, 'checkout', '--orphan', 'unrelated')
+    git(repo, 'rm', '-rf', '.')
+    (repo / 'unrelated.txt').write_text('unrelated main\n')
+    git(repo, 'add', '.')
+    git(repo, 'commit', '-m', 'unrelated history')
+    git(repo, 'branch', '-f', 'main', 'HEAD')
+    assert classes.changes(adapter, job) == (4, ['guard/main'])

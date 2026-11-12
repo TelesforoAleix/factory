@@ -1083,6 +1083,8 @@ def test_change_classes_merge_in_both_flows(delivery, make_state, flow, changed_
     d['g'](seed, 'add', '.')
     d['g'](seed, 'commit', '-m', 'base policy')
     base = d['g'](seed, 'rev-parse', 'HEAD')
+    # The policy belongs to main before the PR's own change.
+    d['g'](seed, 'push', 'origin', 'HEAD:refs/heads/main')
     path = seed / changed_path
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text('synthetic\n')
@@ -1202,6 +1204,8 @@ def test_workflow_path_listing_includes_deletions_and_both_rename_sides(delivery
     d['g'](seed, 'add', '.')
     d['g'](seed, 'commit', '-m', 'before')
     base = d['g'](seed, 'rev-parse', 'HEAD')
+    # Publish the existing file on main before deleting or renaming it in the PR.
+    d['g'](seed, 'push', 'origin', 'HEAD:refs/heads/main')
     if operation == 'delete':
         workflow.unlink()
     else:
@@ -1602,6 +1606,8 @@ def test_classes_use_base_policy_and_include_deleted_paths(delivery, operation):
     d['g'](seed, 'add', '.')
     d['g'](seed, 'commit', '-m', 'policy base')
     base = d['g'](seed, 'rev-parse', 'HEAD')
+    # Publish the policy and original paths on the base branch.
+    d['g'](seed, 'push', 'origin', 'HEAD:refs/heads/main')
     if operation == 'edit-policy':
         table.write_text('1 /**\n')
         guard.write_text('changed private content')
