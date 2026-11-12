@@ -68,7 +68,7 @@ def setup(tmp_path, slice_data, make_state, monkeypatch):
     from cplane import fence
     trusted = fence.trusted_directory
     monkeypatch.setattr(fence, 'trusted_directory', lambda path: None if Path(path) == runner.runs else trusted(path))
-    monkeypatch.setattr('cplane.review.changes_workflows', lambda *args: False)
+    monkeypatch.setattr('cplane.classes.changes', lambda *args: (1, []))
     def prepare(repository, branch, token):
         return {'repo': str(tmp_path / 'repos' / repository.split('/')[-1]),
                 'branch': branch, 'base': 'a' * 40, 'repository': repository}
@@ -2056,3 +2056,27 @@ def test_check_head_read_also_guards_merge_cards(setup, metadata):
     fields = gh.call.call_args_list[0].args[-1].split(',')
     assert {'headRefOid', 'title', 'body', 'isDraft', 'mergeStateStatus', 'mergeable'} <= set(fields)
     assert not any(e['event'].startswith('merge:') for e in candidate['log'])
+
+
+@pytest.mark.parametrize('stop', [True, False])
+def test_guard_card_names_at_most_twenty_paths_and_approval_merges(setup, monkeypatch, stop):
+    r, _, gh = setup
+    r.run()
+    current = r.data['slices'][0]
+    job = r.jobs[current['id']]
+    current.update(pr=12, attention=None, stop_before_merge=stop)
+    job.update(phase='pr', tip='b' * 40, request=dict(node_steps=None))
+    paths = [f'guard/{i:02d}' for i in range(23)]
+    monkeypatch.setattr('cplane.classes.changes', lambda *args: (4, paths))
+    gh.checks.return_value = ('green', '')
+    r.pr_checks(current, job)
+    card = current['attention']
+    assert card['kind'] == 'merge'
+    assert all(path in card['body'] for path in paths[:20])
+    assert all(path not in card['body'] for path in paths[20:])
+    assert '3 more class 4 paths' in card['body']
+    gh.merge.assert_not_called()
+    card['approved'] = True
+    r.launch = Mock()
+    r.deliver(current)
+    gh.merge.assert_called_once_with('example/repo', 12, expected='b' * 40)

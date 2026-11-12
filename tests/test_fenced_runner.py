@@ -1057,13 +1057,22 @@ def test_invalid_review_never_submits_or_opens_pr(ticket_runner, answer):
 
 
 @pytest.mark.parametrize('flow', ['cli', 'tickets'])
-@pytest.mark.parametrize('changed', [True, False])
-def test_workflow_changes_require_approval_in_both_flows(delivery, make_state, flow, changed):
+@pytest.mark.parametrize('changed_path,expected', [
+    ('.github/workflows/test.yml', 4), ('guard/key', 4),
+    ('source.py', 1), ('cplane/runner.py', 2), ('query.sql', 2), ('uv.lock', 2),
+])
+def test_change_classes_merge_in_both_flows(delivery, make_state, flow, changed_path, expected):
     d = delivery
     # Build commits only in the synthetic seed, never in an agent copy.
     seed = d['root'] / 'workflow-seed'
     d['g'](d['root'], 'clone', d['remote'], seed)
-    path = seed / ('.github/workflows/test.yml' if changed else 'source.py')
+    table = seed / '.github/change-classes'
+    table.parent.mkdir()
+    table.write_text('4 /guard/**\n2 /cplane/runner.py\n')
+    d['g'](seed, 'add', '.')
+    d['g'](seed, 'commit', '-m', 'base policy')
+    base = d['g'](seed, 'rev-parse', 'HEAD')
+    path = seed / changed_path
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text('synthetic\n')
     d['g'](seed, 'add', '.')
@@ -1079,12 +1088,14 @@ def test_workflow_changes_require_approval_in_both_flows(delivery, make_state, f
     item = state.load(runner.path)['slices'][0]
     item.update(flow=flow, pr=12, stop_before_merge=False,
                 session=dict(tool='codex', id='synthetic-session', folder=str(d['work'])))
-    job = {**d['job'], 'tip': tip, 'phase': 'pr', 'request': request(d['job'])}
+    job = {**d['job'], 'base': base, 'tip': tip, 'phase': 'pr', 'request': request(d['job'])}
     runner.jobs = {item['id']: job}
     runner.launch = Mock()
     runner.pr_checks(item, job)
-    if changed:
+    assert job['change_class'] == expected
+    if expected == 4:
         assert item['attention']['kind'] == 'merge'
+        assert changed_path in item['attention']['body']
         gh.merge.assert_not_called()
         item['attention']['approved'] = True
         runner.deliver(item)
@@ -1168,7 +1179,7 @@ def test_post_merge_review_session_does_not_resubmit_or_publish(ticket_runner):
 
 @pytest.mark.parametrize('operation', ['delete', 'rename_out', 'rename_in'])
 def test_workflow_path_listing_includes_deletions_and_both_rename_sides(delivery, operation):
-    from cplane import review
+    from cplane import classes
     d = delivery
     seed = d['root'] / 'rename-seed'
     d['g'](d['root'], 'clone', d['remote'], seed)
@@ -1189,7 +1200,9 @@ def test_workflow_path_listing_includes_deletions_and_both_rename_sides(delivery
     tip = d['g'](seed, 'rev-parse', 'HEAD')
     d['g'](seed, 'push', 'origin', 'HEAD:refs/heads/renames')
     d['adapter'].git(d['clean'], 'fetch', 'origin', 'refs/heads/renames')
-    assert review.changes_workflows(d['adapter'], {**d['job'], 'base': base, 'tip': tip})
+    number, guards = classes.changes(d['adapter'], {**d['job'], 'base': base, 'tip': tip})
+    assert number == 4
+    assert guards == ['.github/workflows/test.yml']
 
 
 @pytest.mark.parametrize('reason', ['paused', 'capacity'])
@@ -1558,4 +1571,40 @@ def test_github_updated_head_is_fetched_in_clean_clone_before_merge(delivery, ma
     runner.pr_checks(item, job)
     gh.merge.assert_called_once_with('example/repo', 12, expected=updated)
     assert job['base'] == d['base']
+    assert not d['marker'].exists()
+
+
+@pytest.mark.parametrize('operation', ['edit-policy', 'delete', 'rename'])
+def test_classes_use_base_policy_and_include_deleted_paths(delivery, operation):
+    from cplane import classes
+    d = delivery
+    seed = d['root'] / 'policy-seed'
+    d['g'](d['root'], 'clone', d['remote'], seed)
+    table = seed / '.github/change-classes'
+    table.parent.mkdir()
+    table.write_text('4 /guard/**\n2 /strong.py\n')
+    guard = seed / 'guard/key'
+    guard.parent.mkdir()
+    guard.write_text('PRIVATE content never recorded')
+    strong = seed / 'strong.py'
+    strong.write_text('synthetic\n')
+    d['g'](seed, 'add', '.')
+    d['g'](seed, 'commit', '-m', 'policy base')
+    base = d['g'](seed, 'rev-parse', 'HEAD')
+    if operation == 'edit-policy':
+        table.write_text('1 /**\n')
+        guard.write_text('changed private content')
+        expected = (4, ['.github/change-classes', 'guard/key'])
+    elif operation == 'delete':
+        strong.unlink()
+        expected = (2, [])
+    else:
+        guard.rename(seed / 'plain.txt')
+        expected = (4, ['guard/key'])
+    d['g'](seed, 'add', '-A')
+    d['g'](seed, 'commit', '-m', 'change')
+    tip = d['g'](seed, 'rev-parse', 'HEAD')
+    d['g'](seed, 'push', 'origin', 'HEAD:refs/heads/policy-test')
+    d['adapter'].git(d['clean'], 'fetch', 'origin', 'refs/heads/policy-test')
+    assert classes.changes(d['adapter'], {**d['job'], 'base': base, 'tip': tip}) == expected
     assert not d['marker'].exists()

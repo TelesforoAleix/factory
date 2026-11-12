@@ -15,7 +15,7 @@ from .state import StateError
 
 TOKEN_FIELDS = ('input_tokens', 'cached_tokens', 'cache_write_tokens', 'output_tokens', 'reasoning_tokens')
 OUTCOME_FIELDS = ('level', 'executor_source', 'configuration', 'brief_hash', 'ci_result',
-                  'verdict', 'corrects_slice', 'owner_wait_seconds')
+                  'verdict', 'corrects_slice', 'owner_wait_seconds', 'change_class')
 FIELDS = ('kind', 'project', 'feature_id', 'slice_id', 'session_id', 'tool', 'model', 'effort',
           *TOKEN_FIELDS, 'seconds', 'started_at', 'outcome', 'starting_commit', 'prompt',
           'prompt_truncated', 'skill_version', 'eval_candidate', *OUTCOME_FIELDS)
@@ -364,6 +364,15 @@ def ci_record(runner, item, job, status, failing):
             sha = job.get('tip') or getattr(runner.github, 'check_sha', None)
             outcome(state.store(runner.path), job,
                     ci=dict(sha=sha if isinstance(sha, str) else None, status=status, failing_job=failing or None))
+        except Exception:
+            print('cplane: run recording failed', file=sys.stderr)
+
+
+def class_record(runner, job, change_class):
+    from . import state
+    if state.postgres():
+        try:
+            outcome(state.store(runner.path), job, change_class=change_class)
         except Exception:
             print('cplane: run recording failed', file=sys.stderr)
 
