@@ -2294,3 +2294,24 @@ group 21000 and mode 1770, and Home Lab planning delivery. Keep rollback ready:
 delete the switch line and restart `factory-sessions`. For root services, unset or any other switch
 value retains the existing command behavior (default `factory-cli`, or the
 configured executable); non-root services require the socket switch.
+
+Eval runs execute through the runner's normal fence with Codex or Claude. A due
+planned run becomes running; slices start first, then an attempt may use a free
+`executors` place. Only one eval attempt runs at a time across Factory, and it
+also respects the repository execution limit. Pi is not available yet.
+
+Each attempt uses a fresh detached work copy at the case's pinned base commit,
+after fetching the clean clone. It has a 30-minute limit and does not publish or
+install. Its diff, including untracked and binary files, lives at
+`/srv/factory/runs/<state-hash>/<turn-id>/attempt.patch` (or the configured runner
+run area). The attempt's `output_ref` names that file. The enclosing attempt
+folder is mode 0700 and the diff is mode 0600. Eval work copies grant group 21000 read/traversal before ownership transfer, so
+the non-root runner can snapshot them without executing agent Git metadata.
+An agent file that cannot be read fails collection without privilege fallback.
+The work copy is removed after collection. Token metrics come from the CLI output; subscription attempts have
+no `cost_usd` value. No slice/chat run record is created.
+
+Use `cplane eval run cancel ID` to stop a run from starting more attempts. An
+attempt already running finishes and keeps its diff and metrics. Usage-limit
+interruptions return an attempt to planned and hold eval starts until reset.
+Grading is separate from execution.

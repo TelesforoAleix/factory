@@ -61,7 +61,11 @@ def command(job):
                 '--json-schema', json.dumps(FINAL_SCHEMA)]
         if job.get('resume'):
             args += ['--resume', job['resume']]
-    return [*fence.fence_command(), 'run', '--tool', job['tool'], '--repo', job['repo'],
+    identity = []
+    if job.get('eval_attempt'):
+        identity = (['--run-id', job['container_id']] if fence.socket_enabled() else
+                    ['--session-turn', str(job['cleanup_turn'])])
+    return [*fence.fence_command(), 'run', *identity, '--tool', job['tool'], '--repo', job['repo'],
             '--run', str(folder / 'io'), '--', *args, '--', job['prompt']]
 
 
@@ -87,7 +91,25 @@ class Processes:
         job['pid'] = proc.pid
         return proc.pid
 
+    def stop(self, job):
+        cleanup = (['stop', job['container_id']] if fence.socket_enabled() else
+                   ['session-cleanup', str(job['cleanup_turn'])])
+        subprocess.run([*fence.fence_command(), *cleanup], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       env=fence.host_environment())
+
     def poll(self, job):
+        if job.get('eval_attempt'):
+            folder = Path(job['run'])
+            done = (folder / 'exit.json').exists()
+            if not done and job.get('pid'):
+                try:
+                    os.killpg(job['pid'], 0)
+                except ProcessLookupError:
+                    done = True
+                except PermissionError:
+                    pass
+            return done, '', None, ''
         folder = Path(job['run'])
         session = job.get('session', '')
         final = None
@@ -164,17 +186,31 @@ def supervise(folder):
     logfile = folder / ('turn.jsonl' if job['tool'] == 'codex' else 'claude.json')
     atomic_json(folder / 'supervisor.json', {'pid': os.getpid()})
     code = 1
+    timed_out = False
+    stopped = True
     try:
         with logfile.open('ab') as log, (folder / 'stderr.log').open('ab') as errors:
             os.fchmod(log.fileno(), 0o600)
             os.fchmod(errors.fileno(), 0o600)
             code = subprocess.run(command(job), cwd=str(folder), stdin=subprocess.DEVNULL,
-                                  stdout=log, stderr=errors, close_fds=True).returncode
+                                  stdout=log, stderr=errors, close_fds=True,
+                                  **({'timeout': job['timeout_seconds']} if job.get('eval_attempt') else {})).returncode
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        stopped = False
+        cleanup = (['stop', job['container_id']] if fence.socket_enabled() else
+                   ['session-cleanup', str(job['cleanup_turn'])])
+        # Do not announce completion until the container is confirmed stopped.
+        subprocess.run([*fence.fence_command(), *cleanup], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       env=fence.host_environment())
+        stopped = True
     except Exception as error:
         with logfile.open('a') as log:
             log.write(str(error) + '\n')
     finally:
-        atomic_json(folder / 'exit.json', {'code': code, 'at': time.time()})
+        if stopped:
+            atomic_json(folder / 'exit.json', {'code': code, 'at': time.time(), **({'timeout': True} if timed_out else {})})
 
 
 if __name__ == '__main__':
