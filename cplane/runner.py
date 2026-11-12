@@ -25,7 +25,7 @@ from .text_bounds import ATTENTION_LIMIT, LOG_LIMIT, cut, cut_line
 from .times import now
 from .eligibility import eligibility
 
-BOT_EVENTS = frozenset({'question', 'escalation', 'merge', 'owner-check', 'stuck', 'chat-paused', 'testing-review'})
+BOT_EVENTS = frozenset({'question', 'escalation', 'merge', 'owner-check', 'stuck', 'chat-paused', 'testing-review', 'digest'})
 BOT_ACCEPTED_FIELDS = frozenset({'id', 'repo', 'title', 'state', 'pr', 'feature', 'paused', 'attention'})
 
 
@@ -1016,10 +1016,6 @@ class Runner:
             if state.postgres():
                 state.store(self.path).route_chat_events()
                 self.data = state.load(self.path)
-            if not self.data["slices"]:
-                if orders_changed:
-                    self.git.commit(self.path)
-                return  # Nothing to mutate or commit in an empty scheduler.
             state_before = json.dumps(self.data, ensure_ascii=False, separators=(',', ':'))
             self.notices = []
             self.jobs = {}
@@ -1136,6 +1132,18 @@ class Runner:
                     if key not in seen:
                         self.notices.append(dict(at=self.at, id=item['id'], event='stuck',
                                                  text=f'Stuck: {reason}', since=key[1], reason=reason))
+            from . import digest
+            local = self.instant.astimezone(digest.LOCAL)
+            day = local.date()
+            if local >= digest.boundary(day) and not any(
+                    n.get('event') == 'digest' and n.get('date') == day.isoformat()
+                    for _, n in previous_notices):
+                end = digest.boundary(day)
+                backend = state.store(self.path)
+                records = (backend.run_record_list() + [r for r in backend.run_record_export(
+                    end.astimezone(timezone.utc) - timedelta(hours=24)) if r['kind'] == 'task']) if state.postgres() else []
+                self.notices.append(dict(at=self.at, id='digest', event='digest', date=day.isoformat(),
+                                         text=digest.build(self.data, records, end)))
             changed = json.dumps(self.data, ensure_ascii=False, separators=(',', ':')) != state_before
             if changed or self.notices:
                 if state.postgres():

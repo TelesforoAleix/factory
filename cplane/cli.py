@@ -1,6 +1,6 @@
 """Owner and planner commands for the scheduling state file."""
 import argparse
-from datetime import datetime
+from datetime import datetime, date, timedelta, timezone
 import hashlib
 import json
 import os
@@ -120,6 +120,8 @@ def parser():
     common.add_argument("--commit", action="store_true", default=argparse.SUPPRESS, help="commit and sync state repository")
     root = Parser(description="A scheduler's state file and its commands", parents=[common])
     commands = root.add_subparsers(dest="command", required=True, parser_class=Parser)
+    digest_parser = commands.add_parser('digest', parents=[common], help='print the daily digest')
+    digest_parser.add_argument('--date', help='local date of the 07:00 digest (YYYY-MM-DD)')
     chat = commands.add_parser('chat', parents=[common], help='manage Postgres chats')
     chats = chat.add_subparsers(dest='chat_command', required=True, parser_class=Parser)
     for name in ('list', 'open', 'read', 'unread', 'project', 'configure', 'defaults', 'archive', 'unarchive'):
@@ -405,7 +407,6 @@ def main(argv=None):
             if not state.postgres():
                 raise state.StateError('run record commands require Postgres (CPLANE_DATABASE_URL)')
             if args.runs_command == 'export':
-                from datetime import date, timezone
                 try:
                     since = datetime.combine(date.fromisoformat(args.since), datetime.min.time(), timezone.utc)
                 except ValueError:
@@ -583,6 +584,23 @@ def main(argv=None):
             raise state.StateError("provide --state or CPLANE_STATE")
         # In database mode this path remains the anchor for briefs/run metadata.
         path = Path(path or "slices.json").expanduser()
+        if args.command == 'digest':
+            from . import digest
+            from .times import now
+            try:
+                today = now().astimezone(LOCAL)
+                if args.date and not re.fullmatch(r'\d{4}-\d{2}-\d{2}', args.date):
+                    raise ValueError()
+                day = date.fromisoformat(args.date) if args.date else today.date() - timedelta(days=today < digest.boundary(today.date()))
+            except ValueError:
+                raise state.StateError('--date must be an ISO date (YYYY-MM-DD)') from None
+            end = digest.boundary(day)
+            with state.locked(path) as backend:
+                data = backend.load()
+                records = (backend.run_record_list() + [r for r in backend.run_record_export(
+                    end.astimezone(timezone.utc) - timedelta(hours=24)) if r['kind'] == 'task']) if state.postgres() else []
+                print(digest.build(data, records, end))
+            return 0
         if args.command == "export":
             with state.locked(path) as backend:
                 payload = json.dumps(backend.load(), indent=2, ensure_ascii=False) + "\n"
