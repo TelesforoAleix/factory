@@ -1,5 +1,5 @@
 # Owner-installed at cutover; see docs/node.md for prerequisites.
-# Shared optional factory-tickets.env contains CPLANE_TASK_SUBMIT only.
+# Required per-service env files are owner-provided non-secret configuration.
 services:
   ui:
     image: homelab-deployer-factory:${HOMELAB_DEPLOY_TAG:?commit required}
@@ -19,9 +19,13 @@ services:
     - factory_ui.serve
     environment:
       CPLANE_DATABASE_URL_FILE: /run/secrets/database-url
+      HOME: /tmp
+      CPLANE_STATE: /srv/factory/briefs/slices.json
+      CPLANE_RUNS: /srv/factory/runs
+      CPLANE_REPOS: /srv/factory/work
     env_file:
-    - path: ./factory-tickets.env
-      required: false
+    - path: ./ui.env
+      required: true
     ports:
     - 127.0.0.1:8300:8300
     volumes:
@@ -65,6 +69,7 @@ services:
     - cplane.intake
     environment:
       CPLANE_DATABASE_URL_FILE: /run/secrets/database-url
+      HOME: /tmp
     volumes:
     - type: bind
       source: /run/factory-intake
@@ -108,6 +113,11 @@ services:
     environment:
       CPLANE_DATABASE_URL_FILE: /run/secrets/database-url
       CPLANE_PLANNING_WRITE_KEY: /run/secrets/planning-write-key
+      HOME: /tmp
+      GH_CONFIG_DIR: /tmp/.config/gh
+    env_file:
+    - path: ./sessions.env
+      required: true
     group_add:
     - '976'
     volumes:
@@ -191,15 +201,18 @@ services:
       CPLANE_BRIEFS_KNOWN_HOSTS: /run/secrets/briefs-known-hosts
       CPLANE_PLANNING_WRITE_KEY: /run/secrets/planning-write-key
       CPLANE_DENY_LIST: /run/secrets/deny-list
+      HOME: /tmp
+      GH_CONFIG_DIR: /tmp/.config/gh
       CPLANE_FENCE: '1'
       CPLANE_GITHUB_AUTH: app
       CPLANE_STATE: /srv/factory/briefs/slices.json
       CPLANE_RUNS: /srv/factory/runs
+      CPLANE_REPOS: /srv/factory/work
       CPLANE_EXPORT_DIR: /srv/homelab/factory-state
       CPLANE_BOT_EXPORT: /srv/factory/bot-export
     env_file:
-    - path: ./factory-tickets.env
-      required: false
+    - path: ./runner.env
+      required: true
     group_add:
     - '976'
     - '975'

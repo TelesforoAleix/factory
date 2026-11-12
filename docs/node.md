@@ -2025,21 +2025,157 @@ have separate service-owned source paths.
 | runner, sessions | `planning-write-key` | `CPLANE_PLANNING_WRITE_KEY` |
 | runner | `deny-list` | `CPLANE_DENY_LIST` |
 
-The compose environment contains paths and non-secret mode settings only.
-Runner selects GitHub App authentication. Its App/installation IDs and planning
-remote configuration still need a reviewed non-secret configuration interface
-before cutover; this file does not guess their values.
+The compose environment contains secret **paths** and non-secret settings.
+At cutover, the owner places required `./ui.env`, `./sessions.env` and
+`./runner.env` beside the **installed** compose file. Intake needs no env file.
+Each service reads only its own file. Use Compose 2.24 or later for the explicit
+`env_file.required` entries. These files contain non-secret settings only; do not copy the old host env files wholesale. Database URLs, keys, passwords
+and tokens remain in the individual secret binds above. In particular, an orders
+endpoint or planning remote must not embed credentials, and task argument lists
+must not contain credentials. These files are consumed by Compose, not mounted
+inside containers. No private env file is checked into this repository.
 
-UI and runner both read the same optional `factory-tickets.env`, placed by the
-owner beside the **installed** compose file. It may contain only
-`CPLANE_TASK_SUBMIT`, with the owner's existing JSON argument list, and must
-contain no credentials or other secrets. Compose 2.24 or later is needed for
-`env_file.required: false`. Absence leaves the setting unset in both services,
-which preserves the owner's disabled tickets flow at cutover. Do not set it to
-an empty string as a substitute for absence: eligibility tests presence. Never
-configure this setting on just one of these services. Compose consumes this
-configuration file; it is not another container bind mount. No private env file
-is added to the repository.
+Compose's explicit `environment` overrides its service's env file. The owner
+must populate the service files from the existing non-secret configuration:
+
+| File | Settings to carry forward |
+| --- | --- |
+| `ui.env` | `CPLANE_INSTALL_REPOS`, `CPLANE_TASK_SUBMIT` |
+| `sessions.env` | `CPLANE_INSTALL_REPOS`, `CPLANE_PLANNING_REMOTE` |
+| `runner.env` | `CPLANE_GITHUB_APP_ID`, `CPLANE_GITHUB_INSTALLATION_ID`, `CPLANE_PLANNING_REMOTE`, `CPLANE_ORDERS_URL`, `CPLANE_INSTALL_REPOS`, `CPLANE_TASK_STATUS`, `CPLANE_TASK_SUBMIT`, `CPLANE_BACKLOG_GENERATED` |
+
+Both App IDs are required positive integers for the runner's selected App
+mode; there are no defaults. Keep the install allowlist identical in all three
+files so Home, session tools and the runner agree. Sessions needs its own file
+because its planning preparation and Workshop install tools read those settings.
+
+Set `CPLANE_TASK_SUBMIT` to the same existing JSON argument list in **both**
+`ui.env` and `runner.env`. If tickets are disabled at cutover as currently planned,
+omit the assignment from **both** files; the files themselves remain required.
+An empty assignment still enables the eligibility flag and is invalid for actual
+submission. The runner's `CPLANE_TASK_STATUS` is the corresponding JSON argument
+list for polling. The existing host commands still need a supported container
+submission interface before tickets can run. Never enable this flag in just one
+of UI and runner. Sessions does not execute the runner's pipeline scheduler or
+compute the UI's eligibility snapshot, so it does not consume this flag.
+
+### Environment read audit
+
+The audit used `rg -n 'environ|getenv|expanduser|Path.home' cplane/ factory_ui/`
+and followed calls from each of the four service commands, including UI request
+handlers, session Workshop tools, scheduled runner jobs, and child executors.
+An import alone does not make every CLI subcommand reachable. The tables cover
+application reads in these packages, including conditional authentication reads;
+third-party library environment interfaces are outside this source audit.
+`cplane migrate` in UI additionally uses only the shared database resolver.
+
+All four services resolve `CPLANE_DATABASE_URL_FILE` from compose environment as
+`/run/secrets/database-url`. The fallback `CPLANE_DATABASE_URL` defaults to unset
+and must stay absent, including from env files: setting it together with the file
+setting raises an error. Secret values are read from the file, never Compose.
+
+All four explicitly receive `HOME=/tmp` from compose environment, matching the
+image default and keeping Python home expansion writable. The image supplies
+`PATH` with `/opt/factory/.venv/bin` first, `PYTHONDONTWRITEBYTECODE=1`,
+`PYTHONUNBUFFERED=1`, `XDG_CACHE_HOME=/tmp/.cache`,
+`XDG_CONFIG_HOME=/tmp/.config`, `UV_CACHE_DIR=/tmp/.cache/uv` and
+`UV_PYTHON_DOWNLOADS=never`. These are image defaults, not owner env-file entries.
+Sessions and runner also receive `GH_CONFIG_DIR=/tmp/.config/gh` from compose.
+Python temp files default to `/tmp`; no extra tmpfs or host mount is needed.
+
+**UI** (`factory_ui.serve`, request handlers and `eligibility.observed`):
+
+| Setting read | Source at cutover | Reader / purpose |
+| --- | --- | --- |
+| `CPLANE_DATABASE_URL_FILE`, `CPLANE_DATABASE_URL` | compose / unset fallback, as above | `state.database_url` |
+| `CPLANE_INSTALL_REPOS` | `ui.env`; code default empty allowlist | `home.home_data`, installation checks and store chat-event capture |
+| `CPLANE_TASK_SUBMIT` | `ui.env`, matching runner; omit in both to disable | `eligibility.eligibility` tests presence |
+| `CPLANE_STATE` | compose: `/srv/factory/briefs/slices.json` | `eligibility.observed` anchors the same run hash as runner |
+| `CPLANE_RUNS` | compose: `/srv/factory/runs` | `installation.runs_path`, `Runner.__init__`, usage-report lookup |
+| `CPLANE_REPOS` | compose: `/srv/factory/work` | `Runner.__init__` during eligibility observation; avoids default `~/Code` |
+
+The paths align metadata names; they grant no filesystem access. UI's decided
+mounts do not expose runs or fence logins, so its current eligibility snapshot
+cannot see those host job/usage files. That observation interface also needs
+resolving before cutover without adding an unreviewed mount.
+
+**Intake** (`cplane.intake` and its inbox insertion path):
+
+| Setting read | Source at cutover | Reader / purpose |
+| --- | --- | --- |
+| `CPLANE_DATABASE_URL_FILE`, `CPLANE_DATABASE_URL` | compose / unset fallback, as above | `state.database_url` |
+
+The socket and named group are constants, not environment settings. Intake does
+not execute arbitrary CLI commands or the runner's scheduler through imports.
+
+**Sessions** (`cplane.sessions`, model probes and Workshop tools):
+
+| Setting read | Source at cutover | Reader / purpose |
+| --- | --- | --- |
+| `CPLANE_DATABASE_URL_FILE`, `CPLANE_DATABASE_URL` | compose / unset fallback, as above | `state.database_url` |
+| `CPLANE_INSTALL_REPOS` | `sessions.env`; code default empty allowlist | Workshop install eligibility and store chat-event handling |
+| `CPLANE_PLANNING_REMOTE` | `sessions.env`; code default empty, which refuses planning preparation | `Planning.prepare`, SSH remote without credentials |
+| `CPLANE_PLANNING_WRITE_KEY` | compose: `/run/secrets/planning-write-key` | `Planning.git` push identity |
+| `CPLANE_BRIEFS_KEY` | default: `/etc/factory/briefs-key/id_ed25519` (unmounted) | `Planning.git` fetch identity; unresolved secret interface |
+| `CPLANE_BRIEFS_KNOWN_HOSTS` | default: `/etc/factory/briefs-key/known_hosts` (unmounted) | planning SSH host verification; unresolved interface |
+| `CPLANE_FENCE_COMMAND` | default: `factory-cli` | turn launch, model probes, cleanup and bundle export |
+| `CPLANE_GITHUB_AUTH` | default: `token` | `fence.github_environment` for repository fetches; its hard-coded token file is unmounted |
+| `CPLANE_GITHUB_APP_ID`, `CPLANE_GITHUB_INSTALLATION_ID` | default: unset; conditional reads only if App mode is selected | `github_app.installation_token`; not configured for sessions by this contract |
+| `CPLANE_GITHUB_APP_KEY` | default: `/etc/factory/github-app.pem` (unmounted); conditional on App mode | same token resolver; switching modes alone cannot supply the key |
+| `PATH`, `LANG`, `PYTHONPATH` | image/default inherited `PATH` and `LANG` if present; `PYTHONPATH` unset | `fence.host_environment` forwards only present values |
+| `GH_TOKEN` | generated in the authenticated Git child's environment; no deployed value | `python -m cplane.fence credential get` returns the scoped token to Git |
+
+`BRIEFS`, `RUNS`, `UI_DOCS`, `WORK_ROOT` and the lock path in sessions are
+constants, so a `CPLANE_RUNS` setting cannot repair the session write conflicts
+listed below. Default authentication and planning credential gaps remain explicit
+cutover prerequisites; no extra secret bind is introduced here.
+
+**Runner** (`cplane --actor runner run --every 60`, delivery and scheduled jobs):
+
+| Setting read | Source at cutover | Reader / purpose |
+| --- | --- | --- |
+| `CPLANE_DATABASE_URL_FILE`, `CPLANE_DATABASE_URL` | compose / unset fallback, as above | `state.database_url` |
+| `CPLANE_STATE` | compose: `/srv/factory/briefs/slices.json` | CLI metadata anchor and runner |
+| `CPLANE_RUNS` | compose: `/srv/factory/runs` | runner, install records and usage-report lookup |
+| `CPLANE_REPOS` | compose: `/srv/factory/work` | runner repository base; replaces code default `~/Code` |
+| `CPLANE_FENCE` | compose: `1` | `executors.fenced` |
+| `CPLANE_FENCE_COMMAND` | default: `factory-cli` | fenced subprocess launch, bundle export, cleanup and usage probes |
+| `CPLANE_GITHUB_AUTH` | compose: `app` | selects App authentication instead of the legacy token file |
+| `CPLANE_GITHUB_APP_ID`, `CPLANE_GITHUB_INSTALLATION_ID` | `runner.env`, required for App mode | `github_app.installation_token` |
+| `CPLANE_GITHUB_APP_KEY` | compose: `/run/secrets/github-app.pem` | token minting key path |
+| `CPLANE_BRIEFS_KEY` | compose: `/run/secrets/briefs-key` | planning fetch identity |
+| `CPLANE_BRIEFS_KNOWN_HOSTS` | compose: `/run/secrets/briefs-known-hosts` | planning SSH host verification |
+| `CPLANE_PLANNING_WRITE_KEY` | compose: `/run/secrets/planning-write-key` | planning export push identity |
+| `CPLANE_DENY_LIST` | compose: `/run/secrets/deny-list` | public-content delivery gate |
+| `CPLANE_PLANNING_REMOTE` | `runner.env`; code default empty and refuses export | hourly `feature_export`, SSH remote without credentials |
+| `CPLANE_ORDERS_URL` | `runner.env`; if absent, code falls back to `/srv/factory/orders-url`, which is unmounted | orders collector; empty string explicitly disables collection |
+| `CPLANE_INSTALL_REPOS` | `runner.env`; code default empty allowlist | install eligibility and store chat-event handling |
+| `CPLANE_TASK_SUBMIT` | `runner.env`, matching UI; omit in both to disable | ticket eligibility and `cut.submit` |
+| `CPLANE_TASK_STATUS` | `runner.env`; code default empty, which refuses polling | `cut.status` |
+| `CPLANE_BACKLOG_GENERATED` | `runner.env`; code default false, enabled only by `1` | hourly feature export's generated backlog table |
+| `CPLANE_EXPORT_DIR` | compose: `/srv/homelab/factory-state` | daily state/outbox export; code default absent disables the job |
+| `CPLANE_BOT_EXPORT` | compose: `/srv/factory/bot-export` | bot export; code default absent disables the job |
+| `PATH`, `LANG`, `PYTHONPATH` | image/default inherited `PATH` and `LANG` if present; `PYTHONPATH` unset | `fence.host_environment` and detached executor environment |
+| `GH_TOKEN` | generated from the App for the authenticated Git/gh child; no deployed value | Git credential helper's conditional environment read |
+
+The grep also finds `primer.render`/launchd installation and `install_host.main`
+reads. Those are separate host entry points, not called by these service commands.
+The runner currently requests a host systemd install unit rather than calling
+`install_host.main` in-process; its installer interface still needs replacing by
+the deployer socket client. Other CLI subcommands do not run merely because UI
+imports `cplane.cli`.
+
+Although compose sets a writable `HOME` and `GH_CONFIG_DIR`, the present
+`fence.host_environment()` explicitly replaces the Git/gh child environment with
+`HOME=/nonexistent`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null` and
+`GIT_TERMINAL_PROMPT=0`, forwarding only `PATH`, `LANG` and `PYTHONPATH`.
+`github_environment()` adds the scoped `GH_TOKEN`; executor supervisors similarly
+forward only `PATH`, `LANG`, `PYTHONPATH` and an optional `CPLANE_FENCE_COMMAND`.
+Thus Git's global configuration remains disabled intentionally, and the new
+`GH_CONFIG_DIR` cannot reach those gh calls until a reviewed application change
+preserves a writable scratch configuration location. Setting more env-file values
+cannot override this hard-coded child environment. App signing uses a separate
+OpenSSL child with `os.defpath` and `HOME=/nonexistent` and writes no home config.
 
 Every healthcheck uses Python from the service image, without curl, wget or a
 shell. UI fetches its root page; intake connects to the Unix socket without

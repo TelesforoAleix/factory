@@ -3,6 +3,7 @@ from pathlib import Path, PurePosixPath
 import re
 from urllib.parse import urlsplit
 
+import pytest
 import yaml
 
 
@@ -32,9 +33,11 @@ SECRET_SETTINGS = {
 RUNNER_SETTINGS = dict(
     CPLANE_FENCE='1', CPLANE_GITHUB_AUTH='app',
     CPLANE_STATE='/srv/factory/briefs/slices.json', CPLANE_RUNS='/srv/factory/runs',
+    CPLANE_REPOS='/srv/factory/work',
     CPLANE_EXPORT_DIR='/srv/homelab/factory-state',
     CPLANE_BOT_EXPORT='/srv/factory/bot-export',
 )
+UI_SETTINGS = {key: RUNNER_SETTINGS[key] for key in ('CPLANE_STATE', 'CPLANE_RUNS', 'CPLANE_REPOS')}
 COMMANDS = {
     'ui': ['python', '-m', 'factory_ui.serve'],
     'intake': ['python', '-m', 'cplane.intake'],
@@ -49,6 +52,36 @@ def looks_secret(value):
             or re.search(r'(?i)(?:password|token|secret|api[_-]?key)\s*[=:]\s*\S+', value))
 
 
+def assert_nonsecret_environment(environment):
+    for key, value in environment.items():
+        if key.endswith('_FILE') or key in SECRET_SETTINGS:
+            assert value.startswith('/run/secrets/')
+        else:
+            assert not key.endswith(('_KEY', '_TOKEN', '_PASSWORD', '_URL')), key
+        assert not looks_secret(value), key
+
+
+@pytest.mark.parametrize('key,value', [
+    ('SERVICE_KEY', 'synthetic'), ('SERVICE_TOKEN', 'synthetic'),
+    ('SERVICE_PASSWORD', 'synthetic'),
+    ('CPLANE_ORDERS_URL', 'https://example.invalid/orders'),
+    ('ENDPOINT', 'https://user:synthetic@example.invalid/'),
+    ('CPLANE_GITHUB_APP_KEY', 'synthetic'),
+])
+def test_inline_credentials_and_urls_are_refused(key, value):
+    with pytest.raises(AssertionError):
+        assert_nonsecret_environment({key: value})
+
+
+def test_secret_paths_and_nonsecret_settings_are_allowed():
+    assert_nonsecret_environment({
+        'CPLANE_DATABASE_URL_FILE': '/run/secrets/database-url',
+        'CPLANE_GITHUB_APP_KEY': '/run/secrets/github-app.pem',
+        'CPLANE_GITHUB_APP_ID': '123', 'HOME': '/tmp',
+        'GH_CONFIG_DIR': '/tmp/.config/gh',
+    })
+
+
 def test_contained_services():
     config = yaml.safe_load((ROOT / 'compose.yaml').read_text())
     assert set(config) == {'services', 'networks'}
@@ -61,7 +94,7 @@ def test_contained_services():
         fields = {'image', 'read_only', 'tmpfs', 'cap_drop', 'security_opt',
                   'mem_limit', 'pids_limit', 'restart', 'logging', 'networks',
                   'user', 'command', 'environment', 'volumes', 'healthcheck'}
-        if name in ('ui', 'runner'):
+        if name in ('ui', 'sessions', 'runner'):
             fields.add('env_file')
         if name == 'ui':
             fields.add('ports')
@@ -99,14 +132,20 @@ def test_contained_services():
         if name == 'runner':
             expected_secrets = SECRET_SETTINGS
         expected_env = {key: f'/run/secrets/{file}' for key, file in expected_secrets.items()}
+        expected_env['HOME'] = '/tmp'
+        if name in ('sessions', 'runner'):
+            expected_env['GH_CONFIG_DIR'] = '/tmp/.config/gh'
+        if name == 'ui':
+            expected_env.update(UI_SETTINGS)
         if name == 'runner':
             expected_env.update(RUNNER_SETTINGS)
         # Closed settings list catches arbitrary inline keys/tokens, including
         # credentials without a recognizable provider prefix.
         assert service['environment'] == expected_env
-        assert not any(looks_secret(value) for value in service['environment'].values())
+        assert_nonsecret_environment(service['environment'])
         assert service.get('env_file', []) == (
-            [{'path': './factory-tickets.env', 'required': False}] if name in ('ui', 'runner') else [])
+            [{'path': f'./{name}.env', 'required': True}]
+            if name in ('ui', 'sessions', 'runner') else [])
         mounts = {}
         secret_targets = set()
         for mount in service['volumes']:
