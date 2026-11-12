@@ -325,6 +325,41 @@ def parser():
     transfer = commands.add_parser("export", parents=[common], help="export state and notices in file format")
     transfer.add_argument("path", nargs="?", help="destination state JSON path (required with notices; otherwise stdout)")
     commands.add_parser("compact", parents=[common], help="bound oversized runner text in state")
+    evaluation = commands.add_parser('eval', parents=[common])
+    eval_commands = evaluation.add_subparsers(dest='eval_group', required=True, parser_class=Parser)
+    importer = eval_commands.add_parser('import', parents=[common])
+    importer.add_argument('folder')
+    for group, actions in (('case', ('list',)), ('set', ('create', 'add', 'list', 'show')),
+                           ('run', ('create', 'list', 'show'))):
+        sub = eval_commands.add_parser(group, parents=[common])
+        actions_parser = sub.add_subparsers(dest='eval_action', required=True, parser_class=Parser)
+        for action in actions:
+            command = actions_parser.add_parser(action, parents=[common])
+            if group == 'case':
+                from .evals import FILTERS
+                for field, choices in FILTERS.items():
+                    command.add_argument('--' + field.replace('_', '-'), choices=choices)
+            elif group == 'set':
+                if action in ('create', 'add', 'show'):
+                    command.add_argument('id')
+                if action == 'create':
+                    command.add_argument('--title', required=True)
+                    command.add_argument('--filter', required=True)
+                    command.add_argument('--description', default='')
+                if action == 'add':
+                    command.add_argument('cases', nargs='+')
+                if action in ('create', 'add'):
+                    command.add_argument('--note', default='')
+                if action == 'show':
+                    command.add_argument('--version', type=int)
+            elif action == 'create':
+                command.add_argument('--title', required=True)
+                command.add_argument('--set', dest='sets', action='append', required=True)
+                command.add_argument('--configuration', action='append', required=True)
+                command.add_argument('--repeats', type=int, required=True)
+                command.add_argument('--at')
+            elif action == 'show':
+                command.add_argument('id', type=int)
     runs = commands.add_parser('runs', parents=[common])
     runs_commands = runs.add_subparsers(dest='runs_command', required=True, parser_class=Parser)
     runs_show = runs_commands.add_parser('show', parents=[common])
@@ -405,9 +440,43 @@ def feature_command(args):
     return 0
 
 
+def eval_command(args):
+    from . import evals
+    if not state.postgres():
+        raise state.StateError('eval commands require Postgres (CPLANE_DATABASE_URL or CPLANE_DATABASE_URL_FILE)')
+    backend = state.store(None)
+    actor = getattr(args, 'actor', 'owner')
+    if args.eval_group == 'import':
+        result = evals.import_folder(backend, args.folder)
+    elif args.eval_group == 'case':
+        result = evals.case_list(backend, **{key: getattr(args, key) for key in evals.FILTERS})
+    elif args.eval_group == 'set':
+        if args.eval_action == 'create':
+            result = evals.set_create(backend, args.id, title=args.title, filters=json.loads(args.filter),
+                                     description=args.description, note=args.note, actor=actor)
+        elif args.eval_action == 'add':
+            result = evals.set_add(backend, args.id, args.cases, note=args.note, actor=actor)
+        elif args.eval_action == 'show':
+            result = evals.set_show(backend, args.id, args.version)
+        else:
+            result = evals.set_list(backend)
+    elif args.eval_action == 'create':
+        result = evals.run_create(backend, title=args.title, sets=args.sets,
+                                 configurations=[json.loads(c) for c in args.configuration],
+                                 repeats=args.repeats, scheduled_for=args.at, actor=actor)
+    elif args.eval_action == 'show':
+        result = evals.run_show(backend, args.id)
+    else:
+        result = evals.run_list(backend)
+    print(json.dumps(result, indent=2, ensure_ascii=False, allow_nan=False))
+    return 0
+
+
 def main(argv=None):
     args = parser().parse_args(argv)
     try:
+        if args.command == 'eval':
+            return eval_command(args)
         if args.command == 'runs':
             if not state.postgres():
                 raise state.StateError('run record commands require Postgres (CPLANE_DATABASE_URL)')
