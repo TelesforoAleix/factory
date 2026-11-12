@@ -25,6 +25,7 @@ from . import fence
 from .state import StateError, database_url
 from .stores import PostgresStore, REPOSITORY
 
+PLANNING_EXPORT = 'factory-planning-export'
 BRIEFS = Path('/srv/factory/briefs')
 RUNS = Path(os.environ.get('CPLANE_SESSION_RUNS', '/srv/factory/runs'))
 LOCK = Path(os.environ.get('CPLANE_SESSIONS_LOCK', '/run/factory-sessions.lock'))
@@ -122,6 +123,8 @@ def workspace(session):
             not isinstance(repository, str) or not REPOSITORY.fullmatch(repository)
             for repository in repositories)):
         raise StateError('Invalid session repository')
+    if any(r.split('/')[1].lower() == PLANNING_EXPORT for r in repositories):
+        raise StateError('Repository collides with planning export')
     trusted_directory(WORK_ROOT)
     folder = WORK_ROOT / f'session-{session["id"]}'
     # Older first-turn failures may have a complete workspace but no resume ID.
@@ -134,7 +137,7 @@ def workspace(session):
         if reusable:
             components = [folder / 'repos', *(folder / 'repos' / r.split('/')[1] for r in repositories)]
             if session.get('area') != 'homelab':
-                components.append(folder / 'repos/.planning')
+                components.append(folder / 'repos' / PLANNING_EXPORT)
             try:
                 for component in components:
                     info = component.lstat()
@@ -165,10 +168,10 @@ def workspace(session):
             Planning(session).prepare(folder / 'planning')
         else:
             # Reuse the existing read-only repository mount contract. Repository
-            # names cannot start with '.', so this reserved export cannot collide.
-            export_tree(BRIEFS, repos / '.planning', 'HEAD')
-            (repos / '.planning').chmod(0o755)
-            (folder / 'planning').symlink_to('repos/.planning')
+            # The reserved export name is rejected in repository lists.
+            export_tree(BRIEFS, repos / PLANNING_EXPORT, 'HEAD')
+            (repos / PLANNING_EXPORT).chmod(0o755)
+            (folder / 'planning').symlink_to('repos/' + PLANNING_EXPORT)
         adapter = Fence()
         for repository in session['repositories']:
             _, name = repository.split('/')
@@ -202,7 +205,7 @@ def workspace(session):
                 raise StateError('Repository export replaced')
         paths.append(path)
     if session.get('area') != 'homelab':
-        readonly = folder / 'repos/.planning'
+        readonly = folder / 'repos' / PLANNING_EXPORT
         for component in (folder / 'repos', readonly):
             info = component.lstat()
             if not stat.S_ISDIR(info.st_mode) or info.st_uid not in (0, os.geteuid()) or info.st_mode & 0o022:
@@ -281,7 +284,20 @@ def execute_turn(turn, store):
 def _execute_turn(turn, store, accounting):
     reason = 'Workspace could not be prepared.'
     try:
-        folder, paths = workspace(turn['session'])
+        session = turn['session']
+        if session.get('cli_session_id'):
+            trusted_directory(WORK_ROOT)
+            folder = WORK_ROOT / f'session-{session["id"]}'
+            try:
+                valid = session_directory(folder.lstat())
+            except FileNotFoundError:
+                valid = False
+            if not valid:
+                if os.path.lexists(folder):
+                    fence.remove(folder, 'work')
+                store.reset_session_context(session['id'])
+                session.update(cli_session_id=None, workspace_ready=False)
+        folder, paths = workspace(session)
         reason = 'The model tool could not complete the turn.'
         trusted_directory(RUNS)
         run = RUNS / f'session-turn-{turn["id"]}'
@@ -323,8 +339,6 @@ def _execute_turn(turn, store, accounting):
                                           delivery_notice=(str(error) if isinstance(error, StateError) else
                                                            'Planning delivery failed; nothing confirmed pushed.'))
                 return
-    except CleanupError:
-        raise
     except Exception:
         LOG.error('Session turn %s failed', turn['id'])
         store.finish_session_turn(turn, reason, failed=True)
@@ -337,13 +351,27 @@ def _execute_turn(turn, store, accounting):
 
 def cleanup_interrupted_turn(turn):
     subprocess.run([*fence.fence_command(), 'session-cleanup', str(turn['id'])], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                   stdout=subprocess.DEVNULL)
     run = RUNS / f'session-turn-{turn["id"]}'
     if run.exists():
         # Service termination closes the listener but can leave its directory
         # entry. Only traverse the host-owned run tree after container cleanup.
         trusted_directory(run)
         (run / 'workshop.sock').unlink(missing_ok=True)
+
+
+def reap_turns(active, store):
+    for future in list(active):
+        if future.done():
+            turn = active.pop(future)
+            try:
+                future.result()
+            except Exception:
+                LOG.error('Session turn %s failed unexpectedly', turn['id'])
+                try:
+                    store.finish_session_turn(turn, 'Turn failed unexpectedly.', failed=True)
+                except Exception:
+                    LOG.exception('Could not record session turn %s failure', turn['id'])
 
 
 def main():
@@ -357,11 +385,18 @@ def main():
         recover_catalog_runs()
         store.models_recover()
         for turn in store.interrupted_session_turns():
-            cleanup_interrupted_turn(turn)
-            run_records.chat_record(store, turn, {'outcome': 'interrupted'})
-            store.finish_session_turn(turn, 'Turn interrupted. Send a message to start a new session.', failed=True)
+            try:
+                cleanup_interrupted_turn(turn)
+                run_records.chat_record(store, turn, {'outcome': 'interrupted'})
+                store.finish_session_turn(turn, 'Turn interrupted. Send a message to start a new session.', failed=True)
+            except Exception:
+                LOG.exception('Session turn %s cleanup failed', turn['id'])
+                try:
+                    store.finish_session_turn(turn, 'Turn cleanup failed.', failed=True)
+                except Exception:
+                    LOG.error('Could not record session turn %s failure', turn['id'])
         with ThreadPoolExecutor(max_workers=2) as pool:
-            active = []
+            active = {}
             exporter = DocumentExporter()
             next_export = 0
             while True:
@@ -373,15 +408,12 @@ def main():
                     except Exception:
                         LOG.exception('Document export failed; keeping previous export')
                     next_export = time.monotonic() + 60
-                for future in list(active):
-                    if future.done():
-                        future.result()  # database failures stop service; restart reconciles
-                        active.remove(future)
+                reap_turns(active, store)
                 while len(active) < 2:
                     turn = store.claim_session_turn()
                     if turn is None:
                         break
-                    active.append(pool.submit(execute_turn, turn, PostgresStore(url)))
+                    active[pool.submit(execute_turn, turn, PostgresStore(url))] = turn
                 time.sleep(2)
 
 

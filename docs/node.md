@@ -568,7 +568,7 @@ uses the git delivery path described below.
 Each session gets a new 0700 workspace owned by 21000:21000. Archives exclude
 Git metadata and omit links; exports with special entries fail closed. Home Lab
 `planning/` is a writable git copy. Factory `planning/` points to the reserved
-root-owned `repos/.planning` export, overmounted read-only using the existing
+root-owned `repos/factory-planning-export` export, overmounted read-only using the existing
 repository mount contract. Each named `repos/<name>` is also overmounted read-only.
 No clean clone or briefs clone is mounted. Duplicate repository basenames are
 rejected. Exports are made once; resumed turns never refresh or repair paths in
@@ -2251,7 +2251,11 @@ Launcher refusals print `launcher: <reason>` and exit 125. Chat turns use the
 `chat` profile with run ID `turn-N`; slice turns, warm-ups, version checks and
 model/usage probes use `cli-run`. Bundle exports use `bundle`. Other runs get
 fresh random IDs, except probes, whose explicit IDs allow timeout cleanup and
-catalog recovery to send `stop`. Session cleanup stops `turn-N`.
+catalog recovery to send `stop`. Session cleanup stops `turn-N`. An `unknown_run` stop response is logged once
+at info level and treated as already stopped. Other cleanup errors are logged
+and recorded as a turn failure; a failed turn does not stop the supervisor.
+Factory planning uses the reserved `repos/factory-planning-export` name, and
+repository lists containing that basename are refused.
 
 Work paths must be beneath `/srv/factory/work` with one or two components; run
 paths must be beneath `/srv/factory/runs` with one to three components. The client
@@ -2274,18 +2278,19 @@ service, with group 21000 and exactly mode 1770. The agent writes through the
 group; the sticky bit prevents it renaming or deleting Factory-owned entries.
 `repos/` and its exports remain Factory-owned, mode 0755, and must not be group-
 or other-writable. An old agent-owned 0700 session folder is never reused;
-preparation without a resume ID removes it through `remove` and creates a fresh
-workspace. An incompatible workspace with a resume ID fails validation.
+an incompatible workspace is removed through `remove` and replaced. Its saved
+CLI session IDs are cleared, chat messages remain, and a system line reports that
+earlier tool context was reset. The next turn starts a fresh CLI session.
 
 The same code supports root services on the host. A non-root service must use
 `CPLANE_FENCE_COMMAND=socket`; any direct ownership hand-off with the switch off
 fails explicitly. Setting the session folder's group preserves its service uid
 and needs only membership in group 21000.
 
-After merging, the orchestrator installs this revision with the socket switch
-enabled. Run one Home Lab chat turn with Codex and one with Claude, checking each
-new session folder's service ownership, group 21000 and mode 1770, and that the
-planning bundle delivers. Run one slice through the runner. Roll back by
-installing the previous revision. For root services, unset or any other switch
+After merging, the orchestrator installs this revision and then enables the socket
+switch. Run one chat turn per tool in each area, Home Lab and Factory; also run a
+feature chat with an old folder and one runner slice. Check new session ownership,
+group 21000 and mode 1770, and Home Lab planning delivery. Keep rollback ready:
+delete the switch line and restart `factory-sessions`. For root services, unset or any other switch
 value retains the existing command behavior (default `factory-cli`, or the
 configured executable); non-root services require the socket switch.
