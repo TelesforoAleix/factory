@@ -1,0 +1,7 @@
+/.github/CODEOWNERS @TelesforoAleix
+/.github/ @TelesforoAleix
+/node/ @TelesforoAleix
+**/Dockerfile @TelesforoAleix
+**/compose.yaml @TelesforoAleix
+/cplane/install_host.py @TelesforoAleix
+/cplane/installation.py @TelesforoAleix
