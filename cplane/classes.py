@@ -2,6 +2,8 @@
 import fnmatch
 import re
 
+from .state import StateError
+
 
 DEFAULT = """4 /.github/**
 4 /node/**
@@ -117,12 +119,26 @@ def classify(paths, table, *, deleted=()):
 
 
 def changes(adapter, job):
-    """Read only tracked names and the policy blob through the clean Git copy."""
+    """Classify the PR's own paths using policy from its pinned base."""
     clean = adapter.clean(job['repository'])
     table = adapter.git(clean, 'show', f"{job['base']}:.github/change-classes",
                         allow_failure=True)
+    revisions = (job['base'], job['tip'])
+    try:
+        fetched = adapter.git(clean, 'fetch', '--prune', 'origin',
+                              '+refs/heads/*:refs/remotes/origin/*',
+                              auth=True, allow_failure=True)
+        if fetched.returncode == 0:
+            ancestor = adapter.git(clean, 'merge-base', 'origin/main', job['tip'],
+                                   allow_failure=True)
+            if ancestor.returncode == 0:
+                revisions = (f"origin/main...{job['tip']}",)
+    except (StateError, OSError):
+        # Credential setup can fail before Git returns a fetch status.
+        pass
+    # Retain the original base-to-tip diff when fresh main ancestry is unavailable.
     entries = adapter.git(clean, 'diff', '--name-status', '-z', '--no-renames',
-                          job['base'], job['tip'], '--').stdout.split('\0')
+                          *revisions, '--').stdout.split('\0')
     changes = list(zip(entries[::2], entries[1::2]))
     return classify([path for _, path in changes],
                     table.stdout if table.returncode == 0 else None,
