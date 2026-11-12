@@ -16,14 +16,18 @@ const openAttention = a => a && (a.kind === 'owner-check' || a.kind === 'merge' 
 const attention = f => f.slices.filter(s => s.state !== 'accepted' && openAttention(s.attention));
 function Markdown({text}) { return <div className="markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown></div>; }
 function Header({item}) { return <><small className="feature-meta"><code>{item.id}</code> · {name(item.stage)} · {item.project_name || item.project}</small><h2>{item.title}</h2></>; }
-function SliceRow({slice, error}) {
+function SliceRow({slice, error, select}) {
   const {attributes, listeners, setNodeRef, transform, isDragging} = useSortable({id: slice.id, disabled: {draggable: !slice.movable}});
-  const [open, setOpen] = useState(false), [detail, setDetail] = useState(null), [errorDetail, setErrorDetail] = useState('');
-  function toggle() { if (!open && !detail) fetch('/api/slices/' + encodeURIComponent(slice.id)).then(r => {if (!r.ok) throw Error('Slice unavailable'); return r.json();}).then(setDetail).catch(e => setErrorDetail(e.message)); setOpen(!open); }
-  return <li ref={setNodeRef} className="slice-row" style={isDragging ? {transform: CSS.Transform.toString(transform), position: 'relative', zIndex: 1, background: 'var(--background)'} : undefined}>{slice.movable && <button className="slice-handle" {...attributes} {...listeners} aria-label={'Drag slice ' + slice.id}>⠿</button>}<div><button type="button" onClick={toggle} aria-expanded={open}><code>{slice.id}</code> · {slice.title} · <code>{slice.state}</code></button>{!open && slice.final?.body && <p className="text">{slice.final.body}</p>}{open && (detail ? <><p className="text">{detail.final?.body}</p><ol>{detail.log.map((entry, i) => <li key={i}>{entry.at} · {entry.actor} · {entry.event}</li>)}</ol></> : <p>{errorDetail || 'Loading…'}</p>)}{error && <p role="status" className="pipeline-error">{error}</p>}</div></li>;
+  const status = slice.eligibility?.status || slice.state;
+  return <li ref={setNodeRef} className={'slice-row ' + (status === 'ready' ? 'slice-ready' : 'slice-waiting')} style={isDragging ? {transform: CSS.Transform.toString(transform), position:'relative', zIndex:1, background:'var(--background)'} : undefined}>{slice.movable && <button className="slice-handle" {...attributes} {...listeners} aria-label={'Drag slice ' + slice.id}>⠿</button>}<div><button type="button" className="slice-open" onClick={() => select(slice)}><code>{slice.id}</code> · {slice.title}</button><span className={'eligibility-chip ' + (status === 'ready' ? 'ready' : 'waiting')}>{status}</span>{slice.final?.body && <p className="text">{slice.final.body}</p>}{error && <p role="status" className="pipeline-error">{error}</p>}</div></li>;
+}
+function SlicePanel({slice, close}) {
+  const eligibility = slice.eligibility || {};
+  const lists = [['Blockers', eligibility.ids || []], ['Prerequisites', slice.depends_on || []], ['Dependants', slice.dependants || []]];
+  return <aside className="slice-panel" aria-label={'Slice ' + slice.id}><button className="panel-close" onClick={close} aria-label="Close slice panel">×</button><small><code>{slice.id}</code></small><h2>{slice.title}</h2><Link to={'/factory/slices/' + slice.id.split('/').map(encodeURIComponent).join('/')}>Full slice page →</Link><p><span className={'eligibility-chip ' + (eligibility.status === 'ready' ? 'ready' : 'waiting')}>{eligibility.status || slice.state}</span></p>{eligibility.reason && <p>{eligibility.reason}</p>}{eligibility.for && <p>For: {eligibility.for}</p>}{lists.map(([label, ids]) => <section key={label}><h3>{label}</h3>{ids.length ? <ul>{ids.map(id => <li key={id}><Link to={'/factory/slices/' + id.split('/').map(encodeURIComponent).join('/')}>{id}</Link></li>)}</ul> : <p className="muted">None</p>}</section>)}</aside>;
 }
 export function SliceList({slices, refresh}) {
-  const [error, setError] = useState(null), [pending, setPending] = useState(false);
+  const [error, setError] = useState(null), [pending, setPending] = useState(false), [selected, setSelected] = useState(null);
   const sensors = useSensors(useSensor(MouseSensor, {activationConstraint: {distance: 8}}), useSensor(TouchSensor, {activationConstraint: {delay: 300, tolerance: 8}}));
   async function dragEnd({active, over}) {
     if (pending || !over || active.id === over.id) return;
@@ -37,7 +41,7 @@ export function SliceList({slices, refresh}) {
       await refresh();
     } catch (e) {setError({id:active.id, message:e.message});} finally {setPending(false);}
   }
-  return <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={dragEnd}><SortableContext items={slices.map(s => s.id)} strategy={verticalListSortingStrategy}><ol className="slice-list" aria-label="Feature slices" aria-busy={pending}>{slices.map(slice => <SliceRow key={slice.id} slice={slice} error={error?.id === slice.id ? error.message : null}/>)}</ol></SortableContext></DndContext>;
+  return <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={dragEnd}><SortableContext items={slices.map(s => s.id)} strategy={verticalListSortingStrategy}><ol className="slice-list" aria-label="Feature slices" aria-busy={pending}>{slices.map(slice => <SliceRow key={slice.id} slice={slice} select={setSelected} error={error?.id === slice.id ? error.message : null}/>)}</ol></SortableContext>{selected && <SlicePanel slice={selected} close={() => setSelected(null)}/>}</DndContext>;
 }
 function Panel({item, act, close, refresh}) {
   const totals = item.numbers || {};

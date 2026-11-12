@@ -24,10 +24,12 @@ export function ProjectPage() {
   return <Project key={key} projectKey={key}/>;
 }
 function Project({projectKey}) {
+  const [ready,setReady] = useState(null);
   const [data,setData] = useState(null), [error,setError] = useState(''), [busy,setBusy] = useState(false), [editing,setEditing] = useState(false);
   const url = '/api/projects/' + encodeURIComponent(projectKey);
   async function refresh() {setData(await request(url));}
   useEffect(() => {let live = true; const stop = visiblePolling(async () => {try {const result = await request(url); if (live) {setData(result); setError('');}} catch(e) {if (live) setError(e.message);}}, 30000); return () => {live = false; stop();};}, [url]);
+  useEffect(() => {if (!data) return; let live = true; Promise.all(data.features.map(f => request('/api/pipeline/' + encodeURIComponent(f.id)))).then(features => {if (live) setReady(features.flatMap(f => (f.slices || []).filter(s => s.eligibility?.status === 'ready')));}).catch(() => {if (live) setReady(false);}); return () => {live = false;};}, [data]);
   async function save(fields) {
     const project = await request(url, 'PATCH', fields);
     setData(d => ({...d,project})); projectsChanged();
@@ -46,6 +48,7 @@ function Project({projectKey}) {
     <section><h2>About</h2><p className="text">{p.about || <span className="muted">Not set</span>}</p></section>
     {!!data.attention.length && <section><h2>Needs you</h2><div className="home-board">{data.attention.map((a,i) => <Attention key={a.kind + a.id + i} item={a} act={act}/>)}</div></section>}
     <section><h2>Now</h2>{featureList(data.features.filter(f => ['building','testing'].includes(f.stage)))}<h3>Next</h3>{featureList(data.features.filter(f => f.stage === 'next'))}<div className="home-strip">{['shortlist','grilling','ready','next','building','testing','parked'].map(stage => [stage, data.stages[stage] || 0]).map(([stage,count]) => <Link key={stage} to={pipeline}><span>{label(stage)}</span><strong>{count}</strong></Link>)}</div></section>
+    <section><h2>Ready next</h2>{ready === null ? <p>Loading…</p> : ready === false ? <p>Ready items unavailable.</p> : ready.length ? <ul>{ready.map(s => <li key={s.id}><Link to={'/factory/slices/' + s.id.split('/').map(encodeURIComponent).join('/')}>{s.title} · {s.id}</Link></li>)}</ul> : <p className="muted">No items ready.</p>}</section>
     <section><h2>Chats</h2>{data.chats.length ? <div className="list">{data.chats.map(c => <Link className="home-row" key={c.id} to={'/chats/' + c.id}><strong>{c.kind === 'project' ? p.name + ' orchestrator' : c.title}</strong><small>{c.feature || 'Project orchestrator'}</small></Link>)}</div> : <p className="muted">No open chats.</p>}</section>
     <section><h2>Usage</h2><p className="muted">Calendar month in UTC. Costs come with Insights.</p><div className="project-usage">{[['month','This month'],['all_time','All time']].map(([period,title]) => <div key={period}><h3>{title}</h3><dl>{[['input_tokens','Input tokens'],['output_tokens','Output tokens'],['cached_tokens','Cached tokens'],['hours','Hours of runs']].map(([field,name]) => <React.Fragment key={field}><dt>{name}</dt><dd>{data.usage[period][field] == null ? 'Not recorded' : data.usage[period][field].toLocaleString(undefined,{maximumFractionDigits:field === 'hours' ? 2 : 0})}</dd></React.Fragment>)}</dl></div>)}</div></section>
     <section><h2>Documents</h2><Link to={'/library?project=' + p.key}>Open {p.name} in the Library →</Link></section>

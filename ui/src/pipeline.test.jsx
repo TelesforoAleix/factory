@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import {render, screen, fireEvent, cleanup, waitFor} from '@testing-library/react';
+import {render, screen, fireEvent, cleanup, waitFor, within} from '@testing-library/react';
 import {MemoryRouter} from 'react-router-dom';
 import {afterEach, test, expect, vi} from 'vitest';
 import {App} from './main';
@@ -120,8 +120,7 @@ test('swaps an open panel in place and loads slice details on demand', async () 
   await waitFor(() => expect(panel.textContent).toContain('First line'));
   expect(fetcher.mock.calls.some(([url]) => url.startsWith('/api/slices/'))).toBe(false);
   fireEvent.click(panel.querySelector('.slice-row button'));
-  await waitFor(() => expect(panel.textContent).toContain('Full final'));
-  expect(panel.textContent).toContain('history');
+  expect(panel.querySelector('.slice-panel')).toBeTruthy();
 });
 
 test('project page context filters Pipeline and survives preview open and close', async () => {
@@ -136,4 +135,19 @@ test('project page context filters Pipeline and survives preview open and close'
   fireEvent.keyDown(document,{key:'Escape'});
   expect(screen.queryByText('Other project feature')).toBeNull();
   expect(screen.getByRole('button',{name:'Factory'}).getAttribute('aria-pressed')).toBe('true');
+});
+
+test('slice chips and relationship panel use board explanations', async () => {
+  const statuses = ['ready','blocked','waiting for a decision','waiting for a test or approval','resource busy','failed'];
+  const slices = statuses.map((status,i) => ({id:`demo/S${i}`,title:`Item ${i}`,state:'ready',movable:false,eligibility:{status,...(i === 1 ? {ids:['demo/blocker']} : {})},depends_on:i === 1 ? ['demo/prerequisite'] : [],dependants:i === 1 ? ['demo/dependant'] : []}));
+  const detail = {...feature,slices};
+  vi.stubGlobal('fetch',vi.fn(async url => ({ok:true,json:async()=>url === '/api/pipeline' ? {projects:[],features:[feature]} : url === '/api/chats' ? [] : detail})));
+  render(<MemoryRouter initialEntries={['/pipeline/FAC-F1']}><App/></MemoryRouter>);
+  for (const status of statuses) expect(await screen.findByText(status)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button',{name:/Item 1/}));
+  const panel = screen.getByLabelText('Slice demo/S1');
+  for (const [heading,id] of [['Blockers','demo/blocker'],['Prerequisites','demo/prerequisite'],['Dependants','demo/dependant']]) {
+    expect(panel.textContent).toContain(heading);
+    expect(within(panel).getByRole('link',{name:id}).getAttribute('href')).toBe('/factory/slices/' + id);
+  }
 });
