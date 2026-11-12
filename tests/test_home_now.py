@@ -23,7 +23,7 @@ def test_home_now_projection():
                 dict(id='N', title='Next', stage='next', project='P')]
     class Connection:
         def execute(self, query):
-            return [(7, datetime.fromisoformat(at), None)]
+            return [] if 'cplane_feature_events' in query else [(7, datetime.fromisoformat(at), None)]
     class Store:
         connection = Connection()
         def load(self): return dict(slices=slices)

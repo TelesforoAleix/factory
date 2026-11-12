@@ -1,11 +1,20 @@
 """Owner-facing Home projection; source records remain authoritative."""
 import os
-from datetime import datetime, timezone
+import re
+from datetime import datetime, timedelta, timezone
 
 from cplane.runner import stuck_since
 from cplane.attention import recipient
 from cplane.installation import pending, install_failure, chat_requested, REQUEST
 from cplane.chats import public_chat_result
+
+
+# Event texts written by the planner, runner, installer, and feature pipeline.
+MOVE_PATTERNS = [
+    r'^state: ', r'^started$', r'^finished$', r'^merged: ',
+    r'^install (requested|proposed|started|finished): ', r'^Installed ',
+    r'^rollback\b', r'^escalation: Install ', r'^answer$', r'^stage .+ to ',
+]
 
 
 def home_data(store, board, clean, view):
@@ -128,5 +137,27 @@ def home_data(store, board, clean, view):
     by_project = {c['project']: c for c in chats if c['kind'] == 'project'}
     quick_chats.extend(dict(id=by_project[p['key']]['id'], title=clean(p['name']))
                        for p in board['projects'] if p.get('active', True) and p['key'] in by_project)
-    return dict(quick_chats=quick_chats, projects=board['projects'], features=features, attention=attention, orchestrator_count=orchestrator_count, running=running, running_now=running_now, building=building, unlinked=unlinked,
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(hours=24)
+    moves = []
+    def move(kind, identifier, at, actor, event):
+        instant = datetime.fromisoformat(at) if isinstance(at, str) else at
+        if cutoff <= instant <= now and any(re.search(pattern, event) for pattern in MOVE_PATTERNS):
+            text = clean(event)
+            moves.append((instant, dict(kind=kind, id=identifier, at=instant.isoformat(), actor=actor,
+                                        event=text if len(text) <= 80 else text[:79] + '…')))
+    for s in slices:
+        for entry in s['log']:
+            move('slice', s['id'], entry['at'], entry['actor'], entry['event'])
+    if hasattr(store, 'connection'):
+        rows = store.connection.execute(
+            "SELECT f.id, e.time, e.actor, e.event FROM cplane_feature_events e "
+            "JOIN cplane_features f ON f.feature = e.feature "
+            "WHERE e.time >= now() - interval '24 hours' AND e.event LIKE 'stage %' "
+            "AND e.event NOT LIKE '% slice %'")
+        for identifier, at, actor, event in rows:
+            move('feature', identifier, at, actor, event)
+    moves.sort(key=lambda entry: entry[0], reverse=True)
+    log = dict(moves=[entry for _, entry in moves[:200]], truncated=len(moves) > 200)
+    return dict(log=log, quick_chats=quick_chats, projects=board['projects'], features=features, attention=attention, orchestrator_count=orchestrator_count, running=running, running_now=running_now, building=building, unlinked=unlinked,
                 chats=[{k: clean(v) if k == 'title' else v for k, v in c.items() if k in ('id', 'title', 'project', 'feature', 'waiting')} for c in chats if c['waiting']])

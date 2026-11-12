@@ -17,6 +17,10 @@ function UnlinkedBlock({slices, phone}) {
   const [open, setOpen] = useState(!phone);
   return <section className="home-feature"><button className="home-fold" aria-expanded={open} onClick={() => setOpen(!open)}><strong>Not in a feature</strong><span>{slices.length} open</span></button>{open && <SliceRows slices={slices}/>}</section>;
 }
+function Log({log, phone}) {
+  const [open, setOpen] = useState(!phone);
+  return <section className="home-feature"><button className="home-fold" aria-expanded={open} onClick={() => setOpen(!open)}><strong>Log: {log.moves.length} moves in 24 h</strong></button>{open && <><div className="list">{log.moves.map((move, i) => <div className="home-log-row" key={i}><time dateTime={move.at}>{new Date(move.at).toLocaleString()}</time><span>{move.actor}</span><Link to={move.kind === 'feature' ? '/pipeline/' + encodeURIComponent(move.id) : slicePath(move.id)}>{move.id}</Link><span>{move.event}</span></div>)}</div>{log.truncated && <p>Showing the most recent 200 moves.</p>}</>}</section>;
+}
 export function Attention({item, act}) {
   const [answer, setAnswer] = useState(''), [confirm, setConfirm] = useState(false);
   const labels = {'testing-review':'Testing review', failure:'Failure', approval:'Approval', install:'Install', decision:'Decision', question:'Question or escalation', stuck:'Stuck', limit:'Limit full'};
@@ -48,6 +52,7 @@ export function Home() {
     {(data.building || []).filter(visible).map(f => <FeatureBlock key={f.id} feature={f} phone={phone}/>)}
     {!!next.length && <p className="home-next">Next: {next.map((f,i) => <React.Fragment key={f.id}>{i > 0 && ', '}<Link to={'/pipeline/' + encodeURIComponent(f.id)}>{f.title}</Link></React.Fragment>)}</p>}
     {!!(data.unlinked || []).filter(visible).length && <UnlinkedBlock slices={data.unlinked.filter(visible)} phone={phone}/>}
+    {!!data.log?.moves.length && <Log log={data.log} phone={phone}/>}
 
   </div>;
 }

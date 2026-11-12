@@ -55,7 +55,7 @@ test.each([false, true])('feature blocks start open on desktop and folded on pho
 });
 
 test('empty activity sections are hidden', async () => {
-  const data = {projects:[],features:[],attention:[],running:[],building:[],unlinked:[],chats:[]};
+  const data = {projects:[],features:[],attention:[],running:[],building:[],unlinked:[],chats:[],log:{moves:[],truncated:false}};
   vi.stubGlobal('fetch', async url => ({ok:true,json:async () => url === '/api/home' ? data : []}));
   render(<MemoryRouter><Home/></MemoryRouter>);
   await screen.findByText('Home');
@@ -63,6 +63,7 @@ test('empty activity sections are hidden', async () => {
   expect(screen.queryByText('Running now')).toBeNull();
   expect(screen.queryByText(/Next:/)).toBeNull();
   expect(screen.queryByText('Not in a feature')).toBeNull();
+  expect(screen.queryByRole('button', {name:/Log:/})).toBeNull();
 });
 
 test('failed install offers same-slice retry beside Review', async () => {
@@ -107,4 +108,18 @@ test('shows the orchestrator count only when nonzero', async () => {
   global.fetch = vi.fn(async url => ({ok:true, json:async () => url === '/api/home' ? data : []}));
   render(<MemoryRouter><Home /></MemoryRouter>);
   expect(await screen.findByText('With the orchestrator: 3')).toBeTruthy();
+});
+
+test.each([false, true])('log follows unlinked and starts folded only on phone (%s)', async phone => {
+  vi.stubGlobal('matchMedia', () => ({matches:phone, addEventListener:vi.fn(), removeEventListener:vi.fn()}));
+  const data = {projects:[],features:[],attention:[],unlinked:[{id:'S',title:'Free',state:'ready'}],log:{moves:[{kind:'slice',id:'repo/S',at:'2026-11-12T12:00:00Z',actor:'runner',event:'merged: abc'},{kind:'feature',id:'FAC-F1',at:'2026-11-12T11:00:00Z',actor:'owner',event:'stage next to building'}],truncated:true}};
+  vi.stubGlobal('fetch', async url => ({ok:true,json:async () => url === '/api/home' ? data : []}));
+  const {container} = render(<MemoryRouter><Home/></MemoryRouter>);
+  const button = await screen.findByRole('button',{name:'Log: 2 moves in 24 h'});
+  expect(container.textContent.indexOf('Not in a feature')).toBeLessThan(container.textContent.indexOf('Log:'));
+  expect(button.getAttribute('aria-expanded')).toBe(String(!phone));
+  if (phone) { expect(screen.queryByText('merged: abc')).toBeNull(); fireEvent.click(button); }
+  expect(screen.getByRole('link',{name:'repo/S'}).getAttribute('href')).toBe('/factory/slices/repo/S');
+  expect(screen.getByRole('link',{name:'FAC-F1'}).getAttribute('href')).toBe('/pipeline/FAC-F1');
+  expect(screen.getByText('Showing the most recent 200 moves.')).toBeTruthy();
 });
