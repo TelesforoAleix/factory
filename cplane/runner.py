@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -100,23 +101,97 @@ def codex_usage(folder=None):
     return max(used) if used else None
 
 
-def codex_limits(folder=None):
+def codex_report(folder=None, *, paths=None):
     """The non-null windows (5-hour primary, weekly secondary) of the newest report."""
     root = fence.LOGIN_ROOT / 'codex/sessions'
-    paths = Path(folder or root).rglob('*.jsonl')
+    if paths is None:
+        paths = list(Path(folder or root).rglob('*.jsonl'))
+        if folder is None:
+            runs = Path(os.environ.get('CPLANE_RUNS', '/srv/factory/runs'))
+            paths.extend(runs.glob('*/usage-report.jsonl'))
     newest_first = sorted(paths, key=lambda p: p.stat().st_mtime_ns, reverse=True)
     for session in newest_first:
         # Walk backwards: the last non-null capacity report is the current one.
         for line in reversed(session.read_text(errors='replace').splitlines()):
             try:
-                limits = json.loads(line).get('payload', {}).get('rate_limits')
+                event = json.loads(line)
+                limits = event.get('payload', {}).get('rate_limits')
                 windows = [limits[k] for k in ('primary', 'secondary')
                            if isinstance(limits.get(k), dict)] if limits else []
                 if windows:
-                    return windows
+                    stamp = event.get('timestamp')
+                    reported = (datetime.fromisoformat(stamp).timestamp() if isinstance(stamp, str)
+                                else session.stat().st_mtime)
+                    return windows, reported
             except (ValueError, KeyError, TypeError, AttributeError):
                 continue
     return None
+
+
+def codex_limits(folder=None):
+    report = codex_report(folder)
+    return report[0] if report else None
+
+
+def probe_codex_usage(runs):
+    """Discard the probe workspace and output; retain only normal usage telemetry."""
+    fence.trusted_directory(fence.WORK_ROOT)
+    fence.trusted_directory(runs)
+    token = uuid.uuid4().hex
+    work = fence.WORK_ROOT / ('usage-' + token)
+    output = runs / ('usage-' + token)
+    turn = (2 << 128) + int(token, 16)
+    work.mkdir(mode=0o700)
+    output.mkdir(mode=0o700)
+    os.chown(work, fence.CLI_UID, fence.CLI_GID)
+    session, transcript = None, ''
+    try:
+        result = subprocess.run([fence.fence_command(), 'run', '--tool', 'codex',
+                        '--repo', str(work), '--run', str(output), '--session-turn', str(turn),
+                        '--', 'codex', 'exec', '-m', 'gpt-6-luna', '-c',
+                        'model_reasoning_effort="low"', '--skip-git-repo-check',
+                        '-c', 'history.persistence="none"',
+                        '-c', 'sqlite_home="/tmp/cplane-usage"',
+                        '-c', 'log_dir="/tmp/cplane-usage"',
+                        '--json', '--', 'Reply only: OK'],
+                       stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, text=True,
+                       stderr=subprocess.DEVNULL, timeout=120, env=fence.host_environment())
+        transcript = result.stdout
+    except subprocess.TimeoutExpired as error:
+        transcript = error.stdout or ''
+        if isinstance(transcript, bytes):
+            transcript = transcript.decode(errors='replace')
+        raise
+    finally:
+        for line in transcript.splitlines():
+            try:
+                event = json.loads(line)
+                if event.get('type') == 'thread.started' and re.fullmatch(r'[A-Za-z0-9-]+', event.get('thread_id', '')):
+                    session = event['thread_id']
+            except (ValueError, AttributeError):
+                continue
+        subprocess.run([fence.fence_command(), 'session-cleanup', str(turn)], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       env=fence.host_environment())
+        try:
+            if session:
+                root = fence.LOGIN_ROOT / 'codex/sessions'
+                paths = [p for p in root.rglob('*.jsonl')
+                         if p.name == session + '.jsonl' or p.name.endswith('-' + session + '.jsonl')]
+                try:
+                    report = codex_report(paths=paths) if paths else None
+                    windows = report[0] if report else None
+                    if windows:
+                        limits = {name: {k: window[k] for k in ('used_percent', 'resets_at')
+                                         if isinstance(window.get(k), (int, float))}
+                                  for name, window in zip(('primary', 'secondary'), windows)}
+                        atomic_json(runs / 'usage-report.jsonl', {'payload': {'rate_limits': limits}})
+                finally:
+                    for path in paths:
+                        path.unlink()
+        finally:
+            shutil.rmtree(work)
+            shutil.rmtree(output)
 
 
 def usage_limit_message(tail):
@@ -165,8 +240,22 @@ class BlockedPR(state.StateError):
     pass
 
 
+class BranchConflict(state.StateError):
+    pass
+
+
 class GitHubReadError(state.StateError):
     pass
+
+
+def check_merge_info(info, expected=None):
+    if expected and info['headRefOid'] != expected:
+        raise state.StateError('PR head differs from delivered bundle')
+    if info.get('state') != 'MERGED' and (
+            info.get('isDraft') or re.match(r'(?:\[blocked\]|blocked:|draft:|\[draft\])', info.get('title', ''), re.I)
+            or re.search(r'DO NOT MERGE|MERGE BLOCKER',
+                         info.get('title', '') + '\n' + (info.get('body') or ''), re.I)):
+        raise BlockedPR('PR marked not for merging')
 
 
 class GitHub:
@@ -188,6 +277,8 @@ class GitHub:
                 return result.stdout.strip()
             if attempt + 1 < attempts:
                 time.sleep(5)
+        if args[:2] == ('pr', 'update-branch') and re.search(r'conflict', result.stderr, re.I):
+            raise BranchConflict('PR conflicts with main; needs a new slice from main')
         if read:
             raise GitHubReadError('gh operation failed')
         raise state.StateError('gh operation failed')
@@ -212,7 +303,9 @@ class GitHub:
 
     def checks(self, repo, number, expected=None):
         if expected:
-            info = json.loads(self.call(repo, 'pr', 'view', str(number), '--json', 'headRefOid'))
+            info = json.loads(self.call(repo, 'pr', 'view', str(number), '--json',
+                                       'headRefOid,state,title,body,isDraft,mergeStateStatus,mergeable'))
+            self.check_info = info
             if info['headRefOid'] != expected:
                 raise state.StateError('PR head differs from delivered bundle')
             info = json.loads(self.call(repo, 'api', f'repos/{repo}/actions/runs?head_sha={expected}&per_page=100'))
@@ -257,14 +350,19 @@ class GitHub:
         info = json.loads(self.call(repo, 'pr', 'view', str(number), '--json', 'state'))
         return info['state'] == 'OPEN'
 
+    def merge_info(self, repo, number, expected=None):
+        info = json.loads(self.call(repo, 'pr', 'view', str(number), '--json',
+                                   'state,mergeCommit,title,body,isDraft,headRefOid,mergeStateStatus,mergeable'))
+        check_merge_info(info, expected)
+        return info
+
+    def update_branch(self, repo, number, expected):
+        self.call(repo, 'pr', 'update-branch', str(number), '--expected-head-oid', expected)
+        return self.merge_info(repo, number)['headRefOid']
+
     def merge(self, repo, number, expected=None):
-        fields = 'state,mergeCommit,title,headRefOid' if expected else 'state,mergeCommit,title'
-        info = json.loads(self.call(repo, 'pr', 'view', str(number), '--json', fields))
-        if expected and info['headRefOid'] != expected:
-            raise state.StateError('PR head differs from delivered bundle')
+        info = self.merge_info(repo, number, expected)
         if info['state'] != 'MERGED':
-            if re.match(r'(?:\[blocked\]|blocked:)', info['title'], re.I):
-                raise BlockedPR('PR titled as blocked; not merged')
             self.call(repo, 'pr', 'merge', str(number), '--squash',
                       *(['--match-head-commit', expected] if expected else []))
             info = json.loads(self.call(repo, 'pr', 'view', str(number), '--json', 'state,mergeCommit'))
@@ -338,6 +436,21 @@ class Runner:
                    for j in self.jobs.values()):
                 return None
             codex = self.codex_reader()
+            if (isinstance(codex, (int, float)) and codex >= 99
+                    and getattr(self, '_usage_probe_allowed', False) and not self.room(item)):
+                report = codex_report()
+                if report and self.instant.timestamp() - report[1] > 1800:
+                    self.runs.mkdir(parents=True, mode=0o700, exist_ok=True)
+                    fence.trusted_directory(self.runs)
+                    marker = self.runs / 'usage-probe.json'
+                    last = json.loads(marker.read_text())['at'] if marker.exists() else None
+                    if last is None or self.instant.timestamp() - last >= 3600:
+                        atomic_json(marker, {'at': self.instant.timestamp()})
+                        try:
+                            probe_codex_usage(self.runs)
+                        except (OSError, subprocess.SubprocessError):
+                            pass
+                        codex = self.codex_reader()
             if isinstance(codex, (int, float)) and 0 <= codex < 99:
                 return 'codex', model
             return None
@@ -498,6 +611,17 @@ class Runner:
             return None
         return retry.timestamp() if retry > self.instant else None
 
+    def publish(self, item, job, request):
+        try:
+            return self.fence.publish(job, request)
+        except state.StateError as error:
+            if str(error) == 'branch was rewritten; merge main instead of rebasing':
+                job['phase'] = 'publish-blocked'
+                self.save_job(job)
+                self.attention(item, 'escalation', str(error))
+                return None
+            raise
+
     def apply_final(self, item, job):
         if state.postgres():
             try:
@@ -599,7 +723,9 @@ class Runner:
                 # Workers may already have advanced the branch; only follow it.
                 self.follow_tickets(item, job, tickets)
             else:
-                job['tip'] = job.get('tip') or self.fence.publish(job, {'branch': job['branch']})
+                job['tip'] = job.get('tip') or self.publish(item, job, {'branch': job['branch']})
+                if job['tip'] is None:
+                    return
                 job['task_file'] = cutter.build_task_file(item['id'], item['repo'], job['branch'],
                                                          job['tip'], plan, job['brief'])
                 job['phase'] = 'cut-ready'
@@ -618,7 +744,9 @@ class Runner:
             except ValueError as error:
                 self.attention(item, 'escalation', 'invalid fenced PR request: ' + str(error))
             else:
-                job['tip'] = self.fence.publish(job, request)
+                job['tip'] = self.publish(item, job, request)
+                if job['tip'] is None:
+                    return
                 job['request'], job['phase'] = request, 'pr'
                 self.save_job(job)
                 item['pr'] = self.github.open(self.github_repo(item), request)
@@ -703,7 +831,32 @@ class Runner:
         self.log(item, f"cut-submit: skills {job['skills']}")
         self.log(item, f'Submitted {len(ids)} tickets: ' + json.dumps(ids), True)
 
+    def merge_ready(self, item, job, info=None):
+        try:
+            if info is None:
+                info = self.github.merge_info(self.github_repo(item), item['pr'], expected=job['tip'])
+            else:
+                check_merge_info(info, job['tip'])
+            if job.get('updated_head'):
+                clean = self.fence.clean(job['repository'])
+                self.fence.git(clean, 'fetch', '--no-tags', 'origin',
+                               'refs/heads/' + job['branch'], auth=True)
+                job.pop('updated_head')
+                self.save_job(job)
+            if info.get('mergeStateStatus') == 'BEHIND' and info.get('mergeable') == 'MERGEABLE':
+                job['tip'] = self.github.update_branch(self.github_repo(item), item['pr'], job['tip'])
+                job['updated_head'] = True
+                self.save_job(job)
+                self.log(item, 'checks: pending')
+                return False
+        except (BlockedPR, BranchConflict) as error:
+            self.attention(item, 'escalation', str(error))
+            return False
+        return True
+
     def merge(self, item, job):
+        if not self.merge_ready(item, job):
+            return
         if reviewer.changes_workflows(self.fence, job):
             approval = item['attention']
             if not (approval and approval['kind'] == 'merge' and approval['approved']):
@@ -745,7 +898,10 @@ class Runner:
             self.launch(item, 'Your turn was cut by the usage limit. Your uncommitted work is in your working tree. Continue the slice.', resume=True)
             return
         if attention and attention['answer'] is not None:
-            if not job or not item['session'] or not item['session']['id']:
+            if not item['session'] or not item['session']['id']:
+                if item['state'] in ('ready', 'issued', 'escalated'):
+                    self.start(item)
+            elif not job:
                 self.defer(item, 'deferred: session unavailable')
             else:
                 self.launch(item, attention['answer'], resume=True)
@@ -753,6 +909,8 @@ class Runner:
         if attention and attention['kind'] == 'merge' and attention['approved']:
             if not job or not item['pr']:
                 self.defer(item, 'deferred: PR metadata unavailable')
+                return
+            if not self.merge_ready(item, job):
                 return
             options = {'expected': job['tip']}
             status, failing = self.github.checks(self.github_repo(item), item['pr'], **options)
@@ -768,15 +926,25 @@ class Runner:
             self.launch(item, 'merged as ' + job['sha'], resume=True)
 
     def pr_checks(self, item, job):
-        if job['phase'] != 'pr' or item['attention'] or item['paused']:
+        if job['phase'] != 'pr' or item['paused']:
+            return
+        if item['attention'] and item['attention']['kind'] != 'merge':
             return
         # Recover PR number if creation succeeded but saving state did not.
         if item['pr'] is None:
             item['pr'] = self.github.open(self.github_repo(item), job['request'])
+        if item['attention']:
+            self.merge_ready(item, job)
+            return
         options = {'expected': job['tip']}
         status, failing = self.github.checks(self.github_repo(item), item['pr'], **options)
         run_records.ci_record(self, item, job, status, failing)
         self.log(item, 'checks: ' + status)
+        # The head read used for CI also carries live merge metadata. Reuse that
+        # same observation instead of inserting another read before CI history.
+        info = getattr(self.github, 'check_info', None)
+        if not self.merge_ready(item, job, info if isinstance(info, dict) else None):
+            return
         if status == 'red':
             self.attention(item, 'escalation', 'failing check: ' + failing)
         elif status == 'green':
@@ -785,9 +953,43 @@ class Runner:
             else:
                 self.merge(item, job)
 
+    def start(self, item):
+        reason = self.room(item)
+        if reason or self.choose(item) is None:
+            self.defer(item, reason or 'deferred: capacity unavailable')
+            return
+        if item.get('brief_id'):
+            try:
+                prompt = state.store(self.path).stored_brief(item['brief_id'])
+                self.launch(item, prompt)
+            except Exception:
+                self.slice_failure(item, 'start')
+            return
+        if item['brief'] is None:
+            self.attention(item, 'escalation', 'missing brief')
+            return
+        brief = Path(item['brief'])
+        if not brief.is_absolute():
+            brief = self.path.parent / brief
+        try:
+            with brief.open(encoding='utf-8', newline='') as stream:
+                prompt = stream.read()
+            lines = prompt.splitlines(keepends=True)
+            if lines and lines[0].rstrip('\r\n') == '---':
+                closing = next((i for i in range(1, len(lines))
+                                if lines[i].rstrip('\r\n') == '---'), None)
+                if closing is not None:
+                    prompt = ''.join(lines[closing + 1:])
+            self.launch(item, prompt)
+        except Exception:
+            self.slice_failure(item, 'start')
+
     def run(self):
-        self._run_pass()
-        export_bot(self.path)
+        try:
+            self._run_pass()
+            export_bot(self.path)
+        finally:
+            self._usage_probe_allowed = False
 
     def _run_pass(self):
         with state.locked(self.path):
@@ -817,6 +1019,7 @@ class Runner:
                 previous = self.jobs.get(job['id'])
                 if previous is None or previous['started_ns'] < job['started_ns']:
                     self.jobs[job['id']] = job
+            self._usage_probe_allowed = True
             read_failures, read_successes = set(), set()
             for item in self.data['slices']:
                 read_start = self.github.successful_reads if isinstance(self.github, GitHub) else 0
@@ -835,6 +1038,8 @@ class Runner:
                         if bool(job.get('fence')) != True:
                             raise state.StateError('run mode differs from saved job; needs attention')
                         phase_before = job['phase']
+                        if phase_before == 'publish-blocked' and not item['attention']:
+                            self.attention(item, 'escalation', 'branch was rewritten; merge main instead of rebasing')
                         if phase_before in ('cut-ready', 'submitting', 'submit-failed', 'tickets', 'review-ready'):
                             if item['state'] == 'ready':
                                 item['state'] = 'issued'
@@ -910,31 +1115,7 @@ class Runner:
                             self.defer(item, 'deferred: capacity unavailable'
                                        if result['reason'] == 'provider away' else self.room(item))
                         continue
-                    if item.get('brief_id'):
-                        try:
-                            prompt = state.store(self.path).stored_brief(item['brief_id'])
-                            self.launch(item, prompt)
-                        except Exception:
-                            self.slice_failure(item, 'start')
-                        continue
-                    if item['brief'] is None:
-                        self.attention(item, 'escalation', 'missing brief')
-                        continue
-                    brief = Path(item['brief'])
-                    if not brief.is_absolute():
-                        brief = self.path.parent / brief
-                    try:
-                        with brief.open(encoding='utf-8', newline='') as stream:
-                            prompt = stream.read()
-                        lines = prompt.splitlines(keepends=True)
-                        if lines and lines[0].rstrip('\r\n') == '---':
-                            closing = next((i for i in range(1, len(lines))
-                                            if lines[i].rstrip('\r\n') == '---'), None)
-                            if closing is not None:
-                                prompt = ''.join(lines[closing + 1:])
-                        self.launch(item, prompt)
-                    except Exception:
-                        self.slice_failure(item, 'start')
+                    self.start(item)
             previous_notices = state.store(self.path).notices()
             seen = {(notice.get('id'), notice.get('since'), notice.get('reason'))
                     for _, notice in previous_notices if notice.get('event') == 'stuck'}

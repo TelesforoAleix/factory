@@ -1851,3 +1851,10 @@ Confirm migration 021, run both updates, inspect the list, and confirm a chat tu
 records its role's effort. Add a bounded synthetic slice with `--level light` and
 verify its next runner launch uses Luna at low effort. Start it only through the
 existing runner or an explicit test; never edit state JSON by hand.
+
+Runner refuses GitHub drafts, title prefixes `[Blocked]`, `blocked:`, `Draft:`, `[Draft]`, and `DO NOT MERGE`/`MERGE BLOCKER` anywhere in title/body (case-insensitive): `PR marked not for merging`, with no merge card.
+Runner updates mergeable branches reported behind their base through `gh pr update-branch` (merge commit), pins the new head and waits for CI; update conflicts escalate as `PR conflicts with main; needs a new slice from main`.
+A non-fast-forward publish escalates once as `branch was rewritten; merge main instead of rebasing`; an answer resumes the same executor copy without retrying the push first.
+For a waiting Codex slice at 99% or higher with usage older than 30 minutes, the runner probes Luna at low effort at most hourly, rereads capacity, discards probe output and workspace, and retains only usage windows from the probe rollout.
+Answered attention on a ready, issued or escalated slice without a session starts again from the original brief when capacity is available, using the same start path as a scheduled slice.
+The synthetic repair/review test uses increasing logical start timestamps so wall-clock adjustments cannot select an older fake turn; validate with 20 consecutive standalone pytest invocations, without retries.

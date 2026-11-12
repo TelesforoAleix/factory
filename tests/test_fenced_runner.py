@@ -2,6 +2,7 @@
 import copy
 from datetime import datetime, timedelta, timezone
 import json
+from itertools import count
 import os
 from pathlib import Path
 import shutil
@@ -338,7 +339,8 @@ def test_fenced_checks_bind_to_delivered_head():
     gh.call = Mock(return_value='{"headRefOid":"other"}')
     with pytest.raises(state.StateError, match='PR head differs'):
         gh.checks('example/repo', 1, expected='tip')
-    gh.call.assert_called_once_with('example/repo', 'pr', 'view', '1', '--json', 'headRefOid')
+    gh.call.assert_called_once_with('example/repo', 'pr', 'view', '1', '--json',
+                                    'headRefOid,state,title,body,isDraft,mergeStateStatus,mergeable')
 
 
 @pytest.mark.parametrize('runs,jobs,expected', [
@@ -666,6 +668,11 @@ def ticket_runner(delivery, make_state, monkeypatch):
     brief.parent.mkdir()
     brief.write_text('## Fixed decisions\nKeep this rule.\n## Do not\nNever that.\n')
     processes = SyntheticProcesses()
+    # Saved fake turns are ordered by started_ns. Use a logical sequence rather
+    # than CLOCK_REALTIME, which can step backwards on a CI VM between reviews.
+    # These fake processes do not read output files or compare filesystem mtimes.
+    starts = count(time.time_ns())
+    monkeypatch.setattr(time, 'time_ns', lambda: next(starts))
     runner = Runner(path, processes=processes, github=Mock(), git=Mock(),
                     runs=d['root'] / 'control', codex_reader=lambda: 5)
     runner.github.open.return_value = 12
@@ -1288,7 +1295,7 @@ def test_read_failure_duration_and_success_resets(delivery, make_state, monkeypa
     def run(args, **kwargs):
         if failing[0]:
             return subprocess.CompletedProcess(args, 1, '', d['secret'])
-        response = {'headRefOid': d['tip']} if args[1:3] == ['pr', 'view'] else {'workflow_runs': []}
+        response = {'state': 'OPEN', 'title': 'Synthetic PR', 'headRefOid': d['tip']} if args[1:3] == ['pr', 'view'] else {'workflow_runs': []}
         return subprocess.CompletedProcess(args, 0, json.dumps(response), '')
     monkeypatch.setattr(subprocess, 'run', run)
     start = datetime.now(timezone.utc)
@@ -1460,3 +1467,95 @@ def test_credential_helper_supplies_app_token_only_to_git(monkeypatch):
                             text=True, capture_output=True, check=True)
     assert result.stdout == 'username=x-access-token\npassword=synthetic-installation-token\n'
     assert result.stderr == ''
+
+
+def test_rewritten_remote_branch_rejected_without_force(delivery):
+    d = delivery
+    d['adapter'].publish(d['job'], request(d['job']))
+    # A different descendant of the same pinned base rewrites the published tip.
+    alternate = d['root'] / 'alternate'
+    d['g'](d['root'], 'clone', '--branch', 'main', d['remote'], alternate)
+    (alternate / 'alternate').write_text('different history\n')
+    d['g'](alternate, 'add', '.')
+    d['g'](alternate, 'commit', '-m', 'alternate history')
+    other = d['g'](alternate, 'rev-parse', 'HEAD')
+    d['g'](alternate, 'push', 'origin', f'HEAD:{d["job"]["branch"]}', '--force')
+    with pytest.raises(state.StateError, match='^branch was rewritten; merge main instead of rebasing$'):
+        d['adapter'].publish(d['job'], request(d['job']))
+    assert d['g'](d['remote'], 'rev-parse', 'refs/heads/' + d['job']['branch']) == other
+    assert not any('--force' in args for args, _ in d['calls'])
+
+
+def test_usage_probe_discards_workspace_prompt_and_output(delivery, monkeypatch):
+    from cplane.runner import probe_codex_usage, codex_usage
+    d = delivery
+    (fence.LOGIN_ROOT / 'codex/sessions').mkdir(parents=True)
+    calls = []
+    def run(args, **kwargs):
+        calls.append(args)
+        if args[1] == 'run':
+            assert args[-1] == 'Reply only: OK'
+            assert args[args.index('-m') + 1] == 'gpt-6-luna'
+            assert 'model_reasoning_effort="low"' in args
+            assert 'history.persistence="none"' in args and '--json' in args
+            assert kwargs['env'] == fence.host_environment()
+            session = fence.LOGIN_ROOT / 'codex/sessions/probe-session.jsonl'
+            session.write_text('\n'.join([
+                json.dumps({'prompt': 'Reply only: OK', 'output': 'OK'}),
+                json.dumps({'payload': {'rate_limits': {'primary': {'used_percent': 0}}}})]))
+            return subprocess.CompletedProcess(args, 0,
+                '{"type":"thread.started","thread_id":"probe-session"}\n', '')
+        return subprocess.CompletedProcess(args, 0, '', '')
+    monkeypatch.setattr(subprocess, 'run', run)
+    monkeypatch.setenv('CPLANE_RUNS', str(d['folder'].parent))
+    probe_codex_usage(d['folder'])
+    assert calls[-1][1] == 'session-cleanup'
+    assert not list(fence.WORK_ROOT.glob('usage-*'))
+    assert not [p for p in d['folder'].glob('usage-*') if p.is_dir()]
+    report = d['folder'] / 'usage-report.jsonl'
+    assert 'prompt' not in report.read_text() and 'OK' not in report.read_text()
+    assert codex_usage() == 0
+    assert not (fence.LOGIN_ROOT / 'codex/sessions/probe-session.jsonl').exists()
+
+
+def test_github_updated_head_is_fetched_in_clean_clone_before_merge(delivery, make_state):
+    d = delivery
+    d['adapter'].publish(d['job'], request(d['job']))
+    seed = d['root'] / 'update-seed'
+    d['g'](d['root'], 'clone', d['remote'], seed)
+    (seed / 'main-change').write_text('new main\n')
+    d['g'](seed, 'add', '.')
+    d['g'](seed, 'commit', '-m', 'advance main')
+    d['g'](seed, 'push', 'origin', 'main')
+    d['g'](seed, 'checkout', d['job']['branch'])
+    d['g'](seed, 'merge', 'main', '--no-edit')
+    updated = d['g'](seed, 'rev-parse', 'HEAD')
+    gh = Mock()
+    gh.merge_info.return_value = dict(mergeStateStatus='BEHIND', mergeable='MERGEABLE')
+    def update(*args):
+        d['g'](seed, 'push', 'origin', 'HEAD')
+        gh.merge_info.return_value = dict(mergeStateStatus='CLEAN', mergeable='MERGEABLE')
+        return updated
+    gh.update_branch.side_effect = update
+    gh.checks.return_value = ('pending', '')
+    runner = Runner(make_state(), github=gh, git=Mock())
+    runner.fence = d['adapter']
+    runner.at = datetime.now(timezone.utc).isoformat()
+    item = state.load(runner.path)['slices'][0]
+    item.update(pr=12, stop_before_merge=False)
+    job = dict(d['job'], phase='pr', tip=d['tip'], request=request(d['job']))
+    runner.pr_checks(item, job)
+    assert job['updated_head'] and job['tip'] == updated
+    gh.checks.assert_called_once_with('example/repo', 12, expected=d['tip'])
+    gh.checks.reset_mock()
+    assert d['adapter'].git(d['clean'], 'cat-file', '-e', updated, allow_failure=True).returncode
+    runner.pr_checks(item, job)
+    assert 'updated_head' not in job
+    gh.checks.assert_called_once_with('example/repo', 12, expected=updated)
+    gh.merge.assert_not_called()
+    gh.checks.return_value = ('green', '')
+    gh.merge.return_value = 'merged-sha'
+    runner.pr_checks(item, job)
+    gh.merge.assert_called_once_with('example/repo', 12, expected=updated)
+    assert job['base'] == d['base']
+    assert not d['marker'].exists()
