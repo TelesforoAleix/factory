@@ -361,12 +361,8 @@ def test_socket_removed_after_turn(context, tmp_path, monkeypatch, outcome, sock
             '{"type":"item.completed","item":{"type":"agent_message","text":"Done"}}']))
 
     monkeypatch.setattr(sessions.subprocess, 'run', launch)
-    if outcome == 125:
-        with pytest.raises(sessions.CleanupError):
-            sessions.execute_turn(turn, store)
-    else:
-        sessions.execute_turn(turn, store)
-        store.finish_session_turn.assert_called_once()
+    sessions.execute_turn(turn, store)
+    store.finish_session_turn.assert_called_once()
     assert not (tmp_path / 'session-turn-7/workshop.sock').exists()
 
 
@@ -447,7 +443,7 @@ def test_restart_cleans_interrupted_socket(tmp_path, monkeypatch):
     sessions.cleanup_interrupted_turn(dict(id=7))
     assert not path.exists()
     launch.assert_called_once_with(['homelab-fence', 'session-cleanup', '7'], check=True,
-                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                   stdout=subprocess.DEVNULL)
     # Missing old run directories are harmless; replaced ancestors are refused.
     sessions.cleanup_interrupted_turn(dict(id=8))
     outside = tmp_path / 'outside'

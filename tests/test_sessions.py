@@ -219,9 +219,8 @@ def test_timeout_short_failure_and_cleanup_uncertainty(tmp_path, monkeypatch):
     store.reset_mock()
     turn['id'] = 6
     monkeypatch.setattr(sessions.subprocess, 'run', lambda *a, **k: subprocess.CompletedProcess(a, 125, '', ''))
-    with pytest.raises(sessions.CleanupError):
-        sessions.execute_turn(turn, store)
-    store.finish_session_turn.assert_not_called()
+    sessions.execute_turn(turn, store)
+    assert store.finish_session_turn.call_args.kwargs['failed']
 
 
 def test_web_has_no_execution_path():
@@ -303,7 +302,7 @@ def test_session_exports_remote_default_and_resume_does_not_fetch(tmp_path, monk
             fields[5] = 21000
             return os.stat_result(fields)
         if path in (work / 'session-1/repos', work / 'session-1/repos/repo',
-                    work / 'session-1/repos/.planning'):
+                    work / 'session-1/repos/factory-planning-export'):
             fields = list(info)
             fields[4] = 0
             return os.stat_result(fields)
@@ -318,7 +317,7 @@ def test_session_exports_remote_default_and_resume_does_not_fetch(tmp_path, monk
                           capture_output=True).returncode != 0
     assert (paths[0] / 'content').read_text() == 'default branch'
     assert (folder / 'planning/content').read_text() == 'default branch'
-    assert paths[-1] == folder / 'repos/.planning'
+    assert paths[-1] == folder / 'repos/factory-planning-export'
     assert paths[-1].stat().st_mode & 0o777 == 0o755
     assert not (folder / 'planning/.git').exists()
     assert sum(args[0] == 'fetch' for args in calls) == 1
@@ -418,7 +417,7 @@ def test_restart_removes_unsuitable_workspace(tmp_path, monkeypatch):
     original = Path.lstat
     def lstat(path):
         info = original(path)
-        if path in (work / 'session-1/repos', work / 'session-1/repos/.planning'):
+        if path in (work / 'session-1/repos', work / 'session-1/repos/factory-planning-export'):
             fields = list(info); fields[4] = 0
             return os.stat_result(fields)
         return info
@@ -427,3 +426,60 @@ def test_restart_removes_unsuitable_workspace(tmp_path, monkeypatch):
     assert folder == old
     assert not (folder / 'marker').exists()
     assert not list(work.glob('session-1-abandoned-*'))
+
+
+def test_reserved_planning_export_and_collision(tmp_path, monkeypatch):
+    from cplane import launcher
+    assert launcher.RUN_ID.fullmatch(sessions.PLANNING_EXPORT)
+    monkeypatch.setattr(sessions, 'WORK_ROOT', tmp_path)
+    with pytest.raises(sessions.StateError, match='collides'):
+        sessions.workspace(dict(id=1, cli_session_id=None, repositories=['owner/FACTORY-PLANNING-EXPORT']))
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_old_resume_workspace_resets_context(tmp_path, monkeypatch):
+    old = tmp_path / 'session-1'
+    old.mkdir(mode=0o700)
+    (old / 'old-file').write_text('old context')
+    monkeypatch.setattr(sessions, 'WORK_ROOT', tmp_path)
+    monkeypatch.setattr(sessions, 'RUNS', tmp_path)
+    monkeypatch.setattr(sessions, 'export_tree', lambda clone, dest, ref: dest.mkdir())
+    monkeypatch.setattr(sessions.skills, 'install', lambda *args: None)
+    monkeypatch.setattr(sessions.fence, 'require_ownership_support', lambda: None)
+    monkeypatch.setattr(sessions.os, 'chown', lambda *args, **kwargs: None)
+    store = Mock()
+    turn = dict(id=42, text='hello', session=dict(id=1, area='factory', repositories=[],
+                cli_session_id='old-id', workspace_ready=True, tool='codex', model='m', effort='low'))
+    launch = Mock(return_value=subprocess.CompletedProcess([], 1, ''))
+    monkeypatch.setattr(sessions.subprocess, 'run', launch)
+    sessions.execute_turn(turn, store)
+    store.reset_session_context.assert_called_once_with(1)
+    assert turn['session']['cli_session_id'] is None
+    assert not (old / 'old-file').exists()
+    assert (old / 'planning').is_symlink()
+    assert 'resume' not in launch.call_args.args[0]
+
+
+def test_supervisor_reaps_failed_turn_and_continues():
+    from concurrent.futures import Future
+    failed, completed = Future(), Future()
+    failed.set_exception(RuntimeError('synthetic'))
+    completed.set_result(None)
+    turn = dict(id=1, session=dict(id=1))
+    active = {failed: turn, completed: dict(id=2)}
+    store = Mock()
+    sessions.reap_turns(active, store)
+    assert not active
+    store.finish_session_turn.assert_called_once_with(turn, 'Turn failed unexpectedly.', failed=True)
+
+
+def test_reset_context_preserves_messages(pg_store):
+    sid = pg_store.create_session('factory', 'Example', 'codex', 'synthetic', [])
+    pg_store.session_messages('factory', sid, 'Original message')
+    turn = pg_store.claim_session_turn()
+    pg_store.finish_session_turn(turn, 'Original answer', 'saved-id')
+    pg_store.reset_session_context(sid)
+    chat = pg_store.sessions('factory', sid)[0]
+    assert chat['cli_session_id'] is None
+    messages = pg_store.session_messages('factory', sid)
+    assert [m['text'] for m in messages] == ['Original message', 'Original answer', 'Earlier tool context was reset.']

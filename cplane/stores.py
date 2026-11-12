@@ -350,6 +350,15 @@ class PostgresStore(ModelStore, RoleStore, InboxStore, FeatureStore, RunRecordSt
             return dict(id=row[0], session=session, text=row[2], context=context, role=row[4], automatic=row[5],
                         owner_message=owner_message)
 
+    def reset_session_context(self, session_id):
+        with self.mutation():
+            self.connection.execute(
+                "UPDATE cplane_sessions SET cli_session_id = NULL, tool_sessions = '{}'::jsonb, "
+                "workspace_ready = false WHERE id = %s", (session_id,))
+            self.connection.execute(
+                "INSERT INTO cplane_session_messages (session, role, text, status, automatic) "
+                "VALUES (%s, 'system', 'Earlier tool context was reset.', 'done', true)", (session_id,))
+
     def finish_session_turn(self, turn, reply, cli_id=None, failed=False, *,
                             planning_commits=(), delivery_notice=None):
         with self.mutation():

@@ -2,6 +2,7 @@
 import argparse
 import array
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -135,8 +136,15 @@ def translate(argv):
 def main(argv=None):
     try:
         payload = translate(sys.argv[1:] if argv is None else argv)
-        reply = request(payload, (sys.stdout.fileno(), sys.stderr.fileno())
-                        if payload['op'] == 'run' else ())
+        try:
+            reply = request(payload, (sys.stdout.fileno(), sys.stderr.fileno())
+                            if payload['op'] == 'run' else ())
+        except LauncherError as error:
+            if payload['op'] == 'stop' and str(error) == 'unknown_run':
+                logging.basicConfig(level=logging.INFO)
+                logging.getLogger(__name__).info('Launcher run %s already stopped', payload['run_id'])
+                return 0
+            raise
         if payload['op'] == 'run':
             code = reply.get('exit_code')
             if type(code) is not int or not 0 <= code <= 255:

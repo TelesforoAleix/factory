@@ -77,13 +77,13 @@ def test_client_descriptors_profiles_and_exit(server, turn):
     options = [] if turn is None else ['--session-turn', str(turn)]
     result = cli('run', '--repo', '/srv/factory/work/session-1',
                  '--run', '/srv/factory/runs/feature/slice/io', '--tool', 'codex', *options,
-                 '--read-only-path', '/srv/factory/work/session-1/repos/.planning',
+                 '--read-only-path', '/srv/factory/work/session-1/repos/factory-planning-export',
                  '--', 'codex', 'exec', '--', 'literal $(false)')
     assert (result.returncode, result.stdout, result.stderr) == (23, 'O', 'E')
     payload, = requests
     assert payload['profile'] == ('cli-run' if turn is None else 'chat')
     assert payload['folders'] == dict(work='session-1', run='feature/slice/io')
-    assert payload['exports'] == ['.planning']
+    assert payload['exports'] == ['factory-planning-export']
     assert payload['command'] == ['codex', 'exec', '--', 'literal $(false)']
     assert payload['run_id'] == 'turn-7' if turn else re.fullmatch('[0-9a-f]{32}', payload['run_id'])
     if turn:
@@ -454,15 +454,15 @@ def test_shared_session_and_export_checks(boundary, service_identity, monkeypatc
     assert (info.st_uid, info.st_gid, info.st_mode & 0o7777) == (service_identity, 21000, 0o1770)
     chown.assert_called_once_with(folder, -1, 21000)
     assert not requests  # The session itself is never transferred to the agent.
-    for path in (folder / 'repos', folder / 'repos/.planning'):
+    for path in (folder / 'repos', folder / 'repos/factory-planning-export'):
         info = path.lstat()
         assert info.st_uid == service_identity and info.st_mode & 0o7777 == 0o755
     session.update(cli_session_id='saved')
     assert sessions.workspace(session)[0] == folder
-    (folder / 'repos/.planning').chmod(0o775)
+    (folder / 'repos/factory-planning-export').chmod(0o775)
     with pytest.raises(fence.StateError, match='Planning export replaced'):
         sessions.workspace(session)
-    (folder / 'repos/.planning').chmod(0o755)
+    (folder / 'repos/factory-planning-export').chmod(0o755)
     (folder / 'repos').chmod(0o775)
     with pytest.raises(fence.StateError, match='Planning export replaced'):
         sessions.workspace(session)
@@ -588,3 +588,21 @@ def test_root_direct_handoff_remains_available(tmp_path, monkeypatch):
     monkeypatch.setattr(os, 'chown', chown)
     fence.own(tmp_path, 'work')
     chown.assert_called_once_with(tmp_path, 21000, 21000)
+
+
+def test_unknown_run_stop_is_success(server):
+    _, reply, _ = server
+    reply.clear()
+    reply.update(ok=False, error='unknown_run')
+    result = cli('session-cleanup', '12')
+    assert result.returncode == 0
+    assert result.stderr.count('already stopped') == 1
+
+
+def test_other_stop_error_is_failure(server):
+    _, reply, _ = server
+    reply.clear()
+    reply.update(ok=False, error='unavailable')
+    result = cli('session-cleanup', '12')
+    assert result.returncode == 125
+    assert 'unavailable' in result.stderr
