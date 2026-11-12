@@ -567,3 +567,17 @@ header .project-nav { margin-left: auto; min-width: 0; overflow-x: auto; flex-wr
 .slice-panel { position: fixed; z-index: 20; right: 0; top: 0; bottom: 0; width: min(440px, 100vw); overflow: auto; padding: var(--space-5); background: var(--background); border-left: 1px solid var(--rule); box-shadow: 0 4px 16px #0002; }
 .slice-panel section { border-top: 1px solid var(--rule); margin-top: var(--space-4); }
 @media (max-width: 700px) { .slice-panel { width: 100%; } }
+
+.home-feature { border-top: 1px solid var(--rule); padding-top: var(--space-3); }
+.home-fold { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); width: 100%; text-align: left; }
+.home-feature h3 { margin: var(--space-3) 0; }
+.home-slice { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) 0; border-bottom: 1px solid var(--rule); }
+.home-slice p { flex-basis: 100%; margin: 0; color: var(--secondary); }
+.home-next { margin: var(--space-4) 0; }
+.home-board { grid-template-columns: minmax(0, 1fr); }
+@media (max-width: 700px) {
+  .home-fold { flex-wrap: nowrap; overflow: hidden; }
+  .home-fold > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .home-fold > strong, .home-fold > span { flex-shrink: 0; }
+  .home-fold > span:last-child { flex-shrink: 1; }
+}

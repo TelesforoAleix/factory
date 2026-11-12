@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from cplane.runner import stuck_since
 from cplane.attention import recipient
-from cplane.installation import pending, install_failure, chat_requested
+from cplane.installation import pending, install_failure, chat_requested, REQUEST
 from cplane.chats import public_chat_result
 
 
@@ -93,15 +93,39 @@ def home_data(store, board, clean, view):
         attention.extend({**a, 'title': clean(a['title']), 'text': clean(a['text'])} for a in store.testing_review_waits())
     order = {k: i for i, k in enumerate(('failure', 'approval', 'install', 'decision', 'question', 'testing-review', 'stuck', 'limit'))}
     attention.sort(key=lambda a: (order[a['kind']], a['since'] or ''))
+    ordered = store.ordered_slices(slices) if hasattr(store, 'ordered_slices') else slices
+    def slice_summary(s):
+        return dict(id=s['id'], title=clean(s['title']), state=s['state'],
+                    no_feature=clean(s.get('no_feature')) if s.get('no_feature') else None)
+    building = []
+    for feature in features:
+        if feature['stage'] == 'building':
+            group = [slice_summary(s) for s in ordered if linked[s['id']] is feature]
+            building.append(dict(id=feature['id'], title=clean(feature.get('title', feature['id'])), project=feature['project'],
+                                 slices=group, done=sum(s['state'] in ('accepted', 'dropped') for s in group), total=len(group)))
+    unlinked = [slice_summary(s) | dict(project=None) for s in ordered
+                if not s.get('feature_id') and s['state'] not in ('accepted', 'dropped')]
     running = []
     for s in slices:
         if s['state'] == 'issued':
             f = linked.get(s['id'])
-            issued = next((e['at'] for e in reversed(s['log']) if e['event'] in ('started', 'resumed', 'issued')), s['log'][0]['at'] if s['log'] else None)
-            running.append(dict(id=s['id'], title=clean(s['title']), feature=f['id'] if f else clean(s['feature']), project=f['project'] if f else None, since=issued))
+            issued = next((e['at'] for e in reversed(s['log']) if e['event'] in ('started', 'resumed', 'issued', 'state: issued')), s['log'][0]['at'] if s['log'] else None)
+            running.append(dict(kind='slice', id=s['id'], title=clean(s['title']), feature=f['id'] if f else clean(s['feature']), project=f['project'] if f else None, since=issued))
+    for s, request in pending(data):
+        f = linked.get(s['id'])
+        since = next(e['at'] for e in s['log'] if e['actor'] == 'owner' and e['event'] == REQUEST + request)
+        running.append(dict(kind='install', id=s['id'], title=clean(s['title']), project=f['project'] if f else None, since=since))
+    if hasattr(store, 'connection'):
+        # Message time is the persisted enqueue time; run records can supply a later start.
+        rows = store.connection.execute("SELECT m.session, m.time, (SELECT max(r.started_at) FROM cplane_task_runs r WHERE r.kind = 'chat' AND r.session_id = m.session::text AND r.started_at >= m.time) FROM cplane_session_messages m JOIN cplane_sessions s ON s.id = m.session WHERE m.status = 'running' AND s.area = 'factory'")
+        all_chats = {c['id']: c for c in public_chat_result(store.chats())}
+        for chat_id, queued, started in rows:
+            c = all_chats.get(chat_id)
+            if c:
+                running.append(dict(kind='chat', id=chat_id, title=clean(c['title']), project=c.get('project'), since=(started or queued).isoformat()))
     quick_chats = [dict(id=c['id'], title='Development Orchestrator') for c in chats if c['kind'] == 'orchestrator']
     by_project = {c['project']: c for c in chats if c['kind'] == 'project'}
     quick_chats.extend(dict(id=by_project[p['key']]['id'], title=clean(p['name']))
                        for p in board['projects'] if p.get('active', True) and p['key'] in by_project)
-    return dict(quick_chats=quick_chats, projects=board['projects'], features=features, attention=attention, orchestrator_count=orchestrator_count, running=running,
+    return dict(quick_chats=quick_chats, projects=board['projects'], features=features, attention=attention, orchestrator_count=orchestrator_count, running=running, building=building, unlinked=unlinked,
                 chats=[{k: clean(v) if k == 'title' else v for k, v in c.items() if k in ('id', 'title', 'project', 'feature', 'waiting')} for c in chats if c['waiting']])

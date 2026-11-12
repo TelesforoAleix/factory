@@ -34,17 +34,35 @@ test('Testing review links to chat and requested install remains an owner action
   await waitFor(() => expect(fetcher).toHaveBeenCalledWith('/api/slices/factory/TR1/install', expect.objectContaining({method:'POST'})));
 });
 
-test('inactive attention, running and Next remain visible with quick chat links', async () => {
-  const data = {projects:[{key:'FAC',name:'Factory',active:false},{key:'LAB',name:'Lab',active:true}], features:[{id:'FAC-F1',title:'Queued inactive',project:'FAC',stage:'next'}], running:[{id:'FAC/R1',title:'Running inactive',project:'FAC'}], chats:[{id:7,title:'Waiting inactive',project:'FAC'}], attention:[{kind:'failure',id:'FAC/R1',title:'Failure inactive',project:'FAC',text:'Needs help'}],quick_chats:[{id:1,title:'Development Orchestrator'},{id:9,title:'Lab'}]};
-  vi.stubGlobal('fetch', vi.fn(async () => ({ok:true,json:async () => data})));
+test.each([false, true])('feature blocks start open on desktop and folded on phone (%s)', async phone => {
+  vi.stubGlobal('matchMedia', () => ({matches:phone, addEventListener:vi.fn(), removeEventListener:vi.fn()}));
+  const data = {projects:[],features:[{id:'N',title:'Queued',stage:'next'}],attention:[{kind:'failure',id:'bad',text:'Problem'}],chats:[],running:[{kind:'chat',id:7,title:'Planning',project:'P'}],building:[{id:'F1',title:'Feature',done:0,total:1,slices:[{id:'S1',title:'Working',state:'issued'}]}],unlinked:[{id:'S2',title:'Unlinked',state:'ready',no_feature:'Maintenance'}]};
+  vi.stubGlobal('fetch', async url => ({ok:true,json:async () => url === '/api/home' ? data : []}));
+  const {container} = render(<MemoryRouter><Home/></MemoryRouter>);
+  await screen.findByText('Problem');
+  const feature = screen.getByRole('button',{name:/F1/});
+  const unlinked = screen.getByRole('button',{name:/Not in a feature/});
+  expect(feature.getAttribute('aria-expanded')).toBe(String(!phone));
+  expect(unlinked.getAttribute('aria-expanded')).toBe(String(!phone));
+  const text = container.textContent;
+  expect(text.indexOf('Problem')).toBeLessThan(text.indexOf('Running now'));
+  expect(text.indexOf('Running now')).toBeLessThan(text.indexOf('F1'));
+  expect(text.indexOf('F1')).toBeLessThan(text.indexOf('Next:'));
+  expect(text.indexOf('Next:')).toBeLessThan(text.indexOf('Not in a feature'));
+  if (phone) { fireEvent.click(feature); fireEvent.click(unlinked); }
+  expect(screen.getByText('Maintenance')).toBeTruthy();
+  expect(screen.getByRole('link',{name:/Feature/}).getAttribute('href')).toBe('/pipeline/F1');
+});
+
+test('empty activity sections are hidden', async () => {
+  const data = {projects:[],features:[],attention:[],running:[],building:[],unlinked:[],chats:[]};
+  vi.stubGlobal('fetch', async url => ({ok:true,json:async () => url === '/api/home' ? data : []}));
   render(<MemoryRouter><Home/></MemoryRouter>);
-  expect(await screen.findByText('Failure inactive')).toBeTruthy();
-  expect(screen.getByText('Running inactive')).toBeTruthy();
-  expect(screen.getByText('Waiting inactive')).toBeTruthy();
-  expect(screen.getByText('Queued inactive')).toBeTruthy();
-  expect(screen.queryByRole('button',{name:'Factory'})).toBeNull();
-  const quick = screen.getByLabelText('Quick chats');
-  expect([...quick.querySelectorAll('a')].map(a => [a.textContent,a.getAttribute('href')])).toEqual([['Development Orchestrator','/chats/1'],['Lab','/chats/9']]);
+  await screen.findByText('Home');
+  await waitFor(() => expect(screen.queryByText('Loading…')).toBeNull());
+  expect(screen.queryByText('Running now')).toBeNull();
+  expect(screen.queryByText(/Next:/)).toBeNull();
+  expect(screen.queryByText('Not in a feature')).toBeNull();
 });
 
 test('failed install offers same-slice retry beside Review', async () => {
