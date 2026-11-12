@@ -288,3 +288,38 @@ def test_override_key_link_refused(key, monkeypatch):
     with pytest.raises(state.StateError, match='GitHub App authentication failed'):
         app.installation_token(REPOS)
     mint.assert_not_called()
+
+
+@pytest.mark.parametrize('failure', [urllib.error.URLError('synthetic-secret'), TimeoutError('synthetic-secret'),
+                                    urllib.error.HTTPError('secret', 503, 'secret', {}, None)])
+def test_transient_token_request_failure_is_safe(key, monkeypatch, failure):
+    opener = Mock()
+    opener.open.side_effect = failure
+    monkeypatch.setattr(app.urllib.request, 'build_opener', Mock(return_value=opener))
+    with pytest.raises(app.GitHubAppTransientError) as error:
+        app.installation_token(REPOS)
+    assert str(error.value) == 'GitHub App login failed'
+    assert error.value.__suppress_context__
+    assert not app._TOKENS
+
+
+def test_signing_exception_is_not_transient(key, monkeypatch):
+    monkeypatch.setattr(app, 'jwt', Mock(side_effect=TimeoutError('synthetic-secret')))
+    with pytest.raises(state.StateError) as error:
+        app.installation_token(REPOS)
+    assert type(error.value) is state.StateError
+    assert str(error.value) == 'GitHub App authentication failed'
+
+
+def test_failure_reading_response_is_not_transient(key, monkeypatch):
+    reply = Mock()
+    reply.__enter__ = Mock(return_value=reply)
+    reply.__exit__ = Mock(return_value=False)
+    reply.read.side_effect = TimeoutError('synthetic-secret')
+    opener = Mock()
+    opener.open.return_value = reply
+    monkeypatch.setattr(app.urllib.request, 'build_opener', Mock(return_value=opener))
+    with pytest.raises(state.StateError) as error:
+        app.installation_token(REPOS)
+    assert type(error.value) is state.StateError
+    assert str(error.value) == 'GitHub App authentication failed'
