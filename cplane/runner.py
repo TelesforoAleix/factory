@@ -1,5 +1,5 @@
 """One locked scheduling pass. Adapters keep external effects fakeable."""
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
@@ -596,20 +596,21 @@ class Runner:
         if not match:
             return None
         try:
+            instant = self.instant.astimezone(timezone.utc)
             clock = datetime.strptime(match[4].upper().replace(' ', ''), '%I:%M%p').time()
             if match[1]:
                 day = datetime.strptime(f'{match[1].title()} {match[2]} {match[3]}', '%b %d %Y')
-                retry = self.instant.replace(year=day.year, month=day.month, day=day.day,
+                retry = instant.replace(year=day.year, month=day.month, day=day.day,
                                              hour=clock.hour, minute=clock.minute,
                                              second=0, microsecond=0)
             else:
-                retry = self.instant.replace(hour=clock.hour, minute=clock.minute,
+                retry = instant.replace(hour=clock.hour, minute=clock.minute,
                                              second=0, microsecond=0)
-                if retry <= self.instant:
+                if retry <= instant:
                     retry += timedelta(days=1)
         except ValueError:
             return None
-        return retry.timestamp() if retry > self.instant else None
+        return retry.timestamp() if retry > instant else None
 
     def publish(self, item, job, request):
         try:
@@ -640,13 +641,13 @@ class Runner:
             item['pr'] = job['pr']
         if cut_message:
             now_ts = self.instant.timestamp()
-            reset_at, limit = self.limit_reset(cut_message), None
+            windows = [w for w in (codex_limits() or [])
+                       if isinstance(w.get('used_percent'), (int, float)) and w['used_percent'] >= 99
+                       and isinstance(w.get('resets_at'), (int, float)) and w['resets_at'] > now_ts]
+            reset_at = float(max(w['resets_at'] for w in windows)) if windows else None
+            limit = None
             if reset_at is None:
-                windows = [w for w in (codex_limits() or [])
-                           if isinstance(w.get('used_percent'), (int, float)) and w['used_percent'] >= 99
-                           and isinstance(w.get('resets_at'), (int, float)) and w['resets_at'] > now_ts]
-                if windows:
-                    reset_at = float(max(w['resets_at'] for w in windows))
+                reset_at = self.limit_reset(cut_message)
             if reset_at is None:
                 reset_at, limit = (self.instant + timedelta(minutes=60)).timestamp(), 'fixed'
             else:
