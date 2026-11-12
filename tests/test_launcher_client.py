@@ -136,7 +136,7 @@ def test_fresh_and_explicit_ids(server, options):
 
 
 @pytest.fixture
-def boundary(server, tmp_path, monkeypatch):
+def boundary(server, tmp_path, monkeypatch, service_identity):
     """Run call-site argv through translation and the real socket transport."""
     work, runs = tmp_path / 'work', tmp_path / 'runs'
     work.mkdir()
@@ -162,6 +162,15 @@ def boundary(server, tmp_path, monkeypatch):
         if kwargs.get('text'):
             stdout, stderr = stdout.decode(), stderr.decode()
         return subprocess.CompletedProcess(argv, reply.get('exit_code', 0), stdout, stderr)
+    original_manage = launcher.manage
+
+    def manage(operation, role, path):
+        if operation == 'own':
+            expected = 0o750 if Path(path).name == 'io' else 0o700
+            assert Path(path).stat().st_mode & 0o7777 == expected
+        return original_manage(operation, role, path)
+
+    monkeypatch.setattr(launcher, 'manage', manage)
     monkeypatch.setattr(subprocess, 'run', run)
     return work, runs, server[0], server[1], server[2]
 
@@ -277,16 +286,17 @@ def test_copy_ownership(boundary, monkeypatch, reviewing):
     assert requests == [dict(op='own', role='work', folder_id='review' if reviewing else 'copy')]
 
 
-def test_workspace_planning_ownership_keeps_session_chown(boundary, monkeypatch):
+def test_workspace_planning_ownership_keeps_factory_session(boundary, monkeypatch):
     work, _, requests, _, _ = boundary
-    monkeypatch.setattr(sessions.Planning, 'prepare', lambda self, path: path.mkdir())
+    monkeypatch.setattr(sessions.Planning, 'prepare', lambda self, path: path.mkdir(mode=0o700))
     monkeypatch.setattr(sessions.Planning, '__init__', lambda self, session: None)
     monkeypatch.setattr(sessions.skills, 'install', lambda *args: None)
     chown = Mock()
     monkeypatch.setattr(sessions.os, 'chown', chown)
     sessions.workspace(dict(id=1, area='homelab', cli_session_id=None, repositories=[]))
     assert requests == [dict(op='own', role='work', folder_id='session-1/planning')]
-    chown.assert_called_once_with(work / 'session-1', 21000, 21000)
+    chown.assert_called_once_with(work / 'session-1', -1, 21000)
+    assert (work / 'session-1').stat().st_mode & 0o7777 == 0o1770
 
 
 def test_session_delivery_io_ownership(boundary, monkeypatch):
@@ -397,3 +407,184 @@ def test_run_does_not_send_empty_bytes_after_server_reply(server, monkeypatch):
         reply = launcher.request(dict(op='run', profile='usage', run_id='test'),
                                  (out.fileno(), err.fileno()))
     assert reply['ok']
+
+
+@pytest.fixture(params=[0, 21011], ids=['root', 'service'])
+def service_identity(request, monkeypatch):
+    """Inject ownership metadata without changing the test process's real identity."""
+    actual = os.geteuid()
+    euid = request.param
+    original = Path.lstat
+
+    def lstat(path):
+        info = original(path)
+        if info.st_uid == actual and not (info.st_uid == 0 and info.st_mode & 0o1000):
+            fields = list(info)
+            fields[4] = euid
+            return os.stat_result(fields)
+        return info
+
+    monkeypatch.setattr(os, 'geteuid', lambda: euid)
+    monkeypatch.setattr(Path, 'lstat', lstat)
+    return euid
+
+
+def test_shared_session_and_export_checks(boundary, service_identity, monkeypatch):
+    work, _, requests, _, _ = boundary
+    monkeypatch.setattr(sessions.skills, 'install', lambda *args: None)
+    monkeypatch.setattr(sessions.skills, 'ensure_readable', lambda *args: None)
+    monkeypatch.setattr(sessions, 'export_tree', lambda _, path, ref: path.mkdir())
+    original = Path.lstat
+    groups = {}
+
+    def lstat(path):
+        info = original(path)
+        if path in groups:
+            fields = list(info)
+            fields[5] = groups[path]
+            return os.stat_result(fields)
+        return info
+
+    monkeypatch.setattr(Path, 'lstat', lstat)
+    chown = Mock(side_effect=lambda path, uid, gid: groups.update({path: gid}))
+    monkeypatch.setattr(sessions.os, 'chown', chown)
+    session = dict(id=1, cli_session_id=None, repositories=[])
+    folder, _ = sessions.workspace(session)
+    info = folder.lstat()
+    assert (info.st_uid, info.st_gid, info.st_mode & 0o7777) == (service_identity, 21000, 0o1770)
+    chown.assert_called_once_with(folder, -1, 21000)
+    assert not requests  # The session itself is never transferred to the agent.
+    for path in (folder / 'repos', folder / 'repos/.planning'):
+        info = path.lstat()
+        assert info.st_uid == service_identity and info.st_mode & 0o7777 == 0o755
+    session.update(cli_session_id='saved')
+    assert sessions.workspace(session)[0] == folder
+    (folder / 'repos/.planning').chmod(0o775)
+    with pytest.raises(fence.StateError, match='Planning export replaced'):
+        sessions.workspace(session)
+    (folder / 'repos/.planning').chmod(0o755)
+    (folder / 'repos').chmod(0o775)
+    with pytest.raises(fence.StateError, match='Planning export replaced'):
+        sessions.workspace(session)
+
+
+def test_old_session_removed_before_recreation(boundary, service_identity, monkeypatch):
+    import shutil
+    work, _, requests, _, _ = boundary
+    folder = work / 'session-1'
+    folder.mkdir(mode=0o700)
+    (folder / 'old').write_text('old agent workspace')
+    original = Path.lstat
+    removed = []
+
+    def lstat(path):
+        info = original(path)
+        if path == folder:
+            fields = list(info)
+            fields[4] = service_identity if removed else 21000
+            fields[5] = 21000
+            return os.stat_result(fields)
+        return info
+
+    def remove(path, role):
+        assert (path, role) == (folder, 'work')
+        removed.append(path)
+        shutil.rmtree(path)
+
+    monkeypatch.setattr(Path, 'lstat', lstat)
+    monkeypatch.setattr(fence, 'remove', remove)
+    monkeypatch.setattr(sessions.os, 'chown', Mock())
+    monkeypatch.setattr(sessions.skills, 'install', lambda *args: None)
+    monkeypatch.setattr(sessions, 'export_tree', lambda _, path, ref: path.mkdir())
+    session = dict(id=1, cli_session_id=None, workspace_ready=True, repositories=[])
+    sessions.workspace(session)
+    assert removed == [folder] and not (folder / 'old').exists()
+    assert sessions.session_directory(folder.lstat())
+    assert not requests
+
+
+def test_trusted_service_ancestor_and_write_bits(tmp_path, service_identity):
+    ancestor = tmp_path / 'service'
+    path = ancestor / 'clean'
+    path.mkdir(parents=True)
+    assert fence.trusted_directory(path) == path
+    ancestor.chmod(0o775)
+    with pytest.raises(fence.StateError, match='not writable by others'):
+        fence.trusted_directory(path)
+
+
+@pytest.mark.parametrize('switch', [None, 'factory-cli', '/custom/fence'])
+@pytest.mark.parametrize('operation', ['tree', 'session'])
+def test_nonroot_direct_chown_fails(tmp_path, monkeypatch, switch, operation):
+    monkeypatch.setattr(os, 'geteuid', lambda: 21011)
+    if switch is None:
+        monkeypatch.delenv('CPLANE_FENCE_COMMAND', raising=False)
+    else:
+        monkeypatch.setenv('CPLANE_FENCE_COMMAND', switch)
+    chown = Mock(side_effect=AssertionError('direct chown attempted'))
+    monkeypatch.setattr(os, 'chown', chown)
+    if operation == 'tree':
+        action = lambda: fence.own(tmp_path, 'work', recursive=True)
+    else:
+        monkeypatch.setattr(sessions, 'trusted_directory', lambda path: path)
+        monkeypatch.setattr(sessions, 'WORK_ROOT', tmp_path)
+        action = lambda: sessions.workspace(dict(id=1, cli_session_id=None, repositories=[]))
+    with pytest.raises(fence.StateError, match='Non-root.*CPLANE_FENCE_COMMAND=socket'):
+        action()
+    chown.assert_not_called()
+
+
+@pytest.mark.parametrize('reader', ['bundle', 'reply'])
+@pytest.mark.parametrize('kind', ['link', 'hardlink', 'unreadable'])
+def test_output_refuses_unsafe_files(tmp_path, monkeypatch, reader, kind):
+    io = tmp_path / 'io'
+    io.mkdir(mode=0o750)
+    source = tmp_path / 'source'
+    source.write_text('synthetic output')
+    path = io / ('branch.bundle' if reader == 'bundle' else 'last.json')
+    if kind == 'link':
+        path.symlink_to(source)
+    elif kind == 'hardlink':
+        os.link(source, path)
+    else:
+        path.write_text('unreadable')
+        original = os.open
+
+        def denied(name, flags, *args, **kwargs):
+            if name == path.name:
+                raise PermissionError('agent made output unreadable')
+            return original(name, flags, *args, **kwargs)
+
+        monkeypatch.setattr(os, 'open', denied)
+    with pytest.raises((OSError, ValueError, fence.StateError)):
+        fence.snapshot_bundle(tmp_path) if reader == 'bundle' else executors.read_output(path)
+
+
+@pytest.mark.parametrize('mode,gid', [(0o770, 21000), (0o1775, 21000), (0o1770, 0)])
+def test_session_reuse_requires_exact_mode_and_group(boundary, service_identity, monkeypatch, mode, gid):
+    work, _, _, _, _ = boundary
+    folder = work / 'session-1'
+    folder.mkdir(mode=mode)
+    folder.chmod(mode)
+    original = Path.lstat
+
+    def lstat(path):
+        info = original(path)
+        if path == folder:
+            fields = list(info)
+            fields[5] = gid
+            return os.stat_result(fields)
+        return info
+
+    monkeypatch.setattr(Path, 'lstat', lstat)
+    with pytest.raises(fence.StateError, match='Workspace unavailable'):
+        sessions.workspace(dict(id=1, cli_session_id='saved', repositories=[]))
+
+
+def test_root_direct_handoff_remains_available(tmp_path, monkeypatch):
+    monkeypatch.setattr(os, 'geteuid', lambda: 0)
+    monkeypatch.delenv('CPLANE_FENCE_COMMAND', raising=False)
+    chown = Mock()
+    monkeypatch.setattr(os, 'chown', chown)
+    fence.own(tmp_path, 'work')
+    chown.assert_called_once_with(tmp_path, 21000, 21000)

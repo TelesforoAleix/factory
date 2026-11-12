@@ -290,6 +290,8 @@ def test_session_exports_remote_default_and_resume_does_not_fetch(tmp_path, monk
 
     monkeypatch.setattr(fence.Fence, 'git', local_git)
     monkeypatch.setattr(sessions.os, 'chown', Mock())
+    # This fixture substitutes direct ownership; real privilege checks have separate coverage.
+    monkeypatch.setattr('cplane.fence.require_ownership_support', lambda: None)
     # Simulate root-owned read-only exports when tests run without root.
     original_lstat = Path.lstat
 
@@ -297,7 +299,8 @@ def test_session_exports_remote_default_and_resume_does_not_fetch(tmp_path, monk
         info = original_lstat(path)
         if path == work / 'session-1':
             fields = list(info)
-            fields[4] = 21000
+            fields[4] = os.geteuid()
+            fields[5] = 21000
             return os.stat_result(fields)
         if path in (work / 'session-1/repos', work / 'session-1/repos/repo',
                     work / 'session-1/repos/.planning'):
@@ -398,7 +401,7 @@ def test_failed_first_turn_restarts_without_resume_or_skill_resnapshot(pg_store)
     assert 'First decision' in retry['context']
 
 
-def test_restart_moves_unsuitable_workspace_aside(tmp_path, monkeypatch):
+def test_restart_removes_unsuitable_workspace(tmp_path, monkeypatch):
     work = tmp_path / 'work'
     work.mkdir()
     old = work / 'session-1'
@@ -410,6 +413,8 @@ def test_restart_moves_unsuitable_workspace_aside(tmp_path, monkeypatch):
     monkeypatch.setattr(sessions, 'export_tree', export)
     monkeypatch.setattr(sessions.skills, 'install', lambda *_args: None)
     monkeypatch.setattr(sessions.os, 'chown', lambda *_args, **_kwargs: None)
+    # This fixture substitutes direct ownership; real privilege checks have separate coverage.
+    monkeypatch.setattr('cplane.fence.require_ownership_support', lambda: None)
     original = Path.lstat
     def lstat(path):
         info = original(path)
@@ -421,4 +426,4 @@ def test_restart_moves_unsuitable_workspace_aside(tmp_path, monkeypatch):
     folder, _ = sessions.workspace(dict(id=1, cli_session_id=None, _restart=True, repositories=[]))
     assert folder == old
     assert not (folder / 'marker').exists()
-    assert [p.read_text() for p in work.glob('session-1-abandoned-*/marker')] == ['preserved']
+    assert not list(work.glob('session-1-abandoned-*'))

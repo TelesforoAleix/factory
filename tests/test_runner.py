@@ -1104,6 +1104,8 @@ def test_detached_starter_closes_stdin_and_writes_config(tmp_path, monkeypatch):
     from cplane.executors import FINAL_SCHEMA
     popen = Mock(return_value=Mock(pid=123))
     monkeypatch.setattr('cplane.executors.os.chown', lambda *args: None)
+    # This fixture substitutes direct ownership; real privilege checks have separate coverage.
+    monkeypatch.setattr('cplane.fence.require_ownership_support', lambda: None)
     monkeypatch.setattr('cplane.executors.subprocess.Popen', popen)
     job = {'tool': 'codex', 'run': str(tmp_path), 'repo': '/tmp/repo', 'model': 'm', 'prompt': 'brief'}
     assert Processes().start(job) == 123
@@ -1130,6 +1132,8 @@ def test_detached_supervisor_runs_as_importable_module(tmp_path, monkeypatch):
     codex.chmod(0o755)
     monkeypatch.setenv('PATH', str(bin_dir) + os.pathsep + os.environ['PATH'])
     monkeypatch.setattr('cplane.executors.os.chown', lambda *args: None)
+    # This fixture substitutes direct ownership; real privilege checks have separate coverage.
+    monkeypatch.setattr('cplane.fence.require_ownership_support', lambda: None)
     job = {'tool': 'codex', 'run': str(run), 'repo': str(repo), 'model': 'stub', 'prompt': 'test'}
 
     Processes().start(job)

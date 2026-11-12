@@ -1,4 +1,4 @@
-"""Root-only, database-driven fenced conversation turns. No web execution path."""
+"""Database-driven fenced conversation turns. No web execution path."""
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
 import ctypes
@@ -111,6 +111,11 @@ class DocumentExporter:
             os.close(lock_fd)
 
 
+def session_directory(info):
+    return (stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid()
+            and info.st_gid == fence.CLI_GID and stat.S_IMODE(info.st_mode) == 0o1770)
+
+
 def workspace(session):
     repositories = session['repositories']
     if (not isinstance(repositories, list) or any(
@@ -125,7 +130,7 @@ def workspace(session):
     retry_workspace = session.get('_restart') and exists
     if exists and not session.get('cli_session_id'):
         info = folder.lstat()
-        reusable = (retry_workspace or session.get('workspace_ready')) and stat.S_ISDIR(info.st_mode) and info.st_uid == 21000 and stat.S_IMODE(info.st_mode) == 0o700
+        reusable = (retry_workspace or session.get('workspace_ready')) and session_directory(info)
         if reusable:
             components = [folder / 'repos', *(folder / 'repos' / r.split('/')[1] for r in repositories)]
             if session.get('area') != 'homelab':
@@ -133,33 +138,25 @@ def workspace(session):
             try:
                 for component in components:
                     info = component.lstat()
-                    if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+                    if not stat.S_ISDIR(info.st_mode) or info.st_uid not in (0, os.geteuid()) or info.st_mode & 0o022:
                         reusable = False
                         break
             except OSError:
                 reusable = False
         if not reusable:
-            # Rename the directory entry itself, never traverse an untrusted tree.
-            stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
-            for suffix in range(10000):
-                aside = WORK_ROOT / f'session-{session["id"]}-abandoned-{stamp}-{suffix}'
-                if not os.path.lexists(aside):
-                    os.rename(folder, aside)
-                    break
-            else:
-                raise StateError('Workspace unavailable')
+            fence.remove(folder, 'work')
             retry_workspace = False
             session['workspace_ready'] = False
     if session['cli_session_id'] or session.get('workspace_ready') or retry_workspace:
-        # Never refresh or walk an agent-owned workspace on resume. Only the
-        # root-owned installed instructions may have their read modes repaired.
+        # Never refresh or walk the workspace on resume. Only Factory-owned
+        # installed instructions may have their read modes repaired.
         info = folder.lstat()
-        if (not stat.S_ISDIR(info.st_mode) or info.st_uid != 21000
-                or stat.S_IMODE(info.st_mode) != 0o700):
+        if not session_directory(info):
             raise StateError('Workspace unavailable')
         skills.ensure_readable(folder, session.get('skill_names'))
     else:
         # mkdir is exclusive: an interrupted or planted workspace is never reused.
+        fence.require_ownership_support()
         folder.mkdir(mode=0o700)
         repos = folder / 'repos'
         repos.mkdir(mode=0o755)
@@ -172,16 +169,16 @@ def workspace(session):
             export_tree(BRIEFS, repos / '.planning', 'HEAD')
             (repos / '.planning').chmod(0o755)
             (folder / 'planning').symlink_to('repos/.planning')
-        fence = Fence()
+        adapter = Fence()
         for repository in session['repositories']:
             _, name = repository.split('/')
-            clean = fence.clean(repository)
+            clean = adapter.clean(repository)
             if not clean.exists():
                 clean.mkdir(mode=0o700)
-                fence.git(clean, 'init', '--bare', '--template=')
-                fence.git(clean, 'remote', 'add', 'origin', f'https://github.com/{repository}.git')
-            fence.git(clean, 'fetch', '--prune', 'origin', '+refs/heads/*:refs/remotes/origin/*', auth=True)
-            head = fence.git(clean, 'ls-remote', '--symref', 'origin', 'HEAD', auth=True).stdout
+                adapter.git(clean, 'init', '--bare', '--template=')
+                adapter.git(clean, 'remote', 'add', 'origin', f'https://github.com/{repository}.git')
+            adapter.git(clean, 'fetch', '--prune', 'origin', '+refs/heads/*:refs/remotes/origin/*', auth=True)
+            head = adapter.git(clean, 'ls-remote', '--symref', 'origin', 'HEAD', auth=True).stdout
             match = re.search(r'^ref: refs/heads/([^\s]+)\s+HEAD$', head, re.M)
             if not match:
                 raise StateError('GitHub default branch unavailable')
@@ -190,24 +187,25 @@ def workspace(session):
                 session['_starting_commit'] = commit
             (repos / name).chmod(0o755)
         skills.install(folder, session.get('skill_names') if session.get('skill_names') is not None else sorted(skills.DEFAULTS))
-        # Chown planning only, while workspace remains root-owned and inaccessible.
+        # Transfer planning only while the session is still private to Factory.
         if session.get('area') == 'homelab':
             own(folder / 'planning', 'work', recursive=True)
-        os.chown(folder, 21000, 21000)
+        os.chown(folder, -1, fence.CLI_GID)
+        folder.chmod(0o1770)
     paths = []
     for repository in session['repositories']:
         path = folder / 'repos' / repository.split('/')[1]
         # Reject any agent replacement, including an ancestor symlink. No recursion.
         for component in (folder / 'repos', path):
             info = component.lstat()
-            if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+            if not stat.S_ISDIR(info.st_mode) or info.st_uid not in (0, os.geteuid()) or info.st_mode & 0o022:
                 raise StateError('Repository export replaced')
         paths.append(path)
     if session.get('area') != 'homelab':
         readonly = folder / 'repos/.planning'
         for component in (folder / 'repos', readonly):
             info = component.lstat()
-            if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+            if not stat.S_ISDIR(info.st_mode) or info.st_uid not in (0, os.geteuid()) or info.st_mode & 0o022:
                 raise StateError('Planning export replaced')
         paths.append(readonly)
     return folder, paths
@@ -287,7 +285,7 @@ def _execute_turn(turn, store, accounting):
         reason = 'The model tool could not complete the turn.'
         trusted_directory(RUNS)
         run = RUNS / f'session-turn-{turn["id"]}'
-        run.mkdir(mode=0o700)  # root-owned; no agent output files to follow
+        run.mkdir(mode=0o700)  # Factory-owned; no agent output files to follow
         command = turn_command(turn, folder, paths, run)
         accounting['started'] = time.time()
         workshop = (WorkshopServer(run, PostgresStore(store._url), turn['session']['id'],
@@ -312,7 +310,8 @@ def _execute_turn(turn, store, accounting):
         commits = []
         if turn['session'].get('area') == 'homelab':
             io_folder = run / 'io'
-            io_folder.mkdir(mode=0o700)
+            io_folder.mkdir(mode=0o750)
+            io_folder.chmod(0o750)
             fence.own(io_folder, 'run')
             try:
                 commits = Planning(turn['session']).deliver(folder / 'planning', run)

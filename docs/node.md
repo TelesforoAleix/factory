@@ -2212,16 +2212,23 @@ settings retain the existing host defaults until explicitly set:
 | `CPLANE_SESSION_RUNS` | `/srv/factory/runs` | Place turn and model probe folders on a writable runs bind; use `/srv/factory/runs/sessions` at cutover. |
 | `CPLANE_UI_DOCS` | `/var/lib/factory/ui-docs` | Configure the same document root for UI and sessions, with staging and the lock in its parent. |
 
-These settings do not change the compose contract. Before cutover, the following
-remain open:
+The fence's group, GID 21000, is the shared file channel. Runner (UID 21010)
+and sessions (UID 21011) must be supplementary members of that group. With
+`CPLANE_FENCE_COMMAND=socket`, trusted directories and exports accept ownership
+by root or the service's own euid and continue to reject group/other write bits.
+This resolves the trusted-directory and workspace ownership prerequisite for
+unprivileged services without capabilities; it does not change the compose
+contract. Before cutover, the following remain open:
 
 - Sessions needs clean clones in its mounts. Its document export exchanges the
   document directory, so the writable bind must accommodate that exchange and
   the sibling staging directory and lock.
-- Sessions and runner still enforce root-owned trusted directories and change
-  workspace ownership to UID 21000. Their unprivileged UIDs and empty capability
-  sets cannot perform those operations. Sessions also uses GitHub authentication
-  and planning read credentials beyond its decided secret set.
+- Sessions uses GitHub authentication and planning read credentials beyond its
+  decided secret set.
+- Installed-instruction mode repair on resume still requires root-owned uid/gid
+  metadata (`cplane/skills.py`), and workshop chats still transfer their socket
+  to UID 21000 (`cplane/workshop.py`). These separate boundaries also need updates
+  before non-root session cutover.
 - The image contains neither the current `factory-cli` executable nor clients
   for the mounted launcher/deployer sockets. Existing fence resumes also inspect
   login state that is deliberately absent from these service mounts.
@@ -2254,14 +2261,31 @@ and rejects links. Read-only exports remain names under the work folder's
 and three-component run paths before enabling this switch.
 
 With the switch enabled, whole-tree ownership transfers and removal of
-agent-owned temporary folders go through launcher `own` and `remove`. Factory
-still runs as root: the chat session folder itself retains its direct `os.chown`
-to preserve the root-owned exports within it. Removing this last direct ownership
-transfer is an open issue for the later non-root slice. Trusted-directory checks,
-export ownership checks and delivery validation remain unchanged.
+agent-owned temporary folders go through launcher `own` and `remove`, to
+UID/GID 21000. Before transfer, Factory sets `io` folders whose outputs it reads
+to mode 0750. Work/review copies, planning trees, and probe/warm-up work folders
+whose contents Factory does not read retain mode 0700. Services read agent
+outputs through group 21000; unreadable output fails the run, with no root
+fallback. Output reads use directory descriptors and `O_NOFOLLOW` and require
+regular files with one link.
 
-After merging, the orchestrator installs this revision, waits for the platform
-path support above, sets `CPLANE_FENCE_COMMAND=socket`, and runs one slice per
-harness plus one chat turn with each tool. Roll back by unsetting
-`CPLANE_FENCE_COMMAND`. Unset or any other value retains the existing command
-behavior (default `factory-cli`, or the configured executable).
+Chat session folders (`work/session-N`) remain owned by the creating Factory
+service, with group 21000 and exactly mode 1770. The agent writes through the
+group; the sticky bit prevents it renaming or deleting Factory-owned entries.
+`repos/` and its exports remain Factory-owned, mode 0755, and must not be group-
+or other-writable. An old agent-owned 0700 session folder is never reused;
+preparation without a resume ID removes it through `remove` and creates a fresh
+workspace. An incompatible workspace with a resume ID fails validation.
+
+The same code supports root services on the host. A non-root service must use
+`CPLANE_FENCE_COMMAND=socket`; any direct ownership hand-off with the switch off
+fails explicitly. Setting the session folder's group preserves its service uid
+and needs only membership in group 21000.
+
+After merging, the orchestrator installs this revision with the socket switch
+enabled. Run one Home Lab chat turn with Codex and one with Claude, checking each
+new session folder's service ownership, group 21000 and mode 1770, and that the
+planning bundle delivers. Run one slice through the runner. Roll back by
+installing the previous revision. For root services, unset or any other switch
+value retains the existing command behavior (default `factory-cli`, or the
+configured executable); non-root services require the socket switch.

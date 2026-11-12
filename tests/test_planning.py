@@ -255,13 +255,16 @@ def test_homelab_workspace_git_copy_and_resume(delivery, monkeypatch):
     monkeypatch.setattr(sessions, 'WORK_ROOT', work)
     monkeypatch.setattr(sessions, 'Planning', lambda _: d['adapter'])
     monkeypatch.setattr(sessions.os, 'chown', Mock())
+    # This fixture substitutes direct ownership; real privilege checks have separate coverage.
+    monkeypatch.setattr('cplane.fence.require_ownership_support', lambda: None)
     real_lstat = Path.lstat
 
     def owner(path):
         info = real_lstat(path)
         if path == work / 'session-1':
             values = list(info)
-            values[4] = 21000
+            values[4] = os.geteuid()
+            values[5] = 21000
             return os.stat_result(values)
         return info
 
@@ -289,6 +292,8 @@ def test_turn_records_pushes_or_delivery_refusal(tmp_path, monkeypatch, notice):
     monkeypatch.setattr(sessions, 'workspace', lambda _: (tmp_path, []))
     monkeypatch.setattr(sessions, 'RUNS', tmp_path)
     monkeypatch.setattr(sessions.os, 'chown', Mock())
+    # This fixture substitutes direct ownership; real privilege checks have separate coverage.
+    monkeypatch.setattr('cplane.fence.require_ownership_support', lambda: None)
     monkeypatch.setattr(sessions.subprocess, 'run', Mock(return_value=
                         subprocess.CompletedProcess([], 0, '{"session_id":"synthetic","result":"reply"}')))
     adapter = Mock()
