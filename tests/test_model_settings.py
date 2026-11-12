@@ -35,6 +35,8 @@ def programs(tmp_path, monkeypatch):
     monkeypatch.setattr(fence, 'ROOT_UID', os.getuid())
     monkeypatch.setattr(sessions, 'RUNS', runs)
     monkeypatch.setattr(models.os, 'chown', Mock())
+    # This fixture substitutes direct ownership; real privilege checks have separate coverage.
+    monkeypatch.setattr('cplane.fence.require_ownership_support', lambda: None)
     calls = []
 
     def run(argv, **kwargs):

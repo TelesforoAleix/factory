@@ -20,6 +20,8 @@ from cplane.runner import Git, GitHub, Runner
 @pytest.fixture
 def delivery(tmp_path, monkeypatch):
     monkeypatch.setattr('cplane.cut.skills_version', lambda: 'synthetic-installation-revision')
+    # This fixture substitutes direct ownership; real privilege checks have separate coverage.
+    monkeypatch.setattr(fence, 'require_ownership_support', lambda: None)
     tmp_path = tmp_path.resolve()
     monkeypatch.setenv('CPLANE_FENCE', '1')
     monkeypatch.setenv('GIT_CONFIG_GLOBAL', '/dev/null')
@@ -277,6 +279,8 @@ def test_fenced_supervisor_collects_session_and_final_from_run_folder(tmp_path, 
     folder = tmp_path.resolve()
     monkeypatch.setenv('CPLANE_FENCE_COMMAND', 'homelab-fence')
     monkeypatch.setattr(executors.os, 'chown', Mock())
+    # This fixture substitutes direct ownership; real privilege checks have separate coverage.
+    monkeypatch.setattr(fence, 'require_ownership_support', lambda: None)
     monkeypatch.setattr(executors.subprocess, 'Popen', Mock(return_value=Mock(pid=123)))
     job = dict(tool=tool, run=str(folder), repo='/untrusted/repo', model='synthetic',
                prompt='synthetic', fence=True, started_ns=0)

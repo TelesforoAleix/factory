@@ -30,7 +30,13 @@ def socket_enabled():
     return os.environ.get('CPLANE_FENCE_COMMAND') == 'socket'
 
 
+def require_ownership_support():
+    if os.geteuid() != 0 and not socket_enabled():
+        raise StateError('Non-root ownership changes require CPLANE_FENCE_COMMAND=socket')
+
+
 def own(path, role, *, recursive=False):
+    require_ownership_support()
     if socket_enabled():
         from .launcher import manage
         manage('own', role, path)
@@ -90,7 +96,7 @@ def git_options():
 
 
 def trusted_directory(path):
-    """Only root-managed ancestors; do not resolve through an agent-planted link."""
+    """Only root- or service-managed ancestors; never resolve agent-planted links."""
     for part in [*reversed(path.parents), path]:
         info = part.lstat()
         if not stat.S_ISDIR(info.st_mode):
@@ -98,8 +104,8 @@ def trusted_directory(path):
         # Sticky system temporary roots are needed by synthetic fixtures only.
         if part != path and info.st_mode & stat.S_ISVTX and info.st_uid == 0:
             continue
-        if info.st_uid not in (0, ROOT_UID) or info.st_mode & 0o022:
-            raise StateError('trusted directory must be root-owned and not writable by others')
+        if info.st_uid not in (0, os.geteuid()) or info.st_mode & 0o022:
+            raise StateError('trusted directory must be owned by root or the service and not writable by others')
     return path
 
 

@@ -29,8 +29,9 @@ def read_output(path):
     try:
         fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
         with os.fdopen(fd, 'r', errors='replace') as stream:
-            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
-                raise ValueError('executor output is not a regular file')
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise ValueError('executor output must be a regular file with one link')
             return stream.read()
     finally:
         os.close(directory)
@@ -69,7 +70,8 @@ class Processes:
         job['fence'] = True
         folder = Path(job['run'])
         output = folder / 'io'
-        output.mkdir(mode=0o700)
+        output.mkdir(mode=0o750)
+        output.chmod(0o750)
         atomic_json(output / 'schema.json', FINAL_SCHEMA)
         os.chmod(output / 'schema.json', 0o444)
         fence.own(output, 'run')
