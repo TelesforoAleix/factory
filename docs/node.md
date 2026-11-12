@@ -2228,3 +2228,38 @@ file. This slice does not add mounts, capabilities, users, networks, ports or
 application changes to work around them. Static compose tests validate the
 reviewed boundary; they do not prove runtime readiness. The owner still reviews
 the guard file on GitHub before any merge or eventual manual installation.
+
+### Factory launcher socket switch
+
+Set `CPLANE_FENCE_COMMAND=socket` for Factory to invoke
+`python -m cplane.launcher` through its current Python interpreter. The client
+connects to `/run/homelab-launcher.sock`; `CPLANE_LAUNCHER_SOCKET` overrides that
+path for tests. Detached executor supervisors preserve both settings.
+
+The client sends one JSON request per connection. Run requests pass stdout and
+stderr as two writable descriptors and wait for the container exit code.
+Launcher refusals print `launcher: <reason>` and exit 125. Chat turns use the
+`chat` profile with run ID `turn-N`; slice turns, warm-ups, version checks and
+model/usage probes use `cli-run`. Bundle exports use `bundle`. Other runs get
+fresh random IDs, except probes, whose explicit IDs allow timeout cleanup and
+catalog recovery to send `stop`. Session cleanup stops `turn-N`.
+
+Work paths must be beneath `/srv/factory/work` with one or two components; run
+paths must be beneath `/srv/factory/runs` with one to three components. The client
+refuses outside paths before connecting. The launcher validates existing folders
+and rejects links. Read-only exports remain names under the work folder's
+`repos/` directory. The platform launcher must support two-component work paths
+and three-component run paths before enabling this switch.
+
+With the switch enabled, whole-tree ownership transfers and removal of
+agent-owned temporary folders go through launcher `own` and `remove`. Factory
+still runs as root: the chat session folder itself retains its direct `os.chown`
+to preserve the root-owned exports within it. Removing this last direct ownership
+transfer is an open issue for the later non-root slice. Trusted-directory checks,
+export ownership checks and delivery validation remain unchanged.
+
+After merging, the orchestrator installs this revision, waits for the platform
+path support above, sets `CPLANE_FENCE_COMMAND=socket`, and runs one slice per
+harness plus one chat turn with each tool. Roll back by unsetting
+`CPLANE_FENCE_COMMAND`. Unset or any other value retains the existing command
+behavior (default `factory-cli`, or the configured executable).

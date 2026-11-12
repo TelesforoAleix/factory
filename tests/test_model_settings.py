@@ -451,8 +451,8 @@ def test_configured_fence_command_for_catalog_and_recovery(programs, tmp_path, m
 def test_fence_command_defaults_and_rolls_back(monkeypatch):
     from cplane import fence
     monkeypatch.delenv('CPLANE_FENCE_COMMAND', raising=False)
-    assert fence.fence_command() == 'factory-cli'
+    assert fence.fence_command() == ['factory-cli']
     monkeypatch.setenv('CPLANE_FENCE_COMMAND', 'homelab-fence')
-    assert fence.fence_command() == 'homelab-fence'
+    assert fence.fence_command() == ['homelab-fence']
     monkeypatch.delenv('CPLANE_FENCE_COMMAND')
-    assert fence.fence_command() == 'factory-cli'
+    assert fence.fence_command() == ['factory-cli']

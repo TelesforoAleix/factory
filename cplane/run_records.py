@@ -330,7 +330,7 @@ def launch_metadata(runner, item, job):
         args = [job['tool'], 'exec' if job['tool'] == 'codex' else '-p', '--version']
         if job.get('fence'):
             (Path(job['run']) / 'version').mkdir(mode=0o700, exist_ok=True)
-            args = [fence.fence_command(), 'run', '--tool', job['tool'], '--repo', job['repo'],
+            args = [*fence.fence_command(), 'run', '--tool', job['tool'], '--repo', job['repo'],
                     '--run', str(Path(job['run']) / 'version'), '--', *args]
         try:
             result = subprocess.run(args, capture_output=True, text=True, timeout=15)

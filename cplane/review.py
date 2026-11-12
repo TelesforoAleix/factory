@@ -1,7 +1,6 @@
 """Slice review validation and fresh copies, using only the clean clone for Git."""
 from importlib.resources import files
 import json
-import os
 
 from jsonschema import Draft202012Validator
 
@@ -44,11 +43,7 @@ def prepare(adapter, previous, copy_id):
                 '--config', 'user.name=Factory', '--config', 'user.email=factory@localhost',
                 str(clean), str(copy))
     copy.chmod(0o700)
-    for directory, folders, paths in os.walk(copy, followlinks=False):
-        for name in [*folders, *paths]:
-            os.chown(os.path.join(directory, name), fence.CLI_UID, fence.CLI_GID,
-                     follow_symlinks=False)
-    os.chown(copy, fence.CLI_UID, fence.CLI_GID)
+    fence.own(copy, 'work', recursive=True)
     return {**{key: previous[key] for key in ('repository', 'branch', 'base', 'default')},
             'repo': str(copy), 'tip': tip}
 

@@ -60,7 +60,7 @@ def command(job):
                 '--json-schema', json.dumps(FINAL_SCHEMA)]
         if job.get('resume'):
             args += ['--resume', job['resume']]
-    return [fence.fence_command(), 'run', '--tool', job['tool'], '--repo', job['repo'],
+    return [*fence.fence_command(), 'run', '--tool', job['tool'], '--repo', job['repo'],
             '--run', str(folder / 'io'), '--', *args, '--', job['prompt']]
 
 
@@ -72,12 +72,12 @@ class Processes:
         output.mkdir(mode=0o700)
         atomic_json(output / 'schema.json', FINAL_SCHEMA)
         os.chmod(output / 'schema.json', 0o444)
-        os.chown(output, 21000, 21000)
+        fence.own(output, 'run')
         atomic_json(folder / 'request.json', job)
         # The supervisor is outside the CLI process group and closes all terminal FDs.
         with (folder / 'supervisor.log').open('ab') as log:
             os.fchmod(log.fileno(), 0o600)
-            options = {'env': {k: os.environ[k] for k in ('PATH', 'LANG', 'PYTHONPATH', 'CPLANE_FENCE_COMMAND')
+            options = {'env': {k: os.environ[k] for k in ('PATH', 'LANG', 'PYTHONPATH', 'CPLANE_FENCE_COMMAND', 'CPLANE_LAUNCHER_SOCKET')
                                if k in os.environ}}
             proc = subprocess.Popen([sys.executable, '-m', 'cplane.executors', str(folder)],
                                     stdin=subprocess.DEVNULL, stdout=log, stderr=log,

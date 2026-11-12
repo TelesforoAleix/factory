@@ -236,11 +236,13 @@ def probe_codex_usage(runs):
     turn = (2 << 128) + int(token, 16)
     work.mkdir(mode=0o700)
     output.mkdir(mode=0o700)
-    os.chown(work, fence.CLI_UID, fence.CLI_GID)
+    fence.own(work, 'work')
+    options = (['--run-id', 'usage-' + token] if fence.socket_enabled()
+               else ['--session-turn', str(turn)])
     session, transcript = None, ''
     try:
-        result = subprocess.run([fence.fence_command(), 'run', '--tool', 'codex',
-                        '--repo', str(work), '--run', str(output), '--session-turn', str(turn),
+        result = subprocess.run([*fence.fence_command(), 'run', '--tool', 'codex',
+                        '--repo', str(work), '--run', str(output), *options,
                         '--', 'codex', 'exec', '-m', 'gpt-6-luna', '-c',
                         'model_reasoning_effort="low"', '--skip-git-repo-check',
                         '-c', 'history.persistence="none"',
@@ -263,7 +265,8 @@ def probe_codex_usage(runs):
                     session = event['thread_id']
             except (ValueError, AttributeError):
                 continue
-        subprocess.run([fence.fence_command(), 'session-cleanup', str(turn)], check=True,
+        cleanup = ['stop', 'usage-' + token] if fence.socket_enabled() else ['session-cleanup', str(turn)]
+        subprocess.run([*fence.fence_command(), *cleanup], check=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                        env=fence.host_environment())
         try:
@@ -283,7 +286,7 @@ def probe_codex_usage(runs):
                     for path in paths:
                         path.unlink()
         finally:
-            shutil.rmtree(work)
+            fence.remove(work, 'work')
             shutil.rmtree(output)
 
 
