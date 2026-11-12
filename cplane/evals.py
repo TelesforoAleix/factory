@@ -217,6 +217,10 @@ def run_create(store, *, title, sets, configurations, repeats, scheduled_for=Non
         if not isinstance(config, dict) or any(not isinstance(config.get(k), str) or not config[k].strip()
                                                 for k in ('id', 'harness', 'model', 'route')):
             raise StateError('Configuration requires nonempty id, harness, model and route')
+        if config['harness'] not in ('codex', 'claude'):
+            raise StateError(f"harness {config['harness']} is not available yet")
+        if 'effort' in config and (not isinstance(config['effort'], str) or not config['effort'].strip()):
+            raise StateError('Configuration effort must be nonempty text')
         ids.append(config['id'])
     if len(ids) != len(set(ids)):
         raise StateError('Duplicate configuration id')
@@ -275,3 +279,12 @@ def verdict_add(store, attempt, *, judge, prompt_hash, verdict, reason):
     with store.mutation():
         return _rows(store, 'INSERT INTO cplane_eval_verdicts (attempt, judge, prompt_hash, verdict, reason) '
                      'VALUES (%s,%s,%s,%s,%s) RETURNING *', (attempt, judge, prompt_hash, verdict, reason))[0]
+
+
+def run_cancel(store, identifier):
+    with store.mutation():
+        if not store.connection.execute(
+                "UPDATE cplane_eval_runs SET state = 'cancelled' WHERE id = %s RETURNING id",
+                (identifier,)).fetchone():
+            raise StateError('Eval run not found')
+        return run_show(store, identifier)

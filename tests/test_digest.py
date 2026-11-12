@@ -40,6 +40,9 @@ def test_runner_daily_notice_and_cli_read_only(tmp_path, make_state, slice_data,
     path = make_state()
     from conftest import SyntheticStore
     backend = SyntheticStore(path)
+    from cplane import eval_runner
+    monkeypatch.setattr(eval_runner, 'collect', Mock())
+    monkeypatch.setattr(eval_runner, 'start', Mock())
     backend.pipeline_step = lambda at: []
     backend.route_chat_events = lambda: None
     backend.ordered_slices = lambda items: items

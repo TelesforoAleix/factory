@@ -1146,6 +1146,9 @@ class Runner:
                 previous = self.jobs.get(job['id'])
                 if previous is None or previous['started_ns'] < job['started_ns']:
                     self.jobs[job['id']] = job
+            if state.postgres():
+                from . import eval_runner
+                eval_runner.collect(self, state.store(self.path))
             self._usage_probe_allowed = True
             read_failures, read_successes, login_failures, login_successes = set(), set(), set(), set()
             for item in self.data['slices']:
@@ -1269,6 +1272,8 @@ class Runner:
                                        if result['reason'] == 'provider away' else self.room(item))
                         continue
                     self.start(item)
+            if state.postgres():
+                eval_runner.start(self, state.store(self.path))
             previous_notices = state.store(self.path).notices()
             seen = {(notice.get('id'), notice.get('since'), notice.get('reason'))
                     for _, notice in previous_notices if notice.get('event') == 'stuck'}

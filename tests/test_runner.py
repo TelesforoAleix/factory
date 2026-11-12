@@ -1713,6 +1713,9 @@ def test_pipeline_failure_diagnostic_survives_missing_cli_version(setup, monkeyp
 
     r, processes, _ = setup
     backend = SyntheticStore(r.path)
+    from cplane import eval_runner
+    monkeypatch.setattr(eval_runner, 'collect', Mock())
+    monkeypatch.setattr(eval_runner, 'start', Mock())
     backend.pipeline_step = Mock(side_effect=RuntimeError('PRIVATE pipeline failure'))
     backend.route_chat_events = Mock()
     backend.ordered_slices = lambda items: items

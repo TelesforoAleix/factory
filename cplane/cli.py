@@ -333,7 +333,7 @@ def parser():
     importer = eval_commands.add_parser('import', parents=[common])
     importer.add_argument('folder')
     for group, actions in (('case', ('list',)), ('set', ('create', 'add', 'list', 'show')),
-                           ('run', ('create', 'list', 'show'))):
+                           ('run', ('create', 'list', 'show', 'cancel'))):
         sub = eval_commands.add_parser(group, parents=[common])
         actions_parser = sub.add_subparsers(dest='eval_action', required=True, parser_class=Parser)
         for action in actions:
@@ -361,7 +361,7 @@ def parser():
                 command.add_argument('--configuration', action='append', required=True)
                 command.add_argument('--repeats', type=int, required=True)
                 command.add_argument('--at')
-            elif action == 'show':
+            elif action in ('show', 'cancel'):
                 command.add_argument('id', type=int)
     runs = commands.add_parser('runs', parents=[common])
     runs_commands = runs.add_subparsers(dest='runs_command', required=True, parser_class=Parser)
@@ -467,6 +467,8 @@ def eval_command(args):
         result = evals.run_create(backend, title=args.title, sets=args.sets,
                                  configurations=[json.loads(c) for c in args.configuration],
                                  repeats=args.repeats, scheduled_for=args.at, actor=actor)
+    elif args.eval_action == 'cancel':
+        result = evals.run_cancel(backend, args.id)
     elif args.eval_action == 'show':
         result = evals.run_show(backend, args.id)
     else:
