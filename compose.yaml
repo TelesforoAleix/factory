@@ -1,0 +1,325 @@
+# Owner-installed at cutover; see docs/node.md for prerequisites.
+# Required per-service env files are owner-provided non-secret configuration.
+services:
+  ui:
+    image: homelab-deployer-factory:${HOMELAB_DEPLOY_TAG:?commit required}
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    pids_limit: 128
+    restart: unless-stopped
+    logging: {driver: journald}
+    networks: [homelab_default]
+    user: 992:978
+    command:
+    - python
+    - -m
+    - factory_ui.serve
+    environment:
+      CPLANE_DATABASE_URL_FILE: /run/secrets/database-url
+      HOME: /tmp
+      CPLANE_STATE: /srv/factory/briefs/slices.json
+      CPLANE_RUNS: /srv/factory/runs
+      CPLANE_REPOS: /srv/factory/work
+    env_file:
+    - path: ./ui.env
+      required: true
+    ports:
+    - 127.0.0.1:8300:8300
+    volumes:
+    - type: bind
+      source: /var/lib/factory/ui-docs
+      target: /var/lib/factory/ui-docs
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /etc/factory/secrets/ui/database-url
+      target: /run/secrets/database-url
+      read_only: true
+      bind:
+        create_host_path: false
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8300/', timeout=5).read()
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+  intake:
+    image: homelab-deployer-factory:${HOMELAB_DEPLOY_TAG:?commit required}
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    pids_limit: 128
+    restart: unless-stopped
+    logging: {driver: journald}
+    networks: [homelab_default]
+    user: 991:977
+    command:
+    - python
+    - -m
+    - cplane.intake
+    environment:
+      CPLANE_DATABASE_URL_FILE: /run/secrets/database-url
+      HOME: /tmp
+    volumes:
+    - type: bind
+      source: /run/factory-intake
+      target: /run/factory-intake
+      read_only: false
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /etc/factory/secrets/intake/database-url
+      target: /run/secrets/database-url
+      read_only: true
+      bind:
+        create_host_path: false
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import socket; s = socket.socket(socket.AF_UNIX); s.settimeout(5); s.connect('/run/factory-intake/intake.sock');
+        s.close()
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+  sessions:
+    image: homelab-deployer-factory:${HOMELAB_DEPLOY_TAG:?commit required}
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    pids_limit: 128
+    restart: unless-stopped
+    logging: {driver: journald}
+    networks: [homelab_default]
+    user: 21011:21011
+    command:
+    - python
+    - -m
+    - cplane.sessions
+    environment:
+      CPLANE_DATABASE_URL_FILE: /run/secrets/database-url
+      CPLANE_PLANNING_WRITE_KEY: /run/secrets/planning-write-key
+      HOME: /tmp
+      GH_CONFIG_DIR: /tmp/.config/gh
+    env_file:
+    - path: ./sessions.env
+      required: true
+    group_add:
+    - '976'
+    volumes:
+    - type: bind
+      source: /srv/factory/work
+      target: /srv/factory/work
+      read_only: false
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /var/lib/factory/ui-docs
+      target: /var/lib/factory/ui-docs
+      read_only: false
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /srv/factory/briefs
+      target: /srv/factory/briefs
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /srv/factory/runs
+      target: /srv/factory/runs
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /run/homelab-launcher.sock
+      target: /run/homelab-launcher.sock
+      read_only: false
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /etc/factory/secrets/sessions/database-url
+      target: /run/secrets/database-url
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /etc/factory/secrets/sessions/planning-write-key
+      target: /run/secrets/planning-write-key
+      read_only: true
+      bind:
+        create_host_path: false
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import os; os.kill(1, 0); from cplane.state import database_url; import psycopg;
+        c = psycopg.connect(database_url(), connect_timeout=5); c.execute('SELECT
+        1'); c.close()
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+  runner:
+    image: homelab-deployer-factory:${HOMELAB_DEPLOY_TAG:?commit required}
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1g
+    pids_limit: 256
+    restart: unless-stopped
+    logging: {driver: journald}
+    networks: [homelab_default]
+    user: 21010:21010
+    command:
+    - cplane
+    - --actor
+    - runner
+    - run
+    - --every
+    - '60'
+    environment:
+      CPLANE_DATABASE_URL_FILE: /run/secrets/database-url
+      CPLANE_GITHUB_APP_KEY: /run/secrets/github-app.pem
+      CPLANE_BRIEFS_KEY: /run/secrets/briefs-key
+      CPLANE_BRIEFS_KNOWN_HOSTS: /run/secrets/briefs-known-hosts
+      CPLANE_PLANNING_WRITE_KEY: /run/secrets/planning-write-key
+      CPLANE_DENY_LIST: /run/secrets/deny-list
+      HOME: /tmp
+      GH_CONFIG_DIR: /tmp/.config/gh
+      CPLANE_FENCE: '1'
+      CPLANE_GITHUB_AUTH: app
+      CPLANE_STATE: /srv/factory/briefs/slices.json
+      CPLANE_RUNS: /srv/factory/runs
+      CPLANE_REPOS: /srv/factory/work
+      CPLANE_EXPORT_DIR: /srv/homelab/factory-state
+      CPLANE_BOT_EXPORT: /srv/factory/bot-export
+    env_file:
+    - path: ./runner.env
+      required: true
+    group_add:
+    - '976'
+    - '975'
+    volumes:
+    - type: bind
+      source: /srv/factory/briefs
+      target: /srv/factory/briefs
+      read_only: false
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /srv/factory/runs
+      target: /srv/factory/runs
+      read_only: false
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /srv/factory/work
+      target: /srv/factory/work
+      read_only: false
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /srv/factory/clean
+      target: /srv/factory/clean
+      read_only: false
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /srv/factory/exports
+      target: /srv/factory/exports
+      read_only: false
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /srv/factory/bot-export
+      target: /srv/factory/bot-export
+      read_only: false
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /srv/homelab/factory-state
+      target: /srv/homelab/factory-state
+      read_only: false
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /run/homelab-launcher.sock
+      target: /run/homelab-launcher.sock
+      read_only: false
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /run/homelab-deployer.sock
+      target: /run/homelab-deployer.sock
+      read_only: false
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /etc/factory/secrets/runner/database-url
+      target: /run/secrets/database-url
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /etc/factory/secrets/runner/github-app.pem
+      target: /run/secrets/github-app.pem
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /etc/factory/secrets/runner/briefs-key
+      target: /run/secrets/briefs-key
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /etc/factory/secrets/runner/briefs-known-hosts
+      target: /run/secrets/briefs-known-hosts
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /etc/factory/secrets/runner/planning-write-key
+      target: /run/secrets/planning-write-key
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /etc/factory/secrets/runner/deny-list
+      target: /run/secrets/deny-list
+      read_only: true
+      bind:
+        create_host_path: false
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import os; os.kill(1, 0); from cplane.state import database_url; import psycopg;
+        c = psycopg.connect(database_url(), connect_timeout=5); c.execute('SELECT
+        1'); c.close()
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+networks:
+  homelab_default:
+    external: true
+    name: homelab_default
