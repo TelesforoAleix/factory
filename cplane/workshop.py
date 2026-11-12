@@ -373,7 +373,8 @@ class Workshop:
                 candidates += orchestrators
             for candidate in candidates:
                 if (candidate['state'] != 'failed' and not candidate['archived']
-                        and self.store.chat_can_take(candidate['id'])):
+                        and (candidate['kind'] in ('project', 'orchestrator')
+                             or self.store.chat_can_take(candidate['id']))):
                     target = candidate['id']
                     break
             text = (f"Decision: {record['decision']}\n"

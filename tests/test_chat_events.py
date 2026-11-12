@@ -354,7 +354,7 @@ def test_old_queued_owner_slice_event_is_preserved_without_running(context, slic
 
 @pytest.mark.parametrize('unavailable', ['missing', 'archived', 'paused', 'failed', 'limit'])
 @pytest.mark.parametrize('level', ['project', 'orchestrator'])
-def test_decision_skips_unavailable_levels(context, unavailable, level):
+def test_decision_holds_at_paused_levels_and_skips_unavailable_levels(context, unavailable, level):
     store, workshops, chats, *_ = context
     skipped = chats[level]
     with store.mutation():
@@ -374,6 +374,17 @@ def test_decision_skips_unavailable_levels(context, unavailable, level):
     records = [n for _, n in store.notices() if n['event'] == 'workshop-decision']
     assert records[-1]['decision'] == identifier
     owners = [n for _, n in store.notices() if n['event'] == 'owner-check']
+    if unavailable in ('paused', 'limit'):
+        assert not owners and records[-1]['status'] == 'open'
+        assert records[-1]['holder'] == skipped['id']
+        message = store.session_messages(skipped['area'], skipped['id'])[-1]
+        assert identifier in message['text'] and message['automatic'] and message['status'] == 'queued'
+        with store.mutation():
+            assert not store.chat_can_take(skipped['id'])
+        if unavailable == 'limit':
+            assert store.chat_show(skipped['id'])['auto_paused']
+            assert len([n for _, n in store.notices() if n['event'] == 'chat-paused']) == 1
+        return
     if level == 'project':
         assert not owners
         assert records[-1]['holder'] == chats['orchestrator']['id']
@@ -385,9 +396,6 @@ def test_decision_skips_unavailable_levels(context, unavailable, level):
             assert len(cards) == 1 and identifier in cards[0]['text']
     if unavailable != 'missing':
         assert not any(identifier in m['text'] for m in store.session_messages(skipped['area'], skipped['id']))
-    if unavailable == 'limit':
-        assert store.chat_show(skipped['id'])['auto_paused']
-        assert len([n for _, n in store.notices() if n['event'] == 'chat-paused']) == 1
 
 
 def test_decision_home_phone_and_owner_reply(context, tmp_path, monkeypatch):
@@ -447,17 +455,21 @@ def test_decision_delivery_rollback_and_concurrent_answers(context, monkeypatch)
     assert sum(identifier in m['text'] for m in store.session_messages('factory', chats['feature']['id'])) == 1
 
 
-def test_all_decision_levels_skipped_still_reach_owner(context):
+def test_all_decision_levels_paused_holds_at_project(context):
     store, workshops, chats, *_ = context
     with store.mutation():
         store.connection.execute('UPDATE cplane_sessions SET auto_paused = true WHERE id = ANY(%s)',
                                  ([chats['project']['id'], chats['orchestrator']['id']],))
     identifier = value(call(workshops['feature'], 'raise_decision', text='Owner-only choice', recommendation='Wait'))['decision']
     cards = create_app(store).test_client().get('/api/home').json['attention']
-    assert len(cards) == 1 and cards[0]['chat'] == chats['orchestrator']['id']
-    assert identifier in cards[0]['text'] and chats['feature']['title'] in cards[0]['text']
-    value(call(workshops['orchestrator'], 'answer_decision', decision=identifier, text='Owner said wait'))
-    assert 'Owner said wait' in store.session_messages('factory', chats['feature']['id'])[-1]['text']
+    assert cards == []
+    assert not any(n['event'] == 'owner-check' for _, n in store.notices())
+    assert store.notices()[-1][1]['holder'] == chats['project']['id']
+    message = store.session_messages('factory', chats['project']['id'])[-1]
+    assert identifier in message['text'] and chats['feature']['title'] in message['text']
+    store.chat_reactivate(chats['project']['id'])
+    value(call(workshops['project'], 'answer_decision', decision=identifier, text='Recorded choice'))
+    assert 'Recorded choice' in store.session_messages('factory', chats['feature']['id'])[-1]['text']
 
 
 def test_answer_delivery_failure_keeps_decision_open(context):

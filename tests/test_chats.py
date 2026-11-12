@@ -637,3 +637,48 @@ def test_feature_rename_updates_feature_chat(pg_store):
     identifier, chat = feature_chat(pg_store, 'Original', 'FAC')
     pg_store.feature_title(identifier, 'Renamed')
     assert pg_store.chat_show(chat['id'])['title'] == 'Renamed'
+
+
+@pytest.mark.parametrize('kind', ['feature', 'project', 'orchestrator'])
+def test_owner_reactivate_resets_without_message_or_turn_and_clears_card(pg_store, kind):
+    from cplane.times import now
+
+    if kind == 'feature':
+        _, chat = feature_chat(pg_store)
+    elif kind == 'project':
+        with pg_store.mutation():
+            pg_store.connection.execute("UPDATE cplane_projects SET repository = NULL WHERE key = 'FAC'")
+        chat = pg_store.create_project_chat('FAC')
+    else:
+        chat = pg_store.chats(kind='orchestrator')[0]
+    sid = chat['id']
+    pg_store.system_message(sid, 'Queued decision')
+    with pg_store.mutation():
+        pg_store.connection.execute(
+            'UPDATE cplane_sessions SET auto_turns = 10, auto_paused = true WHERE id = %s', (sid,))
+        pg_store.append_notices([dict(event='chat-paused', at=now().isoformat(), chat=sid, text='Paused')])
+    client = create_app(pg_store).test_client()
+    def cards():
+        return [a for a in client.get('/api/home').json['attention'] if a.get('reactivate')]
+
+    assert len(cards()) == 1
+    before = pg_store.session_messages(chat['area'], sid)
+    url = f'/api/chats/{sid}/reactivate'
+    assert client.post(url).status_code == 403
+    assert pg_store.chat_show(sid)['auto_paused']
+    assert pg_store.chat_show(sid)['auto_turns'] == 10
+    headers = {'X-Factory-UI': '1'}
+    response = client.post(url, headers=headers)
+    assert response.status_code == 200
+    assert response.json['auto_turns'] == 0 and response.json['auto_paused'] is False
+    assert response.json['state'] == chat['state']
+    assert pg_store.session_messages(chat['area'], sid) == before
+    assert cards() == []
+    audit = pg_store.notices()[-1][1]
+    assert audit['event'] == 'chat-reactivated' and audit['actor'] == 'owner' and audit['chat'] == sid
+    with pg_store.mutation():
+        assert pg_store.chat_can_take(sid)
+    turn = pg_store.claim_session_turn()
+    assert turn['session']['id'] == sid
+    assert turn['text'] == before[0]['text']
+    assert client.post('/api/chats/999999/reactivate', headers=headers).status_code == 400

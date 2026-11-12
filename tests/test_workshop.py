@@ -148,6 +148,59 @@ def test_decision_chain_and_noop_audit(context):
         assert store.connection.execute('SELECT count(*) FROM cplane_workshop_writes').fetchone()[0] == 5
 
 
+@pytest.mark.parametrize('kind,source', [('project', 'feature'), ('orchestrator', 'project')])
+@pytest.mark.parametrize('pause', ['paused', 'limit'])
+def test_paused_decision_level_holds_until_reactivated(context, kind, source, pause):
+    store, workshops, chats, *_ = context
+    sid = chats[kind]['id']
+    with store.mutation():
+        store.connection.execute(
+            'UPDATE cplane_sessions SET auto_turns = %s, auto_paused = %s WHERE id = %s',
+            (store.limit_show()['chat_auto_turns'], pause == 'paused', sid))
+    identifier = value(call(workshops[source], 'raise_decision', text='Question', recommendation='A'))['decision']
+    record = store.notices()[-1][1]
+    assert record['decision'] == identifier and record['holder'] == sid and record['status'] == 'open'
+    assert not any(n['event'] == 'owner-check' for _, n in store.notices())
+    messages = store.session_messages(chats[kind]['area'], sid)
+    assert len(messages) == 1
+    assert messages[0]['automatic'] and messages[0]['status'] == 'queued'
+    assert identifier in messages[0]['text']
+    with store.mutation():
+        assert not store.chat_can_take(sid)
+    assert store.chat_show(sid)['auto_paused']
+    assert store.session_messages(chats[kind]['area'], sid) == messages
+
+
+@pytest.mark.parametrize('unavailable', ['archived', 'failed', 'missing'])
+def test_unavailable_project_decision_level_is_skipped(context, unavailable):
+    store, workshops, chats, *_ = context
+    sid = chats['project']['id']
+    if unavailable == 'archived':
+        store.chat_archive(sid)
+    else:
+        with store.mutation():
+            if unavailable == 'failed':
+                store.connection.execute("UPDATE cplane_sessions SET state = 'failed' WHERE id = %s", (sid,))
+            else:
+                store.connection.execute('DELETE FROM cplane_sessions WHERE id = %s', (sid,))
+    identifier = value(call(workshops['feature'], 'raise_decision', text='Question', recommendation='A'))['decision']
+    record = store.notices()[-1][1]
+    assert record['decision'] == identifier and record['holder'] == chats['orchestrator']['id']
+    assert record['status'] == 'open'
+    assert not any(n['event'] == 'owner-check' for _, n in store.notices())
+    if unavailable != 'missing':
+        assert store.session_messages(chats['project']['area'], sid) == []
+
+
+@pytest.mark.parametrize('kind', ['feature', 'project', 'orchestrator'])
+def test_reactivate_is_not_a_workshop_tool(context, kind):
+    store, workshops, chats, *_ = context
+    assert 'reactivate' not in [tool['name'] for tool in TOOLS]
+    before = store.snapshot()
+    assert call(workshops[kind], 'reactivate', chat=chats['orchestrator']['id'])['isError']
+    assert store.snapshot() == before
+
+
 @pytest.mark.parametrize('answer_at', ['project', 'orchestrator', 'owner'])
 def test_decision_answer_returns_to_first_chat_and_closes(context, answer_at):
     store, workshops, chats, *_ = context
