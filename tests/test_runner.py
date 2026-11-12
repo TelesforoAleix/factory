@@ -942,6 +942,18 @@ def test_other_usage_limit_messages_parse(setup, monkeypatch, message, expected)
     assert cut(r, p, message, None, monkeypatch)['reset_at'] == expected.timestamp()
 
 
+@pytest.mark.parametrize('message, expected', [
+    ('try again at 11:19 PM.', datetime(2026, 11, 12, 0, 19, tzinfo=timezone(timedelta(hours=1)))),
+    ('try again at Nov 13th, 2026 11:19 PM.', datetime(2026, 11, 14, 0, 19, tzinfo=timezone(timedelta(hours=1)))),
+    ('try again at 10:00 PM.', datetime(2026, 11, 12, 23, 0, tzinfo=timezone(timedelta(hours=1)))),
+])
+def test_message_clock_is_utc_with_local_instant(setup, monkeypatch, message, expected):
+    r, p, _ = setup
+    r.clock = lambda: datetime(2026, 11, 12, 0, 10, tzinfo=timezone(timedelta(hours=1)))
+    r.run()
+    assert cut(r, p, NO_TIME + ' ' + message, None, monkeypatch)['reset_at'] == expected.timestamp()
+
+
 def test_stale_reset_without_time_waits_sixty_minutes(setup, monkeypatch):
     r, p, _ = setup
     r.run()
@@ -962,8 +974,8 @@ def test_report_at_99_percent_names_the_reset(setup, monkeypatch):
     r, p, _ = setup
     r.run()
     primary = {'used_percent': 37.0, 'resets_at': NOW.timestamp() + 600}
-    weekly = {'used_percent': 100.0, 'resets_at': NOW.timestamp() + 90000}
-    assert cut(r, p, NO_TIME, [primary, weekly], monkeypatch)['reset_at'] == weekly['resets_at']
+    weekly = {'used_percent': 99.0, 'resets_at': NOW.timestamp() + 90000}
+    assert cut(r, p, FIVE_HOUR, [primary, weekly], monkeypatch)['reset_at'] == weekly['resets_at']
 
 
 def test_null_limits_with_and_without_message_time(setup, monkeypatch):
