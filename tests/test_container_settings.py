@@ -58,7 +58,8 @@ def test_sessions_lock(tmp_path):
         from unittest.mock import patch
         from cplane import sessions
         assert str(sessions.LOCK) == EXPECTED
-        with patch.object(sessions, 'database_url'), patch('builtins.open', side_effect=RuntimeError) as opened:
+        with patch.dict('os.environ', {'CPLANE_GITHUB_AUTH': 'app'}), \\
+             patch.object(sessions, 'database_url'), patch('builtins.open', side_effect=RuntimeError) as opened:
             try:
                 sessions.main()
             except RuntimeError:

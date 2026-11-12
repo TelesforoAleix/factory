@@ -2,6 +2,7 @@
 import io
 import os
 from pathlib import Path
+import stat
 import subprocess
 import tarfile
 from unittest.mock import Mock
@@ -12,6 +13,88 @@ from cplane import sessions
 from factory_ui import create_app
 from test_stores import pg_store
 from conftest import seed_model_choices
+
+
+@pytest.mark.parametrize('initial', [None, '0', '1'])
+def test_startup_forces_read_only_before_any_service_work(monkeypatch, initial):
+    # Register restoration for the environment change performed by main itself.
+    monkeypatch.setenv('CPLANE_GITHUB_READ_ONLY', '0')
+    if initial is None:
+        monkeypatch.delenv('CPLANE_GITHUB_READ_ONLY', raising=False)
+    else:
+        monkeypatch.setenv('CPLANE_GITHUB_READ_ONLY', initial)
+    monkeypatch.setenv('CPLANE_GITHUB_AUTH', 'app')
+    def stop():
+        assert os.environ['CPLANE_GITHUB_READ_ONLY'] == '1'
+        raise RuntimeError('startup reached database')
+    monkeypatch.setattr(sessions, 'database_url', stop)
+    with pytest.raises(RuntimeError, match='startup reached database'):
+        sessions.main()
+
+
+@pytest.mark.parametrize('auth', [None, 'token'])
+def test_startup_refuses_token_mode_before_database(monkeypatch, auth):
+    monkeypatch.setenv('CPLANE_GITHUB_READ_ONLY', '0')
+    if auth is None:
+        monkeypatch.delenv('CPLANE_GITHUB_AUTH', raising=False)
+    else:
+        monkeypatch.setenv('CPLANE_GITHUB_AUTH', auth)
+    database = Mock()
+    monkeypatch.setattr(sessions, 'database_url', database)
+    with pytest.raises(sessions.StateError, match='token mode cannot be narrowed'):
+        sessions.main()
+    database.assert_not_called()
+    assert os.environ['CPLANE_GITHUB_READ_ONLY'] == '1'
+
+
+@pytest.mark.parametrize('override', [False, True])
+def test_sessions_and_runner_guard_each_others_clean_root(tmp_path, monkeypatch, override):
+    from cplane import fence
+    runner_root = tmp_path / 'clean'
+    runner_root.mkdir(mode=0o700)
+    monkeypatch.setattr(fence, 'CLEAN_ROOT', runner_root)
+    monkeypatch.delenv('CPLANE_SESSIONS_CLEAN_ROOT', raising=False)
+    session_root = tmp_path / ('custom-sessions' if override else 'clean-sessions')
+    if override:
+        monkeypatch.setenv('CPLANE_SESSIONS_CLEAN_ROOT', str(session_root))
+    runner = fence.Fence()
+    chat = sessions.repository_fence()
+    assert chat.clean_root == session_root
+    assert runner.clean_root == runner_root
+    assert session_root.stat().st_uid == os.geteuid()
+    assert stat.S_IMODE(session_root.stat().st_mode) == 0o700
+    runner_clean = runner.clean('example/repo')
+    chat_clean = chat.clean('example/repo')
+    assert runner_clean == runner_root / 'example/repo.git'
+    assert chat_clean == session_root / 'example/repo.git'
+    for adapter, own_clean, other_clean in ((runner, runner_clean, chat_clean), (chat, chat_clean, runner_clean)):
+        own_clean.mkdir(mode=0o700)
+        adapter.git(own_clean, 'init', '--bare', '--template=')
+        assert adapter.git(own_clean, 'rev-parse', '--is-bare-repository').stdout.strip() == 'true'
+        with pytest.raises(sessions.StateError, match='outside clean clones'):
+            adapter.git(other_clean, 'status')
+        traversal = adapter.clean_root / '..' / other_clean.relative_to(tmp_path)
+        with pytest.raises(sessions.StateError, match='outside clean clones'):
+            adapter.git(traversal, 'status')
+
+
+@pytest.mark.parametrize('path', ['clean', 'clean/nested', '.'])
+def test_sessions_refuses_overlapping_clean_roots(tmp_path, monkeypatch, path):
+    monkeypatch.setattr(sessions.fence, 'CLEAN_ROOT', tmp_path / 'clean')
+    monkeypatch.setenv('CPLANE_SESSIONS_CLEAN_ROOT', str(tmp_path / path))
+    with pytest.raises(sessions.StateError, match='must be separate'):
+        sessions.repository_fence()
+
+
+def test_sessions_refuses_symlink_clean_root(tmp_path, monkeypatch):
+    runner_root = tmp_path / 'clean'
+    runner_root.mkdir(mode=0o700)
+    monkeypatch.setattr(sessions.fence, 'CLEAN_ROOT', runner_root)
+    root = tmp_path / 'linked'
+    root.symlink_to(runner_root, target_is_directory=True)
+    monkeypatch.setenv('CPLANE_SESSIONS_CLEAN_ROOT', str(root))
+    with pytest.raises(sessions.StateError, match='link or non-directory'):
+        sessions.repository_fence()
 
 
 @pytest.fixture(autouse=True)
@@ -311,8 +394,9 @@ def test_session_exports_remote_default_and_resume_does_not_fetch(tmp_path, monk
     monkeypatch.setattr(Path, 'lstat', export_lstat)
     session = dict(id=1, area='factory', cli_session_id=None, repositories=['owner/repo'])
     folder, paths = sessions.workspace(session)
-    clean = clean_root / 'owner/repo.git'
+    clean = tmp_path / 'clean-sessions/owner/repo.git'
     assert clean.is_dir()
+    assert list(clean_root.iterdir()) == []
     assert subprocess.run(['git', '-C', str(clean), 'rev-parse', '--verify', 'HEAD'],
                           capture_output=True).returncode != 0
     assert (paths[0] / 'content').read_text() == 'default branch'

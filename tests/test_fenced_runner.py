@@ -1417,8 +1417,13 @@ def test_review_ready_attention_and_pause(ticket_runner, answer, paused, starts)
 
 
 @pytest.mark.parametrize('auth', [None, 'token'])
-def test_legacy_token_mode_unchanged(delivery, monkeypatch, auth):
+@pytest.mark.parametrize('read_only', [None, '0'])
+def test_legacy_token_mode_unchanged(delivery, monkeypatch, auth, read_only):
     from cplane import github_app
+    if read_only is None:
+        monkeypatch.delenv('CPLANE_GITHUB_READ_ONLY', raising=False)
+    else:
+        monkeypatch.setenv('CPLANE_GITHUB_READ_ONLY', read_only)
     if auth is None:
         monkeypatch.delenv('CPLANE_GITHUB_AUTH', raising=False)
     else:
@@ -1429,6 +1434,16 @@ def test_legacy_token_mode_unchanged(delivery, monkeypatch, auth):
     assert fence.github_environment(['example/repo']) == {
         **fence.host_environment(), 'GH_TOKEN': delivery['secret']}
     mint.assert_not_called()
+
+
+def test_read_only_refuses_token_file_before_opening_it(monkeypatch):
+    monkeypatch.setenv('CPLANE_GITHUB_AUTH', 'token')
+    monkeypatch.setenv('CPLANE_GITHUB_READ_ONLY', '1')
+    opened = Mock(side_effect=AssertionError('must not read token file'))
+    monkeypatch.setattr(fence.os, 'open', opened)
+    with pytest.raises(state.StateError, match='token mode cannot be narrowed'):
+        fence.github_environment(['example/repo'])
+    opened.assert_not_called()
 
 
 def test_app_environment_ignores_old_state_repositories(make_state, slice_data, monkeypatch):
