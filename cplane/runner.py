@@ -360,7 +360,9 @@ class GitHub:
     def call(self, repo, *args):
         options = {'env': fence.github_environment([repo]), 'cwd': '/'}
         command = ['gh', *args] if args and args[0] == 'api' else ['gh', *args, '-R', repo]
-        read = args[:2] in (('pr', 'view'), ('pr', 'list')) or args[:1] == ('api',)
+        update = (args[:3] == ('api', '-X', 'PUT') and len(args) > 3
+                  and re.fullmatch(r'repos/[^/]+/[^/]+/pulls/\d+/update-branch', args[3]))
+        read = args[:2] in (('pr', 'view'), ('pr', 'list')) or (args[:1] == ('api',) and not update)
         attempts = 3 if read else 1
         for attempt in range(attempts):
             result = subprocess.run(command, text=True, capture_output=True, **options)
@@ -370,7 +372,7 @@ class GitHub:
                 return result.stdout.strip()
             if attempt + 1 < attempts:
                 time.sleep(5)
-        if args[:2] == ('pr', 'update-branch') and re.search(r'conflict', result.stderr, re.I):
+        if update and re.search(r'\b422\b', result.stderr) and re.search(r'conflict', result.stderr, re.I):
             raise BranchConflict('PR conflicts with main; needs a new slice from main')
         if read:
             raise GitHubReadError('gh operation failed')
@@ -450,8 +452,17 @@ class GitHub:
         return info
 
     def update_branch(self, repo, number, expected):
-        self.call(repo, 'pr', 'update-branch', str(number), '--expected-head-oid', expected)
-        return self.merge_info(repo, number)['headRefOid']
+        self.call(repo, 'api', '-X', 'PUT', f'repos/{repo}/pulls/{number}/update-branch',
+                  '-f', f'expected_head_sha={expected}')
+        deadline = time.monotonic() + 120
+        while True:
+            head = self.merge_info(repo, number)['headRefOid']
+            if head != expected:
+                return head
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise state.StateError('gh operation failed')
+            time.sleep(min(5, remaining))
 
     def merge(self, repo, number, expected=None):
         info = self.merge_info(repo, number, expected)
