@@ -1901,17 +1901,53 @@ def test_branch_update_conflict_has_fixed_reason(setup):
     gh.merge.assert_not_called()
 
 
-def test_github_update_branch_uses_merge_and_classifies_conflict(monkeypatch):
-    from cplane.runner import BranchConflict
+def test_github_update_branch_polls_for_new_head(monkeypatch):
     gh = GitHub()
-    gh.call = Mock(side_effect=['', '{"state":"OPEN","title":"OK","headRefOid":"new"}'])
+    gh.call = Mock(return_value='')
+    gh.merge_info = Mock(side_effect=[{'headRefOid': 'old'}, {'headRefOid': 'old'},
+                                      {'headRefOid': 'new'}])
+    sleep = Mock()
+    monkeypatch.setattr('cplane.runner.time.sleep', sleep)
     assert gh.update_branch('example/repo', 12, 'old') == 'new'
-    assert gh.call.call_args_list[0].args == (
-        'example/repo', 'pr', 'update-branch', '12', '--expected-head-oid', 'old')
+    gh.call.assert_called_once_with('example/repo', 'api', '-X', 'PUT',
+                                    'repos/example/repo/pulls/12/update-branch',
+                                    '-f', 'expected_head_sha=old')
+    assert gh.merge_info.call_count == 3
+    assert sleep.call_count == 2
+    sleep.assert_called_with(5)
+
+
+def test_github_update_branch_times_out(monkeypatch):
+    gh = GitHub()
+    gh.call = Mock(return_value='')
+    gh.merge_info = Mock(return_value={'headRefOid': 'old'})
+    clock = [0]
+    monkeypatch.setattr('cplane.runner.time.monotonic', lambda: clock[0])
+    monkeypatch.setattr('cplane.runner.time.sleep', lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+    with pytest.raises(state.StateError, match='^gh operation failed$'):
+        gh.update_branch('example/repo', 12, 'old')
+    assert clock[0] == 120
+    assert gh.merge_info.call_count == 25
+
+
+@pytest.mark.parametrize(('error', 'exception'), [
+    ('HTTP 422: merge conflict', 'conflict'),
+    ('HTTP 422: expected head does not match', 'failure'),
+    ('HTTP 500: merge conflict', 'failure'),
+])
+def test_github_update_branch_classifies_failures(monkeypatch, error, exception):
+    from cplane.runner import BranchConflict
     monkeypatch.setattr('cplane.fence.github_environment', lambda _: {})
-    monkeypatch.setattr(subprocess, 'run', Mock(return_value=subprocess.CompletedProcess([], 1, '', 'merge conflict')))
-    with pytest.raises(BranchConflict, match='^PR conflicts with main; needs a new slice from main$'):
+    run = Mock(return_value=subprocess.CompletedProcess([], 1, '', error))
+    monkeypatch.setattr(subprocess, 'run', run)
+    expected_type = BranchConflict if exception == 'conflict' else state.StateError
+    message = 'PR conflicts with main; needs a new slice from main' if exception == 'conflict' else 'gh operation failed'
+    with pytest.raises(expected_type, match='^' + message + '$'):
         GitHub().update_branch('example/repo', 12, 'old')
+    assert run.call_count == 1
+    assert run.call_args.args[0] == ['gh', 'api', '-X', 'PUT',
+                                     'repos/example/repo/pulls/12/update-branch',
+                                     '-f', 'expected_head_sha=old']
 
 
 def test_rewritten_publish_escalates_once_and_answer_resumes_existing_copy(setup):
