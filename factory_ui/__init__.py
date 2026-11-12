@@ -519,6 +519,9 @@ def create_app(store=None):
     from .inbox import register_inbox
     register_inbox(app, backend)
 
+    from .evals import register_evals
+    register_evals(app, backend)
+
     from .library import register_library
     register_library(app, backend, documents)
 

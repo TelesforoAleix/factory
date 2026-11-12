@@ -581,3 +581,11 @@ header .project-nav { margin-left: auto; min-width: 0; overflow-x: auto; flex-wr
   .home-fold > strong, .home-fold > span { flex-shrink: 0; }
   .home-fold > span:last-child { flex-shrink: 1; }
 }
+
+.eval-table {max-width: 100%; overflow-x: auto;}
+.eval-table table {width: max-content; min-width: 100%;}
+.eval-table th, .eval-table td {white-space: nowrap;}
+.eval-form {max-width: 52rem;}
+.eval-form fieldset {min-width: 0; margin: 1rem 0;}
+.eval-form fieldset > label {display: block;}
+.eval-config {border-bottom: 1px solid var(--border); padding-bottom: 1rem; margin-bottom: 1rem;}
