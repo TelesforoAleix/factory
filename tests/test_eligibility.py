@@ -145,7 +145,7 @@ def test_allowed_files_cli_atomic_rules_and_why(make_state, capsys, monkeypatch)
     monkeypatch.setattr(runner.Runner, 'choose', lambda *args: ('codex', 'synthetic'))
     path = make_state()
     args = ['--state', str(path), '--actor', 'planner']
-    assert main([*args, 'edit', 'voice/W1', '--allowed-files', 'src/**', '*.toml']) == 0
+    assert main([*args, 'edit', 'voice/W1', '--no-feature', 'One-off', '--allowed-files', 'src/**', '*.toml']) == 0
     item = state.load(path)['slices'][0]
     assert item['allowed_files'] == ['src/**', '*.toml']
     assert item['log'][-1]['actor'] == 'planner'
@@ -165,7 +165,7 @@ def test_allowed_files_cli_atomic_rules_and_why(make_state, capsys, monkeypatch)
 def test_allowed_files_add(make_state):
     path = make_state([])
     assert main(['--state', str(path), 'add', '--id', 'test/new', '--repo', 'owner/repo',
-                 '--feature', 'Feature', '--title', 'Scope', '--allowed-files', 'docs/**']) == 0
+                 '--feature', 'Feature', '--title', 'Scope', '--no-feature', 'One-off', '--allowed-files', 'docs/**']) == 0
     assert state.load(path)['slices'][0]['allowed_files'] == ['docs/**']
 
 

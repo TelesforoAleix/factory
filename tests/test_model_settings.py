@@ -234,7 +234,7 @@ def test_every_chat_and_executor_command_passes_effort(tool, effort, tmp_path):
 
 def test_slice_level_resolves_at_launch_and_explicit_fields_win(pg_store, tmp_path):
     seed_model_choices(pg_store)
-    add = ['add', '--id', 'new/W2', '--repo', 'owner/repo', '--feature', 'Synthetic', '--title', 'Task', '--level', 'light']
+    add = ['add', '--id', 'new/W2', '--repo', 'owner/repo', '--feature', 'Synthetic', '--title', 'Task', '--level', 'light', '--no-feature', 'One-off']
     assert main(add) == 0
     item = pg_store.load()['slices'][0]
     assert 'level' not in item  # v1 document contract retained
@@ -333,6 +333,7 @@ def test_issued_title_edit_does_not_change_executor_or_level(pg_store, slice_dat
     seed_model_choices(pg_store)
     item = copy.deepcopy(slice_data)
     item['state'] = 'issued'
+    item['no_feature'] = 'One-off'
     pg_store.save(dict(version=1, slices=[item]))
     pg_store.slice_level(item['id'], 'light', {})
     assert main(['edit', item['id'], '--title', 'New title']) == 0
@@ -344,7 +345,7 @@ def test_issued_title_edit_does_not_change_executor_or_level(pg_store, slice_dat
 
 
 def test_invalid_slice_choice_rolls_back_metadata_and_document(pg_store):
-    add = ['add', '--id', 'new/W2', '--repo', 'owner/repo', '--feature', 'Synthetic', '--title', 'Task']
+    add = ['add', '--id', 'new/W2', '--repo', 'owner/repo', '--feature', 'Synthetic', '--title', 'Task', '--no-feature', 'One-off']
     assert main([*add, '--model', 'missing']) == 1
     assert pg_store.load()['slices'] == []
     assert pg_store.slice_policy('new/W2') is None

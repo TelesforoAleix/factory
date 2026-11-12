@@ -284,8 +284,11 @@ def parser():
             sub.add_argument("--id", dest="new_id", default=argparse.SUPPRESS)
         else:
             sub.add_argument("--id", required=True)
-        for field in ("repo", "feature", "feature_id", "title", "brief", "model"):
+        for field in ("repo", "feature", "title", "brief", "model"):
             sub.add_argument(f"--{field.replace('_', '-')}", required=command == "add" and field in ("repo", "feature", "title"), default=argparse.SUPPRESS)
+        association = sub.add_mutually_exclusive_group()
+        association.add_argument('--feature-id', default=argparse.SUPPRESS)
+        association.add_argument('--no-feature', default=argparse.SUPPRESS, metavar='REASON')
         sub.add_argument("--effort", choices=("low", "medium", "high", "xhigh", "max", "ultra"), default=argparse.SUPPRESS)
         sub.add_argument("--flow", choices=("cli", "tickets"), default=argparse.SUPPRESS)
         sub.add_argument("--tool", choices=("codex", "claude"), default=argparse.SUPPRESS)

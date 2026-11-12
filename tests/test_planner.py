@@ -7,6 +7,7 @@ import pytest
 
 from cplane.cli import main
 from cplane.state import load
+from test_stores import pg_store
 
 
 STATES = ('planned', 'researching', 'ready', 'issued', 'awaiting handover', 'in review', 'accepted', 'escalated')
@@ -20,7 +21,13 @@ ALLOWED = {
     ('awaiting handover', 'awaiting handover'), ('escalated', 'issued'),
     ('in review', 'accepted'), ('in review', 'issued'),
 }
-ADD = ['add', '--id', 'new/W2', '--repo', 'example/repo', '--feature', 'feature', '--title', 'Title']
+ADD = ['add', '--id', 'new/W2', '--repo', 'example/repo', '--feature', 'feature', '--title', 'Title', '--no-feature', 'One-off']
+
+
+@pytest.fixture
+def slice_data(slice_data):
+    slice_data['no_feature'] = 'Existing one-off'
+    return slice_data
 
 
 def invoke(path, *args):
@@ -38,7 +45,7 @@ def test_add_defaults_and_log(make_state):
     assert item == dict(id='new/W2', repo='example/repo', feature='feature', title='Title',
                        state='planned', brief=None, executor={'tool': 'codex', 'model': 'gpt-6.1-terra', 'effort': 'medium'},
                        stop_before_merge=False, depends_on=[], slot=None, paused=False,
-                       session=None, pr=None, attention=None, log=item['log'])
+                       session=None, pr=None, attention=None, no_feature='One-off', log=item['log'])
     assert len(item['log']) == 1
     assert item['log'][0]['actor'] == 'owner'
     assert item['log'][0]['event'] == 'add'
@@ -318,7 +325,7 @@ def test_flow_add_edit_and_issued_guard(make_state):
     assert cli.main(prefix + ['edit', 'voice/W1', '--flow', 'cli']) == 0
     assert state.load(path)['slices'][0]['flow'] == 'cli'
     assert cli.main(prefix + ['add', '--id', 'voice/W2', '--repo', 'owner/repo', '--feature', 'f',
-                              '--title', 'Second', '--tool', 'codex', '--flow', 'tickets']) == 0
+                              '--title', 'Second', '--tool', 'codex', '--flow', 'tickets', '--no-feature', 'One-off']) == 0
     assert state.load(path)['slices'][1]['flow'] == 'tickets'
     data = state.load(path)
     data['slices'][0]['state'] = 'issued'
@@ -428,3 +435,54 @@ def test_hand_install_without_note(make_state, slice_data, monkeypatch):
     path = make_state()
     assert invoke(path, 'installed', 'voice/W1', sha) == 0
     assert any(entry['event'] == f'Installed {sha}. By hand.' for entry in load(path)['slices'][0]['log'])
+
+
+def test_feature_association_required_and_reason(make_state, capsys):
+    path = make_state([])
+    plain = ADD[:-2]
+    before = path.read_bytes()
+    assert invoke(path, *plain) == 1
+    assert '--no-feature' in capsys.readouterr().err
+    assert path.read_bytes() == before
+    for reason in ('', '   ', 'x' * 201, 'bad\x00reason'):
+        assert invoke(path, *plain, '--no-feature', reason) == 1
+        assert path.read_bytes() == before
+    with pytest.raises(SystemExit):
+        invoke(path, *ADD, '--feature-id', 'FAC-F1')
+    assert path.read_bytes() == before
+    assert invoke(path, *ADD) == 0
+    assert load(path)['slices'][0]['no_feature'] == 'One-off'
+
+
+def test_legacy_edit_requires_association(make_state, slice_data, capsys):
+    del slice_data['no_feature']
+    path = make_state()
+    before = path.read_bytes()
+    assert invoke(path, 'edit', 'voice/W1', '--title', 'New') == 1
+    assert '--no-feature' in capsys.readouterr().err
+    assert path.read_bytes() == before
+    assert invoke(path, 'edit', 'voice/W1', '--title', 'New', '--no-feature', 'Cleanup') == 0
+    assert load(path)['slices'][0]['no_feature'] == 'Cleanup'
+
+
+def test_feature_link_edits_and_aliases(pg_store, capsys):
+    from conftest import seed_model_choices
+    seed_model_choices(pg_store)
+    original = pg_store.feature_add('FAC', 'Synthetic')['id']
+    moved = pg_store.feature_move(original, 'LAB')['id']
+    plain = ADD[:-2]
+    before = pg_store.snapshot()
+    assert main([*plain, '--feature-id', 'FAC-F999']) == 1
+    assert pg_store.snapshot() == before
+    assert main([*plain, '--feature-id', original]) == 0
+    assert pg_store.load()['slices'][0]['feature_id'] == original
+    before = pg_store.snapshot()
+    assert main(['edit', 'new/W2', '--feature-id', '']) == 1
+    assert '--no-feature' in capsys.readouterr().err
+    assert pg_store.snapshot() == before
+    assert main(['edit', 'new/W2', '--no-feature', 'One-off']) == 0
+    item = pg_store.load()['slices'][0]
+    assert 'feature_id' not in item and item['no_feature'] == 'One-off'
+    assert main(['edit', 'new/W2', '--feature-id', moved]) == 0
+    item = pg_store.load()['slices'][0]
+    assert item['feature_id'] == moved and 'no_feature' not in item

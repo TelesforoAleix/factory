@@ -30,6 +30,20 @@ accounting, validation and installation.
 
 ## Slice housekeeping
 
+Slice creation and edits require either a valid `--feature-id` (a current ID or
+alias) or `--no-feature REASON` for work without a feature. The free-text
+`--feature` name is not a link. Reasons must be nonempty and at most 200
+characters. The options are mutually exclusive. Use `edit --no-feature REASON`
+to remove a feature link; setting `--feature-id` removes the previous reason.
+Existing unassociated slices need one of these options when edited. Issued and
+awaiting-handover slices retain their existing edit restrictions, so their
+association cannot be changed in those states.
+
+```sh
+cplane add --id example/W1 --repo owner/repo --feature Chore --title Cleanup --no-feature 'One-off cleanup' --actor planner
+cplane edit example/W1 --feature-id FAC-F1 --actor planner
+```
+
 ```sh
 cplane state SLICE dropped --actor owner  # Pause issued or awaiting-handover slices first.
 cplane install SLICE --actor owner
