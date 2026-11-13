@@ -117,6 +117,18 @@ def session_directory(info):
             and info.st_gid == fence.CLI_GID and stat.S_IMODE(info.st_mode) == 0o1770)
 
 
+def repository_fence():
+    root = Path(os.path.abspath(os.environ.get(
+        'CPLANE_SESSIONS_CLEAN_ROOT', fence.CLEAN_ROOT.with_name('clean-sessions'))))
+    runner_root = Path(os.path.abspath(fence.CLEAN_ROOT))
+    if root.is_relative_to(runner_root) or runner_root.is_relative_to(root):
+        raise StateError('Sessions clean root must be separate from the runner clean root')
+    trusted_directory(root.parent)
+    root.mkdir(mode=0o700, exist_ok=True)
+    trusted_directory(root)
+    return Fence(clean_root=root)
+
+
 def workspace(session):
     repositories = session['repositories']
     if (not isinstance(repositories, list) or any(
@@ -172,7 +184,7 @@ def workspace(session):
             export_tree(BRIEFS, repos / PLANNING_EXPORT, 'HEAD')
             (repos / PLANNING_EXPORT).chmod(0o755)
             (folder / 'planning').symlink_to('repos/' + PLANNING_EXPORT)
-        adapter = Fence()
+        adapter = repository_fence() if session['repositories'] else None
         for repository in session['repositories']:
             _, name = repository.split('/')
             clean = adapter.clean(repository)
@@ -375,6 +387,11 @@ def reap_turns(active, store):
 
 
 def main():
+    # Enforce this before any recovery, model probe or worker can contact GitHub.
+    os.environ['CPLANE_GITHUB_READ_ONLY'] = '1'
+    if os.environ.get('CPLANE_GITHUB_AUTH', 'token') != 'app':
+        raise StateError('Sessions requires CPLANE_GITHUB_AUTH=app; '
+                         'token mode cannot be narrowed to read-only')
     logging.basicConfig(level=logging.INFO)
     url = database_url()
     # One supervisor on the node; DB claims additionally serialize capacity checks.

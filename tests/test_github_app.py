@@ -18,6 +18,7 @@ REPOS = ('example/one', 'example/two')
 
 @pytest.fixture
 def key(tmp_path, monkeypatch):
+    monkeypatch.delenv('CPLANE_GITHUB_READ_ONLY', raising=False)
     monkeypatch.setattr(app, '_TOKENS', {})
     path = tmp_path / 'fake-app.pem'
     subprocess.run(['openssl', 'genpkey', '-algorithm', 'RSA', '-pkeyopt',
@@ -51,10 +52,10 @@ def test_jwt_claims_and_real_rs256_signature(key, tmp_path):
     assert result.returncode == 0
 
 
-def response(token='synthetic-token', expiry=NOW + 3600, repos=REPOS):
+def response(token='synthetic-token', expiry=NOW + 3600, repos=REPOS, permissions=None):
     return io.BytesIO(json.dumps(dict(token=token,
         expires_at=datetime.fromtimestamp(expiry, timezone.utc).isoformat(),
-        repositories=[{'full_name': repo} for repo in repos])).encode())
+        repositories=[{'full_name': repo} for repo in repos], permissions=permissions)).encode())
 
 
 def test_token_request_only_given_repositories(key, monkeypatch):
@@ -68,6 +69,52 @@ def test_token_request_only_given_repositories(key, monkeypatch):
     assert json.loads(request.data) == {'repositories': ['one', 'two']}
     assert request.get_header('Authorization').startswith('Bearer ')
     assert opener.open.call_args.kwargs == {'timeout': 30}
+
+
+def test_read_only_request_is_scoped_to_repository_and_contents(key, monkeypatch):
+    monkeypatch.setenv('CPLANE_GITHUB_READ_ONLY', '1')
+    opener = Mock()
+    opener.open.return_value = response(repos=['example/one'], permissions={'contents': 'read'})
+    monkeypatch.setattr(app.urllib.request, 'build_opener', Mock(return_value=opener))
+    assert app.installation_token(['example/one']) == 'synthetic-token'
+    assert json.loads(opener.open.call_args.args[0].data) == {
+        'repositories': ['one'], 'permissions': {'contents': 'read'}}
+
+
+@pytest.mark.parametrize('permissions', [None, {}, {'contents': 'write'},
+    {'contents': 'read', 'pull_requests': 'write'}, {'contents': 'read', 'metadata': 'read'}])
+def test_read_only_refuses_any_other_permissions(key, monkeypatch, permissions):
+    monkeypatch.setenv('CPLANE_GITHUB_READ_ONLY', '1')
+    opener = Mock()
+    opener.open.return_value = response(permissions=permissions)
+    monkeypatch.setattr(app.urllib.request, 'build_opener', Mock(return_value=opener))
+    with pytest.raises(state.StateError, match='response is invalid'):
+        app.installation_token(REPOS)
+    assert not app._TOKENS
+
+
+def test_read_only_and_write_caches_are_separate(key, monkeypatch):
+    opener = Mock()
+    opener.open.side_effect = [response('write'), response('read', permissions={'contents': 'read'})]
+    monkeypatch.setattr(app.urllib.request, 'build_opener', Mock(return_value=opener))
+    assert app.installation_token(REPOS) == 'write'
+    monkeypatch.setenv('CPLANE_GITHUB_READ_ONLY', '1')
+    assert app.installation_token(REPOS) == 'read'
+    assert app.installation_token(REPOS) == 'read'
+    monkeypatch.setenv('CPLANE_GITHUB_READ_ONLY', '0')
+    assert app.installation_token(REPOS) == 'write'
+    assert opener.open.call_count == 2
+    assert len(app._TOKENS) == 2
+
+
+def test_direct_mint_also_honors_process_read_only_mode(key, monkeypatch):
+    monkeypatch.setenv('CPLANE_GITHUB_READ_ONLY', '1')
+    opener = Mock()
+    opener.open.return_value = response(permissions={'contents': 'read'})
+    monkeypatch.setattr(app.urllib.request, 'build_opener', Mock(return_value=opener))
+    with key.open('rb') as source:
+        assert app.mint(source.fileno(), '123', '456', REPOS, NOW)[0] == 'synthetic-token'
+    assert json.loads(opener.open.call_args.args[0].data)['permissions'] == {'contents': 'read'}
 
 
 @pytest.mark.parametrize('kind', ['owner', 'mode', 'directory', 'fifo', 'symlink'])

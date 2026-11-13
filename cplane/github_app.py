@@ -47,11 +47,15 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def mint(fd, app_id, installation_id, repositories, now):
+def mint(fd, app_id, installation_id, repositories, now, *, read_only=False):
+    read_only = read_only or os.environ.get('CPLANE_GITHUB_READ_ONLY') == '1'
     assertion = jwt(fd, app_id, now)
+    body = {'repositories': [repo.split('/')[1] for repo in repositories]}
+    if read_only:
+        body['permissions'] = {'contents': 'read'}
     request = urllib.request.Request(
         f'https://api.github.com/app/installations/{installation_id}/access_tokens',
-        data=json.dumps({'repositories': [repo.split('/')[1] for repo in repositories]}).encode(),
+        data=json.dumps(body).encode(),
         headers={'Authorization': 'Bearer ' + assertion,
                  'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json',
                  'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'factory-cplane'},
@@ -72,7 +76,8 @@ def mint(fd, app_id, installation_id, repositories, now):
     expiry = datetime.fromisoformat(data['expires_at'].replace('Z', '+00:00'))
     if (not isinstance(token, str) or not token or any(c.isspace() for c in token)
             or expiry.tzinfo is None or expiry.timestamp() <= now + 60
-            or {r['full_name'].lower() for r in data['repositories']} != set(repositories)):
+            or {r['full_name'].lower() for r in data['repositories']} != set(repositories)
+            or (read_only and data.get('permissions') != {'contents': 'read'})):
         raise StateError('GitHub App token response is invalid')
     return token, expiry.timestamp()
 
@@ -91,6 +96,7 @@ def installation_token(repositories):
     """Reuse tokens in this process, renewing within five minutes of expiry."""
     try:
         repos = repositories_checked(repositories)
+        read_only = os.environ.get('CPLANE_GITHUB_READ_ONLY') == '1'
         app_id = os.environ['CPLANE_GITHUB_APP_ID']
         installation_id = os.environ['CPLANE_GITHUB_INSTALLATION_ID']
         if not all(re.fullmatch(r'[1-9][0-9]*', value) for value in (app_id, installation_id)):
@@ -104,13 +110,14 @@ def installation_token(repositories):
                 raise StateError('GitHub App key must be a root-owned regular file with mode 0600')
             # Keep distinct scopes, installations and key revisions isolated. A
             # fork must mint its own token rather than use its parent's cache.
-            context = (os.getpid(), app_id, installation_id, repos, info.st_dev,
+            context = (os.getpid(), app_id, installation_id, repos, read_only, info.st_dev,
                        info.st_ino, info.st_mtime_ns, info.st_ctime_ns)
             with _TOKEN_LOCK:
                 now = time.time()
                 cached = _TOKENS.get(context)
                 if cached is None or cached[1] <= now + 300:
-                    cached = mint(key.fileno(), app_id, installation_id, repos, now)
+                    cached = mint(key.fileno(), app_id, installation_id, repos, now,
+                                  read_only=read_only)
                     _TOKENS[context] = cached
                 return cached[0]
     except StateError:

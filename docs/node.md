@@ -300,6 +300,33 @@ repository scope and key revision, and renewed when five minutes or less remain
 before expiry. The runner's oneshot passes and the separate installer each mint
 their own tokens; there is no cross-process mint limit, shared cache or broker.
 Tokens are never written to disk. Every call still checks the key file.
+
+| Setting | Default | Sessions behavior |
+| --- | --- | --- |
+| `CPLANE_GITHUB_AUTH` | `token` | Must be `app`; sessions refuses token-file mode at startup because it cannot narrow that token. |
+| `CPLANE_GITHUB_READ_ONLY` | unset (full App permissions) | The sessions entry point always sets `1`, overriding even `0` in the environment. |
+| `CPLANE_SESSIONS_CLEAN_ROOT` | `/srv/factory/clean-sessions` | Separate bare clones, fetched on demand; created mode 0700 by the service under a trusted parent. |
+
+With `CPLANE_GITHUB_READ_ONLY=1`, each App request includes only
+`permissions: {contents: read}` and the call's repositories. The response must
+report exactly those permissions and repositories; broader or missing permissions
+are refused. Read-only and write tokens have separate in-process cache entries.
+Leave this setting unset for the runner. The runner needs write access for
+delivery; sessions only fetches repositories for chats. App-authenticated session
+repository fetches never use the runner's `/srv/factory/clean`, and each `Fence`
+host Git guard accepts only its own root.
+The sessions root cannot equal, contain or sit inside the runner root; links and
+untrusted ownership or write permissions are refused. Planning document writes
+continue to use their existing separate deploy key and existing
+`/srv/factory/clean/planning-sessions` clones; that separate write-back path is
+unchanged here.
+
+After installing this change, run one chat turn per tool in each area, Home Lab
+and Factory, on a repository. Verify the repository appears under sessions'
+clean root and the runner root was untouched, then run one runner slice to
+verify its App tokens still write. Today's root services may continue to read
+the shared App key and environment file; sessions enforces its own mode.
+
 Each App token request names only the repository of its Git, `gh`, or install
 call. Scheduler state is never used to supply repositories; calls without an
 explicit repository are refused. If GitHub refuses a token request, the error
@@ -2001,7 +2028,7 @@ host path. Prepare paths and socket permissions before cutover:
 | --- | --- | --- |
 | `ui` | `/var/lib/factory/ui-docs` | none |
 | `intake` | none | `/run/factory-intake` |
-| `sessions` | `/srv/factory/briefs`, `/srv/factory/runs` | `/srv/factory/work`, `/var/lib/factory/ui-docs`, `/run/homelab-launcher.sock` |
+| `sessions` | `/srv/factory/briefs`, `/srv/factory/runs` | `/srv/factory/work`, `/srv/factory/clean-sessions`, `/var/lib/factory/ui-docs`, `/run/homelab-launcher.sock` |
 | `runner` | none | `/srv/factory/briefs`, `/srv/factory/runs`, `/srv/factory/work`, `/srv/factory/clean`, `/srv/factory/exports`, `/srv/factory/bot-export`, `/srv/homelab/factory-state`, `/run/homelab-launcher.sock`, `/run/homelab-deployer.sock` |
 
 The runner anchors metadata at `/srv/factory/briefs/slices.json`, uses
@@ -2019,7 +2046,7 @@ have separate service-owned source paths.
 | Services | File name | Environment path setting |
 | --- | --- | --- |
 | all four | `database-url` | `CPLANE_DATABASE_URL_FILE` |
-| runner | `github-app.pem` | `CPLANE_GITHUB_APP_KEY` |
+| runner, sessions | `github-app.pem` | `CPLANE_GITHUB_APP_KEY` |
 | runner | `briefs-key` | `CPLANE_BRIEFS_KEY` |
 | runner | `briefs-known-hosts` | `CPLANE_BRIEFS_KNOWN_HOSTS` |
 | runner, sessions | `planning-write-key` | `CPLANE_PLANNING_WRITE_KEY` |
@@ -2041,10 +2068,10 @@ must populate the service files from the existing non-secret configuration:
 | File | Settings to carry forward |
 | --- | --- |
 | `ui.env` | `CPLANE_INSTALL_REPOS`, `CPLANE_TASK_SUBMIT` |
-| `sessions.env` | `CPLANE_INSTALL_REPOS`, `CPLANE_PLANNING_REMOTE` |
+| `sessions.env` | `CPLANE_INSTALL_REPOS`, `CPLANE_PLANNING_REMOTE`, `CPLANE_GITHUB_AUTH=app`, `CPLANE_GITHUB_APP_ID`, `CPLANE_GITHUB_INSTALLATION_ID`, `CPLANE_GITHUB_APP_KEY=/run/secrets/github-app.pem`, `CPLANE_SESSIONS_CLEAN_ROOT=/srv/factory/clean-sessions` |
 | `runner.env` | `CPLANE_GITHUB_APP_ID`, `CPLANE_GITHUB_INSTALLATION_ID`, `CPLANE_PLANNING_REMOTE`, `CPLANE_ORDERS_URL`, `CPLANE_INSTALL_REPOS`, `CPLANE_TASK_STATUS`, `CPLANE_TASK_SUBMIT`, `CPLANE_BACKLOG_GENERATED` |
 
-Both App IDs are required positive integers for the runner's selected App
+Both App IDs are required positive integers for runner and sessions App
 mode; there are no defaults. Keep the install allowlist identical in all three
 files so Home, session tools and the runner agree. Sessions needs its own file
 because its planning preparation and Workshop install tools read those settings.
@@ -2108,6 +2135,14 @@ resolving before cutover without adding an unreviewed mount.
 The socket and named group are constants, not environment settings. Intake does
 not execute arbitrary CLI commands or the runner's scheduler through imports.
 
+The sessions App key is its own copy at
+`/etc/factory/secrets/sessions/github-app.pem`, owned by UID 21011, mode 0400,
+mounted read-only at `/run/secrets/github-app.pem`, the same in-container path
+used by the runner's separate copy. Prepare `/srv/factory/clean-sessions` owned
+by 21011:21011, mode 0700, and bind it writable only in sessions. These sessions
+binds and App settings are requirements for the later container cutover; this
+slice documents them without changing compose, containers or mounts.
+
 **Sessions** (`cplane.sessions`, model probes and Workshop tools):
 
 | Setting read | Source at cutover | Reader / purpose |
@@ -2119,16 +2154,19 @@ not execute arbitrary CLI commands or the runner's scheduler through imports.
 | `CPLANE_BRIEFS_KEY` | default: `/etc/factory/briefs-key/id_ed25519` (unmounted) | `Planning.git` fetch identity; unresolved secret interface |
 | `CPLANE_BRIEFS_KNOWN_HOSTS` | default: `/etc/factory/briefs-key/known_hosts` (unmounted) | planning SSH host verification; unresolved interface |
 | `CPLANE_FENCE_COMMAND` | default: `factory-cli` | turn launch, model probes, cleanup and bundle export |
-| `CPLANE_GITHUB_AUTH` | default: `token` | `fence.github_environment` for repository fetches; its hard-coded token file is unmounted |
-| `CPLANE_GITHUB_APP_ID`, `CPLANE_GITHUB_INSTALLATION_ID` | default: unset; conditional reads only if App mode is selected | `github_app.installation_token`; not configured for sessions by this contract |
-| `CPLANE_GITHUB_APP_KEY` | default: `/etc/factory/github-app.pem` (unmounted); conditional on App mode | same token resolver; switching modes alone cannot supply the key |
+| `CPLANE_GITHUB_AUTH` | `sessions.env`: `app`; code default `token` is refused at startup | `fence.github_environment` for repository fetches |
+| `CPLANE_GITHUB_READ_ONLY` | entry point forces `1`, whatever the environment says | repository-scoped App tokens with exactly `contents: read` |
+| `CPLANE_GITHUB_APP_ID`, `CPLANE_GITHUB_INSTALLATION_ID` | `sessions.env`, required; default unset | `github_app.installation_token` |
+| `CPLANE_GITHUB_APP_KEY` | `sessions.env`: `/run/secrets/github-app.pem`; code default `/etc/factory/github-app.pem` | sessions' own UID 21011 mode 0400 key copy, mounted read-only |
+| `CPLANE_SESSIONS_CLEAN_ROOT` | `sessions.env`: `/srv/factory/clean-sessions`, also the code default | sessions' own writable bare clones; never the runner's root |
 | `PATH`, `LANG`, `PYTHONPATH` | image/default inherited `PATH` and `LANG` if present; `PYTHONPATH` unset | `fence.host_environment` forwards only present values |
 | `GH_TOKEN` | generated in the authenticated Git child's environment; no deployed value | `python -m cplane.fence credential get` returns the scoped token to Git |
 
 `BRIEFS` and `WORK_ROOT` in sessions remain fixed. `CPLANE_SESSION_RUNS`,
 `CPLANE_UI_DOCS` and `CPLANE_SESSIONS_LOCK` configure the session paths;
-`CPLANE_RUNS` remains the separate runner setting. Default authentication and planning credential gaps remain explicit
-cutover prerequisites; no extra secret bind is introduced here.
+`CPLANE_RUNS` remains the separate runner setting. The sessions App key copy,
+clean-root bind and planning credential gaps remain explicit cutover prerequisites;
+the deployed compose file is unchanged by this slice.
 
 **Runner** (`cplane --actor runner run --every 60`, delivery and scheduled jobs):
 
@@ -2141,6 +2179,7 @@ cutover prerequisites; no extra secret bind is introduced here.
 | `CPLANE_FENCE` | compose: `1` | `executors.fenced` |
 | `CPLANE_FENCE_COMMAND` | default: `factory-cli` | fenced subprocess launch, bundle export, cleanup and usage probes |
 | `CPLANE_GITHUB_AUTH` | compose: `app` | selects App authentication instead of the legacy token file |
+| `CPLANE_GITHUB_READ_ONLY` | unset | preserves the runner's full App permissions and separate write-token cache |
 | `CPLANE_GITHUB_APP_ID`, `CPLANE_GITHUB_INSTALLATION_ID` | `runner.env`, required for App mode | `github_app.installation_token` |
 | `CPLANE_GITHUB_APP_KEY` | compose: `/run/secrets/github-app.pem` | token minting key path |
 | `CPLANE_BRIEFS_KEY` | compose: `/run/secrets/briefs-key` | planning fetch identity |
@@ -2209,6 +2248,7 @@ settings retain the existing host defaults until explicitly set:
 | `FACTORY_UI_HOST` | `127.0.0.1` | Bind the UI to the container interface; host publication must remain loopback-only. |
 | `CPLANE_INTAKE_GID` | unset (look up `factory-intake`) | Use the numeric socket group without a named group in the image. |
 | `CPLANE_SESSIONS_LOCK` | `/run/factory-sessions.lock` | Place the supervisor lock on a writable bind. |
+| `CPLANE_SESSIONS_CLEAN_ROOT` | `/srv/factory/clean-sessions` | Prepare a sessions-owned writable bind separate from the runner's clean root. |
 | `CPLANE_SESSION_RUNS` | `/srv/factory/runs` | Place turn and model probe folders on a writable runs bind; use `/srv/factory/runs/sessions` at cutover. |
 | `CPLANE_UI_DOCS` | `/var/lib/factory/ui-docs` | Configure the same document root for UI and sessions, with staging and the lock in its parent. |
 

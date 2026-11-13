@@ -85,6 +85,9 @@ def github_environment(repositories=None):
         return env
     if auth != 'token':
         raise StateError('CPLANE_GITHUB_AUTH must be token or app')
+    if os.environ.get('CPLANE_GITHUB_READ_ONLY') == '1':
+        raise StateError('CPLANE_GITHUB_READ_ONLY=1 requires CPLANE_GITHUB_AUTH=app; '
+                         'token mode cannot be narrowed')
     fd = os.open(TOKEN, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     with os.fdopen(fd) as stream:
         info = os.fstat(stream.fileno())
@@ -140,7 +143,8 @@ def snapshot_bundle(folder):
 
 
 class Fence:
-    def __init__(self):
+    def __init__(self, *, clean_root=None):
+        self.clean_root = Path(os.path.abspath(CLEAN_ROOT if clean_root is None else clean_root))
         self.begin_pass()
 
     def begin_pass(self):
@@ -193,16 +197,17 @@ class Fence:
         if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repo) or any(
                 part in ('.', '..') for part in repo.split('/')):
             raise StateError('invalid GitHub repository')
-        trusted_directory(CLEAN_ROOT)
+        trusted_directory(self.clean_root)
         owner, name = repo.split('/')
-        parent = CLEAN_ROOT / owner
+        parent = self.clean_root / owner
         parent.mkdir(mode=0o700, exist_ok=True)
         trusted_directory(parent)
         return parent / (name + '.git')
 
     def git(self, clean, *args, auth=False, allow_failure=False, index=None):
         # This is the only host Git entry point for delivery. Never accept a work copy.
-        if not clean.is_relative_to(CLEAN_ROOT) or clean == CLEAN_ROOT:
+        clean = Path(os.path.abspath(clean))
+        if not clean.is_relative_to(self.clean_root) or clean == self.clean_root:
             raise StateError('host Git refused outside clean clones')
         trusted_directory(clean)
         repo = clean.parent.name + '/' + clean.name.removesuffix('.git')
