@@ -309,8 +309,10 @@ Tokens are never written to disk. Every call still checks the key file.
 
 With `CPLANE_GITHUB_READ_ONLY=1`, each App request includes only
 `permissions: {contents: read}` and the call's repositories. The response must
-report exactly those permissions and repositories; broader or missing permissions
-are refused. Read-only and write tokens have separate in-process cache entries.
+report `contents: read` and may also report `metadata: read`, which GitHub grants
+every App token. Any other permission or value, or missing `contents`, is refused.
+The response must report exactly the call's repositories.
+Read-only and write tokens have separate in-process cache entries.
 Leave this setting unset for the runner. The runner needs write access for
 delivery; sessions only fetches repositories for chats. App-authenticated session
 repository fetches never use the runner's `/srv/factory/clean`, and each `Fence`

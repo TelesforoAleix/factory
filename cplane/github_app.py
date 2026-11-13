@@ -77,7 +77,8 @@ def mint(fd, app_id, installation_id, repositories, now, *, read_only=False):
     if (not isinstance(token, str) or not token or any(c.isspace() for c in token)
             or expiry.tzinfo is None or expiry.timestamp() <= now + 60
             or {r['full_name'].lower() for r in data['repositories']} != set(repositories)
-            or (read_only and data.get('permissions') != {'contents': 'read'})):
+            or (read_only and data.get('permissions') not in (
+                {'contents': 'read'}, {'contents': 'read', 'metadata': 'read'}))):
         raise StateError('GitHub App token response is invalid')
     return token, expiry.timestamp()
 

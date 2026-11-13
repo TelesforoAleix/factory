@@ -74,15 +74,31 @@ def test_token_request_only_given_repositories(key, monkeypatch):
 def test_read_only_request_is_scoped_to_repository_and_contents(key, monkeypatch):
     monkeypatch.setenv('CPLANE_GITHUB_READ_ONLY', '1')
     opener = Mock()
-    opener.open.return_value = response(repos=['example/one'], permissions={'contents': 'read'})
+    opener.open.return_value = response(
+        repos=['example/one'], permissions={'contents': 'read', 'metadata': 'read'})
     monkeypatch.setattr(app.urllib.request, 'build_opener', Mock(return_value=opener))
     assert app.installation_token(['example/one']) == 'synthetic-token'
     assert json.loads(opener.open.call_args.args[0].data) == {
         'repositories': ['one'], 'permissions': {'contents': 'read'}}
 
 
+@pytest.mark.parametrize('permissions', [
+    {'contents': 'read', 'metadata': 'read'}, {'contents': 'read'}])
+def test_read_only_accepts_contents_with_optional_metadata(key, monkeypatch, permissions):
+    monkeypatch.setenv('CPLANE_GITHUB_READ_ONLY', '1')
+    opener = Mock()
+    opener.open.return_value = response(permissions=permissions)
+    monkeypatch.setattr(app.urllib.request, 'build_opener', Mock(return_value=opener))
+    assert app.installation_token(REPOS) == 'synthetic-token'
+
+
 @pytest.mark.parametrize('permissions', [None, {}, {'contents': 'write'},
-    {'contents': 'read', 'pull_requests': 'write'}, {'contents': 'read', 'metadata': 'read'}])
+    {'contents': 'write', 'metadata': 'read'},
+    {'contents': 'read', 'pull_requests': 'write'},
+    {'contents': 'read', 'metadata': 'read', 'pull_requests': 'write'},
+    {'contents': 'read', 'issues': 'read'}, {'metadata': 'read'},
+    {'contents': 'read', 'metadata': 'write'}, {'contents': 'read', 'metadata': None},
+    ['contents'], 'read'])
 def test_read_only_refuses_any_other_permissions(key, monkeypatch, permissions):
     monkeypatch.setenv('CPLANE_GITHUB_READ_ONLY', '1')
     opener = Mock()
@@ -95,7 +111,8 @@ def test_read_only_refuses_any_other_permissions(key, monkeypatch, permissions):
 
 def test_read_only_and_write_caches_are_separate(key, monkeypatch):
     opener = Mock()
-    opener.open.side_effect = [response('write'), response('read', permissions={'contents': 'read'})]
+    opener.open.side_effect = [
+        response('write'), response('read', permissions={'contents': 'read', 'metadata': 'read'})]
     monkeypatch.setattr(app.urllib.request, 'build_opener', Mock(return_value=opener))
     assert app.installation_token(REPOS) == 'write'
     monkeypatch.setenv('CPLANE_GITHUB_READ_ONLY', '1')
@@ -110,7 +127,7 @@ def test_read_only_and_write_caches_are_separate(key, monkeypatch):
 def test_direct_mint_also_honors_process_read_only_mode(key, monkeypatch):
     monkeypatch.setenv('CPLANE_GITHUB_READ_ONLY', '1')
     opener = Mock()
-    opener.open.return_value = response(permissions={'contents': 'read'})
+    opener.open.return_value = response(permissions={'contents': 'read', 'metadata': 'read'})
     monkeypatch.setattr(app.urllib.request, 'build_opener', Mock(return_value=opener))
     with key.open('rb') as source:
         assert app.mint(source.fileno(), '123', '456', REPOS, NOW)[0] == 'synthetic-token'
