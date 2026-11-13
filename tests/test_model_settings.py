@@ -459,3 +459,36 @@ def test_fence_command_defaults_and_rolls_back(monkeypatch):
     assert fence.fence_command() == ['homelab-fence']
     monkeypatch.delenv('CPLANE_FENCE_COMMAND')
     assert fence.fence_command() == ['factory-cli']
+
+@pytest.mark.parametrize('kind', ['routes', 'providers'])
+@pytest.mark.parametrize('base', [None, 'https://example.test/base/'])
+def test_home_lab_proxy_passes_json_and_uses_configured_url(monkeypatch, kind, base):
+    import io
+    from unittest.mock import patch
+    if base is None:
+        monkeypatch.delenv('HOMELAB_API_URL', raising=False)
+    else:
+        monkeypatch.setenv('HOMELAB_API_URL', base)
+    payload = {'version': 'synthetic', kind: [{'extra': 'passed through'}]}
+    response = io.BytesIO(json.dumps(payload).encode())
+    response.status = 200
+    with patch('factory_ui.urlopen', return_value=response) as fetch:
+        result = create_app().test_client().get('/api/settings/home-lab/' + kind)
+    assert result.status_code == 200 and result.json == payload
+    fetch.assert_called_once_with((base or 'http://127.0.0.1:8000').rstrip('/') + '/v1/manage/' + kind, timeout=5)
+
+
+@pytest.mark.parametrize('failure', ['down', '500', 'invalid_json', 'scheme'])
+def test_home_lab_proxy_returns_safe_error(monkeypatch, failure):
+    import io
+    from unittest.mock import patch
+    from urllib.error import HTTPError, URLError
+    monkeypatch.setenv('HOMELAB_API_URL', 'file:///private' if failure == 'scheme' else 'http://private.test')
+    error = URLError('private address') if failure == 'down' else HTTPError('http://private.test', 500, 'private body', {}, None)
+    response = io.BytesIO(b'private body')
+    response.status = 200
+    with patch('factory_ui.urlopen', return_value=response, side_effect=error if failure in ('down', '500') else None) as fetch:
+        result = create_app().test_client().get('/api/settings/home-lab/routes')
+    assert result.status_code == 502 and result.json == {'error': 'Home Lab unavailable'}
+    if failure == 'scheme':
+        fetch.assert_not_called()

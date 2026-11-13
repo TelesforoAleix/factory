@@ -9,6 +9,7 @@ test('project switches persist immediately, omit NEW and report a failed save', 
   const fetcher = vi.fn(async (url, options) => ({ok:true,json:async () => url === '/api/settings/models' ? {models:[],updates:[]} : url.startsWith('/api/settings/') ? [] : options ? {...project,active:false} : [project,{key:'NEW',name:'No project yet',active:true}]}));
   vi.stubGlobal('fetch',fetcher);
   render(<Settings/>);
+  expect(screen.getByRole('link', {name:'View routes and providers'}).getAttribute('href')).toBe('/settings/home-lab');
   const toggle = await screen.findByRole('switch',{name:'Active Factory'});
   expect(toggle.checked).toBe(true);
   expect(screen.getByText('FAC').tagName).toBe('CODE');

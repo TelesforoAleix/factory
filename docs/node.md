@@ -2245,6 +2245,7 @@ settings retain the existing host defaults until explicitly set:
 
 | Setting | Default | Container prerequisite addressed |
 | --- | --- | --- |
+| `HOMELAB_API_URL` | `http://127.0.0.1:8000` | Home Lab API base URL for the read-only settings page. |
 | `FACTORY_UI_HOST` | `127.0.0.1` | Bind the UI to the container interface; host publication must remain loopback-only. |
 | `CPLANE_INTAKE_GID` | unset (look up `factory-intake`) | Use the numeric socket group without a named group in the image. |
 | `CPLANE_SESSIONS_LOCK` | `/run/factory-sessions.lock` | Place the supervisor lock on a writable bind. |
