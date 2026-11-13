@@ -607,3 +607,5 @@ header .project-nav { margin-left: auto; min-width: 0; overflow-x: auto; flex-wr
   .home-lab-row summary strong::before { content: '▸ '; }
   .home-lab-row[open] summary strong::before { content: '▾ '; }
 }
+
+.prompt-text { white-space: pre-wrap; overflow-wrap: anywhere; }

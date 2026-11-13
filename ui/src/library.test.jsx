@@ -10,12 +10,15 @@ import {quoteOffset} from './library';
 afterEach(() => {cleanup(); vi.unstubAllGlobals(); mock.setAnnotations.mockClear();});
 const selector = {type:'TextQuoteSelector', exact:'searchable', prefix:'A ', suffix:' document.'};
 const doc = {path:'factory/plan.md', title:'Plan', status:'draft', date:'2026-11-01', markdown:'A searchable document.', receiver:{id:7}};
+const prompt = {name:'chat',sha256:'abcdef123456' + '0'.repeat(52),text:'Synthetic prompt text.\nSecond line.'};
 const chat = {id:7,title:'Factory project',kind:'project',area:'factory',state:'idle'};
-const skill = {name:'grilling',description:'Ask questions',version:'abcdef123456',projects:['FAC'],markdown:'Grill one question.'};
+const skill = {name:'grilling',description:'Ask questions',version:'abcdef123456',sha256:'123456789abc' + 'd'.repeat(52),projects:['FAC'],markdown:'Grill one question.'};
 function fixture(comments=[]) {
   const fetchMock = vi.fn(async (url, options) => ({ok:true,json:async () => {
     if (url.startsWith('/api/library?')) return {documents:[doc],projects:[{key:'FAC',name:'Factory'}]};
     if (url === '/api/skills') return [skill];
+    if (url === '/api/prompts') return [prompt];
+    if (url === '/api/prompts/chat') return prompt;
     if (url === '/api/skills/grilling') return options?.method === 'POST' ? {...skill,projects:[]} : skill;
     if (url.startsWith('/api/chats')) return [chat];
     if (url.includes('/api/library/documents/')) return doc;
@@ -31,7 +34,10 @@ test('tree filters search by project and links skills with versions', async () =
   expect(await screen.findByText('Plan')).toBeTruthy();
   expect(screen.getByText('Skills & guides')).toBeTruthy();
   expect(screen.getByText('Skills & guides').closest('details').open).toBe(false);
-  expect(screen.getByText('abcdef12')).toBeTruthy();
+  expect(screen.getByText('123456789abc')).toBeTruthy();
+  expect(screen.getByText('Prompts')).toBeTruthy();
+  expect(screen.getByText('abcdef123456')).toBeTruthy();
+  expect(screen.getByText('chat').closest('a').getAttribute('href')).toBe('/library/prompts/chat');
   fireEvent.click(screen.getByRole('button', {name:'Factory'}));
   fireEvent.change(screen.getByLabelText('Search Library'),{target:{value:'router'}});
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/library?project=FAC&q=router',{}));
@@ -44,6 +50,13 @@ test('skill rows expose the selected project switch', async () => {
   expect(toggle.checked).toBe(true);
   fireEvent.click(toggle);
   await waitFor(() => expect(fetchMock.mock.calls.some(([url,o]) => url === '/api/skills/grilling' && o?.method === 'POST' && JSON.parse(o.body).enabled === false)).toBe(true));
+});
+test('prompt page displays exact text and full hash without edit controls', async () => {
+  const fetchMock = fixture(); render(<MemoryRouter initialEntries={['/library/prompts/chat']}><App/></MemoryRouter>);
+  await waitFor(() => expect(document.querySelector('.prompt-text')?.textContent).toBe(prompt.text));
+  expect(screen.getByText(prompt.sha256)).toBeTruthy();
+  expect(screen.queryByRole('textbox', {name:/prompt/i})).toBeNull();
+  expect(fetchMock.mock.calls.every(([,options]) => !options?.method)).toBe(true);
 });
 test('selection saves a W3C quote with context and guards the write', async () => {
   const fetchMock=fixture(); render(<MemoryRouter initialEntries={['/library/documents/factory/plan.md']}><App/></MemoryRouter>);
@@ -71,6 +84,7 @@ test('all drafts send once to chosen chat and sent history and changed quotes re
 test('skill text and project switch use the existing backend', async () => {
   const fetchMock=fixture(); render(<MemoryRouter initialEntries={['/library/skills/grilling?project=FAC']}><App/></MemoryRouter>);
   expect(await screen.findByText('Grill one question.')).toBeTruthy();
+  expect(screen.getByText(skill.sha256)).toBeTruthy();
   fireEvent.click(await screen.findByRole('checkbox',{name:'Enabled for Factory'}));
   await waitFor(() => expect(fetchMock.mock.calls.some(([url,o]) => url==='/api/skills/grilling' && o?.method==='POST' && JSON.parse(o.body).enabled===false)).toBe(true));
 });
@@ -122,7 +136,7 @@ test('drafts delete and sent comments resolve into a collapsed history', async (
   const fetcher = vi.fn(async (url, options) => {
     if (url.endsWith('/1') && options?.method === 'DELETE') comments = comments.filter(c => c.id !== 1);
     if (url.endsWith('/2') && options?.method === 'PATCH') comments = comments.map(c => ({...c,resolved_at:'2026-11-03',resolution_note:JSON.parse(options.body).note}));
-    return {ok:true,json:async () => url.startsWith('/api/library?') ? {documents:[doc],projects:[]} : url === '/api/skills' ? [] : url.startsWith('/api/chats') ? [chat] : url.includes('/documents/') ? doc : comments};
+    return {ok:true,json:async () => url.startsWith('/api/library?') ? {documents:[doc],projects:[]} : url === '/api/skills' || url === '/api/prompts' ? [] : url.startsWith('/api/chats') ? [chat] : url.includes('/documents/') ? doc : comments};
   });
   vi.stubGlobal('fetch',fetcher);
   render(<MemoryRouter initialEntries={['/library/documents/factory/plan.md']}><App/></MemoryRouter>);

@@ -1,5 +1,6 @@
 """Read-only export/skill views and owner comment actions."""
 from flask import jsonify, request
+from cplane import prompts
 from cplane.state import StateError
 from cplane.skills import instructions
 from .documents import DocumentNotFound
@@ -82,6 +83,16 @@ def register_library(app, backend, documents):
                 raise StateError('Choose a chat')
             return backend().library_send(document, payload.get('chat'), grill=request.path.startswith('/api/library/grill/'))
         return respond(operation)
+
+    @app.get('/api/prompts')
+    def list_prompts():
+        return respond(lambda: [dict(name=name, sha256=prompts.sha256(name)) for name in prompts.names()])
+
+    @app.get('/api/prompts/<name>')
+    def prompt(name):
+        if name not in prompts.names():
+            return jsonify(error='Prompt not found'), 404
+        return respond(lambda: dict(name=name, sha256=prompts.sha256(name), text=prompts.text(name)))
 
     @app.route('/api/skills/<name>', methods=['GET', 'POST'])
     def skill(name):
