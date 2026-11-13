@@ -1,8 +1,11 @@
 """Best-effort turn accounting; diagnostics never include executor or prompt text."""
+from contextlib import ExitStack
 from datetime import datetime, timezone
 import json
 import hashlib
+import os
 import re
+import stat
 import time
 from pathlib import Path
 import subprocess
@@ -18,7 +21,82 @@ OUTCOME_FIELDS = ('level', 'executor_source', 'configuration', 'brief_hash', 'ci
                   'verdict', 'corrects_slice', 'owner_wait_seconds', 'change_class')
 FIELDS = ('kind', 'project', 'feature_id', 'slice_id', 'session_id', 'tool', 'model', 'effort',
           *TOKEN_FIELDS, 'seconds', 'started_at', 'outcome', 'starting_commit', 'prompt',
-          'prompt_truncated', 'skill_version', 'eval_candidate', *OUTCOME_FIELDS)
+          'prompt_truncated', 'skill_version', 'eval_candidate', *OUTCOME_FIELDS, 'context')
+
+
+def _skill_digest(path, root=None):
+    with ExitStack() as stack:
+        parent = None
+        if root is not None:
+            parent = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            stack.callback(os.close, parent)
+            parts = path.relative_to(root).parts
+            if any(part in ('.', '..') for part in parts):
+                raise ValueError('invalid skill path')
+            for part in parts[:-1]:
+                parent = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+                stack.callback(os.close, parent)
+            path = parts[-1]
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+        with os.fdopen(fd, 'rb') as stream:
+            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                raise ValueError('skill must be a regular file')
+            return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+
+def context(*, prompt_names=(), skill_files=(), skill_root=None):
+    """Snapshot loaded instructions; one unreadable file never hides the others."""
+    from . import prompts
+    result = []
+    for name in prompt_names:
+        try:
+            result.append(dict(kind='prompt', name=name, sha256=prompts.sha256(name)))
+        except Exception:
+            print('cplane: run context prompt unreadable', file=sys.stderr)
+    for name, path in skill_files:
+        try:
+            # Installed files live in an agent workspace: never open a link or
+            # block on a substituted FIFO, and hash bytes without text decoding.
+            digest = _skill_digest(path, skill_root)
+            result.append(dict(kind='skill', name=name, sha256=digest))
+        except Exception:
+            print('cplane: run context skill unreadable', file=sys.stderr)
+    return sorted(result, key=lambda entry: (entry['kind'], entry['name']))
+
+
+def chat_context(folder, session, prompt_names):
+    try:
+        directory = folder / '.claude' / 'skills'
+        # Include the snapshot's expected files so a missing skill is diagnosed,
+        # and discover installed files for legacy sessions as well.
+        names = set(session.get('skill_names') or ())
+        names.update(path.parent.name for path in directory.glob('*/SKILL.md'))
+        files = [(name, directory / name / 'SKILL.md') for name in sorted(names)]
+    except Exception:
+        print('cplane: run context skills unreadable', file=sys.stderr)
+        files = []
+    return context(prompt_names=prompt_names, skill_files=files, skill_root=folder)
+
+
+def save_context(run, entries):
+    """Keep the pre-launch snapshot for interrupted chat recovery."""
+    try:
+        from .executors import atomic_json
+        atomic_json(run / 'context.json', entries)
+    except Exception:
+        print('cplane: run context snapshot failed', file=sys.stderr)
+
+
+def saved_context(run):
+    try:
+        from .executors import read_output
+        entries = json.loads(read_output(run / 'context.json'))
+        if not isinstance(entries, list):
+            raise ValueError('context must be an array')
+        return entries
+    except Exception:
+        print('cplane: run context snapshot unreadable', file=sys.stderr)
+        return []
 
 
 def usage(tool, output):
@@ -154,9 +232,10 @@ class RunRecordStore:
                           prompt=cut(prompt, TEXT_LIMIT) if prompt is not None else None,
                           prompt_truncated=prompt is not None and len(prompt) > TEXT_LIMIT,
                           eval_candidate=False)
-            if values.get('ci_result') is not None:
-                from psycopg.types.json import Jsonb
-                values['ci_result'] = Jsonb(values['ci_result'])
+            from psycopg.types.json import Jsonb
+            for field in ('ci_result', 'context'):
+                if values.get(field) is not None:
+                    values[field] = Jsonb(values[field])
             self.connection.execute(
                 'INSERT INTO cplane_run_records (turn_key, ' + ', '.join(FIELDS) + ') VALUES (' +
                 ', '.join(['%s'] * (len(FIELDS) + 1)) + ') ON CONFLICT (turn_key) DO NOTHING',
@@ -268,6 +347,7 @@ def slice_record(store, item, job):
            kind='slice', slice_id=item['id'], session_id=job.get('session') or None,
            tool=job['tool'], model=job.get('model'), effort=job.get('effort'),
            starting_commit=job.get('starting_commit'), skill_version=job.get('skills'),
+           context=job.get('context', []),
            **{field: job.get(field) for field in OUTCOME_FIELDS},
            started_at=datetime.fromtimestamp(started / 1e9, timezone.utc) if started else None,
            seconds=max(0, end - started / 1e9) if end is not None and started else None,
@@ -284,6 +364,7 @@ def chat_record(store, turn, accounting):
                tool=session['tool'], model=session.get('model'),
                effort='medium' if session['tool'] == 'codex' else None,
                prompt=turn.get('text'), starting_commit=session.get('_starting_commit'), skill_version=session.get('skill_version'),
+               context=accounting.get('context', []),
                started_at=datetime.fromtimestamp(accounting['started'], timezone.utc) if accounting.get('started') else None,
                seconds=(max(0, accounting.get('ended', time.time()) - accounting['started'])
                         if accounting.get('started') else None),

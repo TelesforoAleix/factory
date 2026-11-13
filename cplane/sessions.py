@@ -221,7 +221,7 @@ def workspace(session):
     return folder, paths
 
 
-def turn_command(turn, folder, paths, run):
+def turn_command(turn, folder, paths, run, *, accounting=None):
     session = turn['session']
     tool = session['tool']
     args = [*fence.fence_command(), 'run', '--tool', tool, '--repo', str(folder), '--run', str(run),
@@ -245,11 +245,17 @@ def turn_command(turn, folder, paths, run):
     prompt = ('Workshop event: ' if turn.get('role') == 'system' else '') + turn['text']
     if turn.get('context'):
         prompt = turn['context'] + '\n\nCurrent message:\n' + prompt
+    loaded_prompts = []
     if session.get('kind') in WORKSHOP_KINDS:
         prompt += f'\n\nCurrent message ID: {turn["id"]}'
-        prompt += '\n\n' + prompts.text('secretary' if session.get('kind') == 'secretary' else 'chat')
+        name = 'secretary' if session.get('kind') == 'secretary' else 'chat'
+        prompt += '\n\n' + prompts.text(name)
+        loaded_prompts.append(name)
     if session.get('area') == 'homelab':
         prompt += '\n\n' + prompts.text('homelab')
+        loaded_prompts.append('homelab')
+    if accounting is not None:
+        accounting['context'] = run_records.chat_context(folder, session, loaded_prompts)
     return [*args, '--', *command, '--', prompt]
 
 
@@ -307,7 +313,8 @@ def _execute_turn(turn, store, accounting):
         trusted_directory(RUNS)
         run = RUNS / f'session-turn-{turn["id"]}'
         run.mkdir(mode=0o700)  # Factory-owned; no agent output files to follow
-        command = turn_command(turn, folder, paths, run)
+        command = turn_command(turn, folder, paths, run, accounting=accounting)
+        run_records.save_context(run, accounting['context'])
         accounting['started'] = time.time()
         workshop = (WorkshopServer(run, PostgresStore(store._url), turn['session']['id'],
                                    Documents(UI_DOCS))
@@ -397,7 +404,9 @@ def main():
         for turn in store.interrupted_session_turns():
             try:
                 cleanup_interrupted_turn(turn)
-                run_records.chat_record(store, turn, {'outcome': 'interrupted'})
+                run_records.chat_record(store, turn, {
+                    'outcome': 'interrupted',
+                    'context': run_records.saved_context(RUNS / f'session-turn-{turn["id"]}')})
                 store.finish_session_turn(turn, 'Turn interrupted. Send a message to start a new session.', failed=True)
             except Exception:
                 LOG.exception('Session turn %s cleanup failed', turn['id'])

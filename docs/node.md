@@ -1059,6 +1059,18 @@ Records survive run-folder cleanup. No ticket-attempt service is queried and no
 money is calculated. `cplane run` with no subcommand still runs the scheduler.
 File-store execution silently skips recording; record commands require Postgres.
 
+Migration 027 adds nullable JSONB `context` to run records, included in existing
+UI and CLI reads. Old rows remain `NULL` (unknown); new invocations record an
+array sorted by kind and name, with `{kind, name, sha256}` entries. Chats snapshot
+their Factory prompt files using `prompts.sha256(name)` and every installed
+`SKILL.md` using its bytes before each turn, including resumes. Ordinary slices
+load no Factory prompt or skill files and record `[]`; cut and review launches
+embed a source skill and hash that source file's bytes, while resumed slice
+invocations load no additional Factory files. Hash failures emit a short diagnostic
+and retain the entries that succeeded. Before installing this migration, take a
+database dump; after installation, check one chat turn's record and the next slice
+run's record for `context`.
+
 `run list` accepts `--slice ID`, `--project KEY`, and `--json`. Lists never return
 prompt text, including in JSON. `run show ID` prints the full record as JSON,
 including the prompt. `run mark ID` selects an eval candidate; `--clear` removes
