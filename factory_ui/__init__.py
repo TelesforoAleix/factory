@@ -1,5 +1,8 @@
 """Owner web view of Factory state."""
 import os
+import json
+from urllib.parse import urlsplit
+from urllib.request import urlopen
 import re
 from pathlib import Path
 from argparse import Namespace
@@ -338,6 +341,22 @@ def create_app(store=None):
         if set(payload) - {'name', 'about', 'public_url', 'repository_url'}:
             return jsonify(error='Choose project fields; keys cannot change'), 400
         return chat_response(lambda: backend().project_set(key, actor='owner', **payload))
+
+    @app.get('/api/settings/home-lab/<kind>')
+    def settings_home_lab(kind):
+        if kind not in ('routes', 'providers'):
+            return jsonify(error='Not found'), 404
+        try:
+            base = os.environ.get('HOMELAB_API_URL', 'http://127.0.0.1:8000').rstrip('/')
+            parsed = urlsplit(base)
+            if parsed.scheme not in ('http', 'https') or not parsed.netloc or parsed.query or parsed.fragment:
+                raise ValueError('Invalid Home Lab URL')
+            with urlopen(base + '/v1/manage/' + kind, timeout=5) as response:
+                if response.status != 200:
+                    raise ValueError('Home Lab error')
+                return jsonify(json.load(response))
+        except Exception:
+            return jsonify(error='Home Lab unavailable'), 502
 
     @app.get('/api/settings/models')
     def settings_models():

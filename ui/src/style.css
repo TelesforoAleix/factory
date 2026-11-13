@@ -592,3 +592,18 @@ header .project-nav { margin-left: auto; min-width: 0; overflow-x: auto; flex-wr
 
 .home-log-row { display: flex; flex-wrap: wrap; gap: .35rem 1rem; padding: .5rem 0; }
 .home-log-row time { color: var(--muted, #666); }
+
+.home-lab-settings { max-width: 70rem; min-width: 0; overflow-wrap: anywhere; }
+.home-lab-row, .home-lab-provider { border-bottom: 1px solid var(--rule); padding: var(--space-3) 0; }
+.home-lab-row summary, .home-lab-provider { display: grid; grid-template-columns: minmax(8rem, 1fr) minmax(0, 3fr) minmax(5rem, 1fr); gap: var(--space-3); }
+.home-lab-row summary { cursor: pointer; }
+.home-lab-row summary::before { content: '▸'; }
+.home-lab-row summary { grid-template-columns: auto minmax(8rem, 1fr) minmax(0, 3fr) minmax(5rem, 1fr); }
+.home-lab-row[open] summary::before { content: '▾'; }
+.home-lab-row li { padding: var(--space-1) 0; }
+@media (max-width: 700px) {
+  .home-lab-row summary, .home-lab-provider { display: flex; flex-direction: column; gap: var(--space-1); }
+  .home-lab-row summary::before { display: none; }
+  .home-lab-row summary strong::before { content: '▸ '; }
+  .home-lab-row[open] summary strong::before { content: '▾ '; }
+}
