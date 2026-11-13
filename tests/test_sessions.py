@@ -9,7 +9,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from cplane import sessions
+from cplane import prompts, sessions
 from factory_ui import create_app
 from test_stores import pg_store
 from conftest import seed_model_choices
@@ -278,7 +278,7 @@ def test_turn_prompt_instruction_does_not_change_stored_text(area, tool, resume,
     prompt = sessions.turn_command(turn, tmp_path, [], tmp_path / 'run')[-1]
     assert turn['text'] == 'Owner message'
     if area == 'homelab':
-        assert prompt == 'Owner message\n\n' + sessions.HOMELAB_INSTRUCTION
+        assert prompt == 'Owner message\n\n' + prompts.text('homelab')
         for phrase in ('planning/', 'main', 'git add', 'git commit', 'each agreed change',
                        'short message', 'unprotected Markdown'):
             assert phrase in prompt
