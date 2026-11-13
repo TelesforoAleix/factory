@@ -61,9 +61,35 @@ test('empty activity sections are hidden', async () => {
   await screen.findByText('Home');
   await waitFor(() => expect(screen.queryByText('Loading…')).toBeNull());
   expect(screen.queryByText('Running now')).toBeNull();
+  expect(screen.queryByText('Chats waiting for you')).toBeNull();
   expect(screen.queryByText(/Next:/)).toBeNull();
   expect(screen.queryByText('Not in a feature')).toBeNull();
   expect(screen.queryByRole('button', {name:/Log:/})).toBeNull();
+});
+
+test('waiting chats show their titles and subtitles and respect the project filter', async () => {
+  const data = {projects:[{key:'FAC',name:'Factory'},{key:'OTH',name:'Other'},{key:'EMPTY',name:'Empty'}],features:[],attention:[{kind:'failure',id:'bad',text:'Problem'}],running_now:[{kind:'chat',id:9,title:'Running'}],chats:[
+    {id:1,title:'FAC',project:'FAC',feature:'Planning'},
+    {id:2,title:'Other discussion',project:'OTH'},
+    {id:3,title:'Unknown project',project:'MISSING'},
+    {id:4,title:'General'}]};
+  vi.stubGlobal('fetch', async url => ({ok:true,json:async () => url === '/api/home' ? data : []}));
+  const {container} = render(<MemoryRouter><Home/></MemoryRouter>);
+  const link = await screen.findByRole('link', {name:'Factory Planning'});
+  expect(link.getAttribute('href')).toBe('/chats/1');
+  expect(screen.getByRole('link', {name:'Other discussion Other'}).getAttribute('href')).toBe('/chats/2');
+  expect(screen.getByRole('link', {name:'Unknown project MISSING'})).toBeTruthy();
+  expect(screen.getByRole('link', {name:'General Chat'})).toBeTruthy();
+  expect(container.textContent.indexOf('Needs your attention')).toBeLessThan(container.textContent.indexOf('Chats waiting for you'));
+  expect(container.textContent.indexOf('Chats waiting for you')).toBeLessThan(container.textContent.indexOf('Running now'));
+  fireEvent.click(screen.getByRole('button', {name:'Factory'}));
+  expect(screen.queryByRole('link', {name:'Other discussion Other'})).toBeNull();
+  expect(screen.getByRole('link', {name:'Factory Planning'})).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', {name:'Other'}));
+  expect(screen.queryByRole('link', {name:'Factory Planning'})).toBeNull();
+  expect(screen.getByRole('link', {name:'Other discussion Other'})).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', {name:'Empty'}));
+  expect(screen.queryByText('Chats waiting for you')).toBeNull();
 });
 
 test('failed install offers same-slice retry beside Review', async () => {
