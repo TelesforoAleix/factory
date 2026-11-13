@@ -636,9 +636,13 @@ class Runner:
         cut_turn = item.get('flow', 'cli') == 'tickets' and not review and not (previous and previous.get('sha'))
         brief = previous.get('brief', '') if (resume or review) and previous else prompt
         skills = cutter.skills_version()
+        context = []
         if (cut_turn or review) and not resume:
-            from .skills import instructions
-            prompt = instructions('slice-review' if review else 'cut') + brief
+            from .skills import ROOT, instructions
+            name = 'slice-review' if review else 'cut'
+            prompt = instructions(name) + brief
+            # These launches embed the source skill; no installed copy exists.
+            context = run_records.context(skill_files=[(name, ROOT / (name + '.md'))])
         prompt += (f'\n\nRunner assignment: use branch {metadata["branch"]}. '
                    f'This assigned branch overrides any branch named in the brief. '
                    f'The pinned base commit is {metadata["base"]}.' + (
@@ -652,6 +656,7 @@ class Runner:
                'session': item['session']['id'] if resume else '',
                'resume': item['session']['id'] if resume else None, 'phase': 'running'}
         job['skills'] = skills
+        job['context'] = context
         job['starting_commit'] = (metadata.get('base') if not resume else
                                   None)
         job.update(metadata, fence=True)
