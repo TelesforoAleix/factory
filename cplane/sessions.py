@@ -17,7 +17,7 @@ import tarfile
 import time
 
 from .fence import Fence, trusted_directory, host_environment, WORK_ROOT, own
-from . import run_records, skills
+from . import prompts, run_records, skills
 from .workshop import WorkshopServer, KINDS as WORKSHOP_KINDS
 from factory_ui.documents import Documents
 from .planning import Planning
@@ -30,11 +30,6 @@ BRIEFS = Path('/srv/factory/briefs')
 RUNS = Path(os.environ.get('CPLANE_SESSION_RUNS', '/srv/factory/runs'))
 LOCK = Path(os.environ.get('CPLANE_SESSIONS_LOCK', '/run/factory-sessions.lock'))
 LOG = logging.getLogger(__name__)
-HOMELAB_INSTRUCTION = (
-    'A change to planning/ reaches main only when it is committed there with '
-    'git add and git commit. Commit each agreed change in the turn that makes it, '
-    'with a short message. Only unprotected Markdown files may change.'
-)
 
 
 def export_tree(clone, destination, ref, *, markdown_only=False):
@@ -251,12 +246,10 @@ def turn_command(turn, folder, paths, run):
     if turn.get('context'):
         prompt = turn['context'] + '\n\nCurrent message:\n' + prompt
     if session.get('kind') in WORKSHOP_KINDS:
-        from .workshop import CHAT_INSTRUCTION
         prompt += f'\n\nCurrent message ID: {turn["id"]}'
-        from .inbox import SECRETARY_INSTRUCTION
-        prompt += '\n\n' + (SECRETARY_INSTRUCTION if session.get('kind') == 'secretary' else CHAT_INSTRUCTION)
+        prompt += '\n\n' + prompts.text('secretary' if session.get('kind') == 'secretary' else 'chat')
     if session.get('area') == 'homelab':
-        prompt += '\n\n' + HOMELAB_INSTRUCTION
+        prompt += '\n\n' + prompts.text('homelab')
     return [*args, '--', *command, '--', prompt]
 
 

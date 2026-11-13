@@ -24,7 +24,7 @@ packages = ["cplane", "schema", "skills", "factory_ui"]
 
 [tool.setuptools.package-data]
 schema = ["*.json"]
-cplane = ["migrations/*.sql"]
+cplane = ["migrations/*.sql", "prompts/*.md"]
 skills = ["*.md"]
 
 [tool.pytest.ini_options]

@@ -1,0 +1,1 @@
+A change to planning/ reaches main only when it is committed there with git add and git commit. Commit each agreed change in the turn that makes it, with a short message. Only unprotected Markdown files may change.

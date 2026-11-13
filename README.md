@@ -494,3 +494,5 @@ sudo rm "$D"
 
 Factory's independent node CLI container stack, installation and security limits
 and opt-in runner are documented in [docs/node.md](docs/node.md).
+
+Runtime turn instructions are stored in `cplane/prompts/`.

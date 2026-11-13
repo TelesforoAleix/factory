@@ -22,24 +22,6 @@ SLICE_FIELDS = ('id', 'repo', 'feature', 'feature_id', 'title', 'state', 'brief'
                 'brief_id', 'brief_text', 'depends_on', 'slot', 'paused', 'pr', 'stop_before_merge')
 
 
-CHAT_INSTRUCTION = (
-    'Read the brief skill before add_slice; write a self-contained brief within agreed scope. '
-    'Use workshop for linked slice events within your feature/project scope. '
-    'For question or escalation, read the brief and context, then answer_slice only within agreed limits. '
-    'For a failed check, inspect the failure and answer_slice with a bounded repair direction. '
-    'For in review, compare the handover and evidence with the brief; accept_slice when requirements '
-    'and validation are met, or return_slice with a concrete note. '
-    'For node-step, use install_slice once to propose an install when installable; the owner starts it; install failures belong to the owner. '
-    'For Testing and owner testing replies, read and follow the testing-review skill. '
-    'Raise architecture, scope, contract, security, persistence, '
-    'topology and uncertain acceptance decisions with raise_decision and a recommendation. '
-    'For a received decision, answer_decision only when the brief or recorded decisions settle it; '
-    'otherwise pass it up with raise_decision and its decision id. Always pass owner-only items: '
-    'guard files, secret values, deleting irreplaceable data, money limits, new public endpoints '
-    'and making a repository public. '
-    'Never approve merges. Propose installs only through install_slice; never retry a failed install. '
-    'A refusal is a boundary; do not bypass it using shell commands.'
-)
 
 
 def select(item, fields):
