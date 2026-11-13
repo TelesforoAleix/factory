@@ -1,5 +1,6 @@
 """Skill catalog, locked switches and workspace snapshots on synthetic data."""
 import json
+import hashlib
 from pathlib import Path
 import subprocess
 from unittest.mock import Mock
@@ -82,7 +83,10 @@ def test_switches_defaults_validation_and_api(pg_store, extra_skill, capsys):
     response = client.get('/api/skills')
     assert response.status_code == 200
     assert response.json == snapshot
-    assert set(response.json[0]) == {'name', 'description', 'version', 'projects'}
+    assert set(response.json[0]) == {'name', 'description', 'version', 'projects', 'sha256'}
+    expected = hashlib.sha256((extra_skill / 'extra.md').read_bytes()).hexdigest()
+    assert next(s for s in response.json if s['name'] == 'extra')['sha256'] == expected
+    assert client.get('/api/skills/extra').json['sha256'] == expected
     assert client.post('/api/skills', json={}).status_code == 403
     pg_store.migrate()
     assert pg_store.skill_list() == snapshot

@@ -1,6 +1,7 @@
 """Repository-owned skills and project switches. No runtime writes to the source."""
 from contextlib import ExitStack
 import json
+import hashlib
 import os
 import stat
 from pathlib import Path
@@ -17,7 +18,8 @@ def catalog():
     for path in sorted(ROOT.glob('*.md')):
         if not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', path.stem) or path.is_symlink():
             raise StateError('Invalid skill file')
-        text = path.read_text()
+        raw = path.read_bytes()
+        text = raw.decode()
         try:
             first = text.splitlines()[0]
             if not first.startswith('--- '):
@@ -28,7 +30,7 @@ def catalog():
                 raise ValueError()
         except (ValueError, KeyError, IndexError, TypeError):
             raise StateError('Invalid skill frontmatter') from None
-        result.append(dict(name=path.stem, description=metadata['description']))
+        result.append(dict(name=path.stem, description=metadata['description'], sha256=hashlib.sha256(raw).hexdigest()))
     return result
 
 
