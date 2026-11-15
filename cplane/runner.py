@@ -634,6 +634,9 @@ class GitHub:
             self.check_info = info
             if info["headRefOid"] != expected:
                 raise state.StateError("PR head differs from delivered bundle")
+            if info.get("state") == "MERGED":
+                # Let the runner record the final merge without polling old CI.
+                return "merged", ""
             info = json.loads(
                 self.call(
                     repo,
@@ -1503,6 +1506,9 @@ class Runner:
                 )
             else:
                 check_merge_info(info, job["tip"])
+            if info.get("state") == "MERGED":
+                self.merge(item, job, ready=True, merged=info)
+                return False
             if job.get("updated_head"):
                 clean = self.fence.clean(job["repository"])
                 self.fence.git(
@@ -1537,7 +1543,7 @@ class Runner:
             return False
         return True
 
-    def merge(self, item, job, *, ready=False):
+    def merge(self, item, job, *, ready=False, merged=None):
         if not ready and not self.merge_ready(item, job):
             return
         change_class, guards = classes.changes(self.fence, job)
@@ -1545,7 +1551,7 @@ class Runner:
         self.save_job(job)
         run_records.class_record(self, job, change_class)
         approval = item["attention"]
-        if (guards or item["stop_before_merge"]) and not (
+        if merged is None and (guards or item["stop_before_merge"]) and not (
             approval and approval["kind"] == "merge" and approval["approved"]
         ):
             body = f"Approve PR #{item['pr']}"
@@ -1559,7 +1565,11 @@ class Runner:
             return
         options = {"expected": job["tip"]}
         try:
-            sha = self.github.merge(self.github_repo(item), item["pr"], **options)
+            if merged is not None:
+                sha = merged["mergeCommit"]["oid"]
+                self.log(item, f"PR #{item['pr']} merged outside the runner", True)
+            else:
+                sha = self.github.merge(self.github_repo(item), item["pr"], **options)
         except BlockedPR as error:
             self.attention(item, "escalation", str(error))
             return
@@ -1647,6 +1657,9 @@ class Runner:
             status, failing = self.github.checks(
                 self.github_repo(item), item["pr"], **options
             )
+            if status == "merged":
+                self.merge_ready(item, job)
+                return
             run_records.ci_record(self, item, job, status, failing)
             self.log(item, "approval checks: " + status)
             if status == "red":
@@ -1673,6 +1686,9 @@ class Runner:
         status, failing = self.github.checks(
             self.github_repo(item), item["pr"], **options
         )
+        if status == "merged":
+            self.merge_ready(item, job)
+            return
         run_records.ci_record(self, item, job, status, failing)
         self.log(item, "checks: " + status)
         # The head read used for CI also carries live merge metadata. Reuse that
