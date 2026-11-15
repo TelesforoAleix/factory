@@ -50,6 +50,7 @@ class FakeGitHub:
         self.checks = Mock(return_value=('pending', ''))
         self.merge = Mock(return_value='abc123')
         self.merge_info = Mock(return_value={})
+        self.owner_approval = Mock(return_value=None)
         self.update_branch = Mock(return_value='c' * 40)
 
 
@@ -2158,3 +2159,86 @@ def test_ticket_resume_and_submission_gate(setup, monkeypatch):
     collect.assert_not_called()
     submit.assert_not_called()
     launch.assert_not_called()
+
+
+@pytest.mark.parametrize('reviews,expected', [
+    ([(2, 'TelesforoAleix', 'APPROVED', 'tip')], 2),
+    ([(2, 'TelesforoAleix', 'APPROVED', 'old')], None),
+    ([(9, 'TelesforoAleix', 'CHANGES_REQUESTED', 'old'),
+      (2, 'TelesforoAleix', 'APPROVED', 'tip')], None),
+    ([(2, 'TelesforoAleix', 'APPROVED', 'tip'),
+      (9, 'TelesforoAleix', 'DISMISSED', 'tip')], None),
+    ([(2, 'other', 'APPROVED', 'tip')], None),
+    ([(2, 'TelesforoAleix', 'APPROVED', 'tip'),
+      (9, 'other', 'CHANGES_REQUESTED', 'tip'),
+      (10, 'TelesforoAleix', 'COMMENTED', 'old')], 2),
+    ([], None),
+])
+def test_owner_github_approval_uses_newest_deciding_review_across_pages(reviews, expected):
+    gh = GitHub()
+    records = [{'id': id, 'user': {'login': login}, 'state': state, 'commit_id': tip}
+               for id, login, state, tip in reviews]
+    gh.call = Mock(return_value=json.dumps([records[:1], records[1:]]))
+    assert gh.owner_approval('example/repo', 12, 'tip') == expected
+    gh.call.assert_called_once_with(
+        'example/repo', 'api', 'repos/example/repo/pulls/12/reviews?per_page=100',
+        '--paginate', '--slurp')
+
+
+@pytest.mark.parametrize('stop,review,approval', [
+    (False, False, 42), (True, True, 42), (True, False, 42),
+    (False, False, None), (True, True, None),
+])
+def test_github_approval_respects_planner_review_and_records_owner(setup, stop, review, approval):
+    r, _, gh = setup
+    r.run()
+    current = r.data['slices'][0]
+    job = r.jobs[current['id']]
+    current.update(pr=12, stop_before_merge=stop)
+    job.update(phase='pr', tip='b' * 40, request={'node_steps': None})
+    r.attention(current, 'merge', 'Approve PR #12')
+    card = current['attention']
+    if review:
+        card['review'] = {'at': r.at, 'actor': 'planner', 'verdict': 'Ready'}
+    gh.owner_approval.return_value = approval
+    gh.checks.return_value = ('pending', '')
+    r.deliver(current)
+    accepted = approval is not None and (not stop or review)
+    assert card['approved'] == accepted
+    if stop and not review:
+        gh.owner_approval.assert_not_called()
+    else:
+        gh.owner_approval.assert_called_once_with('example/repo', 12, 'b' * 40)
+    gh.merge.assert_not_called()
+    if accepted:
+        assert current['log'][-2]['actor'] == 'owner'
+        assert 'GitHub review 42 from TelesforoAleix' in current['log'][-2]['event']
+        gh.checks.return_value = ('green', '')
+        r.launch = Mock()
+        r.deliver(current)
+        assert gh.owner_approval.call_count == 1
+        gh.merge.assert_called_once_with('example/repo', 12, expected='b' * 40)
+
+
+def test_github_approval_needs_new_review_after_branch_update(setup):
+    r, _, gh = setup
+    r.run()
+    current = r.data['slices'][0]
+    job = r.jobs[current['id']]
+    current.update(pr=12, stop_before_merge=False)
+    job.update(phase='pr', tip='b' * 40, request={'node_steps': None})
+    r.attention(current, 'merge', 'Approve PR #12')
+    gh.owner_approval.return_value = 42
+    gh.checks.return_value = ('pending', '')
+    r.deliver(current)
+    assert current['attention']['approved']
+    gh.merge_info.return_value = {'mergeStateStatus': 'BEHIND', 'mergeable': 'MERGEABLE'}
+    r.deliver(current)
+    assert not current['attention']['approved']
+    assert job['tip'] == 'c' * 40
+    gh.merge_info.return_value = {}
+    gh.owner_approval.return_value = None
+    gh.checks.return_value = ('green', '')
+    r.deliver(current)
+    gh.owner_approval.assert_called_with('example/repo', 12, 'c' * 40)
+    gh.merge.assert_not_called()

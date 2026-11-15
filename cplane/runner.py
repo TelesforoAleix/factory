@@ -526,6 +526,9 @@ def check_merge_info(info, expected=None):
         raise BlockedPR("PR marked not for merging")
 
 
+OWNER_LOGIN = "TelesforoAleix"
+
+
 class GitHub:
     successful_reads = 0
 
@@ -717,6 +720,21 @@ class GitHub:
         info = json.loads(self.call(repo, "pr", "view", str(number), "--json", "state"))
         return info["state"] == "OPEN"
 
+    def owner_approval(self, repo, number, tip):
+        pages = json.loads(self.call(
+            repo, "api", f"repos/{repo}/pulls/{number}/reviews?per_page=100",
+            "--paginate", "--slurp",
+        ))
+        reviews = [
+            review for page in pages for review in page
+            if review.get("user", {}).get("login") == OWNER_LOGIN
+            and review.get("state") in ("APPROVED", "CHANGES_REQUESTED", "DISMISSED")
+        ]
+        newest = max(reviews, key=lambda review: review["id"], default=None)
+        if newest and newest["state"] == "APPROVED" and newest.get("commit_id") == tip:
+            return newest["id"]
+        return None
+
     def merge_info(self, repo, number, expected=None):
         info = json.loads(
             self.call(
@@ -807,9 +825,9 @@ class Runner:
         )
         self.notices = []
 
-    def log(self, item, event, notice=False):
+    def log(self, item, event, notice=False, *, actor="runner"):
         event = cut_line(event, LOG_LIMIT)
-        item["log"].append({"at": self.at, "actor": "runner", "event": event})
+        item["log"].append({"at": self.at, "actor": actor, "event": event})
         if notice:
             self.notices.append(
                 {
@@ -1504,6 +1522,12 @@ class Runner:
                 job["tip"] = self.github.update_branch(
                     self.github_repo(item), item["pr"], job["tip"]
                 )
+                if job.get("github_approval_tip") != job["tip"] and job.pop(
+                    "github_approval_tip", None
+                ):
+                    approval = item["attention"]
+                    if approval and approval["kind"] == "merge":
+                        approval["approved"] = False
                 job["updated_head"] = True
                 self.save_job(job)
                 self.log(item, "checks: pending")
@@ -1595,12 +1619,30 @@ class Runner:
             else:
                 self.launch(item, attention["answer"], resume=True)
             return
-        if attention and attention["kind"] == "merge" and attention["approved"]:
+        if attention and attention["kind"] == "merge":
             if not job or not item["pr"]:
                 self.defer(item, "deferred: PR metadata unavailable")
                 return
             if not self.merge_ready(item, job):
                 return
+            if not attention["approved"]:
+                if item["stop_before_merge"] and "review" not in attention:
+                    return
+                review_id = self.github.owner_approval(
+                    self.github_repo(item), item["pr"], job["tip"]
+                )
+                if review_id is None:
+                    return
+                attention["approved"] = True
+                job["github_approval_tip"] = job["tip"]
+                self.save_job(job)
+                self.log(
+                    item,
+                    f"Approved merge for {item['id']} by GitHub review {review_id} "
+                    f"from {OWNER_LOGIN} on {job['tip']}",
+                    True,
+                    actor="owner",
+                )
             options = {"expected": job["tip"]}
             status, failing = self.github.checks(
                 self.github_repo(item), item["pr"], **options

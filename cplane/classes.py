@@ -1,5 +1,6 @@
 """Change policy from the target repository's pinned base, never executor content."""
 import fnmatch
+import os
 import re
 
 from .state import StateError
@@ -119,7 +120,7 @@ def classify(paths, table, *, deleted=()):
 
 
 def changes(adapter, job):
-    """Classify the PR's own paths using policy from its pinned base."""
+    """Classify PR paths and Factory's installed guard drift with pinned policy."""
     clean = adapter.clean(job['repository'])
     table = adapter.git(clean, 'show', f"{job['base']}:.github/change-classes",
                         allow_failure=True)
@@ -140,6 +141,17 @@ def changes(adapter, job):
     entries = adapter.git(clean, 'diff', '--name-status', '-z', '--no-renames',
                           *revisions, '--').stdout.split('\0')
     changes = list(zip(entries[::2], entries[1::2]))
-    return classify([path for _, path in changes],
-                    table.stdout if table.returncode == 0 else None,
-                    deleted=[path for status, path in changes if status == 'D'])
+    policy = table.stdout if table.returncode == 0 else None
+    level, guards = classify([path for _, path in changes], policy,
+                             deleted=[path for status, path in changes if status == 'D'])
+    installed = os.environ.get('CPLANE_REVISION')
+    if installed and job['repository'] == 'TelesforoAleix/factory':
+        # Compare file trees, not ancestry: inherited guard changes still gate
+        # installation, while guards restored to installed content do not.
+        paths = adapter.git(clean, 'diff', '--name-only', '-z', '--no-renames',
+                            installed, job['tip'], '--').stdout.split('\0')
+        _, installed_guards = classify(paths, policy)
+        guards = sorted(set(guards) | set(installed_guards))
+        if guards:
+            level = 4
+    return level, guards
