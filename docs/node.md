@@ -1933,7 +1933,7 @@ existing runner or an explicit test; never edit state JSON by hand.
 Runner refuses GitHub drafts, title prefixes `[Blocked]`, `blocked:`, `Draft:`, `[Draft]`, and `DO NOT MERGE`/`MERGE BLOCKER` anywhere in title/body (case-insensitive): `PR marked not for merging`, with no merge card.
 Runner updates mergeable branches reported behind their base through `gh pr update-branch` (merge commit), pins the new head and waits for CI; update conflicts escalate as `PR conflicts with main; needs a new slice from main`.
 A non-fast-forward publish escalates once as `branch was rewritten; merge main instead of rebasing`; an answer resumes the same executor copy without retrying the push first.
-For a waiting Codex slice at 99% or higher with usage older than 30 minutes, the runner probes Luna at low effort at most hourly, rereads capacity, discards probe output and workspace, and retains only usage windows from the probe rollout.
+In default file mode, for a waiting Codex slice at 99% or higher with usage older than 30 minutes, the runner probes Luna at low effort at most hourly, rereads capacity, discards probe output and workspace, and retains only usage windows from the probe rollout.
 After a Codex usage cut, the runner uses a future reset from a report window at 99% or higher, otherwise the message time in UTC, otherwise a 60-minute wait.
 Answered attention on a ready, issued or escalated slice without a session starts again from the original brief when capacity is available, using the same start path as a scheduled slice.
 The synthetic repair/review test uses increasing logical start timestamps so wall-clock adjustments cannot select an older fake turn; validate with 20 consecutive standalone pytest invocations, without retries.
@@ -2192,6 +2192,8 @@ the deployed compose file is unchanged by this slice.
 | `CPLANE_REPOS` | compose: `/srv/factory/work` | runner repository base; replaces code default `~/Code` |
 | `CPLANE_FENCE` | compose: `1` | `executors.fenced` |
 | `CPLANE_FENCE_COMMAND` | default: `factory-cli` | fenced subprocess launch, bundle export, cleanup and usage probes |
+| `CPLANE_USAGE_SOURCE` | `runner.env`: `launcher` after this slice is installed; default unset | sealed launcher reads; no login file access |
+| `CPLANE_DEPLOYER_SOCKET` | `runner.env`: `/run/homelab-deployer.sock` only at cutover; default unset | detached install client; unset retains the host systemd unit |
 | `CPLANE_GITHUB_AUTH` | compose: `app` | selects App authentication instead of the legacy token file |
 | `CPLANE_GITHUB_READ_ONLY` | unset | preserves the runner's full App permissions and separate write-token cache |
 | `CPLANE_GITHUB_APP_ID`, `CPLANE_GITHUB_INSTALLATION_ID` | `runner.env`, required for App mode | `github_app.installation_token` |
@@ -2213,9 +2215,9 @@ the deployed compose file is unchanged by this slice.
 
 The grep also finds `primer.render`/launchd installation and `install_host.main`
 reads. Those are separate host entry points, not called by these service commands.
-The runner currently requests a host systemd install unit rather than calling
-`install_host.main` in-process; its installer interface still needs replacing by
-the deployer socket client. Other CLI subcommands do not run merely because UI
+By default the runner requests a host systemd install unit rather than calling
+`install_host.main` in-process; `CPLANE_DEPLOYER_SOCKET` selects the detached
+deployer socket client described below. Other CLI subcommands do not run merely because UI
 imports `cplane.cli`.
 
 Although compose sets a writable `HOME` and `GH_CONFIG_DIR`, the present
@@ -2266,6 +2268,8 @@ settings retain the existing host defaults until explicitly set:
 | `CPLANE_SESSIONS_CLEAN_ROOT` | `/srv/factory/clean-sessions` | Prepare a sessions-owned writable bind separate from the runner's clean root. |
 | `CPLANE_SESSION_RUNS` | `/srv/factory/runs` | Place turn and model probe folders on a writable runs bind; use `/srv/factory/runs/sessions` at cutover. |
 | `CPLANE_UI_DOCS` | `/var/lib/factory/ui-docs` | Configure the same document root for UI and sessions, with staging and the lock in its parent. |
+| `CPLANE_USAGE_SOURCE` | unset (host files) | Set `launcher` for runner usage and resumes without login mounts. Other values retain host reads. |
+| `CPLANE_DEPLOYER_SOCKET` | unset (host install unit) | Set `/run/homelab-deployer.sock` at container cutover for detached deployer installs. |
 
 The fence's group, GID 21000, is the shared file channel. Runner (UID 21010)
 and sessions (UID 21011) must be supplementary members of that group. With
@@ -2284,14 +2288,58 @@ contract. Before cutover, the following remain open:
   metadata (`cplane/skills.py`), and workshop chats still transfer their socket
   to UID 21000 (`cplane/workshop.py`). These separate boundaries also need updates
   before non-root session cutover.
-- The image contains neither the current `factory-cli` executable nor clients
-  for the mounted launcher/deployer sockets. Existing fence resumes also inspect
-  login state that is deliberately absent from these service mounts.
+- The image contains no `factory-cli` executable. Enable the launcher socket
+  command and usage settings below before running without login mounts, and
+  enable the deployer socket only at cutover. The platform must first allow
+  runner UID 21010 for the launcher's `usage` profile and supply Factory's
+  deployer manifest and caller permissions.
 
 Resolve these interfaces within the containment decisions before installing the
 file. Static compose tests validate the reviewed boundary; they do not prove
 runtime readiness. The owner still reviews the guard file on GitHub before any
 merge or eventual manual installation.
+
+### Runner usage and install switches
+
+Both switches are off by default. With neither set, the runner retains its host
+login-file reads and `factory-install` systemd units.
+
+Set `CPLANE_USAGE_SOURCE=launcher` for the runner immediately after installing
+this slice. Each pass shares at most one `usage` launcher run, named
+`usage-read-<token>`, and always sends `stop` afterward; `unknown_run` means it
+is already stopped. Invalid, null, refused or failed reads mean unknown usage.
+The runner opens, lists and stats no path under `/srv/factory/logins` in this
+mode. Claude usage is unknown, as on today's node. Resume skips the transcript
+existence check; a missing session fails its resume turn into attention.
+
+Launcher readings have no timestamp. Their age uses the newer of the last
+`usage-probe.json` timestamp and the newest Codex run record's end
+(`started_at + seconds`). With neither, usage is stale. When a Codex read is
+needed and that age exceeds 30 minutes, a due probe runs before the shared
+launcher read, at most once per hour and within executor capacity. The probe
+still uses the normal fenced CLI run and stop, but neither deletes login
+transcripts nor writes `usage-report.jsonl`. The existing file-mode usage gate
+and probe rules remain unchanged.
+
+Set `CPLANE_DEPLOYER_SOCKET=/run/homelab-deployer.sock` only at container cutover.
+The deployer installs containers, while today's Factory runs through systemd.
+`process` persists install intent and starts a detached Python child, then
+returns without waiting. The child requests installation of the repository name
+`factory` at the recorded merge SHA, waits without a socket timeout, and writes
+the existing private install result file. A held `.started` file lock tracks the
+child across runner restarts. A child that ends without a result escalates and
+is never replayed. Failures include the deployer's reason and any guard paths;
+`waits for the owner` reports the exact manual `sudo homelab-deployer install
+factory <sha>` command. The platform owns rollback after install failures.
+Factory is not on its automatic application list today, and its manifest arrives
+with the platform slice before cutover.
+
+After merge, the orchestrator must: install; set
+`CPLANE_USAGE_SOURCE=launcher` for the runner; check one pass reads Codex usage
+through the launcher. Confirm one `usage-read-*` record, no login file access by
+the runner, and that a slice or eval needing Codex can still start. Keep the
+deployer switch unset until cutover. To roll back either switch, unset that
+setting and restart the runner.
 
 ### Factory launcher socket switch
 
