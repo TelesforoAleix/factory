@@ -55,6 +55,8 @@ class FakeProcesses:
 @pytest.fixture
 def execution(pg_store, cases, tmp_path, monkeypatch):
     evals.import_folder(pg_store, cases[0])
+    with pg_store.mutation():
+        pg_store.connection.execute("UPDATE cplane_eval_cases SET kind='review'")
     evals.set_create(pg_store, 'synthetic', title='S', filters={'size': 'S'})
     processes = FakeProcesses()
     runner = Runner(tmp_path / 'state', processes=processes, git=Mock(), orders=Mock(),
@@ -201,7 +203,7 @@ def test_usage_limit_replans_and_holds_until_reset(pg_store, execution, monkeypa
     assert len(processes.started) == 2
 
 
-@pytest.mark.parametrize('harness', ['pi', 'other'])
+@pytest.mark.parametrize('harness', ['other'])
 def test_unavailable_harness_creates_nothing(pg_store, execution, harness):
     with pytest.raises(state.StateError, match=f'harness {harness} is not available yet'):
         create(pg_store, tool=harness)

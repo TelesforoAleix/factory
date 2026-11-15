@@ -69,7 +69,9 @@ def test_versions_run_expansion_and_verdicts(pg_store, cases):
     v2 = evals.set_add(pg_store, 'synthetic', ['example/public#53/2', 'example/public#53/1'], actor='planner')
     assert v2['version'] == 2 and v2['members'] == ['example/public#53/1', 'example/public#53/2']
     assert evals.set_show(pg_store, 'synthetic', 1) == v1
-    configurations = [dict(id=str(n), harness='codex', model='synthetic', route='test') for n in range(3)]
+    with pg_store.mutation():
+        pg_store.connection.execute("UPDATE cplane_eval_cases SET start_commit=%s", ('b' * 40,))
+    configurations = [dict(id=str(n), harness='pi', model='base', route='platform', configuration='base') for n in range(3)]
     run = evals.run_create(pg_store, title='Synthetic run', sets=['synthetic:1', 'synthetic:2'],
                             configurations=configurations, repeats=2, actor='planner')
     assert len(run['attempts']) == 12
@@ -116,8 +118,10 @@ def test_cli_commands(pg_store, cases, capsys, monkeypatch, tmp_path):
     assert len(json.loads(capsys.readouterr().out)['members']) == 1
     assert main(['eval', 'set', 'list']) == 0
     assert len(json.loads(capsys.readouterr().out)) == 1
+    with pg_store.mutation():
+        pg_store.connection.execute("UPDATE cplane_eval_cases SET start_commit=%s", ('b' * 40,))
     assert main(['eval', 'run', 'create', '--title', 'CLI', '--set', 'cli', '--configuration',
-                 '{"id":"a","harness":"codex","model":"synthetic","route":"test"}',
+                 '{"id":"a","harness":"pi","model":"base","route":"platform","configuration":"base"}',
                  '--repeats', '2', '--at', '2026-12-01T12:00:00Z']) == 0
     run = json.loads(capsys.readouterr().out)
     assert len(run['attempts']) == 4
@@ -145,6 +149,15 @@ def test_whole_slice_cases(pg_store, cases, kind):
     case, = evals.case_list(pg_store)
     assert case['id'] == 'example/public#53' and case['size'] == 'L'
     assert case['level'] == ('light' if kind == 'slice' else None)
+    evals.set_create(pg_store, 'fence', title='Fence', filters={'kind': kind})
+    configs = [{'id': tool, 'harness': tool, 'model': 'synthetic', 'route': 'test'}
+               for tool in ('codex', 'claude')]
+    run = evals.run_create(pg_store, title='Fence', sets=['fence'], configurations=configs, repeats=1)
+    assert len(run['attempts']) == 2
+    with pytest.raises(state.StateError, match='platform route requires ticket cases'):
+        evals.run_create(pg_store, title='Bad', sets=['fence'], repeats=1,
+                         configurations=[{'id': 'pi', 'harness': 'pi', 'model': 'base',
+                                          'route': 'platform', 'configuration': 'base'}])
 
 
 def test_invalid_planning_is_atomic(pg_store, cases):
@@ -246,3 +259,48 @@ def test_starts_migration_preserves_existing_rows_and_checks_types(pg_store, cas
     for sql in ["start_commit='invalid'", "pinned_paths=ARRAY['path',NULL]", "pinned_paths='not-an-array'", "pinned_paths=ARRAY[['a'],['b']]"]:
         with pytest.raises(state.StateError), pg_store.mutation():
             pg_store.connection.execute('UPDATE cplane_eval_cases SET ' + sql)
+
+
+def test_platform_migration_and_import_backfill(pg_store, cases):  # noqa: F811
+    evals.import_folder(pg_store, cases[0])
+    with pg_store.mutation():
+        before = evals._rows(pg_store, 'SELECT * FROM cplane_eval_cases ORDER BY id')
+        pg_store.connection.execute('ALTER TABLE cplane_eval_cases DROP COLUMN allowed_files')
+        pg_store.connection.execute('ALTER TABLE cplane_eval_attempts DROP COLUMN platform_task')
+        pg_store.connection.execute("DELETE FROM cplane_migrations WHERE name='029_eval_platform.sql'")
+    pg_store.migrate()
+    pg_store.migrate()
+    with pg_store.locked():
+        assert pg_store.connection.execute(
+            "SELECT count(*) FROM cplane_migrations WHERE name='029_eval_platform.sql'").fetchone()[0] == 1
+        assert pg_store.connection.execute('SELECT count(*) FROM cplane_eval_cases WHERE allowed_files IS NULL').fetchone()[0] == 2
+    assert evals.import_folder(pg_store, cases[0]) == {'inserted': 0, 'updated': 2, 'unchanged': 0}
+    with pg_store.locked():
+        after = evals._rows(pg_store, 'SELECT * FROM cplane_eval_cases ORDER BY id')
+    assert [r['allowed_files'] for r in after] == [['small.py'], ['large.py']]
+    assert before == after
+    assert evals.import_folder(pg_store, cases[0]) == {'inserted': 0, 'updated': 0, 'unchanged': 2}
+
+
+@pytest.mark.parametrize('problem', ['codex', 'claude', 'start', 'route', 'name', 'missing'])
+def test_ticket_platform_planning_refusals_are_atomic(pg_store, cases, problem):  # noqa: F811
+    evals.import_folder(pg_store, cases[0])
+    evals.set_create(pg_store, 's', title='S', filters={})
+    config = {'id': 'pi-base', 'harness': 'pi', 'model': 'base', 'route': 'platform', 'configuration': 'base'}
+    if problem in ('codex', 'claude'):
+        config['harness'] = problem
+        with pg_store.mutation():
+            pg_store.connection.execute('UPDATE cplane_eval_cases SET start_commit=%s', ('b' * 40,))
+    elif problem == 'route':
+        config['route'] = 'fence'
+    elif problem == 'name':
+        config['configuration'] = 'bad/name'
+    elif problem == 'missing':
+        del config['configuration']
+    message = ('tickets require' if problem in ('codex', 'claude') else
+               'ticket requires a start commit' if problem == 'start' else 'Pi requires')
+    with pytest.raises(state.StateError, match=message):
+        evals.run_create(pg_store, title='Bad', sets=['s'], configurations=[config], repeats=1)
+    assert evals.run_list(pg_store) == []
+    with pg_store.locked():
+        assert pg_store.connection.execute('SELECT count(*) FROM cplane_eval_attempts').fetchone()[0] == 0
