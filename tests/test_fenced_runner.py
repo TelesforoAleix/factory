@@ -126,6 +126,12 @@ def delivery(tmp_path, monkeypatch):
             return subprocess.CompletedProcess(args, 0, '', '')
         if args[0] == 'git':
             assert args[1:3] == ['-C', str(clean)], 'host Git must only run in the clean clone'
+            result = real_run(args, **kwargs)
+            if result.returncode and 'clone' in args:
+                # This fixture uses only synthetic paths and credentials. Production
+                # deliberately suppresses Git diagnostics, which can contain secrets.
+                print('Synthetic Git clone failed:', result.stderr)
+            return result
         return real_run(args, **kwargs)
 
     monkeypatch.setattr(subprocess, 'run', run)
