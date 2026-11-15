@@ -683,13 +683,14 @@ def main(argv=None):
                 data = backend.load()
                 records = (backend.run_record_list() + [r for r in backend.run_record_export(
                     end.astimezone(timezone.utc) - timedelta(hours=24)) if r['kind'] == 'task']) if state.postgres() else []
-                print(digest.build(data, records, end))
+            print(digest.build(data, records, end))
             return 0
         if args.command == "export":
             with state.locked(path) as backend:
-                payload = json.dumps(backend.load(), indent=2, ensure_ascii=False) + "\n"
-                outbox = "".join(json.dumps(notice, ensure_ascii=False) + "\n"
-                                 for _, notice in backend.notices())
+                data, notices = backend.load(), backend.notices()
+            payload = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+            outbox = "".join(json.dumps(notice, ensure_ascii=False) + "\n"
+                             for _, notice in notices)
             if args.path:
                 destination = Path(args.path).expanduser()
                 destination.write_text(payload)
@@ -769,7 +770,7 @@ def main(argv=None):
                 if item is None:
                     raise state.StateError(f"unknown slice: {args.id}")
                 limits = backend.limit_show() if state.postgres() else None
-                print(json.dumps(eligibility(item, observed(data, path, limits=limits)), ensure_ascii=False))
+            print(json.dumps(eligibility(item, observed(data, path, limits=limits)), ensure_ascii=False))
         elif args.command == "show":
             from .executors import read_output
             item = next((item for item in state.load(path)["slices"] if item["id"] == args.id), None)
