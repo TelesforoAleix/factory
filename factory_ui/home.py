@@ -142,7 +142,12 @@ def home_data(store, board, clean, view):
     moves = []
     def move(kind, identifier, at, actor, event):
         instant = datetime.fromisoformat(at) if isinstance(at, str) else at
-        if cutoff <= instant <= now and any(re.search(pattern, event) for pattern in MOVE_PATTERNS):
+        if kind == 'slice' and (event.startswith(f'Answered {identifier}: ') or event == 'answer_slice'):
+            event = f'Answered {identifier}'
+            matched = True
+        else:
+            matched = any(re.search(pattern, event) for pattern in MOVE_PATTERNS)
+        if cutoff <= instant <= now and matched:
             text = clean(event)
             moves.append((instant, dict(kind=kind, id=identifier, at=instant.isoformat(), actor=actor,
                                         event=text if len(text) <= 80 else text[:79] + '…')))

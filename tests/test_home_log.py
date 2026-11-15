@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta, timezone
 
 from cplane.planner import new_slice
@@ -32,6 +33,12 @@ def test_home_log_projection():
     assert data['moves'][0]['kind'] == 'feature' and data['moves'][0]['id'] == 'FAC-F1'
     assert data['moves'][1]['kind'] == 'slice' and data['moves'][1]['id'] == 'repo/S'
     assert data['moves'][1]['actor'] == 'chat:orchestrator'
+    item['log'] = [{'at': (now - timedelta(minutes=i + 1)).isoformat(), 'actor': 'owner', 'event': event}
+                   for i, event in enumerate(['Answered repo/S: private answer\nmore private text', 'answer_slice',
+                                              'Answered repo/other: private answer'])]
+    data = home_data(Store(), {'features': [], 'projects': []}, lambda x: x, None)['log']
+    assert [m['event'] for m in data['moves']] == ['stage next to building', 'Answered repo/S', 'Answered repo/S']
+    assert 'private' not in json.dumps(data)
     item['log'] = [dict(at=(now - timedelta(seconds=i)).isoformat(), actor='owner', event='state: ' + 'x' * 100) for i in range(201)]
     data = home_data(Store(), dict(features=[], projects=[]), lambda x: x.replace('x', 'y'), None)['log']
     assert data['truncated'] and len(data['moves']) == 200
