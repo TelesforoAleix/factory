@@ -32,11 +32,9 @@ places HOME and caches under `/tmp`. CI's `image` job builds it, checks CLI help
 imports, tool versions and `ui/dist/index.html` as UID 65534 with a read-only
 root, tmpfs `/tmp` and no capabilities, and reports the image size in bytes.
 
-Nothing on the node uses this image yet. Existing systemd services and all
-`node/` files are unchanged; there is no installation or other node step after
-this merge. The root compose file below defines the future service UIDs, mounts
-and networks; application prerequisites still need resolving before cutover.
-The existing host Workshop command still binds to loopback.
+Since the 2026-11-15 cutover, the four services run healthy in containers
+installed by the platform deployer. The root compose file below defines their
+UIDs, mounts and networks. The separate CLI fence uses `node/compose.yaml`.
 The Dockerfile and CI workflow require the owner's GitHub review before merge.
 
 ## Install after merge
@@ -2002,17 +2000,16 @@ working. Existing export scripts and systemd timers under `node/` are unchanged.
 
 ## Four contained Factory services (cutover contract)
 
-The root `compose.yaml` describes the service cutover. Nothing on the node uses
-this file until that cutover. The owner reviews and manually copies it beside the
-platform deployer's installed application manifest. The deployer uses its
+Since the 2026-11-15 cutover, the four services run healthy using the root
+`compose.yaml`, installed by the platform deployer. The owner reviews and copies
+the compose file and Dockerfile to `/opt/homelab-deployer/factory/`, beside the
+installed application manifest and the three env files. The deployer uses its
 installed Dockerfile and compose file, builds from the selected commit, and passes
 only `HOMELAB_DEPLOY_TAG`. Every service uses
 `homelab-deployer-factory:${HOMELAB_DEPLOY_TAG:?commit required}`.
 Each service receives that commit as `CPLANE_REVISION` for installations without a `REVISION` file.
-The fence's separate `node/compose.yaml` and existing systemd units are unchanged.
-After this slice merges, install and exercise one chat turn per tool in a
-feature chat and a planning chat, then resume an existing chat. Workshop tools
-must answer and planning preparation must use the sessions clean root.
+The fence uses the separate `node/compose.yaml`. The four host service units
+were stopped at cutover.
 
 Services appear in this order so the deployer's health and migration commands run
 in `ui`:
@@ -2058,21 +2055,32 @@ and `/srv/factory/runs/sessions` owned by sessions (21011:21011), and prepare
 `/srv/factory/clean-sessions` owned by sessions with mode 0700. Set
 both `/srv/factory/work` and `/srv/factory/runs` to root:root, mode 1733
 (sticky, writable and traversable by both services). Existing entries remain
-protected by the sticky bit and workspace ownership checks. Today's root services
+protected by the sticky bit and workspace ownership checks. Host root services
 and mode 0711 remain supported.
+
+Stopping `factory-intake.service` removes its systemd `RuntimeDirectory`. Add
+`d /run/factory-intake 0750 991 977 -` to a `tmpfiles.d` file, then run
+`systemd-tmpfiles --create` after stopping the host unit to recreate the bind.
+
 Planning clones are freshly prepared in `clean-sessions/planning-sessions/`;
 existing planning clones under the runner's clean root are not moved.
 
 Sessions reads the runner-owned briefs clone with `CPLANE_BRIEFS_OWNER_UID=21010`.
 Only document export accepts that additional owner and marks that exact clone as
-Git-safe; the sessions bind remains read-only. Runner pulls and planning fetches
+Git-safe; the sessions bind remains read-only. Keep the clone folder mode 0750,
+owned by the runner with group `factory-sessions`. The clone contents were written
+by root with umask 077; run `chmod -R o+rX` on the contents so sessions can read
+them, without changing the folder itself. Runner pulls and planning fetches
 use the configured `CPLANE_BRIEFS_KEY` and `CPLANE_BRIEFS_KNOWN_HOSTS`, overriding
 the clone's host SSH command.
 
 The runner anchors metadata at `/srv/factory/briefs/slices.json`, uses
 `/srv/factory/runs`, sends the daily export to `/srv/homelab/factory-state`, and
 sets `CPLANE_BOT_EXPORT=/srv/factory/bot-export`. The additional exports mount is
-reserved by the cutover contract. No private state or export data belongs in Git.
+reserved by the cutover contract. Set `/srv/factory/bot-export` to mode 2750
+(setgid), group `homelab-bot`. The runner is not in that group; setgid gives new
+files the folder's group so the export can `fchown` them to that group. No private
+state or export data belongs in Git.
 
 Each secret is an individual read-only bind from
 `/etc/factory/secrets/<service>/<name>` to `/run/secrets/<name>`, owned by that
@@ -2168,8 +2176,7 @@ Python temp files default to `/tmp`; no extra tmpfs or host mount is needed.
 
 The paths align metadata names; they grant no filesystem access. UI's decided
 mounts do not expose runs or fence logins, so its current eligibility snapshot
-cannot see those host job/usage files. That observation interface also needs
-resolving before cutover without adding an unreviewed mount.
+cannot see those host job/usage files.
 
 **Intake** (`cplane.intake` and its inbox insertion path):
 
@@ -2288,18 +2295,25 @@ cplane migrate
 
 ### Application prerequisites before cutover
 
-The image accounts, configured briefs SSH identity, shared sticky runs root and
-read-only document export ownership are supported by Factory. Before cutover,
-the following platform prerequisites remain open:
+The application and platform prerequisites for the 2026-11-15 cutover were
+met; none remain open. Static compose tests validate the reviewed boundary but
+do not prove runtime readiness.
 
-- The platform must first allow
-  runner UID 21010 for the launcher's `usage` profile and supply Factory's
-  deployer manifest and caller permissions.
+### Install after merge
 
-Resolve these interfaces within the containment decisions before installing the
-file. Static compose tests validate the reviewed boundary; they do not prove
-runtime readiness. The owner still reviews the guard file on GitHub before any
-merge or eventual manual installation.
+The orchestrator installs the merged revision through the platform deployer.
+Factory is not on its automatic application list, so run the deployer's
+command-line install from a terminal:
+
+```sh
+sudo homelab-deployer install factory <sha>
+```
+
+The deployer's compose file, Dockerfile and `ui.env`, `sessions.env` and
+`runner.env` live in `/opt/homelab-deployer/factory/`. An install of a commit
+that changes guard files requires the owner's approving review on that commit's
+PR. The owner cannot approve a PR they authored, so guard changes come through
+PRs opened by the runner's GitHub App.
 
 ### Runner usage and install switches
 
@@ -2324,7 +2338,7 @@ transcripts nor writes `usage-report.jsonl`. The existing file-mode usage gate
 and probe rules remain unchanged.
 
 Set `CPLANE_DEPLOYER_SOCKET=/run/homelab-deployer.sock` only at container cutover.
-The deployer installs containers, while today's Factory runs through systemd.
+The deployer installs the Factory containers.
 `process` persists install intent and starts a detached Python child, then
 returns without waiting. The child requests installation of the repository name
 `factory` at the recorded merge SHA, waits without a socket timeout, and writes
@@ -2333,8 +2347,7 @@ child across runner restarts. A child that ends without a result escalates and
 is never replayed. Failures include the deployer's reason and any guard paths;
 `waits for the owner` reports the exact manual `sudo homelab-deployer install
 factory <sha>` command. The platform owns rollback after install failures.
-Factory is not on its automatic application list today, and its manifest arrives
-with the platform slice before cutover.
+Factory is not on its automatic application list.
 
 After merge, the orchestrator must: install; set
 `CPLANE_USAGE_SOURCE=launcher` for the runner; check one pass reads Codex usage
