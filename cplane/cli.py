@@ -332,6 +332,9 @@ def parser():
     eval_commands = evaluation.add_subparsers(dest='eval_group', required=True, parser_class=Parser)
     importer = eval_commands.add_parser('import', parents=[common])
     importer.add_argument('folder')
+    starts = eval_commands.add_parser('starts', parents=[common])
+    starts.add_argument('bundle')
+    starts.add_argument('--pr', required=True)
     for group, actions in (('case', ('list',)), ('set', ('create', 'add', 'list', 'show')),
                            ('run', ('create', 'list', 'show', 'cancel'))):
         sub = eval_commands.add_parser(group, parents=[common])
@@ -451,6 +454,8 @@ def eval_command(args):
     actor = getattr(args, 'actor', 'owner')
     if args.eval_group == 'import':
         result = evals.import_folder(backend, args.folder)
+    elif args.eval_group == 'starts':
+        result = evals.import_starts(backend, args.bundle, args.pr)
     elif args.eval_group == 'case':
         result = evals.case_list(backend, **{key: getattr(args, key) for key in evals.FILTERS})
     elif args.eval_group == 'set':

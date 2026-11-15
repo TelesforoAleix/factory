@@ -12,8 +12,9 @@ FILTERS = {'kind': ('ticket', 'slice', 'review'),
            'tag_kind': ('new', 'change', 'fix', 'tests', 'docs'),
            'size': ('S', 'M', 'L'), 'language': ('python', 'swift', 'typescript'),
            'half': ('development', 'held-out')}
-CASE_FIELDS = ('id', 'kind', 'level', 'repository', 'pr', 'base_commit', 'title', 'task',
-               'check_command', 'reference_diff', 'tag_kind', 'size', 'language', 'half')
+IMPORT_FIELDS = ('id', 'kind', 'level', 'repository', 'pr', 'base_commit', 'title', 'task',
+                 'check_command', 'reference_diff', 'tag_kind', 'size', 'language', 'half')
+CASE_FIELDS = IMPORT_FIELDS + ('start_commit', 'start_branch', 'pinned_paths')
 
 
 def _rows(store, sql, parameters=()):
@@ -138,12 +139,45 @@ def import_folder(store, folder):
             if prior and all(prior[0][k] == v for k, v in case.items()):
                 counts['unchanged'] += 1
                 continue
-            assignments = ', '.join(f'{k} = EXCLUDED.{k}' for k in CASE_FIELDS if k != 'id')
-            store.connection.execute('INSERT INTO cplane_eval_cases (' + ', '.join(CASE_FIELDS) + ') VALUES (' +
-                                     ', '.join(['%s'] * len(CASE_FIELDS)) + ') ON CONFLICT (id) DO UPDATE SET ' + assignments,
-                                     tuple(case[k] for k in CASE_FIELDS))
+            assignments = ', '.join(f'{k} = EXCLUDED.{k}' for k in IMPORT_FIELDS if k != 'id')
+            store.connection.execute('INSERT INTO cplane_eval_cases (' + ', '.join(IMPORT_FIELDS) + ') VALUES (' +
+                                     ', '.join(['%s'] * len(IMPORT_FIELDS)) + ') ON CONFLICT (id) DO UPDATE SET ' + assignments,
+                                     tuple(case[k] for k in IMPORT_FIELDS))
             counts['updated' if prior else 'inserted'] += 1
     return counts
+
+
+def import_starts(store, bundle, pr, *, adapter=None):
+    """Publish validated ticket starts, then atomically record the PR's metadata."""
+    from .fence import Fence
+    match = re.fullmatch(r'([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#([1-9][0-9]*)', pr)
+    if not match:
+        raise StateError('Eval starts requires repository#pr')
+    repository, number = match[1], int(match[2])
+    with store.mutation():
+        cases = _rows(store, "SELECT * FROM cplane_eval_cases WHERE repository=%s AND pr=%s AND kind='ticket'",
+                      (repository, number))
+        if not cases:
+            raise StateError(f'{pr}: no ticket cases')
+        by_id = {case['id']: case for case in cases}
+        expected = [f'{pr}/{n}' for n in range(1, len(cases) + 1)]
+        if set(by_id) != set(expected):
+            raise StateError(f'{pr}: ticket IDs must be consecutive from 1')
+        cases = [by_id[key] for key in expected]
+        if len({case['base_commit'] for case in cases}) != 1:
+            raise StateError(f'{pr}: ticket base commits differ')
+        starts = (adapter or Fence()).publish_eval_starts(repository, number, cases[0]['base_commit'],
+                                                         len(cases), bundle)
+        counts = {'updated': 0, 'unchanged': 0}
+        for case, start in zip(cases, starts, strict=True):
+            if all(case[key] == value for key, value in start.items()):
+                counts['unchanged'] += 1
+                continue
+            store.connection.execute('UPDATE cplane_eval_cases SET start_commit=%s, start_branch=%s, pinned_paths=%s '
+                                     'WHERE id=%s',
+                                     (start['start_commit'], start['start_branch'], start['pinned_paths'], case['id']))
+            counts['updated'] += 1
+        return counts
 
 
 def case_list(store, **filters):
@@ -151,7 +185,8 @@ def case_list(store, **filters):
     if any(k not in FILTERS or v not in FILTERS[k] for k, v in filters.items()):
         raise StateError('Invalid eval case filter')
     with store.locked():
-        return _rows(store, 'SELECT id, kind, level, repository, pr, title, tag_kind, size, language, half, created_at '
+        return _rows(store, 'SELECT id, kind, level, repository, pr, title, tag_kind, size, language, half, created_at, '
+                     "CASE WHEN start_commit IS NULL THEN 'no' ELSE 'yes' END AS has_start "
                      'FROM cplane_eval_cases' + (' WHERE ' + ' AND '.join(f'{k} = %s' for k in filters) if filters else '') +
                      ' ORDER BY id', tuple(filters.values()))
 
