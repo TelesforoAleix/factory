@@ -25,6 +25,7 @@ from . import state
 from .orders import Collector
 from .executors import Processes, atomic_json, FENCE_PARAGRAPH
 from . import fence
+from .planning import ssh_command
 from . import github_app
 from . import cut as cutter
 from . import review as reviewer
@@ -468,6 +469,8 @@ class Git:
     def pull(self, path):
         if (path.parent / ".git").exists():
             fence.trusted_directory(path.parent)
+            env = fence.host_environment()
+            env["GIT_SSH_COMMAND"] = ssh_command()
             result = subprocess.run(
                 [
                     "git",
@@ -482,7 +485,7 @@ class Git:
                 ],
                 capture_output=True,
                 text=True,
-                env=fence.host_environment(),
+                env=env,
             )
             if result.returncode:
                 raise state.StateError("briefs fast-forward pull failed")

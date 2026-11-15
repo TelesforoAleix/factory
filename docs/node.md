@@ -2024,8 +2024,10 @@ in `ui`:
 | `runner` | 21010:21010 | `cplane --actor runner run --every 60` | homelab-launch (976), homelab-deploy (975), factory-cli (21000) |
 
 At cutover, create the two new service accounts `factory-sessions` 21011:21011
-and `factory-runner` 21010:21010. These are distinct from fence agent UID/GID
-21000:21000 and proxy UID 21001. Every service has a read-only root, tmpfs `/tmp`,
+and `factory-runner` 21010:21010. The image includes both accounts with home
+`/tmp` and no login shell, so SSH and Python can resolve these UIDs. These are
+distinct from fence agent UID/GID 21000:21000 and proxy UID 21001. Every service
+has a read-only root, tmpfs `/tmp`,
 all capabilities dropped, no-new-privileges, journald logging and
 `restart: unless-stopped`. UI, intake and sessions each have 512 MiB memory and
 128 PIDs; runner has 1 GiB and 256 PIDs. These limits cover service processes;
@@ -2053,11 +2055,18 @@ read the parent, documents and sibling `.ui-docs.lock`. Sessions stages and
 exchanges the documents under that parent. Prepare `/var/lib/factory/sessions`
 and `/srv/factory/runs/sessions` owned by sessions (21011:21011), and prepare
 `/srv/factory/clean-sessions` owned by sessions with mode 0700. Set
-`/srv/factory/work` to root:root, mode 1733 (sticky, writable and traversable
-by both services). Existing entries remain protected by the sticky bit and
-workspace ownership checks. Today's root services and mode 0711 remain supported.
+both `/srv/factory/work` and `/srv/factory/runs` to root:root, mode 1733
+(sticky, writable and traversable by both services). Existing entries remain
+protected by the sticky bit and workspace ownership checks. Today's root services
+and mode 0711 remain supported.
 Planning clones are freshly prepared in `clean-sessions/planning-sessions/`;
 existing planning clones under the runner's clean root are not moved.
+
+Sessions reads the runner-owned briefs clone with `CPLANE_BRIEFS_OWNER_UID=21010`.
+Only document export accepts that additional owner and marks that exact clone as
+Git-safe; the sessions bind remains read-only. Runner pulls and planning fetches
+use the configured `CPLANE_BRIEFS_KEY` and `CPLANE_BRIEFS_KNOWN_HOSTS`, overriding
+the clone's host SSH command.
 
 The runner anchors metadata at `/srv/factory/briefs/slices.json`, uses
 `/srv/factory/runs`, sends the daily export to `/srv/homelab/factory-state`, and
@@ -2192,6 +2201,7 @@ binds and App settings are included in the compose contract for cutover.
 | `CPLANE_GITHUB_READ_ONLY` | entry point forces `1`, whatever the environment says | repository-scoped App tokens with exactly `contents: read` |
 | `CPLANE_GITHUB_APP_ID`, `CPLANE_GITHUB_INSTALLATION_ID` | `sessions.env`, required; default unset | `github_app.installation_token` |
 | `CPLANE_GITHUB_APP_KEY` | compose: `/run/secrets/github-app.pem`; code default `/etc/factory/github-app.pem` | sessions' own UID 21011 mode 0400 key copy, mounted read-only |
+| `CPLANE_BRIEFS_OWNER_UID` | compose: `21010`; default unset retains root/service ownership only | `DocumentExporter` accepts the runner's read-only briefs clone |
 | `CPLANE_SESSIONS_CLEAN_ROOT` | compose: `/srv/factory/clean-sessions`, also the code default | sessions' own repository and planning clones; never the runner's root |
 | `PATH`, `LANG`, `PYTHONPATH` | image/default inherited `PATH` and `LANG` if present; `PYTHONPATH` unset | `fence.host_environment` forwards only present values |
 | `GH_TOKEN` | generated in the authenticated Git child's environment; no deployed value | `python -m cplane.fence credential get` returns the scoped token to Git |
@@ -2199,8 +2209,8 @@ binds and App settings are included in the compose contract for cutover.
 `BRIEFS` and `WORK_ROOT` in sessions remain fixed. `CPLANE_SESSION_RUNS`,
 `CPLANE_UI_DOCS` and `CPLANE_SESSIONS_LOCK` configure the session paths in compose
 to `/srv/factory/runs/sessions`, `/var/lib/factory/workshop/ui-docs` and
-`/var/lib/factory/sessions/sessions.lock`, respectively; `CPLANE_RUNS` remains
-the separate runner setting.
+`/var/lib/factory/sessions/sessions.lock`, respectively. `CPLANE_RUNS` separately
+names the shared runs root for trust checks (default `/srv/factory/runs`).
 
 **Runner** (`cplane --actor runner run --every 60`, delivery and scheduled jobs):
 
@@ -2218,8 +2228,8 @@ the separate runner setting.
 | `CPLANE_GITHUB_READ_ONLY` | unset | preserves the runner's full App permissions and separate write-token cache |
 | `CPLANE_GITHUB_APP_ID`, `CPLANE_GITHUB_INSTALLATION_ID` | `runner.env`, required for App mode | `github_app.installation_token` |
 | `CPLANE_GITHUB_APP_KEY` | compose: `/run/secrets/github-app.pem` | token minting key path |
-| `CPLANE_BRIEFS_KEY` | compose: `/run/secrets/briefs-key` | planning fetch identity |
-| `CPLANE_BRIEFS_KNOWN_HOSTS` | compose: `/run/secrets/briefs-known-hosts` | planning SSH host verification |
+| `CPLANE_BRIEFS_KEY` | compose: `/run/secrets/briefs-key` | briefs pull and planning fetch identity |
+| `CPLANE_BRIEFS_KNOWN_HOSTS` | compose: `/run/secrets/briefs-known-hosts` | briefs pull and planning SSH host verification |
 | `CPLANE_PLANNING_WRITE_KEY` | compose: `/run/secrets/planning-write-key` | planning export push identity |
 | `CPLANE_DENY_LIST` | compose: `/run/secrets/deny-list` | public-content delivery gate |
 | `CPLANE_EVAL_TASK_URL`, `CPLANE_EVAL_TASK_KEY_FILE` | compose: `http://api:8000`, `/run/secrets/eval-task-key` | authenticated platform eval task endpoint |
@@ -2277,8 +2287,9 @@ cplane migrate
 
 ### Application prerequisites before cutover
 
-This compose contract alone cannot run the application successfully. Before
-cutover, the following remain open:
+The image accounts, configured briefs SSH identity, shared sticky runs root and
+read-only document export ownership are supported by Factory. Before cutover,
+the following platform prerequisites remain open:
 
 - The platform must first allow
   runner UID 21010 for the launcher's `usage` profile and supply Factory's

@@ -15,6 +15,15 @@ START = 'refs/factory/start'
 DELIVERED = 'refs/factory/delivered'
 
 
+def ssh_command(*, write=False):
+    key = (os.environ.get('CPLANE_PLANNING_WRITE_KEY', WRITE_KEY) if write
+           else os.environ.get('CPLANE_BRIEFS_KEY', READ_KEY))
+    hosts = os.environ.get('CPLANE_BRIEFS_KNOWN_HOSTS', KNOWN_HOSTS)
+    return (
+        f'ssh -F /dev/null -i {shlex.quote(str(key))} -o IdentitiesOnly=yes -o BatchMode=yes '
+        f'-o StrictHostKeyChecking=yes -o UserKnownHostsFile={shlex.quote(str(hosts))}')
+
+
 def sessions_clean_root():
     root = Path(os.path.abspath(os.environ.get(
         'CPLANE_SESSIONS_CLEAN_ROOT', fence.CLEAN_ROOT.with_name('clean-sessions'))))
@@ -46,12 +55,7 @@ class Planning:
         env = fence.host_environment()
         if network:
             # Only the push receives the write identity, in its private environment.
-            key = (os.environ.get('CPLANE_PLANNING_WRITE_KEY', WRITE_KEY) if network == 'push'
-                   else os.environ.get('CPLANE_BRIEFS_KEY', READ_KEY))
-            hosts = os.environ.get('CPLANE_BRIEFS_KNOWN_HOSTS', KNOWN_HOSTS)
-            env['GIT_SSH_COMMAND'] = (
-                f'ssh -F /dev/null -i {shlex.quote(str(key))} -o IdentitiesOnly=yes -o BatchMode=yes '
-                f'-o StrictHostKeyChecking=yes -o UserKnownHostsFile={shlex.quote(str(hosts))}')
+            env['GIT_SSH_COMMAND'] = ssh_command(write=network == 'push')
         result = subprocess.run(
             ['git', '-C', str(self.clean), *fence.git_options(),
              '-c', 'protocol.file.allow=always', '-c', 'user.name=Factory',
