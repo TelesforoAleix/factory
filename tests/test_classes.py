@@ -1,10 +1,12 @@
 """Synthetic path policies; no executor content or private state."""
 import os
 import subprocess
+from unittest.mock import Mock
 
 import pytest
 
 from cplane import classes, fence
+from cplane.runner import Runner
 
 
 @pytest.mark.parametrize('path,expected', [
@@ -176,3 +178,58 @@ def test_changes_fall_back_to_base_when_merge_base_is_unavailable(merged_pr):
     git(repo, 'commit', '-m', 'unrelated history')
     git(repo, 'branch', '-f', 'main', 'HEAD')
     assert classes.changes(adapter, job) == (4, ['guard/main'])
+
+
+@pytest.mark.parametrize('repository,revision,expected', [
+    ('TelesforoAleix/factory', 'base', (4, ['guard/main'])),
+    ('TelesforoAleix/factory', 'main', (1, [])),
+    ('TelesforoAleix/factory', None, (1, [])),
+    ('example/repo', 'base', (1, [])),
+])
+def test_installed_guard_comparison_only_for_factory(merged_pr, monkeypatch, repository, revision, expected):
+    adapter, job, repo, clean, git, _ = merged_pr
+    monkeypatch.setattr(adapter, 'clean', lambda _: clean)
+    job['repository'] = repository
+    if revision:
+        monkeypatch.setenv('CPLANE_REVISION', job['base'] if revision == 'base'
+                           else git(repo, 'rev-parse', 'main'))
+    else:
+        monkeypatch.delenv('CPLANE_REVISION', raising=False)
+    assert classes.changes(adapter, job) == expected
+
+    runner = Mock(fence=adapter)
+    candidate = {'pr': 12, 'attention': None, 'stop_before_merge': False}
+    job['request'] = {'node_steps': None}
+    Runner.merge(runner, candidate, job, ready=True)
+    if expected[1]:
+        runner.github.merge.assert_not_called()
+        runner.attention.assert_called_once_with(
+            candidate, 'merge', 'Approve PR #12: class 4 paths\n"guard/main"')
+    else:
+        runner.github.merge.assert_called_once()
+        runner.attention.assert_not_called()
+
+
+@pytest.mark.parametrize('restore', [False, True])
+def test_installed_guards_union_pr_guards_even_when_restored(merged_pr, monkeypatch, restore):
+    adapter, job, repo, clean, git, import_tip = merged_pr
+    monkeypatch.setattr(adapter, 'clean', lambda _: clean)
+    job['repository'] = 'TelesforoAleix/factory'
+    monkeypatch.setenv('CPLANE_REVISION', job['base'])
+    # A guard restored to installed content still remains a PR guard path.
+    if restore:
+        git(repo, 'checkout', job['base'], '--', 'guard/main')
+    (repo / 'guard/own').unlink()
+    git(repo, 'add', '.')
+    git(repo, 'commit', '-m', 'restore inherited guard and delete own guard')
+    import_tip()
+    assert classes.changes(adapter, job) == (4, ['guard/main', 'guard/own'])
+
+
+def test_installed_revision_unavailable_fails_closed(merged_pr, monkeypatch):
+    adapter, job, _, clean, _, _ = merged_pr
+    monkeypatch.setattr(adapter, 'clean', lambda _: clean)
+    job['repository'] = 'TelesforoAleix/factory'
+    monkeypatch.setenv('CPLANE_REVISION', 'f' * 40)
+    with pytest.raises(fence.StateError):
+        classes.changes(adapter, job)

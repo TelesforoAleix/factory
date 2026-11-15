@@ -1946,6 +1946,23 @@ merge card listing up to 20 guard paths and a remaining count. Classes 1 and 2
 merge with green CI; the nullable run-record `change_class` records the decision.
 A brief's `stop_before_merge` can require approval for any class.
 
+On each pass, an unapproved merge card also checks GitHub reviews through the
+runner's GitHub App. Among reviews by `TelesforoAleix` in `APPROVED`,
+`CHANGES_REQUESTED` or `DISMISSED` state, the highest review ID must be
+`APPROVED`, and its `commit_id` must equal the job's delivered tip. The runner
+records this as the owner's approval by GitHub review and sets the card's
+approval; a later push needs a new review. Stop-before-merge slices still need
+a recorded planner review first, just as with `cplane approve`. Workshop,
+phone and command-line approval remain available, and green CI is still required.
+
+For `TelesforoAleix/factory`, when `CPLANE_REVISION` is set, the runner also
+compares that installed commit's file tree with the PR tip. Guard paths that
+differ, classified with the same pinned-base table, join the PR's own class 4
+paths on the merge card. This includes guard changes inherited from `main`,
+even on a docs-only PR. Equal guard contents add no paths. Other repositories,
+and runs without `CPLANE_REVISION`, retain the PR-only rule. An unavailable
+installed revision fails the check rather than bypassing approval.
+
 The Postgres-backed runner sends a daily `digest` notice on its first pass at or after 07:00 Copenhagen time, covering the preceding 24 elapsed hours. `cplane digest` prints the latest scheduled digest without writing a notice; `cplane digest --date YYYY-MM-DD` selects the local date of its 07:00 boundary. Counts identify slices without including titles or attention bodies. Task spend is shown only when every recorded task attempt in the window has a known cost; other run costs are not available in the records.
 
 ## Service secret files and the runner loop
@@ -2311,8 +2328,11 @@ sudo homelab-deployer install factory <sha>
 
 The deployer's compose file, Dockerfile and `ui.env`, `sessions.env` and
 `runner.env` live in `/opt/homelab-deployer/factory/`. An install of a commit
-that changes guard files requires the owner's approving review on that commit's
-PR. The owner cannot approve a PR they authored, so guard changes come through
+whose guard files differ from the installed commit requires the owner's
+approving review on that commit's PR. The runner uses `CPLANE_REVISION` to
+account for this difference before merging, and accepts the owner's GitHub
+approval on the delivered tip under the merge-card rules above. The owner
+cannot approve a PR they authored, so guard changes come through
 PRs opened by the runner's GitHub App.
 
 ### Runner usage and install switches
