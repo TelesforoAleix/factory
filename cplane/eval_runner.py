@@ -1,12 +1,15 @@
-"""Runner-only eval execution. No delivery, grading, or slice run records."""
+"""Runner-only eval execution through the fence or the graded platform route."""
+import base64
+from datetime import datetime
 import json
+import logging
 import os
 from pathlib import Path
 import re
 import time
 import uuid
 
-from . import evals, fence, run_records
+from . import eval_platform, evals, fence, run_records
 from .executors import read_output
 
 LEAD = ('Make the change in this working tree; do not branch, commit, push or open a PR; '
@@ -14,11 +17,13 @@ LEAD = ('Make the change in this working tree; do not branch, commit, push or op
 TIMEOUT = 30 * 60
 
 
-def _finish(store, attempt, status, *, metrics=None, error=None, output_ref=None):
+def _finish(store, attempt, status, *, metrics=None, error=None, output_ref=None, result=None):
     from psycopg.types.json import Jsonb
+    if error:
+        result = {'error': error}
     store.connection.execute(
         'UPDATE cplane_eval_attempts SET state=%s, metrics=%s, result=%s, output_ref=%s WHERE id=%s',
-        (status, Jsonb(metrics or {}), Jsonb({'error': error}) if error else None, output_ref, attempt))
+        (status, Jsonb(metrics or {}), Jsonb(result) if result is not None else None, output_ref, attempt))
 
 
 def _end_runs(store):
@@ -82,6 +87,9 @@ def collect(runner, store):
     for attempt in evals._rows(store, 'SELECT a.*, c.repository FROM cplane_eval_attempts a '
                               'JOIN cplane_eval_cases c ON c.id=a."case" '
                               "WHERE a.state='running' ORDER BY a.id"):
+        if attempt['platform_task'] is not None:
+            _collect_platform(runner, store, attempt)
+            continue
         job = runner.jobs.get('eval:' + str(attempt['id']))
         if job is None or job.get('metadata_unavailable'):
             # Without a confirmed end, another runner may still own this process.
@@ -163,18 +171,22 @@ def start(runner, store):
     if any(j['phase'] == 'usage-limit-wait' and j['reset_at'] > runner.instant.timestamp()
            for j in runner.jobs.values()):
         return
-    attempts = evals._rows(store, 'SELECT a.*, c.repository, c.base_commit, c.start_commit, c.task, r.configurations '
+    attempts = evals._rows(store, 'SELECT a.*, c.repository, c.base_commit, c.start_commit, c.start_branch, c.title, c.task, '
+                           'c.allowed_files, c.check_command, c.pinned_paths, c.pr, r.configurations '
                            'FROM cplane_eval_attempts a JOIN cplane_eval_runs r ON r.id=a.eval_run '
                            'JOIN cplane_eval_cases c ON c.id=a."case" '
                            "WHERE a.state='planned' AND r.state='running' ORDER BY a.id LIMIT 1")
     if not attempts:
         return
     attempt = attempts[0]
+    config = next(c for c in attempt['configurations'] if c['id'] == attempt['configuration_id'])
+    if config['harness'] == 'pi':
+        _start_platform(store, attempt, config)
+        return
     # Use the same eligibility calculation as slices, including absent live jobs.
     item = dict(id='eval:' + str(attempt['id']), repo=attempt['repository'], state='ready')
     if runner.room(item):
         return
-    config = next(c for c in attempt['configurations'] if c['id'] == attempt['configuration_id'])
     if config['harness'] not in ('codex', 'claude'):
         _finish(store, attempt['id'], 'failed', error='Attempt harness unavailable')
         _end_runs(store)
@@ -229,3 +241,72 @@ def available(runner, tool):
                 and 0 <= window['used_percentage'] < 90)
     except (KeyError, TypeError):
         return False
+
+
+def _start_platform(store, attempt, config):
+    from psycopg.types.json import Jsonb
+    body = {
+        'attempt': f"factory-{attempt['id']}", 'repository': attempt['repository'],
+        'branch': attempt['start_branch'], 'base_commit': attempt['start_commit'],
+        'title': attempt['title'], 'goal': attempt['task'], 'allowed_files': attempt['allowed_files'],
+        'check_command': attempt['check_command'], 'pinned_paths': attempt['pinned_paths'],
+        'eval': {
+            'set': f"run{attempt['eval_run']}",
+            'case': f"{attempt['repository'].split('/')[-1]}.pr{attempt['pr']}-t{attempt['case'].rsplit('/', 1)[-1]}",
+            'configuration': config['configuration'],
+        },
+    }
+    try:
+        task = eval_platform.Client().submit(body)
+    except eval_platform.Unavailable as error:
+        logging.getLogger(__name__).warning('%s', error)
+        return
+    store.connection.execute("UPDATE cplane_eval_attempts SET platform_task=%s, state='running', metrics=%s WHERE id=%s",
+                             (task, Jsonb({'started_at': time.time()}), attempt['id']))
+
+
+def _collect_platform(runner, store, attempt):
+    if time.time() - attempt['metrics']['started_at'] >= 3600:
+        _finish(store, attempt['id'], 'failed', error='Attempt timed out')
+        return
+    try:
+        task = eval_platform.Client().get(attempt['platform_task'])
+    except eval_platform.Unavailable as error:
+        logging.getLogger(__name__).warning('%s', error)
+        return
+    if task['status'] in ('queued', 'running'):
+        return
+    if task['status'] not in ('done', 'failed', 'escalated', 'cancelled'):
+        return
+    attempts = task['attempts']
+    metrics = {}
+    starts = [datetime.fromisoformat(a['started_at']) for a in attempts if a.get('started_at')]
+    ends = [datetime.fromisoformat(a['ended_at']) for a in attempts if a.get('ended_at')]
+    if starts and ends:
+        metrics['wall_seconds'] = max(0, (max(ends) - min(starts)).total_seconds())
+    for target, sources in [('input_tokens', ('fresh_tokens', 'cached_tokens')),
+                            ('output_tokens', ('output_tokens',)), ('cost_usd', ('cost_usd',))]:
+        values = [a.get('usage', {}).get(k) for a in attempts for k in sources]
+        if values and all(isinstance(v, (int, float)) for v in values):
+            metrics[target] = sum(values)
+    result = {'reason': task.get('reason')}
+    if task['status'] in ('done', 'failed'):
+        first = next((a for a in attempts if a['number'] == 1), None)
+        result.update(tests='pass' if task['status'] == 'done' else 'fail',
+                      first='pass' if first and first['status'] == 'done' else 'fail', attempts=len(attempts))
+    output_ref = None
+    if task.get('diff_base64') is not None:
+        patch = base64.b64decode(task['diff_base64'], validate=True)
+        runner.runs.mkdir(parents=True, mode=0o700, exist_ok=True)
+        fence.trusted_directory(runner.runs)
+        folder = runner.runs / f"platform-{attempt['id']}"
+        folder.mkdir(mode=0o700, exist_ok=True)
+        target = folder / 'attempt.patch'
+        with target.open('wb') as stream:
+            os.fchmod(stream.fileno(), 0o600)
+            stream.write(patch)
+            stream.flush()
+            os.fsync(stream.fileno())
+        output_ref = str(target)
+    _finish(store, attempt['id'], 'done' if task['status'] == 'done' else 'failed',
+            result=result, metrics=metrics, output_ref=output_ref)

@@ -13,7 +13,7 @@ FILTERS = {'kind': ('ticket', 'slice', 'review'),
            'size': ('S', 'M', 'L'), 'language': ('python', 'swift', 'typescript'),
            'half': ('development', 'held-out')}
 IMPORT_FIELDS = ('id', 'kind', 'level', 'repository', 'pr', 'base_commit', 'title', 'task',
-                 'check_command', 'reference_diff', 'tag_kind', 'size', 'language', 'half')
+                 'check_command', 'reference_diff', 'tag_kind', 'size', 'language', 'half', 'allowed_files')
 CASE_FIELDS = IMPORT_FIELDS + ('start_commit', 'start_branch', 'pinned_paths')
 
 
@@ -127,7 +127,7 @@ def import_folder(store, folder):
                         title=_text(item.get('title'), 'title', key),
                         task=_text(item.get('change'), 'change', key),
                         check_command=(_text(item.get('check'), 'check', key) if kind == 'ticket' else item.get('check')),
-                        reference_diff=patch, size=size(store, patch, files),
+                        reference_diff=patch, allowed_files=files, size=size(store, patch, files),
                         half=half(store, repository, pr), **tags)
             if key in cases:
                 raise StateError(f'{key}: duplicate case in import')
@@ -252,8 +252,12 @@ def run_create(store, *, title, sets, configurations, repeats, scheduled_for=Non
         if not isinstance(config, dict) or any(not isinstance(config.get(k), str) or not config[k].strip()
                                                 for k in ('id', 'harness', 'model', 'route')):
             raise StateError('Configuration requires nonempty id, harness, model and route')
-        if config['harness'] not in ('codex', 'claude'):
+        if config['harness'] not in ('codex', 'claude', 'pi'):
             raise StateError(f"harness {config['harness']} is not available yet")
+        if config['harness'] == 'pi' and (config['route'] != 'platform' or
+                not isinstance(config.get('configuration'), str) or
+                not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,63}', config['configuration'])):
+            raise StateError('Pi requires route platform and a valid configuration name')
         if 'effort' in config and (not isinstance(config['effort'], str) or not config['effort'].strip()):
             raise StateError('Configuration effort must be nonempty text')
         ids.append(config['id'])
@@ -275,6 +279,15 @@ def run_create(store, *, title, sets, configurations, repeats, scheduled_for=Non
             if ref not in versions:
                 versions.append(ref)
             members.update(selected['members'])
+        for member in sorted(members):
+            case = _rows(store, 'SELECT kind, start_commit FROM cplane_eval_cases WHERE id=%s', (member,))[0]
+            if case['kind'] == 'ticket':
+                if any(c['harness'] != 'pi' for c in configurations):
+                    raise StateError(f'{member}: tickets require the platform route')
+                if not case['start_commit']:
+                    raise StateError(f'{member}: ticket requires a start commit')
+            elif any(c['harness'] == 'pi' for c in configurations):
+                raise StateError(f'{member}: platform route requires ticket cases')
         run = store.connection.execute('INSERT INTO cplane_eval_runs '
             '(title, created_by, scheduled_for, repeats, set_versions, configurations) VALUES (%s,%s,%s,%s,%s,%s) RETURNING id',
             (title, actor, scheduled_for, repeats, Jsonb(versions), Jsonb(configurations))).fetchone()[0]

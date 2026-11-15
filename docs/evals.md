@@ -1,7 +1,8 @@
 # Eval store
 
 An eval compares quality, speed and cost on the same work across configurations.
-This slice stores and plans experiments; it does not execute attempts or grade them.
+The runner executes slice and review attempts in the fence and sends ticket attempts
+to the platform, which grades them with their pinned check.
 All commands require Postgres through `CPLANE_DATABASE_URL` or
 `CPLANE_DATABASE_URL_FILE`, and emit JSON. Mutations accept `--actor` (default
 `owner`) to record who created a set version or run.
@@ -81,9 +82,9 @@ cplane eval set create small --title 'Small development cases' \
 cplane eval set add small 'example/public#53/2' --actor planner
 cplane eval set list
 cplane eval set show small --version 1
+# Import ticket starts as described below before creating a ticket run.
 cplane eval run create --title 'Synthetic comparison' --set small:1 --set small:2 \
-  --configuration '{"id":"a","harness":"codex","model":"synthetic-a","route":"test"}' \
-  --configuration '{"id":"b","harness":"claude","model":"synthetic-b","route":"test"}' \
+  --configuration '{"id":"pi-base","harness":"pi","model":"base","route":"platform","configuration":"base"}' \
   --repeats 2 --at '2026-12-01T12:00:00Z' --actor planner
 cplane eval run list
 cplane eval run show 1
@@ -102,7 +103,7 @@ IDs must be unique, and each configuration requires nonempty string `id`, `harne
 `model` and `route` fields; extra configuration fields are retained. Repeats are
 numbered from 1. Runs and expanded attempts start in `planned`. Omit `--at` for
 immediate scheduling (`scheduled_for` is null); otherwise provide an ISO timestamp
-with a timezone. Scheduling only records intent.
+with a timezone. The runner starts due runs during its next pass.
 
 Run show includes attempts and their verdicts. Unknown metrics are absent from the
 metrics object. An attempt can link to an existing run record and retain an
@@ -149,21 +150,77 @@ them and completes the import. An identical rerun reports zero updated cases.
 Ordinary case imports preserve the start metadata. Case list reports `has_start`
 as `yes` or `no` without exposing commit content.
 
-Attempts use `start_commit` when set and otherwise retain `base_commit` behavior.
-Their output diff is against the actual start. Restoring pinned paths before
-checks and executing those checks belong to the grading slice.
+Ticket attempts require `start_commit` and the platform route described below.
+Slice and review attempts keep the fence path, using `start_commit` when set and
+otherwise `base_commit`. Their output diff is against the actual start.
 
-Node step after merge: **install with a dump first; then cplane eval starts for
-the three bundles in /srv/factory/eval-starts**. The orchestrator dumps the
-`factory` database before installing, then runs:
+## Platform ticket attempts
+
+Tickets run only through the platform's sealed Pi task path. Run creation refuses
+Codex or Claude configurations paired with tickets, and tickets without a start
+commit. Pi configurations require `route` of `platform` and a platform
+`configuration` name; Pi accepts ticket cases only. For example, after importing
+starts and creating a ticket set `T`:
 
 ```sh
-cplane eval starts /srv/factory/eval-starts/fa5-inbox-helper.bundle --pr TelesforoAleix/homelab-v2#53
-cplane eval starts /srv/factory/eval-starts/fb1-review-gate-ci-waits.bundle --pr TelesforoAleix/control-plane#13
-cplane eval starts /srv/factory/eval-starts/fb2-orders.bundle --pr TelesforoAleix/control-plane#14
+cplane eval run create --title 'One ticket' --set T \
+  --configuration '{"id":"pi-base","harness":"pi","model":"base","route":"platform","configuration":"base"}' \
+  --repeats 1 --actor planner
 ```
 
-Verify 13 cases have a start, the 13 eval branches exist on GitHub, and one eval
-attempt on the fence path starts from its recorded start commit. Existing rows
-retain null start fields until imported; migration 028 only adds these three
-nullable columns.
+The set should contain one ticket for the initial node verification. Configuration
+names match `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`; today the platform provides `base`.
+Ticket `files` are retained as `allowed_files`. Reimporting an unchanged source
+backfills that column once, preserving starts, content and creation timestamps.
+Migration 029 adds only nullable `allowed_files` and `platform_task` columns.
+
+Set both settings in the **runner's environment**:
+
+- `CPLANE_EVAL_TASK_URL=http://127.0.0.1:8000`
+- `CPLANE_EVAL_TASK_KEY_FILE=/etc/factory/eval-task-key`
+
+The runner reads and strips the secret file, as with the database URL file. The
+node key file is root-owned, mode `0600`, and contains one line; the runner runs
+as root. No key is logged or stored. Without both settings (or with an unreadable
+or invalid key file), Pi attempts remain planned and a reason is logged once per
+pass. HTTP errors also leave submission planned for retry, without retaining
+response diagnostics. Redirects are refused.
+
+The runner submits `POST /v1/tasks/eval` with the stable name `factory-<attempt id>`.
+The body uses the case's repository, start branch, start commit, title, task,
+allowed files, check command and pinned paths. Eval labels are `run<run id>`,
+`<repository name>.pr<pr>-t<n>`, and the platform configuration name. A 201 or
+409 response records its task ID and marks the attempt running in the same
+transaction. A lost response is recovered by submitting the same name again.
+The running attempt's metrics temporarily include `started_at`, a Unix submission
+timestamp used across runner restarts; terminal metrics replace it.
+
+Every pass polls `GET /v1/tasks/eval/<id>`. The platform restores pinned paths from
+the base commit, runs the check, and retains the attempt only on a pass. A failed
+check retries once with its output as feedback. A completed task produces:
+
+```json
+{"tests":"pass","first":"fail","attempts":2,"reason":"eval_kept"}
+```
+
+`tests` is `pass` only for task status `done`; `first` is `pass` only if platform
+attempt 1 is `done`. `attempts` counts the platform attempts and `reason` retains
+the task reason or null. Task status `failed` produces `tests: fail` and a failed
+Factory attempt. Escalated or cancelled tasks fail the Factory attempt with a
+reason and no `tests`. After 60 minutes the Factory attempt fails with
+`Attempt timed out`; its platform task is left alone.
+
+Terminal metrics include wall seconds from first start to last end, input tokens
+(fresh plus cached), output tokens and cost in USD, summed over platform attempts
+when known. Unknown metrics are absent. A returned diff, including an empty diff,
+is saved as `attempt.patch` with mode `0600` under the runner's private run folder
+and linked by `output_ref`. An absent or oversized diff leaves `output_ref` null.
+Only one eval attempt runs at a time across both paths. Pi tasks consume no local
+executor place and do not read Codex or Claude usage. Slice and review execution
+retains its existing fence behavior.
+
+Node step after merge: **install with a dump first; set CPLANE_EVAL_TASK_URL and
+CPLANE_EVAL_TASK_KEY_FILE for the runner; reimport set T; one pi-base attempt**.
+The orchestrator dumps the `factory` database before installing, sets both runner
+environment settings, reimports the ticket folder, then runs one ticket with
+`pi-base`. Verify it ends with `result.tests` and a diff.
