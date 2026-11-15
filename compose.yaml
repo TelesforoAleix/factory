@@ -116,6 +116,8 @@ services:
     - cplane.sessions
     environment:
       CPLANE_DATABASE_URL_FILE: /run/secrets/database-url
+      CPLANE_BRIEFS_KEY: /run/secrets/briefs-key
+      CPLANE_BRIEFS_KNOWN_HOSTS: /run/secrets/briefs-known-hosts
       CPLANE_PLANNING_WRITE_KEY: /run/secrets/planning-write-key
       CPLANE_GITHUB_APP_KEY: /run/secrets/github-app.pem
       CPLANE_GITHUB_AUTH: app
@@ -190,6 +192,18 @@ services:
     - type: bind
       source: /etc/factory/secrets/sessions/github-app.pem
       target: /run/secrets/github-app.pem
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /etc/factory/secrets/sessions/briefs-key
+      target: /run/secrets/briefs-key
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /etc/factory/secrets/sessions/briefs-known-hosts
+      target: /run/secrets/briefs-known-hosts
       read_only: true
       bind:
         create_host_path: false

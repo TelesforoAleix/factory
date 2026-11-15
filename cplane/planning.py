@@ -15,18 +15,32 @@ START = 'refs/factory/start'
 DELIVERED = 'refs/factory/delivered'
 
 
+def sessions_clean_root():
+    root = Path(os.path.abspath(os.environ.get(
+        'CPLANE_SESSIONS_CLEAN_ROOT', fence.CLEAN_ROOT.with_name('clean-sessions'))))
+    runner_root = Path(os.path.abspath(fence.CLEAN_ROOT))
+    if root.is_relative_to(runner_root) or runner_root.is_relative_to(root):
+        raise StateError('Sessions clean root must be separate from the runner clean root')
+    fence.trusted_directory(root.parent)
+    root.mkdir(mode=0o700, exist_ok=True)
+    return fence.trusted_directory(root)
+
+
 class Planning:
     def __init__(self, session):
         self.session = session
         self.branch = f'session-{session["id"]}'
-        root = fence.trusted_directory(fence.CLEAN_ROOT)
-        parent = root / 'planning-sessions'
+        self.clean_root = sessions_clean_root()
+        parent = self.clean_root / 'planning-sessions'
         parent.mkdir(mode=0o700, exist_ok=True)
         fence.trusted_directory(parent)
         self.clean = parent / self.branch
 
     def git(self, *args, network=None, allow_failure=False):
-        if self.clean == fence.CLEAN_ROOT or not self.clean.is_relative_to(fence.CLEAN_ROOT):
+        # FeatureExport inherits Git operations but keeps the runner's root.
+        root = getattr(self, 'clean_root', fence.CLEAN_ROOT)
+        clean = Path(os.path.abspath(self.clean))
+        if clean == root or not clean.is_relative_to(root):
             raise StateError('Planning host Git refused outside clean clones.')
         fence.trusted_directory(self.clean)
         env = fence.host_environment()

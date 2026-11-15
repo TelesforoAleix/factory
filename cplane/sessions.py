@@ -20,7 +20,7 @@ from .fence import Fence, trusted_directory, host_environment, WORK_ROOT, own
 from . import prompts, run_records, skills
 from .workshop import WorkshopServer, KINDS as WORKSHOP_KINDS
 from factory_ui.documents import Documents
-from .planning import Planning
+from .planning import Planning, sessions_clean_root
 from . import fence
 from .state import StateError, database_url
 from .stores import PostgresStore, REPOSITORY
@@ -113,15 +113,7 @@ def session_directory(info):
 
 
 def repository_fence():
-    root = Path(os.path.abspath(os.environ.get(
-        'CPLANE_SESSIONS_CLEAN_ROOT', fence.CLEAN_ROOT.with_name('clean-sessions'))))
-    runner_root = Path(os.path.abspath(fence.CLEAN_ROOT))
-    if root.is_relative_to(runner_root) or runner_root.is_relative_to(root):
-        raise StateError('Sessions clean root must be separate from the runner clean root')
-    trusted_directory(root.parent)
-    root.mkdir(mode=0o700, exist_ok=True)
-    trusted_directory(root)
-    return Fence(clean_root=root)
+    return Fence(clean_root=sessions_clean_root())
 
 
 def workspace(session):

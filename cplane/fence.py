@@ -154,8 +154,9 @@ def trusted_directory(path):
         info = part.lstat()
         if not stat.S_ISDIR(info.st_mode):
             raise StateError("trusted directory contains a link or non-directory")
-        # Sticky system temporary roots are needed by synthetic fixtures only.
-        if part != path and info.st_mode & stat.S_ISVTX and info.st_uid == 0:
+        # Sticky ancestors support temporary fixtures; WORK_ROOT also permits
+        # direct creation by the two services while protecting existing entries.
+        if (part != path or part == WORK_ROOT) and info.st_mode & stat.S_ISVTX and info.st_uid == 0:
             continue
         if info.st_uid not in (0, os.geteuid()) or info.st_mode & 0o022:
             raise StateError(

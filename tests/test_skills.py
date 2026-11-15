@@ -223,6 +223,8 @@ def test_resume_skill_repair_refuses_replacements_before_chmod(tmp_path, monkeyp
         values[4:6] = [21000 if replacement == 'agent-owned' and info.st_ino == target.stat().st_ino else 0, 0]
         return os.stat_result(values)
     monkeypatch.setattr(skills.os, 'fstat', synthetic_owner)
+    monkeypatch.setattr(skills.os, 'geteuid', lambda: 21011)
+    monkeypatch.setattr(skills.os, 'getegid', lambda: 21011)
     if replacement in ('symlink', 'hardlink'):
         target.unlink()
         if replacement == 'symlink':
@@ -252,3 +254,27 @@ def test_resume_with_no_enabled_skills_or_legacy_snapshot(tmp_path, monkeypatch)
     monkeypatch.setattr(skills.os, 'fstat', root_owned)
     skills.ensure_readable(folder, [])
     assert not (folder / '.claude').exists()
+
+
+@pytest.mark.parametrize('uid,gid,accepted', [
+    (0, 0, True), (21011, 21011, True), (21011, 0, True),
+    (0, 21011, True), (21000, 21011, False), (21011, 21000, False),
+])
+def test_resume_instructions_service_ownership(tmp_path, monkeypatch, uid, gid, accepted):
+    import os
+    folder = tmp_path / 'workspace'
+    folder.mkdir()
+    skills.install(folder, ['brief'])
+    original_fstat = os.fstat
+    def owner(fd):
+        values = list(original_fstat(fd))
+        values[4:6] = [uid, gid]
+        return os.stat_result(values)
+    monkeypatch.setattr(skills.os, 'fstat', owner)
+    monkeypatch.setattr(skills.os, 'geteuid', lambda: 21011)
+    monkeypatch.setattr(skills.os, 'getegid', lambda: 21011)
+    if accepted:
+        skills.ensure_readable(folder, ['brief'])
+    else:
+        with pytest.raises(state.StateError, match='Installed instructions replaced'):
+            skills.ensure_readable(folder, ['brief'])

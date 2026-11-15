@@ -10,14 +10,19 @@ from cplane import fence, planning, sessions
 from cplane.state import StateError
 
 
-@pytest.fixture
-def delivery(tmp_path, monkeypatch):
+@pytest.fixture(params=[False, True], ids=['default-root', 'custom-root'])
+def delivery(tmp_path, monkeypatch, request):
+    sessions_root_override = request.param
     monkeypatch.setattr(fence, 'ROOT_UID', os.getuid())
     monkeypatch.setattr(fence, 'CLI_UID', os.getuid())
     monkeypatch.setattr(fence, 'CLI_GID', os.getgid())
     clean_root = tmp_path / 'clean'
     clean_root.mkdir(mode=0o700)
     monkeypatch.setattr(fence, 'CLEAN_ROOT', clean_root)
+    monkeypatch.delenv('CPLANE_SESSIONS_CLEAN_ROOT', raising=False)
+    sessions_root = tmp_path / ('custom-sessions' if sessions_root_override else 'clean-sessions')
+    if sessions_root_override:
+        monkeypatch.setenv('CPLANE_SESSIONS_CLEAN_ROOT', str(sessions_root))
     monkeypatch.setenv('CPLANE_PLANNING_REMOTE', 'git@github.com:synthetic/planning.git')
     for role in ('AUTHOR', 'COMMITTER'):
         monkeypatch.setenv(f'GIT_{role}_NAME', 'Synthetic')
@@ -73,6 +78,10 @@ def delivery(tmp_path, monkeypatch):
 
     monkeypatch.setattr(subprocess, 'run', execute)
     adapter.prepare(copy)
+    assert adapter.clean == sessions_root / 'planning-sessions/session-1'
+    assert list(clean_root.iterdir()) == []
+    with pytest.raises(FileExistsError):
+        adapter.prepare(tmp_path / 'second-copy')
     base = git(remote, 'rev-parse', 'main')
     marker = tmp_path / 'HOST-HOOK-RAN'
     for repo in (copy, adapter.clean):
@@ -349,3 +358,18 @@ def test_default_planning_paths():
     assert str(planning.READ_KEY) == '/etc/factory/briefs-key/id_ed25519'
     assert str(planning.WRITE_KEY) == '/etc/factory/planning-write-key/id_ed25519'
     assert str(planning.KNOWN_HOSTS) == '/etc/factory/briefs-key/known_hosts'
+
+
+@pytest.mark.parametrize('location', ['root', 'runner', 'traversal'])
+def test_planning_git_stays_in_sessions_root(tmp_path, monkeypatch, location):
+    runner_root = tmp_path / 'clean'
+    monkeypatch.setattr(fence, 'CLEAN_ROOT', runner_root)
+    monkeypatch.setenv('CPLANE_SESSIONS_CLEAN_ROOT', str(tmp_path / 'clean-sessions'))
+    adapter = planning.Planning({'id': 1})
+    adapter.clean = {
+        'root': adapter.clean_root,
+        'runner': runner_root / 'planning-sessions/session-1',
+        'traversal': adapter.clean_root / '../clean/planning-sessions/session-1',
+    }[location]
+    with pytest.raises(StateError, match='outside clean clones'):
+        adapter.git('status')
