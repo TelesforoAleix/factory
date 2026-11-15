@@ -18,6 +18,7 @@ services:
     - -m
     - factory_ui.serve
     environment:
+      # The deployer's commit, used by skills_version when the image has no REVISION file.
       CPLANE_REVISION: ${HOMELAB_DEPLOY_TAG}
       CPLANE_DATABASE_URL_FILE: /run/secrets/database-url
       HOME: /tmp
