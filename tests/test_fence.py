@@ -1,11 +1,12 @@
 """Ticket start bundles use clean clones and disposable local bare remotes."""
 
+import os
 from pathlib import Path
 
 import pytest
 from test_fenced_runner import delivery  # noqa: F401
 
-from cplane import deny, state
+from cplane import deny, fence, state
 
 
 @pytest.fixture
@@ -219,3 +220,33 @@ def test_start_deny_check_scans_intermediate_commit_removed_by_later_ticket(
         d["remote"], "for-each-ref", "--format=%(refname)", "refs/heads/eval/"
     )
     assert branches == "refs/heads/eval/pr53-t1"
+
+
+@pytest.mark.parametrize('mode,uid,is_work,accepted', [
+    (0o1733, 0, True, True), (0o1777, 0, True, True),
+    (0o0711, 0, True, True), (0o0733, 0, True, False),
+    (0o0770, 0, True, False), (0o1733, 21010, True, False),
+    (0o1733, 21011, True, False), (0o1733, 0, False, False),
+    (0o0700, 21010, False, True), (0o0700, 21011, False, False),
+])
+def test_trusted_work_root_sticky_exception(tmp_path, monkeypatch, mode, uid, is_work, accepted):
+    path = tmp_path / 'directory'
+    path.mkdir()
+    monkeypatch.setattr(fence, 'WORK_ROOT', path if is_work else tmp_path / 'work')
+    monkeypatch.setattr(fence.os, 'geteuid', lambda: 21010)
+    original_lstat = Path.lstat
+    def info(part):
+        result = original_lstat(part)
+        values = list(result)
+        # Synthetic service/root ancestors, independent of the test host UID.
+        values[4] = 0
+        if part == path:
+            values[0] = (result.st_mode & ~0o7777) | mode
+            values[4] = uid
+        return os.stat_result(values)
+    monkeypatch.setattr(Path, 'lstat', info)
+    if accepted:
+        assert fence.trusted_directory(path) == path
+    else:
+        with pytest.raises(state.StateError, match='trusted directory'):
+            fence.trusted_directory(path)

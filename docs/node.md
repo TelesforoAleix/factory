@@ -2009,7 +2009,9 @@ installed Dockerfile and compose file, builds from the selected commit, and pass
 only `HOMELAB_DEPLOY_TAG`. Every service uses
 `homelab-deployer-factory:${HOMELAB_DEPLOY_TAG:?commit required}`.
 The fence's separate `node/compose.yaml` and existing systemd units are unchanged.
-There is no node installation step after this merge.
+After this slice merges, install and exercise one chat turn per tool in a
+feature chat and a planning chat, then resume an existing chat. Workshop tools
+must answer and planning preparation must use the sessions clean root.
 
 Services appear in this order so the deployer's health and migration commands run
 in `ui`:
@@ -2050,7 +2052,12 @@ existing documents into `/var/lib/factory/workshop/ui-docs`, and ensure UI can
 read the parent, documents and sibling `.ui-docs.lock`. Sessions stages and
 exchanges the documents under that parent. Prepare `/var/lib/factory/sessions`
 and `/srv/factory/runs/sessions` owned by sessions (21011:21011), and prepare
-`/srv/factory/clean-sessions` owned by sessions with mode 0700.
+`/srv/factory/clean-sessions` owned by sessions with mode 0700. Set
+`/srv/factory/work` to root:root, mode 1733 (sticky, writable and traversable
+by both services). Existing entries remain protected by the sticky bit and
+workspace ownership checks. Today's root services and mode 0711 remain supported.
+Planning clones are freshly prepared in `clean-sessions/planning-sessions/`;
+existing planning clones under the runner's clean root are not moved.
 
 The runner anchors metadata at `/srv/factory/briefs/slices.json`, uses
 `/srv/factory/runs`, sends the daily export to `/srv/homelab/factory-state`, and
@@ -2068,11 +2075,16 @@ have separate service-owned source paths.
 | --- | --- | --- |
 | all four | `database-url` | `CPLANE_DATABASE_URL_FILE` |
 | runner, sessions | `github-app.pem` | `CPLANE_GITHUB_APP_KEY` |
-| runner | `briefs-key` | `CPLANE_BRIEFS_KEY` |
-| runner | `briefs-known-hosts` | `CPLANE_BRIEFS_KNOWN_HOSTS` |
+| runner, sessions | `briefs-key` | `CPLANE_BRIEFS_KEY` |
+| runner, sessions | `briefs-known-hosts` | `CPLANE_BRIEFS_KNOWN_HOSTS` |
 | runner, sessions | `planning-write-key` | `CPLANE_PLANNING_WRITE_KEY` |
 | runner | `deny-list` | `CPLANE_DENY_LIST` |
 | runner | `eval-task-key` | `CPLANE_EVAL_TASK_KEY_FILE` |
+
+At cutover, create sessions' own `/etc/factory/secrets/sessions/briefs-key`
+and `/etc/factory/secrets/sessions/briefs-known-hosts`, owned by 21011:21011,
+mode 0400. These individual read-only binds provide planning fetch credentials
+and SSH host verification independently of the runner's files.
 
 The compose environment contains secret **paths** and non-secret settings.
 At cutover, the owner places required `./ui.env`, `./sessions.env` and
@@ -2173,14 +2185,14 @@ binds and App settings are included in the compose contract for cutover.
 | `CPLANE_INSTALL_REPOS` | `sessions.env`; code default empty allowlist | Workshop install eligibility and store chat-event handling |
 | `CPLANE_PLANNING_REMOTE` | `sessions.env`; code default empty, which refuses planning preparation | `Planning.prepare`, SSH remote without credentials |
 | `CPLANE_PLANNING_WRITE_KEY` | compose: `/run/secrets/planning-write-key` | `Planning.git` push identity |
-| `CPLANE_BRIEFS_KEY` | default: `/etc/factory/briefs-key/id_ed25519` (unmounted) | `Planning.git` fetch identity; unresolved secret interface |
-| `CPLANE_BRIEFS_KNOWN_HOSTS` | default: `/etc/factory/briefs-key/known_hosts` (unmounted) | planning SSH host verification; unresolved interface |
+| `CPLANE_BRIEFS_KEY` | compose: `/run/secrets/briefs-key` | `Planning.git` fetch identity |
+| `CPLANE_BRIEFS_KNOWN_HOSTS` | compose: `/run/secrets/briefs-known-hosts` | planning SSH host verification |
 | `CPLANE_FENCE_COMMAND` | compose: `socket` | turn launch, model probes, cleanup and bundle export |
 | `CPLANE_GITHUB_AUTH` | compose: `app`; code default `token` is refused at startup | `fence.github_environment` for repository fetches |
 | `CPLANE_GITHUB_READ_ONLY` | entry point forces `1`, whatever the environment says | repository-scoped App tokens with exactly `contents: read` |
 | `CPLANE_GITHUB_APP_ID`, `CPLANE_GITHUB_INSTALLATION_ID` | `sessions.env`, required; default unset | `github_app.installation_token` |
 | `CPLANE_GITHUB_APP_KEY` | compose: `/run/secrets/github-app.pem`; code default `/etc/factory/github-app.pem` | sessions' own UID 21011 mode 0400 key copy, mounted read-only |
-| `CPLANE_SESSIONS_CLEAN_ROOT` | compose: `/srv/factory/clean-sessions`, also the code default | sessions' own writable bare clones; never the runner's root |
+| `CPLANE_SESSIONS_CLEAN_ROOT` | compose: `/srv/factory/clean-sessions`, also the code default | sessions' own repository and planning clones; never the runner's root |
 | `PATH`, `LANG`, `PYTHONPATH` | image/default inherited `PATH` and `LANG` if present; `PYTHONPATH` unset | `fence.host_environment` forwards only present values |
 | `GH_TOKEN` | generated in the authenticated Git child's environment; no deployed value | `python -m cplane.fence credential get` returns the scoped token to Git |
 
@@ -2188,7 +2200,7 @@ binds and App settings are included in the compose contract for cutover.
 `CPLANE_UI_DOCS` and `CPLANE_SESSIONS_LOCK` configure the session paths in compose
 to `/srv/factory/runs/sessions`, `/var/lib/factory/workshop/ui-docs` and
 `/var/lib/factory/sessions/sessions.lock`, respectively; `CPLANE_RUNS` remains
-the separate runner setting. Planning credential gaps remain cutover prerequisites.
+the separate runner setting.
 
 **Runner** (`cplane --actor runner run --every 60`, delivery and scheduled jobs):
 
@@ -2268,12 +2280,6 @@ cplane migrate
 This compose contract alone cannot run the application successfully. Before
 cutover, the following remain open:
 
-- Sessions needs planning read credentials and SSH host verification beyond its
-  decided secret set.
-- Installed-instruction mode repair on resume still requires root-owned uid/gid
-  metadata (`cplane/skills.py`), and workshop chats still transfer their socket
-  to UID 21000 (`cplane/workshop.py`). These separate boundaries also need updates
-  before non-root session cutover.
 - The platform must first allow
   runner UID 21010 for the launcher's `usage` profile and supply Factory's
   deployer manifest and caller permissions.

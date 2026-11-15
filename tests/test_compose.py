@@ -142,6 +142,8 @@ def test_contained_services():
         assert service.get('ports', []) == (['127.0.0.1:8300:8300'] if name == 'ui' else [])
         expected_secrets = {'CPLANE_DATABASE_URL_FILE': 'database-url'}
         if name == 'sessions':
+            expected_secrets['CPLANE_BRIEFS_KEY'] = 'briefs-key'
+            expected_secrets['CPLANE_BRIEFS_KNOWN_HOSTS'] = 'briefs-known-hosts'
             expected_secrets['CPLANE_PLANNING_WRITE_KEY'] = 'planning-write-key'
             expected_secrets['CPLANE_GITHUB_APP_KEY'] = 'github-app.pem'
         if name == 'runner':

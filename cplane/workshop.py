@@ -408,8 +408,8 @@ class WorkshopServer(AbstractContextManager):
             (self.run / 'workshop-mcp.json').write_text(json.dumps(config))
             (self.run / 'workshop-mcp.json').chmod(0o444)
             self.server = socketserver.UnixStreamServer(str(self.path), Handler)
-            os.chown(self.path, 21000, 21000)
-            self.path.chmod(0o600)
+            os.chown(self.path, -1, 21000)
+            self.path.chmod(0o660)
             self.thread = threading.Thread(target=self.server.serve_forever,
                                            kwargs=dict(poll_interval=0.05), daemon=True)
             self.thread.start()

@@ -295,15 +295,15 @@ def exchange(path, request):
 
 @pytest.fixture
 def socket_owner(monkeypatch):
-    # Non-root CI cannot chown to the fence UID. Check the requested ownership
-    # there; root and UID 21000 runs exercise the actual socket ownership.
-    if os.getuid() not in (0, 21000):
+    # CI without the fence group checks the requested group change; other
+    # runs exercise the actual socket group while retaining service ownership.
+    if os.geteuid() != 0 and 21000 not in (os.getegid(), *os.getgroups()):
         chown = Mock()
         monkeypatch.setattr('cplane.workshop.os.chown', chown)
         yield os.getuid()
-        assert chown.call_args.args[1:] == (21000, 21000)
+        assert chown.call_args.args[1:] == (-1, 21000)
     else:
-        yield 21000
+        yield os.geteuid()
 
 
 def test_socket_identity_lifecycle_and_stdio_client(context, tmp_path, socket_owner):
@@ -312,7 +312,9 @@ def test_socket_identity_lifecycle_and_stdio_client(context, tmp_path, socket_ow
     run.mkdir(mode=0o700)
     with WorkshopServer(run, PostgresStore(store._url), chats['feature']['id'], documents) as server:
         info = server.path.stat()
-        assert stat.S_ISSOCK(info.st_mode) and stat.S_IMODE(info.st_mode) == 0o600 and info.st_uid == socket_owner
+        assert stat.S_ISSOCK(info.st_mode) and stat.S_IMODE(info.st_mode) == 0o660 and info.st_uid == socket_owner
+        if os.geteuid() == 0 or 21000 in (os.getegid(), *os.getgroups()):
+            assert info.st_gid == 21000
         assert stat.S_IMODE(run.stat().st_mode) == 0o755
         req = dict(jsonrpc='2.0', id=1, method='tools/call', params=dict(name='save_section', arguments=dict(
             feature=outside, section='Design', text='No')),

@@ -45,7 +45,7 @@ def instructions(name):
 
 
 def install(folder, names):
-    """Only called on a new root-owned workspace, before ownership transfer."""
+    """Only called on a new service-owned workspace, before ownership transfer."""
     available = {skill['name']: skill for skill in catalog()}
     if not isinstance(names, list) or any(name not in available for name in names):
         raise StateError('Unknown skill')
@@ -55,7 +55,7 @@ def install(folder, names):
         target.parent.mkdir(parents=True, exist_ok=True)
         # The session service uses umask 0077; the CLI runs as UID 21000.
         # Only these installed instructions need read/traverse access. Keep them
-        # root-owned, with the private workspace root controlling host access.
+        # owned by their creator, with the private workspace root controlling host access.
         for directory in (folder / '.claude', folder / '.claude/skills', target.parent):
             directory.chmod(0o755)
         # Claude expects YAML frontmatter delimiters on separate lines.
@@ -71,7 +71,7 @@ def install(folder, names):
 def ensure_readable(folder, names):
     """Repair only trusted instruction modes on resume, never follow agent links.
 
-    The root service created these files before transferring the workspace root.
+    The service created these files before transferring the workspace root.
     Hold descriptors and validate the whole instruction chain before chmod: the
     agent owns the workspace and may replace its immediate entries at any time.
     """
@@ -97,7 +97,8 @@ def ensure_readable(folder, names):
         def trusted(path, parent, *, directory=False):
             fd = opened(path, parent=parent, directory=directory)
             info = os.fstat(fd)
-            if (info.st_uid != 0 or info.st_gid != 0 or info.st_mode & 0o7022
+            if (info.st_uid not in (0, os.geteuid()) or info.st_gid not in (0, os.getegid())
+                    or info.st_mode & 0o7022
                     or not (stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode))
                     or (not directory and info.st_nlink != 1)):
                 raise StateError('Installed instructions replaced')
