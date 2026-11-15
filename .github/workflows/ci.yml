@@ -23,6 +23,16 @@ jobs:
               gh --version
               test -f ui/dist/index.html
             '
+      - name: SSH and Python account lookup for service UIDs
+        run: |
+          for uid in 21010 21011; do
+            docker run --rm --user "$uid:$uid" --read-only --tmpfs /tmp \
+              --cap-drop ALL --security-opt no-new-privileges --network none \
+              factory:ci sh -ec '
+                ssh -G github.com
+                python -c "import getpass; getpass.getuser()"
+              '
+          done
       - name: Image size in bytes
         run: docker image inspect factory:ci --format '{{.Size}}'
   test:

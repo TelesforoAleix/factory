@@ -121,6 +121,7 @@ services:
       CPLANE_PLANNING_WRITE_KEY: /run/secrets/planning-write-key
       CPLANE_GITHUB_APP_KEY: /run/secrets/github-app.pem
       CPLANE_GITHUB_AUTH: app
+      CPLANE_BRIEFS_OWNER_UID: '21010'
       CPLANE_SESSIONS_CLEAN_ROOT: /srv/factory/clean-sessions
       CPLANE_SESSION_RUNS: /srv/factory/runs/sessions
       CPLANE_SESSIONS_LOCK: /var/lib/factory/sessions/sessions.lock

@@ -549,7 +549,9 @@ def test_postgres_fenced_pass_pulls_briefs_ff_only(delivery, monkeypatch, code):
     assert args == ['git', '-C', str(folder), '-c', 'core.hooksPath=/dev/null',
                     '-c', 'core.fsmonitor=false', 'pull', '--ff-only']
     assert not any('credential.helper' in arg or 'core.sshCommand' in arg for arg in args)
-    assert run.call_args.kwargs['env'] == fence.host_environment()
+    env = run.call_args.kwargs['env'].copy()
+    assert env.pop('GIT_SSH_COMMAND').startswith('ssh -F /dev/null -i ')
+    assert env == fence.host_environment()
     assert 'GH_TOKEN' not in run.call_args.kwargs['env']
     assert config.read_text() == deploy_config
     assert d['secret'] not in str(args)

@@ -150,13 +150,14 @@ def git_options():
 
 def trusted_directory(path):
     """Only root- or service-managed ancestors; never resolve agent-planted links."""
+    shared = (WORK_ROOT, Path(os.environ.get("CPLANE_RUNS", "/srv/factory/runs")))
     for part in [*reversed(path.parents), path]:
         info = part.lstat()
         if not stat.S_ISDIR(info.st_mode):
             raise StateError("trusted directory contains a link or non-directory")
-        # Sticky ancestors support temporary fixtures; WORK_ROOT also permits
-        # direct creation by the two services while protecting existing entries.
-        if (part != path or part == WORK_ROOT) and info.st_mode & stat.S_ISVTX and info.st_uid == 0:
+        # Sticky ancestors support temporary fixtures; shared work and runs roots
+        # also permit direct creation while protecting existing entries.
+        if (part != path or part in shared) and info.st_mode & stat.S_ISVTX and info.st_uid == 0:
             continue
         if info.st_uid not in (0, os.geteuid()) or info.st_mode & 0o022:
             raise StateError(

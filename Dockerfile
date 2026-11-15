@@ -12,6 +12,13 @@ RUN apt-get update \
         ca-certificates git openssh-client libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
+RUN groupadd --gid 21010 factory-runner \
+    && useradd --uid 21010 --gid 21010 --no-create-home --no-log-init \
+        --home-dir /tmp --shell /usr/sbin/nologin factory-runner \
+    && groupadd --gid 21011 factory-sessions \
+    && useradd --uid 21011 --gid 21011 --no-create-home --no-log-init \
+        --home-dir /tmp --shell /usr/sbin/nologin factory-sessions
+
 # Keep both the release version and its official SHA256 sums in the recipe.
 # Only the gh executable is retained, not the archive or a download utility.
 RUN python - <<'PY'

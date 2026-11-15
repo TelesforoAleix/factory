@@ -47,6 +47,7 @@ UI_SETTINGS.update(CPLANE_UI_DOCS=DOCS, FACTORY_UI_HOST='0.0.0.0',
                    HOMELAB_API_URL='http://api:8000')
 SESSIONS_SETTINGS = {
     'CPLANE_GITHUB_AUTH': 'app', 'CPLANE_SESSIONS_CLEAN_ROOT': '/srv/factory/clean-sessions',
+    'CPLANE_BRIEFS_OWNER_UID': '21010',
     'CPLANE_SESSION_RUNS': '/srv/factory/runs/sessions',
     'CPLANE_SESSIONS_LOCK': '/var/lib/factory/sessions/sessions.lock',
     'CPLANE_UI_DOCS': DOCS, 'CPLANE_FENCE_COMMAND': 'socket',
