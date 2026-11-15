@@ -98,23 +98,37 @@ def test_sections_skip_fenced_headings(marker):
     assert cut.sections(brief, 's') == rules
 
 
-def test_archive_revision_used_for_submission(setup):
+def test_archive_revision_used_for_submission(setup, monkeypatch):
     path, _, capture, args, repo = setup
     import shutil
     shutil.rmtree(repo / '.git')
     (repo / 'REVISION').write_text('archive-revision\n')
+    monkeypatch.setenv('CPLANE_REVISION', 'a' * 40)
     assert cli.main(args) == 0
     assert capture.exists()
     assert state.load(path)['slices'][0]['log'][-1]['event'] == 'cut-submit: skills archive-revision'
 
 
-def test_archive_revision_missing_refuses(setup, capsys):
+def test_archive_revision_missing_refuses(setup, capsys, monkeypatch):
     _, _, capture, args, repo = setup
     import shutil
     shutil.rmtree(repo / '.git')
+    monkeypatch.delenv('CPLANE_REVISION', raising=False)
     assert cli.main(args) == 1
     assert 'REVISION' in capsys.readouterr().err
     assert not capture.exists()
+
+
+def test_archive_environment_revision(tmp_path, monkeypatch):
+    monkeypatch.setenv('CPLANE_REVISION', 'a1' * 20)
+    assert cut.skills_version(tmp_path) == 'a1' * 20
+
+
+@pytest.mark.parametrize('revision', ['', 'a' * 39, 'a' * 41, 'A' * 40, 'g' * 40, 'a' * 40 + '\n'])
+def test_archive_invalid_environment_revision_refuses(tmp_path, monkeypatch, revision):
+    monkeypatch.setenv('CPLANE_REVISION', revision)
+    with pytest.raises(state.StateError, match='requires REVISION'):
+        cut.skills_version(tmp_path)
 
 
 def test_dirty_skills_refuse_even_with_revision(setup, capsys):
