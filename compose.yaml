@@ -23,6 +23,9 @@ services:
       CPLANE_STATE: /srv/factory/briefs/slices.json
       CPLANE_RUNS: /srv/factory/runs
       CPLANE_REPOS: /srv/factory/work
+      CPLANE_UI_DOCS: /var/lib/factory/workshop/ui-docs
+      FACTORY_UI_HOST: 0.0.0.0
+      HOMELAB_API_URL: http://api:8000
     env_file:
     - path: ./ui.env
       required: true
@@ -30,8 +33,8 @@ services:
     - 127.0.0.1:8300:8300
     volumes:
     - type: bind
-      source: /var/lib/factory/ui-docs
-      target: /var/lib/factory/ui-docs
+      source: /var/lib/factory/workshop
+      target: /var/lib/factory/workshop
       read_only: true
       bind:
         create_host_path: false
@@ -70,6 +73,7 @@ services:
     environment:
       CPLANE_DATABASE_URL_FILE: /run/secrets/database-url
       HOME: /tmp
+      CPLANE_INTAKE_GID: '977'
     volumes:
     - type: bind
       source: /run/factory-intake
@@ -113,6 +117,13 @@ services:
     environment:
       CPLANE_DATABASE_URL_FILE: /run/secrets/database-url
       CPLANE_PLANNING_WRITE_KEY: /run/secrets/planning-write-key
+      CPLANE_GITHUB_APP_KEY: /run/secrets/github-app.pem
+      CPLANE_GITHUB_AUTH: app
+      CPLANE_SESSIONS_CLEAN_ROOT: /srv/factory/clean-sessions
+      CPLANE_SESSION_RUNS: /srv/factory/runs/sessions
+      CPLANE_SESSIONS_LOCK: /var/lib/factory/sessions/sessions.lock
+      CPLANE_UI_DOCS: /var/lib/factory/workshop/ui-docs
+      CPLANE_FENCE_COMMAND: socket
       HOME: /tmp
       GH_CONFIG_DIR: /tmp/.config/gh
     env_file:
@@ -120,6 +131,7 @@ services:
       required: true
     group_add:
     - '976'
+    - '21000'
     volumes:
     - type: bind
       source: /srv/factory/work
@@ -128,8 +140,26 @@ services:
       bind:
         create_host_path: false
     - type: bind
-      source: /var/lib/factory/ui-docs
-      target: /var/lib/factory/ui-docs
+      source: /var/lib/factory/workshop
+      target: /var/lib/factory/workshop
+      read_only: false
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /srv/factory/clean-sessions
+      target: /srv/factory/clean-sessions
+      read_only: false
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /srv/factory/runs/sessions
+      target: /srv/factory/runs/sessions
+      read_only: false
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /var/lib/factory/sessions
+      target: /var/lib/factory/sessions
       read_only: false
       bind:
         create_host_path: false
@@ -154,6 +184,12 @@ services:
     - type: bind
       source: /etc/factory/secrets/sessions/database-url
       target: /run/secrets/database-url
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /etc/factory/secrets/sessions/github-app.pem
+      target: /run/secrets/github-app.pem
       read_only: true
       bind:
         create_host_path: false
@@ -201,9 +237,14 @@ services:
       CPLANE_BRIEFS_KNOWN_HOSTS: /run/secrets/briefs-known-hosts
       CPLANE_PLANNING_WRITE_KEY: /run/secrets/planning-write-key
       CPLANE_DENY_LIST: /run/secrets/deny-list
+      CPLANE_EVAL_TASK_KEY_FILE: /run/secrets/eval-task-key
       HOME: /tmp
       GH_CONFIG_DIR: /tmp/.config/gh
       CPLANE_FENCE: '1'
+      CPLANE_FENCE_COMMAND: socket
+      CPLANE_USAGE_SOURCE: launcher
+      CPLANE_DEPLOYER_SOCKET: /run/homelab-deployer.sock
+      CPLANE_EVAL_TASK_URL: http://api:8000
       CPLANE_GITHUB_AUTH: app
       CPLANE_STATE: /srv/factory/briefs/slices.json
       CPLANE_RUNS: /srv/factory/runs
@@ -216,6 +257,7 @@ services:
     group_add:
     - '976'
     - '975'
+    - '21000'
     volumes:
     - type: bind
       source: /srv/factory/briefs
@@ -304,6 +346,12 @@ services:
     - type: bind
       source: /etc/factory/secrets/runner/deny-list
       target: /run/secrets/deny-list
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /etc/factory/secrets/runner/eval-task-key
+      target: /run/secrets/eval-task-key
       read_only: true
       bind:
         create_host_path: false
