@@ -1955,6 +1955,15 @@ approval; a later push needs a new review. Stop-before-merge slices still need
 a recorded planner review first, just as with `cplane approve`. Workshop,
 phone and command-line approval remain available, and green CI is still required.
 
+When GitHub reports a slice's PR as `MERGED`, that merge is final: in phase
+`pr` or with a merge card approved or unapproved, the runner records the merge
+without waiting for planner review, approval, CI or a branch update. The PR head
+must still equal the delivered tip; a differing head escalates. The runner logs
+that the PR was merged outside the runner, keeps its computed change class in
+the run record, records `merged: <sha>`, clears the merge attention, and raises
+any declared node step or resumes the executor through the usual post-merge flow.
+Open PR approval rules are unchanged.
+
 For `TelesforoAleix/factory`, when `CPLANE_REVISION` is set, the runner also
 compares that installed commit's file tree with the PR tip. Guard paths that
 differ, classified with the same pinned-base table, join the PR's own class 4

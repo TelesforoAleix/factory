@@ -365,6 +365,78 @@ def test_claude_auto_merge_resume_handover(setup):
     assert item(r)['state'] == 'in review'
 
 
+@pytest.mark.parametrize('card,review,node_steps', [
+    (None, False, None),
+    (False, False, None),
+    (False, True, None),
+    (True, True, None),
+    (False, False, 'Install the merged commit'),
+])
+@pytest.mark.parametrize('different_head', [False, True])
+def test_pass_records_pr_merged_outside_runner(
+        setup, monkeypatch, card, review, node_steps, different_head):
+    r, p, gh = setup
+    claude_start(r)
+    p.finish('waiting', pr_reply(node_steps))
+    r.run()
+    if card is not None:
+        gh.checks.return_value = ('green', '')
+        r.run()
+        def update_card(s):
+            s['attention']['approved'] = card
+            if review:
+                s['attention']['review'] = {
+                    'at': NOW.isoformat(), 'actor': 'planner', 'verdict': 'Ready'}
+        edit(r, update_card)
+    monkeypatch.setattr('cplane.classes.changes', lambda *args: (4, ['node/guard']))
+    class_record = Mock()
+    monkeypatch.setattr('cplane.run_records.class_record', class_record)
+    live = {'state': 'MERGED', 'mergeCommit': {'oid': 'abc123'},
+            'headRefOid': ('d' if different_head else 'b') * 40,
+            'title': '[Blocked] already merged', 'body': 'DO NOT MERGE', 'isDraft': True,
+            'mergeStateStatus': 'BEHIND', 'mergeable': 'MERGEABLE'}
+    github = GitHub()
+    def call(repo, *args):
+        # Any CI, review, update-branch or merge call after merging is a bug.
+        assert args[:2] == ('pr', 'view')
+        return json.dumps(live)
+    github.call = Mock(side_effect=call)
+    r.github = github
+    r.run()
+    current = item(r)
+    job = r.jobs[current['id']]
+    if different_head:
+        assert current['attention']['kind'] == 'escalation'
+        assert 'PR head differs from delivered bundle' in current['attention']['body']
+        assert job['phase'] == 'pr'
+        assert 'sha' not in job
+        assert len(p.started) == 1
+        class_record.assert_not_called()
+        return
+    assert job['sha'] == 'abc123'
+    class_record.assert_called_once()
+    recorded_job = class_record.call_args.args[1]
+    class_record.assert_called_once_with(r, recorded_job, 4)
+    assert recorded_job['change_class'] == 4
+    events = [entry['event'] for entry in current['log']]
+    assert events.count('merged: abc123') == 1
+    assert 'PR #12 merged outside the runner' in events
+    saved = json.loads((Path(p.started[0]['run']) / 'job.json').read_text())
+    assert saved['sha'] == 'abc123'
+    assert saved['change_class'] == 4
+    if node_steps:
+        assert saved['phase'] == job['phase'] == 'node-step'
+        assert current['attention']['kind'] == 'node-step'
+        assert current['attention']['body'] == node_steps
+        assert len(p.started) == 1
+    else:
+        assert saved['phase'] == 'merged'
+        assert current['attention'] is None
+        assert len(p.started) == 2
+        assert_prompt(p.started[-1], 'merged as abc123')
+        assert p.started[-1]['resume'] == 'session-1'
+
+
 @pytest.mark.parametrize('body', ['', ' \n', pr_reply(None), pr_reply('')])
 def test_post_merge_waiting_without_node_steps_finishes(setup, body):
     r, p, gh = setup
