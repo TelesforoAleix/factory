@@ -120,6 +120,11 @@ def skills_version(root=None):
     if not (root / ".git").exists():
         try:
             revision = (root / "REVISION").read_text().strip()
+        except FileNotFoundError:
+            revision = os.environ.get("CPLANE_REVISION", "")
+            if not re.fullmatch(r"[0-9a-f]{40}", revision):
+                raise StateError("skills version requires REVISION outside a git checkout") from None
+            return revision
         except OSError:
             raise StateError("skills version requires REVISION outside a git checkout") from None
         if not revision or "\n" in revision or "\r" in revision:

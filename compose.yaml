@@ -18,6 +18,7 @@ services:
     - -m
     - factory_ui.serve
     environment:
+      CPLANE_REVISION: ${HOMELAB_DEPLOY_TAG}
       CPLANE_DATABASE_URL_FILE: /run/secrets/database-url
       HOME: /tmp
       CPLANE_STATE: /srv/factory/briefs/slices.json
@@ -71,6 +72,7 @@ services:
     - -m
     - cplane.intake
     environment:
+      CPLANE_REVISION: ${HOMELAB_DEPLOY_TAG}
       CPLANE_DATABASE_URL_FILE: /run/secrets/database-url
       HOME: /tmp
       CPLANE_INTAKE_GID: '977'
@@ -115,6 +117,7 @@ services:
     - -m
     - cplane.sessions
     environment:
+      CPLANE_REVISION: ${HOMELAB_DEPLOY_TAG}
       CPLANE_DATABASE_URL_FILE: /run/secrets/database-url
       CPLANE_BRIEFS_KEY: /run/secrets/briefs-key
       CPLANE_BRIEFS_KNOWN_HOSTS: /run/secrets/briefs-known-hosts
@@ -246,6 +249,7 @@ services:
     - --every
     - '60'
     environment:
+      CPLANE_REVISION: ${HOMELAB_DEPLOY_TAG}
       CPLANE_DATABASE_URL_FILE: /run/secrets/database-url
       CPLANE_GITHUB_APP_KEY: /run/secrets/github-app.pem
       CPLANE_BRIEFS_KEY: /run/secrets/briefs-key

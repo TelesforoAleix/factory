@@ -2008,6 +2008,7 @@ platform deployer's installed application manifest. The deployer uses its
 installed Dockerfile and compose file, builds from the selected commit, and passes
 only `HOMELAB_DEPLOY_TAG`. Every service uses
 `homelab-deployer-factory:${HOMELAB_DEPLOY_TAG:?commit required}`.
+Each service receives that commit as `CPLANE_REVISION` for installations without a `REVISION` file.
 The fence's separate `node/compose.yaml` and existing systemd units are unchanged.
 After this slice merges, install and exercise one chat turn per tool in a
 feature chat and a planning chat, then resume an existing chat. Workshop tools

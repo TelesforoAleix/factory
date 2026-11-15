@@ -150,6 +150,7 @@ def test_contained_services():
         if name == 'runner':
             expected_secrets = SECRET_SETTINGS
         expected_env = {key: f'/run/secrets/{file}' for key, file in expected_secrets.items()}
+        expected_env['CPLANE_REVISION'] = '${HOMELAB_DEPLOY_TAG}'
         expected_env['HOME'] = '/tmp'
         if name in ('sessions', 'runner'):
             expected_env['GH_CONFIG_DIR'] = '/tmp/.config/gh'
