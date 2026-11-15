@@ -121,37 +121,37 @@ def classify(paths, table, *, deleted=()):
 
 def changes(adapter, job):
     """Classify PR paths and Factory's installed guard drift with pinned policy."""
-    clean = adapter.clean(job['repository'])
-    table = adapter.git(clean, 'show', f"{job['base']}:.github/change-classes",
-                        allow_failure=True)
-    revisions = (job['base'], job['tip'])
-    try:
-        fetched = adapter.git(clean, 'fetch', '--prune', 'origin',
-                              '+refs/heads/*:refs/remotes/origin/*',
-                              auth=True, allow_failure=True)
-        if fetched.returncode == 0:
-            ancestor = adapter.git(clean, 'merge-base', 'origin/main', job['tip'],
-                                   allow_failure=True)
-            if ancestor.returncode == 0:
-                revisions = (f"origin/main...{job['tip']}",)
-    except (StateError, OSError):
-        # Credential setup can fail before Git returns a fetch status.
-        pass
-    # Retain the original base-to-tip diff when fresh main ancestry is unavailable.
-    entries = adapter.git(clean, 'diff', '--name-status', '-z', '--no-renames',
-                          *revisions, '--').stdout.split('\0')
-    changes = list(zip(entries[::2], entries[1::2]))
-    policy = table.stdout if table.returncode == 0 else None
-    level, guards = classify([path for _, path in changes], policy,
-                             deleted=[path for status, path in changes if status == 'D'])
-    installed = os.environ.get('CPLANE_REVISION')
-    if installed and job['repository'] == 'TelesforoAleix/factory':
-        # Compare file trees, not ancestry: inherited guard changes still gate
-        # installation, while guards restored to installed content do not.
-        paths = adapter.git(clean, 'diff', '--name-only', '-z', '--no-renames',
-                            installed, job['tip'], '--').stdout.split('\0')
-        _, installed_guards = classify(paths, policy)
-        guards = sorted(set(guards) | set(installed_guards))
-        if guards:
-            level = 4
-    return level, guards
+    with adapter.locked_clean(job['repository'], fetch=False) as clean:
+        table = adapter.git(clean, 'show', f"{job['base']}:.github/change-classes",
+                            allow_failure=True)
+        revisions = (job['base'], job['tip'])
+        try:
+            fetched = adapter.git(clean, 'fetch', '--prune', 'origin',
+                                  '+refs/heads/*:refs/remotes/origin/*',
+                                  auth=True, allow_failure=True)
+            if fetched.returncode == 0:
+                ancestor = adapter.git(clean, 'merge-base', 'origin/main', job['tip'],
+                                       allow_failure=True)
+                if ancestor.returncode == 0:
+                    revisions = (f"origin/main...{job['tip']}",)
+        except (StateError, OSError):
+            # Credential setup can fail before Git returns a fetch status.
+            pass
+        # Retain the original base-to-tip diff when fresh main ancestry is unavailable.
+        entries = adapter.git(clean, 'diff', '--name-status', '-z', '--no-renames',
+                              *revisions, '--').stdout.split('\0')
+        changes = list(zip(entries[::2], entries[1::2]))
+        policy = table.stdout if table.returncode == 0 else None
+        level, guards = classify([path for _, path in changes], policy,
+                                 deleted=[path for status, path in changes if status == 'D'])
+        installed = os.environ.get('CPLANE_REVISION')
+        if installed and job['repository'] == 'TelesforoAleix/factory':
+            # Compare file trees, not ancestry: inherited guard changes still gate
+            # installation, while guards restored to installed content do not.
+            paths = adapter.git(clean, 'diff', '--name-only', '-z', '--no-renames',
+                                installed, job['tip'], '--').stdout.split('\0')
+            _, installed_guards = classify(paths, policy)
+            guards = sorted(set(guards) | set(installed_guards))
+            if guards:
+                level = 4
+        return level, guards

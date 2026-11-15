@@ -1,4 +1,5 @@
 """Synthetic path policies; no executor content or private state."""
+import fcntl
 import os
 import subprocess
 from unittest.mock import Mock
@@ -233,3 +234,20 @@ def test_installed_revision_unavailable_fails_closed(merged_pr, monkeypatch):
     monkeypatch.setenv('CPLANE_REVISION', 'f' * 40)
     with pytest.raises(fence.StateError):
         classes.changes(adapter, job)
+
+
+def test_changes_reads_and_fetch_hold_clean_lock(merged_pr, monkeypatch):
+    adapter, job, _, clean, _, _ = merged_pr
+    git = adapter.git
+    calls = []
+
+    def checked(path, *args, **kwargs):
+        with (open(clean.parent / ('.' + clean.name + '.lock'), 'r') as lock,
+              pytest.raises(BlockingIOError)):
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        calls.append(args[0])
+        return git(path, *args, **kwargs)
+
+    monkeypatch.setattr(adapter, 'git', checked)
+    assert classes.changes(adapter, job) == (1, [])
+    assert 'fetch' in calls and 'diff' in calls and 'show' in calls

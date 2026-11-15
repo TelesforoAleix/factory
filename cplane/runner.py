@@ -1510,15 +1510,15 @@ class Runner:
                 self.merge(item, job, ready=True, merged=info)
                 return False
             if job.get("updated_head"):
-                clean = self.fence.clean(job["repository"])
-                self.fence.git(
-                    clean,
-                    "fetch",
-                    "--no-tags",
-                    "origin",
-                    "refs/heads/" + job["branch"],
-                    auth=True,
-                )
+                with self.fence.locked_clean(job["repository"], fetch=False) as clean:
+                    self.fence.git(
+                        clean,
+                        "fetch",
+                        "--no-tags",
+                        "origin",
+                        "refs/heads/" + job["branch"],
+                        auth=True,
+                    )
                 job.pop("updated_head")
                 self.save_job(job)
             if (
