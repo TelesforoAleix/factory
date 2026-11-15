@@ -1,22 +1,24 @@
 """Guard the owner-installed service boundary, independent of Docker availability."""
-from pathlib import Path, PurePosixPath
 import re
+from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
 
 import pytest
 import yaml
 
-
 ROOT = Path(__file__).resolve().parents[1]
 IMAGE = 'homelab-deployer-factory:${HOMELAB_DEPLOY_TAG:?commit required}'
-USERS = dict(ui='992:978', intake='991:977', sessions='21011:21011', runner='21010:21010')
-DOCS = '/var/lib/factory/ui-docs'
+USERS = {'ui': '992:978', 'intake': '991:977', 'sessions': '21011:21011', 'runner': '21010:21010'}
+DOCS_PARENT = '/var/lib/factory/workshop'
+DOCS = f'{DOCS_PARENT}/ui-docs'
 LAUNCH = '/run/homelab-launcher.sock'
 DEPLOY = '/run/homelab-deployer.sock'
 MOUNTS = {
-    'ui': {DOCS: True},
+    'ui': {DOCS_PARENT: True},
     'intake': {'/run/factory-intake': False},
-    'sessions': {'/srv/factory/work': False, DOCS: False,
+    'sessions': {'/srv/factory/work': False, DOCS_PARENT: False,
+                 '/srv/factory/clean-sessions': False, '/srv/factory/runs/sessions': False,
+                 '/var/lib/factory/sessions': False,
                  '/srv/factory/briefs': True, '/srv/factory/runs': True, LAUNCH: False},
     'runner': {**{f'/srv/factory/{p}': False for p in
                   ('briefs', 'runs', 'work', 'clean', 'exports', 'bot-export')},
@@ -29,15 +31,26 @@ SECRET_SETTINGS = {
     'CPLANE_BRIEFS_KNOWN_HOSTS': 'briefs-known-hosts',
     'CPLANE_PLANNING_WRITE_KEY': 'planning-write-key',
     'CPLANE_DENY_LIST': 'deny-list',
+    'CPLANE_EVAL_TASK_KEY_FILE': 'eval-task-key',
 }
-RUNNER_SETTINGS = dict(
-    CPLANE_FENCE='1', CPLANE_GITHUB_AUTH='app',
-    CPLANE_STATE='/srv/factory/briefs/slices.json', CPLANE_RUNS='/srv/factory/runs',
-    CPLANE_REPOS='/srv/factory/work',
-    CPLANE_EXPORT_DIR='/srv/homelab/factory-state',
-    CPLANE_BOT_EXPORT='/srv/factory/bot-export',
-)
+RUNNER_SETTINGS = {
+    'CPLANE_FENCE': '1', 'CPLANE_GITHUB_AUTH': 'app',
+    'CPLANE_STATE': '/srv/factory/briefs/slices.json', 'CPLANE_RUNS': '/srv/factory/runs',
+    'CPLANE_REPOS': '/srv/factory/work',
+    'CPLANE_EXPORT_DIR': '/srv/homelab/factory-state',
+    'CPLANE_BOT_EXPORT': '/srv/factory/bot-export', 'CPLANE_FENCE_COMMAND': 'socket',
+    'CPLANE_USAGE_SOURCE': 'launcher', 'CPLANE_DEPLOYER_SOCKET': DEPLOY,
+    'CPLANE_EVAL_TASK_URL': 'http://api:8000',
+}
 UI_SETTINGS = {key: RUNNER_SETTINGS[key] for key in ('CPLANE_STATE', 'CPLANE_RUNS', 'CPLANE_REPOS')}
+UI_SETTINGS.update(CPLANE_UI_DOCS=DOCS, FACTORY_UI_HOST='0.0.0.0',
+                   HOMELAB_API_URL='http://api:8000')
+SESSIONS_SETTINGS = {
+    'CPLANE_GITHUB_AUTH': 'app', 'CPLANE_SESSIONS_CLEAN_ROOT': '/srv/factory/clean-sessions',
+    'CPLANE_SESSION_RUNS': '/srv/factory/runs/sessions',
+    'CPLANE_SESSIONS_LOCK': '/var/lib/factory/sessions/sessions.lock',
+    'CPLANE_UI_DOCS': DOCS, 'CPLANE_FENCE_COMMAND': 'socket',
+}
 COMMANDS = {
     'ui': ['python', '-m', 'factory_ui.serve'],
     'intake': ['python', '-m', 'cplane.intake'],
@@ -56,7 +69,7 @@ def assert_nonsecret_environment(environment):
     for key, value in environment.items():
         if key.endswith('_FILE') or key in SECRET_SETTINGS:
             assert value.startswith('/run/secrets/')
-        else:
+        elif key not in ('HOMELAB_API_URL', 'CPLANE_EVAL_TASK_URL'):
             assert not key.endswith(('_KEY', '_TOKEN', '_PASSWORD', '_URL')), key
         assert not looks_secret(value), key
 
@@ -124,11 +137,13 @@ def test_contained_services():
         assert service['mem_limit'] and service['pids_limit'] > 0
         assert service['networks'] == ['homelab_default']
         assert service.get('group_add', []) == (
-            ['976', '975'] if name == 'runner' else ['976'] if name == 'sessions' else [])
+            ['976', '975', '21000'] if name == 'runner'
+            else ['976', '21000'] if name == 'sessions' else [])
         assert service.get('ports', []) == (['127.0.0.1:8300:8300'] if name == 'ui' else [])
         expected_secrets = {'CPLANE_DATABASE_URL_FILE': 'database-url'}
         if name == 'sessions':
             expected_secrets['CPLANE_PLANNING_WRITE_KEY'] = 'planning-write-key'
+            expected_secrets['CPLANE_GITHUB_APP_KEY'] = 'github-app.pem'
         if name == 'runner':
             expected_secrets = SECRET_SETTINGS
         expected_env = {key: f'/run/secrets/{file}' for key, file in expected_secrets.items()}
@@ -137,6 +152,10 @@ def test_contained_services():
             expected_env['GH_CONFIG_DIR'] = '/tmp/.config/gh'
         if name == 'ui':
             expected_env.update(UI_SETTINGS)
+        if name == 'intake':
+            expected_env['CPLANE_INTAKE_GID'] = '977'
+        if name == 'sessions':
+            expected_env.update(SESSIONS_SETTINGS)
         if name == 'runner':
             expected_env.update(RUNNER_SETTINGS)
         # Closed settings list catches arbitrary inline keys/tokens, including
@@ -154,6 +173,10 @@ def test_contained_services():
             assert mount['bind'] == {'create_host_path': False}
             source, target = mount['source'], mount['target']
             assert 'docker.sock' not in source and 'docker.sock' not in target
+            for path in (source, target):
+                assert not PurePosixPath(path).is_relative_to('/srv/factory/logins')
+                assert not PurePosixPath(path).is_relative_to(DOCS)
+                assert path != '/var/lib/factory/ui-docs'
             assert '..' not in PurePosixPath(source).parts
             assert target not in mounts and target not in secret_targets
             if target.startswith('/run/secrets/'):
