@@ -163,7 +163,7 @@ def start(runner, store):
     if any(j['phase'] == 'usage-limit-wait' and j['reset_at'] > runner.instant.timestamp()
            for j in runner.jobs.values()):
         return
-    attempts = evals._rows(store, 'SELECT a.*, c.repository, c.base_commit, c.task, r.configurations '
+    attempts = evals._rows(store, 'SELECT a.*, c.repository, c.base_commit, c.start_commit, c.task, r.configurations '
                            'FROM cplane_eval_attempts a JOIN cplane_eval_runs r ON r.id=a.eval_run '
                            'JOIN cplane_eval_cases c ON c.id=a."case" '
                            "WHERE a.state='planned' AND r.state='running' ORDER BY a.id LIMIT 1")
@@ -191,7 +191,8 @@ def start(runner, store):
         runner.runs.mkdir(parents=True, mode=0o700, exist_ok=True)
         fence.trusted_directory(runner.runs)
         folder.mkdir(mode=0o700)
-        metadata = runner.fence.prepare_eval(attempt['repository'], attempt['base_commit'], uuid.uuid4().hex)
+        metadata = runner.fence.prepare_eval(attempt['repository'], attempt['start_commit'] or attempt['base_commit'],
+                                             uuid.uuid4().hex)
         job = dict(id=item['id'], eval_attempt=attempt['id'], run=str(folder), tool=tool, model=model,
                    effort=config.get('effort', 'medium'), prompt=LEAD + attempt['task'],
                    started_ns=time.time_ns(), phase='running', session='', resume=None, fence=True,

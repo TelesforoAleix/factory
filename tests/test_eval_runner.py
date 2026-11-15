@@ -391,3 +391,18 @@ def test_attempt_reservation_is_global_across_runner_paths(pg_store, execution):
     step(pg_store, other)
     assert len(processes.started) == 1
     assert other.jobs['eval:' + str(run['attempts'][0]['id'])]['metadata_unavailable']
+
+
+def test_attempt_uses_start_commit_and_diffs_from_that_start(pg_store, execution):  # noqa: F811 - shared pytest fixture
+    runner, processes, adapter = execution
+    with pg_store.mutation():
+        pg_store.connection.execute('UPDATE cplane_eval_cases SET start_commit=%s', ('b' * 40,))
+    run = create(pg_store)
+    step(pg_store, runner)
+    job, = processes.started
+    assert adapter.prepare_eval.call_args.args[:2] == ('example/public', 'b' * 40)
+    assert job['base'] == 'b' * 40
+    processes.finish(job)
+    step(pg_store, runner)
+    assert adapter.eval_diff.call_args.args[0]['base'] == 'b' * 40
+    assert evals.run_show(pg_store, run['id'])['attempts'][0]['state'] == 'done'

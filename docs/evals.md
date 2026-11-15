@@ -111,5 +111,59 @@ including model and version (for example `model@version`). At most one verdict p
 attempt, judge and prompt hash is stored; grades are `mergeable` or `not_mergeable`.
 The Python `verdict_add(store, ...)` API records verdicts for future graders.
 
-Installation: install; the migration runs after a dump; no other node step.
-The orchestrator can then import the case folder on the node.
+Installation: dump the database before installing. The orchestrator imports case
+files and ticket start bundles on the node as described below.
+
+## Ticket start states
+
+A measured ticket chain contains `tests` directly on the PR's `base_commit`,
+then `ticket 1`, `ticket 2`, through `ticket N`, with one parent per commit.
+Ticket 1 starts at `tests`; ticket n starts at `ticket n-1`. The final ticket
+commit is never a start. Every ticket of that PR pins the paths changed by
+`tests`, including deleted paths and both sides of renames.
+
+Import those states from a local Git bundle with a single head ref:
+
+```sh
+cplane eval starts /path/to/measured.bundle --pr example/public#53
+```
+
+The command fetches the repository into its clean clone, verifies the bundle,
+imports its ref under `refs/factory/eval-starts/`, and checks the complete
+first-parent chain against the PR's consecutive ticket cases and shared base.
+It refuses extra commits, merges, wrong messages, and a wrong base. Diagnostics
+never print commit messages or file content. The temporary import ref is removed.
+
+Each start is published as `eval/pr53-t1`, `eval/pr53-t2`, etc. in that case's
+repository, using the fence's GitHub authentication (the installed node uses the
+Factory GitHub App). The current default branch is refused. Public-repository
+starts pass the same deny check as slice publication, scanning every commit
+between the PR base and each start, so a later deletion cannot hide an addition.
+Existing branches at the same commit are accepted; conflicting branches are
+refused and never overwritten. Only these eval branches are pushed.
+
+After all pushes succeed, one transaction records `start_commit`, `start_branch`
+and `pinned_paths` for the PR. A failed push leaves the PR's stored metadata
+unchanged. Earlier successful branch pushes may remain; rerunning safely accepts
+them and completes the import. An identical rerun reports zero updated cases.
+Ordinary case imports preserve the start metadata. Case list reports `has_start`
+as `yes` or `no` without exposing commit content.
+
+Attempts use `start_commit` when set and otherwise retain `base_commit` behavior.
+Their output diff is against the actual start. Restoring pinned paths before
+checks and executing those checks belong to the grading slice.
+
+Node step after merge: **install with a dump first; then cplane eval starts for
+the three bundles in /srv/factory/eval-starts**. The orchestrator dumps the
+`factory` database before installing, then runs:
+
+```sh
+cplane eval starts /srv/factory/eval-starts/fa5-inbox-helper.bundle --pr TelesforoAleix/homelab-v2#53
+cplane eval starts /srv/factory/eval-starts/fb1-review-gate-ci-waits.bundle --pr TelesforoAleix/control-plane#13
+cplane eval starts /srv/factory/eval-starts/fb2-orders.bundle --pr TelesforoAleix/control-plane#14
+```
+
+Verify 13 cases have a start, the 13 eval branches exist on GitHub, and one eval
+attempt on the fence path starts from its recorded start commit. Existing rows
+retain null start fields until imported; migration 028 only adds these three
+nullable columns.

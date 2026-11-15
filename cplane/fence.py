@@ -353,6 +353,84 @@ class Fence:
             return self.git(clean, *args, 'diff', '--cached', '--binary', '--no-ext-diff',
                             '--no-textconv', job['base'], '--', index=index).stdout
 
+    def publish_eval_starts(self, repo, pr, base, count, bundle):
+        """Validate the whole measured chain before publishing only ticket starts."""
+        if not re.fullmatch(r'[0-9a-fA-F]{40}', base):
+            raise StateError('invalid eval base commit')
+        clean = self.clean(repo)
+        if not clean.exists():
+            clean.mkdir(mode=0o700)
+            self.git(clean, 'init', '--bare', '--template=')
+            self.git(clean, 'remote', 'add', 'origin', f'https://github.com/{repo}.git')
+        self.git(clean, 'fetch', '--prune', 'origin', '+refs/heads/*:refs/remotes/origin/*', auth=True)
+        if self.git(clean, 'cat-file', '-e', base + '^{commit}', allow_failure=True).returncode:
+            raise StateError('bundle refused: case base commit unavailable')
+        with tempfile.TemporaryDirectory(dir=clean, prefix='eval-starts-') as temporary:
+            # Snapshot a regular local input; Git never reads a replaceable source path.
+            snapshot = Path(temporary) / 'starts.bundle'
+            fd = os.open(bundle, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(fd, 'rb') as source, snapshot.open('wb') as target:
+                if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
+                    raise StateError('bundle refused: expected a regular file')
+                os.fchmod(target.fileno(), 0o600)
+                shutil.copyfileobj(source, target)
+            if self.git(clean, 'bundle', 'verify', snapshot, allow_failure=True).returncode:
+                raise StateError('bundle refused: verification failed')
+            heads = self.git(clean, 'bundle', 'list-heads', snapshot).stdout.splitlines()
+            if len(heads) != 1:
+                raise StateError('bundle refused: expected a single ref')
+            _, ref = heads[0].split(' ', 1)
+            if not ref.startswith('refs/heads/'):
+                raise StateError('bundle refused: expected a head ref')
+            imported = 'refs/factory/eval-starts/' + Path(temporary).name
+            try:
+                self.git(clean, 'fetch', '--no-tags', '--no-write-fetch-head', snapshot, f'+{ref}:{imported}')
+                tip = self.git(clean, 'rev-parse', '--verify', imported + '^{commit}').stdout.strip()
+                commits = self.git(clean, 'rev-list', '--first-parent', '--reverse', f'{base}..{tip}').stdout.splitlines()
+                if len(commits) != count + 1:
+                    raise StateError(f'bundle refused: expected tests and {count} ticket commits; got {len(commits)} commits')
+                parent = base.lower()
+                for index, commit in enumerate(commits):
+                    expected = 'tests' if index == 0 else f'ticket {index}'
+                    parents = self.git(clean, 'show', '-s', '--format=%P', commit).stdout.strip().split()
+                    if parents != [parent]:
+                        raise StateError(f'bundle refused: {expected} must have only the expected parent (case base for tests)')
+                    message = self.git(clean, 'show', '-s', '--format=%B', commit).stdout
+                    if message.rstrip('\n') != expected:
+                        raise StateError(f'bundle refused: expected {expected} at position {index + 1}')
+                    parent = commit
+                paths = self.git(clean, 'diff-tree', '-r', '--no-renames', '--no-commit-id', '--name-only',
+                                 '-z', base, commits[0]).stdout.split('\0')
+                paths = sorted(path for path in paths if path)
+                starts = [{'start_commit': commit, 'start_branch': f'eval/pr{pr}-t{n}', 'pinned_paths': paths}
+                          for n, commit in enumerate(commits[:-1], 1)]
+                public = self.is_public(repo)
+                check = deny.Check() if public else None
+                # Check every start, including intermediate additions later removed.
+                for start in starts:
+                    branch = start['start_branch']
+                    if check:
+                        check.request({'branch': branch})
+                        check.commits(lambda *args: self.git(clean, *args), base, start['start_commit'])
+                    head = self.git(clean, 'ls-remote', '--symref', 'origin', 'HEAD', auth=True).stdout
+                    match = re.search(r'^ref: refs/heads/([^\s]+)\s+HEAD$', head, re.MULTILINE)
+                    if not match:
+                        raise StateError('GitHub default branch unavailable')
+                    if branch == match[1]:
+                        raise StateError('bundle refused: eval start branch is the default branch')
+                    expected = 'refs/heads/' + branch
+                    remote = self.git(clean, 'ls-remote', '--refs', 'origin', expected, auth=True).stdout.split()
+                    if remote:
+                        if remote[0] != start['start_commit']:
+                            raise StateError(f'bundle refused: {branch} already exists at another commit')
+                        continue
+                    # Creation-only lease also refuses a concurrent conflicting branch.
+                    self.git(clean, 'push', '--porcelain', '--force-with-lease=' + expected + ':',
+                             'origin', f"{start['start_commit']}:{expected}", auth=True)
+                return starts
+            finally:
+                self.git(clean, 'update-ref', '-d', imported)
+
     def publish(self, job, request):
         if request['branch'] != job['branch'] or job['branch'] == job['default']:
             raise StateError('bundle refused: branch is not the slice branch or is the default branch')
