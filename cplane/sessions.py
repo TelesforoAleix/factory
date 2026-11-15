@@ -193,20 +193,15 @@ def workspace(session):
         adapter = repository_fence() if session['repositories'] else None
         for repository in session['repositories']:
             _, name = repository.split('/')
-            clean = adapter.clean(repository)
-            if not clean.exists():
-                clean.mkdir(mode=0o700)
-                adapter.git(clean, 'init', '--bare', '--template=')
-                adapter.git(clean, 'remote', 'add', 'origin', f'https://github.com/{repository}.git')
-            adapter.git(clean, 'fetch', '--prune', 'origin', '+refs/heads/*:refs/remotes/origin/*', auth=True)
-            head = adapter.git(clean, 'ls-remote', '--symref', 'origin', 'HEAD', auth=True).stdout
-            match = re.search(r'^ref: refs/heads/([^\s]+)\s+HEAD$', head, re.M)
-            if not match:
-                raise StateError('GitHub default branch unavailable')
-            commit = export_tree(clean, repos / name, f'refs/remotes/origin/{match[1]}')
-            if len(repositories) == 1:
-                session['_starting_commit'] = commit
-            (repos / name).chmod(0o755)
+            with adapter.locked_clean(repository) as clean:
+                head = adapter.git(clean, 'ls-remote', '--symref', 'origin', 'HEAD', auth=True).stdout
+                match = re.search(r'^ref: refs/heads/([^\s]+)\s+HEAD$', head, re.M)
+                if not match:
+                    raise StateError('GitHub default branch unavailable')
+                commit = export_tree(clean, repos / name, f'refs/remotes/origin/{match[1]}')
+                if len(repositories) == 1:
+                    session['_starting_commit'] = commit
+                (repos / name).chmod(0o755)
         skills.install(folder, session.get('skill_names') if session.get('skill_names') is not None else sorted(skills.DEFAULTS))
         # Transfer planning only while the session is still private to Factory.
         if session.get('area') == 'homelab':

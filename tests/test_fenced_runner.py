@@ -1,5 +1,6 @@
 """Synthetic credentials, local remotes and hostile copies; no node or real login."""
 import copy
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import json
 from itertools import count
@@ -7,6 +8,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+from threading import Barrier
 import time
 from unittest.mock import Mock
 
@@ -160,6 +162,50 @@ def test_prepare_initializes_a_new_clean_clone_and_pins_default_base(delivery, m
     assert 'init' in calls[0] and '--bare' in calls[0]
     assert not (work / '.git/hooks').exists()
     assert d['secret'] not in (work / '.git/config').read_text()
+
+
+
+def test_concurrent_first_preparations_share_one_clone(delivery, monkeypatch):
+    d = delivery
+    clean = d['adapter'].clean('example/concurrent')
+    start = Barrier(2)
+    def run(args, **kwargs):
+        args = list(args)
+        if 'init' in args:
+            time.sleep(0.2)
+        if 'remote' in args and args[-3:-1] == ['add', 'origin']:
+            args[-1] = str(d['remote'])
+        return d['real_run'](args, **kwargs)
+    monkeypatch.setattr(subprocess, 'run', run)
+    def prepare(i):
+        start.wait(timeout=5)
+        return d['adapter'].prepare('example/concurrent', f'slice/concurrent-{i}', f'concurrent-{i}')
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(prepare, i) for i in range(2)]
+        jobs = [future.result() for future in futures]
+    assert all(job['base'] == d['base'] for job in jobs)
+    assert d['g'](clean, 'rev-parse', '--is-bare-repository') == 'true'
+    assert d['g'](clean, 'remote', 'get-url', 'origin') == str(d['remote'])
+
+
+@pytest.mark.parametrize('initialized', [False, True])
+def test_incomplete_clean_clone_is_rebuilt(delivery, monkeypatch, initialized):
+    d = delivery
+    clean = d['adapter'].clean('example/incomplete')
+    clean.mkdir(mode=0o700)
+    if initialized:
+        d['g'](clean, 'init', '--bare', '--template=')
+    (clean / 'interrupted').write_text('partial')
+    def run(args, **kwargs):
+        args = list(args)
+        if 'remote' in args and args[-3:-1] == ['add', 'origin']:
+            args[-1] = str(d['remote'])
+        return d['real_run'](args, **kwargs)
+    monkeypatch.setattr(subprocess, 'run', run)
+    job = d['adapter'].prepare('example/incomplete', 'slice/rebuilt', 'rebuilt-copy')
+    assert job['base'] == d['base']
+    assert not (clean / 'interrupted').exists()
+    assert d['g'](clean, 'rev-parse', '--is-bare-repository') == 'true'
 
 
 def test_real_bundle_delivery_never_runs_host_git_in_hostile_copy(delivery, capsys, monkeypatch):

@@ -1,6 +1,8 @@
 """Host side of fenced delivery. Agent copies are data, never Git working directories."""
 
+from contextlib import contextmanager
 from contextvars import ContextVar
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -273,6 +275,33 @@ class Fence:
         trusted_directory(parent)
         return parent / (name + ".git")
 
+    @contextmanager
+    def locked_clean(self, repo, *, fetch=True):
+        """Serialize clean clone creation, fetches, and dependent reads."""
+        clean = self.clean(repo)
+        fd = os.open(clean.parent / ("." + clean.name + ".lock"),
+                     os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise StateError("invalid clean clone lock")
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            if fetch:
+                if os.path.lexists(clean):
+                    trusted_directory(clean)
+                    bare = self.git(clean, "--git-dir=.", "rev-parse", "--is-bare-repository", allow_failure=True)
+                    origin = self.git(clean, "--git-dir=.", "remote", "get-url", "origin", allow_failure=True)
+                    if bare.returncode or bare.stdout.strip() != "true" or origin.returncode:
+                        shutil.rmtree(clean)
+                if not clean.exists():
+                    clean.mkdir(mode=0o700)
+                    self.git(clean, "init", "--bare", "--template=")
+                    self.git(clean, "remote", "add", "origin", f"https://github.com/{repo}.git")
+                self.git(clean, "fetch", "--prune", "origin",
+                         "+refs/heads/*:refs/remotes/origin/*", auth=True)
+            yield clean
+        finally:
+            os.close(fd)
+
     def git(self, clean, *args, auth=False, allow_failure=False, index=None):
         # This is the only host Git entry point for delivery. Never accept a work copy.
         clean = Path(os.path.abspath(clean))
@@ -311,95 +340,27 @@ class Fence:
         return result
 
     def prepare(self, repo, branch, copy_id):
-        clean = self.clean(repo)
-        if not clean.exists():
-            clean.mkdir(mode=0o700)
-            self.git(clean, "init", "--bare", "--template=")
-            self.git(clean, "remote", "add", "origin", f"https://github.com/{repo}.git")
-        self.git(clean, "check-ref-format", "refs/heads/" + branch)
-        self.git(
-            clean,
-            "fetch",
-            "--prune",
-            "origin",
-            "+refs/heads/*:refs/remotes/origin/*",
-            auth=True,
-        )
-        head = self.git(
-            clean, "ls-remote", "--symref", "origin", "HEAD", auth=True
-        ).stdout
-        match = re.search(r"^ref: refs/heads/([^\s]+)\s+HEAD$", head, re.M)
-        if not match:
-            raise StateError("GitHub default branch unavailable")
-        default = match[1]
-        if branch == default:
-            raise StateError("slice branch must not be the default branch")
-        base = self.git(
-            clean, "rev-parse", "--verify", f"refs/remotes/origin/{default}^{{commit}}"
-        ).stdout.strip()
-        self.git(clean, "update-ref", f"refs/heads/{branch}", base)
-        trusted_directory(WORK_ROOT)
-        copy = WORK_ROOT / copy_id
-        if copy.exists() or copy.is_symlink():
-            raise StateError("work copy already exists")
-        # All Git executes in the clean clone. Destination has no hooks, templates,
-        # global config, hardlinks, or credentialed URL, and is not yet agent-owned.
-        self.git(
-            clean,
-            "clone",
-            "--no-hardlinks",
-            "--template=",
-            "--single-branch",
-            "--branch",
-            branch,
-            "--config",
-            "core.hooksPath=/dev/null",
-            "--config",
-            "user.name=Factory",
-            "--config",
-            "user.email=factory@localhost",
-            str(clean),
-            str(copy),
-        )
-        copy.chmod(0o700)
-        own(copy, "work", recursive=True)
-        return {
-            "repo": str(copy),
-            "repository": repo,
-            "branch": branch,
-            "base": base,
-            "default": default,
-        }
-
-    def prepare_eval(self, repo, base, copy_id):
-        """Fresh detached copy from a fetched clean clone; no slice ref is touched."""
-        if not re.fullmatch(r"[0-9a-fA-F]{40}", base):
-            raise StateError("invalid eval base commit")
-        if not re.fullmatch(r"[a-f0-9]{32}", copy_id):
-            raise StateError("invalid eval copy id")
-        clean = self.clean(repo)
-        if not clean.exists():
-            clean.mkdir(mode=0o700)
-            self.git(clean, "init", "--bare", "--template=")
-            self.git(clean, "remote", "add", "origin", f"https://github.com/{repo}.git")
-        self.git(
-            clean,
-            "fetch",
-            "--prune",
-            "origin",
-            "+refs/heads/*:refs/remotes/origin/*",
-            auth=True,
-        )
-        base = self.git(
-            clean, "rev-parse", "--verify", base + "^{commit}"
-        ).stdout.strip()
-        trusted_directory(WORK_ROOT)
-        copy = WORK_ROOT / copy_id
-        if copy.exists() or copy.is_symlink():
-            raise StateError("work copy already exists")
-        branch = "factory-eval-" + copy_id
-        try:
-            self.git(clean, "update-ref", "refs/heads/" + branch, base)
+        with self.locked_clean(repo) as clean:
+            self.git(clean, "check-ref-format", "refs/heads/" + branch)
+            head = self.git(
+                clean, "ls-remote", "--symref", "origin", "HEAD", auth=True
+            ).stdout
+            match = re.search(r"^ref: refs/heads/([^\s]+)\s+HEAD$", head, re.M)
+            if not match:
+                raise StateError("GitHub default branch unavailable")
+            default = match[1]
+            if branch == default:
+                raise StateError("slice branch must not be the default branch")
+            base = self.git(
+                clean, "rev-parse", "--verify", f"refs/remotes/origin/{default}^{{commit}}"
+            ).stdout.strip()
+            self.git(clean, "update-ref", f"refs/heads/{branch}", base)
+            trusted_directory(WORK_ROOT)
+            copy = WORK_ROOT / copy_id
+            if copy.exists() or copy.is_symlink():
+                raise StateError("work copy already exists")
+            # All Git executes in the clean clone. Destination has no hooks, templates,
+            # global config, hardlinks, or credentialed URL, and is not yet agent-owned.
             self.git(
                 clean,
                 "clone",
@@ -410,28 +371,72 @@ class Fence:
                 branch,
                 "--config",
                 "core.hooksPath=/dev/null",
+                "--config",
+                "user.name=Factory",
+                "--config",
+                "user.email=factory@localhost",
                 str(clean),
                 str(copy),
             )
-            # Still trusted: detach before handing ownership to the CLI.
-            (copy / ".git/HEAD").write_text(base + "\n")
-            # The non-root runner reads this copy as data through group 21000.
-            # Clone inherits the service's restrictive umask, so grant read and
-            # directory traversal before transfer, without following links.
-            for directory, folders, files in os.walk(copy, followlinks=False):
-                Path(directory).chmod(0o750)
-                for name in files:
-                    path = Path(directory) / name
-                    if not path.is_symlink():
-                        path.chmod(stat.S_IMODE(path.stat().st_mode) | stat.S_IRGRP)
+            copy.chmod(0o700)
             own(copy, "work", recursive=True)
-        except Exception:
-            if copy.exists():
-                remove(copy, "work")
-            raise
-        finally:
-            self.git(clean, "update-ref", "-d", "refs/heads/" + branch)
-        return dict(repo=str(copy), repository=repo, base=base)
+            return {
+                "repo": str(copy),
+                "repository": repo,
+                "branch": branch,
+                "base": base,
+                "default": default,
+            }
+
+    def prepare_eval(self, repo, base, copy_id):
+        """Fresh detached copy from a fetched clean clone; no slice ref is touched."""
+        if not re.fullmatch(r"[0-9a-fA-F]{40}", base):
+            raise StateError("invalid eval base commit")
+        if not re.fullmatch(r"[a-f0-9]{32}", copy_id):
+            raise StateError("invalid eval copy id")
+        with self.locked_clean(repo) as clean:
+            base = self.git(
+                clean, "rev-parse", "--verify", base + "^{commit}"
+            ).stdout.strip()
+            trusted_directory(WORK_ROOT)
+            copy = WORK_ROOT / copy_id
+            if copy.exists() or copy.is_symlink():
+                raise StateError("work copy already exists")
+            branch = "factory-eval-" + copy_id
+            try:
+                self.git(clean, "update-ref", "refs/heads/" + branch, base)
+                self.git(
+                    clean,
+                    "clone",
+                    "--no-hardlinks",
+                    "--template=",
+                    "--single-branch",
+                    "--branch",
+                    branch,
+                    "--config",
+                    "core.hooksPath=/dev/null",
+                    str(clean),
+                    str(copy),
+                )
+                # Still trusted: detach before handing ownership to the CLI.
+                (copy / ".git/HEAD").write_text(base + "\n")
+                # The non-root runner reads this copy as data through group 21000.
+                # Clone inherits the service's restrictive umask, so grant read and
+                # directory traversal before transfer, without following links.
+                for directory, folders, files in os.walk(copy, followlinks=False):
+                    Path(directory).chmod(0o750)
+                    for name in files:
+                        path = Path(directory) / name
+                        if not path.is_symlink():
+                            path.chmod(stat.S_IMODE(path.stat().st_mode) | stat.S_IRGRP)
+                own(copy, "work", recursive=True)
+            except Exception:
+                if copy.exists():
+                    remove(copy, "work")
+                raise
+            finally:
+                self.git(clean, "update-ref", "-d", "refs/heads/" + branch)
+            return dict(repo=str(copy), repository=repo, base=base)
 
     def eval_diff(self, job):
         """Diff a data-only snapshot, never run host Git in the agent's repository.
@@ -516,158 +521,146 @@ class Fence:
         """Validate the whole measured chain before publishing only ticket starts."""
         if not re.fullmatch(r"[0-9a-fA-F]{40}", base):
             raise StateError("invalid eval base commit")
-        clean = self.clean(repo)
-        if not clean.exists():
-            clean.mkdir(mode=0o700)
-            self.git(clean, "init", "--bare", "--template=")
-            self.git(clean, "remote", "add", "origin", f"https://github.com/{repo}.git")
-        self.git(
-            clean,
-            "fetch",
-            "--prune",
-            "origin",
-            "+refs/heads/*:refs/remotes/origin/*",
-            auth=True,
-        )
-        if self.git(
-            clean, "cat-file", "-e", base + "^{commit}", allow_failure=True
-        ).returncode:
-            raise StateError("bundle refused: case base commit unavailable")
-        with tempfile.TemporaryDirectory(dir=clean, prefix="eval-starts-") as temporary:
-            # Snapshot a regular local input; Git never reads a replaceable source path.
-            snapshot = Path(temporary) / "starts.bundle"
-            fd = os.open(bundle, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-            with os.fdopen(fd, "rb") as source, snapshot.open("wb") as target:
-                if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
-                    raise StateError("bundle refused: expected a regular file")
-                os.fchmod(target.fileno(), 0o600)
-                shutil.copyfileobj(source, target)
+        with self.locked_clean(repo) as clean:
             if self.git(
-                clean, "bundle", "verify", snapshot, allow_failure=True
+                clean, "cat-file", "-e", base + "^{commit}", allow_failure=True
             ).returncode:
-                raise StateError("bundle refused: verification failed")
-            heads = self.git(
-                clean, "bundle", "list-heads", snapshot
-            ).stdout.splitlines()
-            if len(heads) != 1:
-                raise StateError("bundle refused: expected a single ref")
-            _, ref = heads[0].split(" ", 1)
-            if not ref.startswith("refs/heads/"):
-                raise StateError("bundle refused: expected a head ref")
-            imported = "refs/factory/eval-starts/" + Path(temporary).name
-            try:
-                self.git(
-                    clean,
-                    "fetch",
-                    "--no-tags",
-                    "--no-write-fetch-head",
-                    snapshot,
-                    f"+{ref}:{imported}",
-                )
-                tip = self.git(
-                    clean, "rev-parse", "--verify", imported + "^{commit}"
-                ).stdout.strip()
-                commits = self.git(
-                    clean, "rev-list", "--first-parent", "--reverse", f"{base}..{tip}"
+                raise StateError("bundle refused: case base commit unavailable")
+            with tempfile.TemporaryDirectory(dir=clean, prefix="eval-starts-") as temporary:
+                # Snapshot a regular local input; Git never reads a replaceable source path.
+                snapshot = Path(temporary) / "starts.bundle"
+                fd = os.open(bundle, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                with os.fdopen(fd, "rb") as source, snapshot.open("wb") as target:
+                    if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
+                        raise StateError("bundle refused: expected a regular file")
+                    os.fchmod(target.fileno(), 0o600)
+                    shutil.copyfileobj(source, target)
+                if self.git(
+                    clean, "bundle", "verify", snapshot, allow_failure=True
+                ).returncode:
+                    raise StateError("bundle refused: verification failed")
+                heads = self.git(
+                    clean, "bundle", "list-heads", snapshot
                 ).stdout.splitlines()
-                if len(commits) != count + 1:
-                    raise StateError(
-                        f"bundle refused: expected tests and {count} ticket commits; got {len(commits)} commits"
-                    )
-                parent = base.lower()
-                for index, commit in enumerate(commits):
-                    expected = "tests" if index == 0 else f"ticket {index}"
-                    parents = (
-                        self.git(clean, "show", "-s", "--format=%P", commit)
-                        .stdout.strip()
-                        .split()
-                    )
-                    if parents != [parent]:
-                        raise StateError(
-                            f"bundle refused: {expected} must have only the expected parent (case base for tests)"
-                        )
-                    message = self.git(
-                        clean, "show", "-s", "--format=%B", commit
-                    ).stdout
-                    if message.rstrip("\n") != expected:
-                        raise StateError(
-                            f"bundle refused: expected {expected} at position {index + 1}"
-                        )
-                    parent = commit
-                paths = self.git(
-                    clean,
-                    "diff-tree",
-                    "-r",
-                    "--no-renames",
-                    "--no-commit-id",
-                    "--name-only",
-                    "-z",
-                    base,
-                    commits[0],
-                ).stdout.split("\0")
-                paths = sorted(path for path in paths if path)
-                starts = [
-                    {
-                        "start_commit": commit,
-                        "start_branch": f"eval/pr{pr}-t{n}",
-                        "pinned_paths": paths,
-                    }
-                    for n, commit in enumerate(commits[:-1], 1)
-                ]
-                public = self.is_public(repo)
-                check = deny.Check() if public else None
-                # Check every start, including intermediate additions later removed.
-                for start in starts:
-                    branch = start["start_branch"]
-                    if check:
-                        check.request({"branch": branch})
-                        check.commits(
-                            lambda *args: self.git(clean, *args),
-                            base,
-                            start["start_commit"],
-                        )
-                    head = self.git(
-                        clean, "ls-remote", "--symref", "origin", "HEAD", auth=True
-                    ).stdout
-                    match = re.search(
-                        r"^ref: refs/heads/([^\s]+)\s+HEAD$", head, re.MULTILINE
-                    )
-                    if not match:
-                        raise StateError("GitHub default branch unavailable")
-                    if branch == match[1]:
-                        raise StateError(
-                            "bundle refused: eval start branch is the default branch"
-                        )
-                    expected = "refs/heads/" + branch
-                    remote = self.git(
-                        clean, "ls-remote", "--refs", "origin", expected, auth=True
-                    ).stdout.split()
-                    if remote:
-                        if remote[0] != start["start_commit"]:
-                            raise StateError(
-                                f"bundle refused: {branch} already exists at another commit"
-                            )
-                        continue
-                    # Creation-only lease also refuses a concurrent conflicting branch.
+                if len(heads) != 1:
+                    raise StateError("bundle refused: expected a single ref")
+                _, ref = heads[0].split(" ", 1)
+                if not ref.startswith("refs/heads/"):
+                    raise StateError("bundle refused: expected a head ref")
+                imported = "refs/factory/eval-starts/" + Path(temporary).name
+                try:
                     self.git(
                         clean,
-                        "push",
-                        "--porcelain",
-                        "--force-with-lease=" + expected + ":",
-                        "origin",
-                        f"{start['start_commit']}:{expected}",
-                        auth=True,
+                        "fetch",
+                        "--no-tags",
+                        "--no-write-fetch-head",
+                        snapshot,
+                        f"+{ref}:{imported}",
                     )
-                return starts
-            finally:
-                self.git(clean, "update-ref", "-d", imported)
+                    tip = self.git(
+                        clean, "rev-parse", "--verify", imported + "^{commit}"
+                    ).stdout.strip()
+                    commits = self.git(
+                        clean, "rev-list", "--first-parent", "--reverse", f"{base}..{tip}"
+                    ).stdout.splitlines()
+                    if len(commits) != count + 1:
+                        raise StateError(
+                            f"bundle refused: expected tests and {count} ticket commits; got {len(commits)} commits"
+                        )
+                    parent = base.lower()
+                    for index, commit in enumerate(commits):
+                        expected = "tests" if index == 0 else f"ticket {index}"
+                        parents = (
+                            self.git(clean, "show", "-s", "--format=%P", commit)
+                            .stdout.strip()
+                            .split()
+                        )
+                        if parents != [parent]:
+                            raise StateError(
+                                f"bundle refused: {expected} must have only the expected parent (case base for tests)"
+                            )
+                        message = self.git(
+                            clean, "show", "-s", "--format=%B", commit
+                        ).stdout
+                        if message.rstrip("\n") != expected:
+                            raise StateError(
+                                f"bundle refused: expected {expected} at position {index + 1}"
+                            )
+                        parent = commit
+                    paths = self.git(
+                        clean,
+                        "diff-tree",
+                        "-r",
+                        "--no-renames",
+                        "--no-commit-id",
+                        "--name-only",
+                        "-z",
+                        base,
+                        commits[0],
+                    ).stdout.split("\0")
+                    paths = sorted(path for path in paths if path)
+                    starts = [
+                        {
+                            "start_commit": commit,
+                            "start_branch": f"eval/pr{pr}-t{n}",
+                            "pinned_paths": paths,
+                        }
+                        for n, commit in enumerate(commits[:-1], 1)
+                    ]
+                    public = self.is_public(repo)
+                    check = deny.Check() if public else None
+                    # Check every start, including intermediate additions later removed.
+                    for start in starts:
+                        branch = start["start_branch"]
+                        if check:
+                            check.request({"branch": branch})
+                            check.commits(
+                                lambda *args: self.git(clean, *args),
+                                base,
+                                start["start_commit"],
+                            )
+                        head = self.git(
+                            clean, "ls-remote", "--symref", "origin", "HEAD", auth=True
+                        ).stdout
+                        match = re.search(
+                            r"^ref: refs/heads/([^\s]+)\s+HEAD$", head, re.MULTILINE
+                        )
+                        if not match:
+                            raise StateError("GitHub default branch unavailable")
+                        if branch == match[1]:
+                            raise StateError(
+                                "bundle refused: eval start branch is the default branch"
+                            )
+                        expected = "refs/heads/" + branch
+                        remote = self.git(
+                            clean, "ls-remote", "--refs", "origin", expected, auth=True
+                        ).stdout.split()
+                        if remote:
+                            if remote[0] != start["start_commit"]:
+                                raise StateError(
+                                    f"bundle refused: {branch} already exists at another commit"
+                                )
+                            continue
+                        # Creation-only lease also refuses a concurrent conflicting branch.
+                        self.git(
+                            clean,
+                            "push",
+                            "--porcelain",
+                            "--force-with-lease=" + expected + ":",
+                            "origin",
+                            f"{start['start_commit']}:{expected}",
+                            auth=True,
+                        )
+                    return starts
+                finally:
+                    self.git(clean, "update-ref", "-d", imported)
 
     def publish(self, job, request):
         if request["branch"] != job["branch"] or job["branch"] == job["default"]:
             raise StateError(
                 "bundle refused: branch is not the slice branch or is the default branch"
             )
-        clean = self.clean(job["repository"])
+        self.clean(job["repository"])
         folder = trusted_directory(Path(job["run"]))
         result = subprocess.run(
             [
@@ -686,60 +679,61 @@ class Fence:
         )
         if result.returncode:
             raise StateError("fenced bundle export failed")
-        bundle = snapshot_bundle(folder)
-        heads = self.git(clean, "bundle", "list-heads", bundle).stdout.splitlines()
-        refs = dict(line.split(" ", 1)[::-1] for line in heads)
-        expected = "refs/heads/" + job["branch"]
-        if set(refs) != {"HEAD", expected} or refs["HEAD"] != refs[expected]:
-            raise StateError("bundle refused: wrong branch or HEAD")
-        self.git(clean, "bundle", "verify", bundle)
-        imported = "refs/factory/import/" + folder.name
-        self.git(
-            clean,
-            "fetch",
-            "--no-tags",
-            "--no-write-fetch-head",
-            bundle,
-            f"+{expected}:{imported}",
-        )
-        tip = self.git(
-            clean, "rev-parse", "--verify", imported + "^{commit}"
-        ).stdout.strip()
-        if self.git(
-            clean, "merge-base", "--is-ancestor", job["base"], tip, allow_failure=True
-        ).returncode:
-            raise StateError(
-                "bundle refused: branch does not descend from the base commit"
+        with self.locked_clean(job["repository"], fetch=False) as clean:
+            bundle = snapshot_bundle(folder)
+            heads = self.git(clean, "bundle", "list-heads", bundle).stdout.splitlines()
+            refs = dict(line.split(" ", 1)[::-1] for line in heads)
+            expected = "refs/heads/" + job["branch"]
+            if set(refs) != {"HEAD", expected} or refs["HEAD"] != refs[expected]:
+                raise StateError("bundle refused: wrong branch or HEAD")
+            self.git(clean, "bundle", "verify", bundle)
+            imported = "refs/factory/import/" + folder.name
+            self.git(
+                clean,
+                "fetch",
+                "--no-tags",
+                "--no-write-fetch-head",
+                bundle,
+                f"+{expected}:{imported}",
             )
-        # Recheck the current remote default before any push, too.
-        head = self.git(
-            clean, "ls-remote", "--symref", "origin", "HEAD", auth=True
-        ).stdout
-        match = re.search(r"^ref: refs/heads/([^\s]+)\s+HEAD$", head, re.M)
-        if not match:
-            raise StateError("GitHub default branch unavailable")
-        if match[1] == job["branch"]:
-            raise StateError("bundle refused: slice branch is now the default branch")
-        if self.is_public(job["repository"]):
-            check = deny.Check()
-            check.request(request)
-            check.commits(lambda *args: self.git(clean, *args), job["base"], tip)
-        result = self.git(
-            clean,
-            "push",
-            "--porcelain",
-            "origin",
-            f"{tip}:{expected}",
-            auth=True,
-            allow_failure=True,
-        )
-        if result.returncode:
-            if re.search(
-                r"\[rejected\].*(?:non-fast-forward|fetch first)", result.stdout
-            ):
-                raise StateError("branch was rewritten; merge main instead of rebasing")
-            raise StateError("fenced Git operation failed")
-        return tip
+            tip = self.git(
+                clean, "rev-parse", "--verify", imported + "^{commit}"
+            ).stdout.strip()
+            if self.git(
+                clean, "merge-base", "--is-ancestor", job["base"], tip, allow_failure=True
+            ).returncode:
+                raise StateError(
+                    "bundle refused: branch does not descend from the base commit"
+                )
+            # Recheck the current remote default before any push, too.
+            head = self.git(
+                clean, "ls-remote", "--symref", "origin", "HEAD", auth=True
+            ).stdout
+            match = re.search(r"^ref: refs/heads/([^\s]+)\s+HEAD$", head, re.M)
+            if not match:
+                raise StateError("GitHub default branch unavailable")
+            if match[1] == job["branch"]:
+                raise StateError("bundle refused: slice branch is now the default branch")
+            if self.is_public(job["repository"]):
+                check = deny.Check()
+                check.request(request)
+                check.commits(lambda *args: self.git(clean, *args), job["base"], tip)
+            result = self.git(
+                clean,
+                "push",
+                "--porcelain",
+                "origin",
+                f"{tip}:{expected}",
+                auth=True,
+                allow_failure=True,
+            )
+            if result.returncode:
+                if re.search(
+                    r"\[rejected\].*(?:non-fast-forward|fetch first)", result.stdout
+                ):
+                    raise StateError("branch was rewritten; merge main instead of rebasing")
+                raise StateError("fenced Git operation failed")
+            return tip
 
 
 if __name__ == "__main__":
