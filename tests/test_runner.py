@@ -1,4 +1,5 @@
 import copy
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 import json
 import os
@@ -74,6 +75,7 @@ def setup(tmp_path, slice_data, make_state, monkeypatch):
         return {'repo': str(tmp_path / 'repos' / repository.split('/')[-1]),
                 'branch': branch, 'base': 'a' * 40, 'repository': repository}
     runner.fence = Mock()
+    runner.fence.locked_clean.side_effect = lambda repo, fetch=True: nullcontext(repo)
     runner.fence.prepare.side_effect = prepare
     runner.fence.resume.side_effect = lambda previous, session: {
         key: previous[key] for key in ('repo', 'branch', 'base', 'repository')}

@@ -1,5 +1,6 @@
 """Synthetic credentials, local remotes and hostile copies; no node or real login."""
 import copy
+import fcntl
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import json
@@ -14,7 +15,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from cplane import deny, executors, fence, state
+from cplane import deny, executors, fence, review, state
 from cplane.executors import Processes, command
 from cplane.runner import Git, GitHub, Runner
 
@@ -1923,3 +1924,42 @@ def test_delivery_app_login_retry_clears_on_success(delivery, make_state, monkey
     runner.run()
     assert mint.call_count == 2
     assert 'github_read_failure_since' not in json.loads((folder / 'job.json').read_text())
+
+
+def assert_clean_git_locked(monkeypatch, adapter, clean):
+    git = adapter.git
+    calls = []
+
+    def checked(path, *args, **kwargs):
+        with (open(clean.parent / ('.' + clean.name + '.lock'), 'r') as lock,
+              pytest.raises(BlockingIOError)):
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        calls.append(args[0])
+        return git(path, *args, **kwargs)
+
+    monkeypatch.setattr(adapter, 'git', checked)
+    return calls
+
+
+def test_review_fetch_and_clone_hold_clean_lock(delivery, monkeypatch):
+    d = delivery
+    d['adapter'].publish(d['job'], request(d['job']))
+    calls = assert_clean_git_locked(monkeypatch, d['adapter'], d['clean'])
+    result = review.prepare(d['adapter'], d['job'], 'review-lock-test')
+    assert result['tip'] == d['tip']
+    assert {'fetch', 'rev-parse', 'merge-base', 'update-ref', 'clone'} <= set(calls)
+
+
+def test_updated_head_fetch_holds_clean_lock(delivery, make_state, monkeypatch):
+    d = delivery
+    runner = Runner(make_state(), github=Mock(), git=Mock())
+    runner.fence = d['adapter']
+    runner.at = datetime.now().astimezone().isoformat()
+    item = state.load(runner.path)['slices'][0]
+    item['pr'] = 12
+    d['adapter'].publish(d['job'], request(d['job']))
+    job = dict(d['job'], tip=d['tip'], updated_head=True)
+    calls = assert_clean_git_locked(monkeypatch, d['adapter'], d['clean'])
+    assert runner.merge_ready(item, job, info={'headRefOid': d['tip'], 'mergeStateStatus': 'CLEAN', 'mergeable': 'MERGEABLE'})
+    assert calls == ['fetch']
+    assert 'updated_head' not in job

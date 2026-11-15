@@ -24,28 +24,28 @@ def validate(answer, *, store=None, job=None):
 
 
 def prepare(adapter, previous, copy_id):
-    clean = adapter.clean(previous['repository'])
-    branch = previous['branch']
-    adapter.git(clean, 'fetch', '--prune', 'origin',
-                '+refs/heads/*:refs/remotes/origin/*', auth=True)
-    tip = adapter.git(clean, 'rev-parse', '--verify',
-                      f'refs/remotes/origin/{branch}^{{commit}}').stdout.strip()
-    if adapter.git(clean, 'merge-base', '--is-ancestor', previous['base'], tip,
-                   allow_failure=True).returncode:
-        raise StateError('review branch does not descend from the slice base')
-    adapter.git(clean, 'update-ref', f'refs/heads/{branch}', tip)
-    fence.trusted_directory(fence.WORK_ROOT)
-    copy = fence.WORK_ROOT / copy_id
-    if copy.exists() or copy.is_symlink():
-        raise StateError('review copy already exists')
-    adapter.git(clean, 'clone', '--no-hardlinks', '--template=', '--single-branch',
-                '--branch', branch, '--config', 'core.hooksPath=/dev/null',
-                '--config', 'user.name=Factory', '--config', 'user.email=factory@localhost',
-                str(clean), str(copy))
-    copy.chmod(0o700)
-    fence.own(copy, 'work', recursive=True)
-    return {**{key: previous[key] for key in ('repository', 'branch', 'base', 'default')},
-            'repo': str(copy), 'tip': tip}
+    with adapter.locked_clean(previous['repository'], fetch=False) as clean:
+        branch = previous['branch']
+        adapter.git(clean, 'fetch', '--prune', 'origin',
+                    '+refs/heads/*:refs/remotes/origin/*', auth=True)
+        tip = adapter.git(clean, 'rev-parse', '--verify',
+                          f'refs/remotes/origin/{branch}^{{commit}}').stdout.strip()
+        if adapter.git(clean, 'merge-base', '--is-ancestor', previous['base'], tip,
+                       allow_failure=True).returncode:
+            raise StateError('review branch does not descend from the slice base')
+        adapter.git(clean, 'update-ref', f'refs/heads/{branch}', tip)
+        fence.trusted_directory(fence.WORK_ROOT)
+        copy = fence.WORK_ROOT / copy_id
+        if copy.exists() or copy.is_symlink():
+            raise StateError('review copy already exists')
+        adapter.git(clean, 'clone', '--no-hardlinks', '--template=', '--single-branch',
+                    '--branch', branch, '--config', 'core.hooksPath=/dev/null',
+                    '--config', 'user.name=Factory', '--config', 'user.email=factory@localhost',
+                    str(clean), str(copy))
+        copy.chmod(0o700)
+        fence.own(copy, 'work', recursive=True)
+        return {**{key: previous[key] for key in ('repository', 'branch', 'base', 'default')},
+                'repo': str(copy), 'tip': tip}
 
 
 def planner_change(args):
