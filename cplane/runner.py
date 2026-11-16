@@ -584,7 +584,15 @@ class GitHub:
             )
         )
         if existing:
-            return existing[0]["number"]
+            number = existing[0]["number"]
+            try:
+                self.call(
+                    repo, "pr", "edit", str(number), "--title", request["title"],
+                    "--body", request["body"],
+                )
+            except state.StateError as error:
+                raise state.StateError("PR edit failed") from error
+            return number
         url = self.call(
             repo,
             "pr",
@@ -1377,10 +1385,13 @@ class Runner:
                 job["tip"] = self.publish(item, job, request)
                 if job["tip"] is None:
                     return
-                job["request"], job["phase"] = request, "pr"
-                self.save_job(job)
-                item["pr"] = self.open_pr(self.github_repo(item), request)
-                self.log(item, f"opened PR: {item['pr']}", True)
+                if final["kind"] == "waiting" and job["tip"] == job["base"]:
+                    self.attention(item, "question", final["body"])
+                else:
+                    job["request"], job["phase"] = request, "pr"
+                    self.save_job(job)
+                    item["pr"] = self.open_pr(self.github_repo(item), request)
+                    self.log(item, f"opened PR: {item['pr']}", True)
         else:
             self.attention(item, "node-step", final["body"])
         if job["phase"] == "ended":
