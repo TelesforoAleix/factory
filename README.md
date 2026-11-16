@@ -211,8 +211,14 @@ normal git configuration and hooks. Use a trusted local state repository. Python
 `fcntl` locking targets macOS and Unix; Windows is not supported.
 
 Run `uv run pytest` for the synthetic fixture, concurrent writer, time, CLI, schema,
-and temporary bare-remote Git tests. CI runs the tests and gitleaks on every PR and
-on pushes to `main`. Main requires the `test` check and forbids force pushes.
+and temporary bare-remote Git tests. On every PR, CI runs `test` and a combined
+image and gitleaks job. The UI workflow runs when `ui/**` or its workflow changes;
+the CLI image workflow runs when `node/cli/**`, `node/proxy/**`,
+`node/compose.yaml`, `node/check-fence.py`, or its workflow changes. New PR
+updates cancel older runs for the same workflow. CI does not run on pushes to
+`main`: the runner requires green checks on an up-to-date PR head before merging.
+These filters and the combined job reduce billed Actions minutes. Main requires
+the `test` check and forbids force pushes.
 
 ## Cutting a plan into queue tickets
 

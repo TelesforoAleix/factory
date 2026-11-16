@@ -1,0 +1,38 @@
+name: CLI image
+on:
+  pull_request:
+    paths:
+      - 'node/cli/**'
+      - 'node/proxy/**'
+      - 'node/compose.yaml'
+      - 'node/check-fence.py'
+      - '.github/workflows/cli-image.yml'
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  cli-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.13'
+          version: '0.11.18'
+      - run: docker build -t factory-cli:1 node/cli
+      - run: docker compose -f node/compose.yaml build
+      - name: Pinned CLI versions under the sealing flags
+        run: |
+          docker run --rm --pull never --user 21000:21000 --cap-drop ALL \
+            --security-opt no-new-privileges --read-only --network none \
+            --tmpfs /tmp:rw,nosuid,nodev,size=512m \
+            --tmpfs /home/agent:rw,nosuid,nodev,size=512m,uid=21000,gid=21000,mode=0700 \
+            --memory 4g --memory-swap 4g --cpus 2 --pids-limit 256 \
+            factory-cli:1 sh -ec 'claude --version; codex --version; python --version; uv --version'
+      - name: Synthetic network fence checks
+        run: |
+          docker compose -f node/compose.yaml up -d --no-build
+          trap 'docker compose -f node/compose.yaml down' EXIT
+          uv run python node/check-fence.py

@@ -1,40 +1,12 @@
 name: CI
 on:
   pull_request:
-  push:
-    branches: [main]
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 jobs:
-  image:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: docker build -t factory:ci .
-      - name: Smoke checks with a read-only filesystem
-        run: |
-          docker run --rm --user 65534:65534 --read-only --tmpfs /tmp \
-            --cap-drop ALL --security-opt no-new-privileges --network none \
-            factory:ci sh -ec '
-              cplane --help
-              python -c "import factory_ui, cplane.sessions, cplane.intake"
-              git --version
-              ssh -V
-              gh --version
-              test -f ui/dist/index.html
-            '
-      - name: SSH and Python account lookup for service UIDs
-        run: |
-          for uid in 21010 21011; do
-            docker run --rm --user "$uid:$uid" --read-only --tmpfs /tmp \
-              --cap-drop ALL --security-opt no-new-privileges --network none \
-              factory:ci sh -ec '
-                ssh -G github.com
-                python -c "import getpass; getpass.getuser()"
-              '
-          done
-      - name: Image size in bytes
-        run: docker image inspect factory:ci --format '{{.Size}}'
   test:
     runs-on: ubuntu-latest
     services:
@@ -60,50 +32,35 @@ jobs:
           version: '0.11.18'
       - run: uv sync --locked
       - run: uv run pytest
-  gitleaks:
-    permissions:
-      contents: read
+  image-gitleaks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - run: docker run --rm --user "$(id -u):$(id -g)" -v "$GITHUB_WORKSPACE:/repo" -w /repo ghcr.io/gitleaks/gitleaks:v8.30.1 git . --redact --exit-code 1
-  cli-image:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-        with:
-          python-version: '3.13'
-          version: '0.11.18'
-      - run: docker build -t factory-cli:1 node/cli
-      - run: docker compose -f node/compose.yaml build
-      - name: Pinned CLI versions under the sealing flags
+      - run: docker build -t factory:ci .
+      - name: Smoke checks with a read-only filesystem
         run: |
-          docker run --rm --pull never --user 21000:21000 --cap-drop ALL \
-            --security-opt no-new-privileges --read-only --network none \
-            --tmpfs /tmp:rw,nosuid,nodev,size=512m \
-            --tmpfs /home/agent:rw,nosuid,nodev,size=512m,uid=21000,gid=21000,mode=0700 \
-            --memory 4g --memory-swap 4g --cpus 2 --pids-limit 256 \
-            factory-cli:1 sh -ec 'claude --version; codex --version; python --version; uv --version'
-      - name: Synthetic network fence checks
+          docker run --rm --user 65534:65534 --read-only --tmpfs /tmp \
+            --cap-drop ALL --security-opt no-new-privileges --network none \
+            factory:ci sh -ec '
+              cplane --help
+              python -c "import factory_ui, cplane.sessions, cplane.intake"
+              git --version
+              ssh -V
+              gh --version
+              test -f ui/dist/index.html
+            '
+      - name: SSH and Python account lookup for service UIDs
         run: |
-          docker compose -f node/compose.yaml up -d --no-build
-          trap 'docker compose -f node/compose.yaml down' EXIT
-          uv run python node/check-fence.py
-  ui:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ui
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: ui/package-lock.json
-      - run: npm ci
-      - run: npm test
-      - run: npm run build
+          for uid in 21010 21011; do
+            docker run --rm --user "$uid:$uid" --read-only --tmpfs /tmp \
+              --cap-drop ALL --security-opt no-new-privileges --network none \
+              factory:ci sh -ec '
+                ssh -G github.com
+                python -c "import getpass; getpass.getuser()"
+              '
+          done
+      - name: Image size in bytes
+        run: docker image inspect factory:ci --format '{{.Size}}'
