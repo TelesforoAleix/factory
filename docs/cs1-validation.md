@@ -103,12 +103,13 @@ After the PR has green `test` and `ui` checks and is merged, request the existin
 reviewed installation with:
 
 ```sh
-sudo factory-install factory/CS1
+sudo factory-cplane --actor owner install factory/CS1
 ```
 
-That command starts the separate installer unit. Wait for it to complete and
-verify `/opt/factory/REVISION` matches the merged commit. It builds the UI, runs
-additive migrations and restarts the UI and sessions services. Repeat these
+That command records an install request for the platform deployer. Wait for it
+to complete and verify `CPLANE_REVISION` in `deployer-factory-runner-1` matches
+the merged commit. The deployer builds the image, runs additive migrations and
+replaces the service containers. Repeat these
 read-only timings, using a real feature ID, chat area and chat ID:
 
 ```sh

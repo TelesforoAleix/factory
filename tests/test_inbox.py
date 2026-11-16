@@ -3,7 +3,6 @@
 import base64
 import json
 import os
-from pathlib import Path
 import socket
 import stat
 import subprocess
@@ -373,9 +372,6 @@ def test_socket_protocol_mode_and_rejection(tmp_path):
         server.shutdown()
         thread.join()
         server.server_close()
-    unit = Path("node/systemd/factory-intake.service").read_text()
-    assert "RestrictAddressFamilies=AF_UNIX" in unit
-    assert "RuntimeDirectoryMode=0750" in unit
 
 
 def test_owner_new_idea_keeps_entry_and_wake(store):
@@ -557,26 +553,6 @@ def test_idea_can_link_multiple_features_without_regressing_implemented(store):
     detail = store.idea_show(idea["id"])
     assert detail["state"] == "implemented"
     assert set(detail["features"]) == {first["id"], second["id"]}
-
-
-def test_intake_unit_uses_database_only_settings_and_minimal_writes():
-    import configparser
-    config = configparser.ConfigParser(interpolation=None, strict=False)
-    config.read('node/systemd/factory-intake.service')
-    service = config['Service']
-    assert service['User'] == service['Group'] == 'factory-intake'
-    assert service['EnvironmentFile'] == '/etc/factory/ui.env'
-    assert service['RuntimeDirectory'] == 'factory-intake'
-    assert service['RuntimeDirectoryMode'] == '0750'
-    assert service['ReadWritePaths'].split() == ['/run/factory-intake']
-    for setting in ('NoNewPrivileges', 'ProtectHome', 'PrivateTmp', 'PrivateDevices',
-                    'RestrictSUIDSGID', 'LockPersonality'):
-        assert service.getboolean(setting)
-    assert service['ProtectSystem'] == 'strict'
-    assert service['CapabilityBoundingSet'] == service['AmbientCapabilities'] == ''
-    assert '-/etc/factory/runner.env' in service['InaccessiblePaths'].split()
-    assert '-/etc/factory/github-token' in service['InaccessiblePaths'].split()
-    assert '-/srv/factory' in service['InaccessiblePaths'].split()
 
 
 def test_arrivals_bypass_paused_limit_and_project_label(store):

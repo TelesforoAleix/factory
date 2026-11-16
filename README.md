@@ -299,10 +299,13 @@ uv run cplane --state /path/to/state.json install-agent
 uv run cplane uninstall-agent
 ```
 
-The following describes the Mac runner with `CPLANE_FENCE` unset. The opt-in
-Ubuntu runner (`CPLANE_FENCE=1`) runs both CLIs through the container fence and
-delivers their commits from offline bundles. Its root service, SSH planner
-wrapper, installation and switch-over are in [docs/node.md](docs/node.md).
+The following describes the Mac runner with `CPLANE_FENCE` unset. The Ubuntu deployment runs four contained services through the platform deployer.
+The runner (`CPLANE_FENCE=1`) uses the launcher socket for agent containers and
+delivers their commits from offline bundles. `sudo factory-cplane` runs the
+installed code inside `deployer-factory-runner-1`, with its environment and state.
+Installs require `CPLANE_DEPLOYER_SOCKET`; the host installer and systemd units
+are removed. Deployment, backups and host cleanup are in
+[docs/node.md](docs/node.md).
 
 Only `run` starts or resumes executors. It makes one pass under the state lock:
 pull the state repository, collect finished turns, deliver answers and approvals,
@@ -492,7 +495,7 @@ sudo launchctl bootout system "$D"
 sudo rm "$D"
 ```
 
-Factory's independent node CLI container stack, installation and security limits
-and opt-in runner are documented in [docs/node.md](docs/node.md).
+Factory's contained deployment, retained CLI fence tools and security limits
+are documented in [docs/node.md](docs/node.md).
 
 Runtime turn instructions are stored in `cplane/prompts/`.

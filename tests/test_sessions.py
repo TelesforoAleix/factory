@@ -310,10 +310,6 @@ def test_web_has_no_execution_path():
     root = Path(__file__).resolve().parents[1]
     source = (root / 'factory_ui/__init__.py').read_text()
     assert 'subprocess' not in source and 'cplane.sessions' not in source
-    service = (root / 'node/systemd/factory-ui.service').read_text()
-    assert 'User=factory-ui' in service and 'Group=factory-ui' in service
-    assert 'InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock' in service
-    assert 'SupplementaryGroups' not in service
 
 
 def test_cli_reply_parsing():

@@ -1,10 +1,4 @@
 #!/bin/sh
-# Root-only environment; keep runner.env to shell-compatible KEY='value' lines.
 set -eu
-umask 077
-set -a
-. /etc/factory/runner.env
-CPLANE_FENCE=1
-set +a
-cd /opt/factory
-exec /opt/factory/.venv/bin/cplane "$@"
+[ "$(id -u)" = 0 ] || { echo 'factory-cplane requires root' >&2; exit 1; }
+exec docker exec -i deployer-factory-runner-1 cplane "$@"

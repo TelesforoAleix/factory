@@ -451,5 +451,5 @@ def test_legacy_marker_content_still_ignored(tmp_path, slice_data, monkeypatch):
     installation.process(r)
     assert (
         entry["attention"]["body"]
-        == "Install unit disappeared; inspect the node before retrying"
+        == "Install requires CPLANE_DEPLOYER_SOCKET; configure the platform deployer"
     )

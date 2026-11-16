@@ -2,7 +2,6 @@ import importlib.machinery
 import importlib.util
 import os
 from pathlib import Path
-import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,38 +21,6 @@ def fake_docker(tmp_path, monkeypatch, script):
     docker.write_text('#!/bin/sh\n' + script)
     docker.chmod(0o755)
     monkeypatch.setenv('PATH', str(tmp_path) + os.pathsep + os.environ['PATH'])
-
-
-def test_failed_dump_removes_partial_file(tmp_path, monkeypatch):
-    module = load('factory-dump')
-    monkeypatch.setattr(module, 'DIRECTORY', tmp_path)
-    fake_docker(tmp_path, monkeypatch, "printf partial\nexit 1\n")
-    assert module.main() == 1
-    assert not list(tmp_path.glob('*.dump'))
-    assert not list(tmp_path.glob('.factory-dump-*'))
-
-
-def test_missing_directory_is_not_created(tmp_path, monkeypatch, capsys):
-    module = load('factory-dump')
-    missing = tmp_path / 'missing' / 'db'
-    monkeypatch.setattr(module, 'DIRECTORY', missing)
-    assert module.main() == 1
-    assert not missing.parent.exists()
-    assert len(capsys.readouterr().err.splitlines()) == 1
-
-
-def test_retention_and_permissions(tmp_path, monkeypatch):
-    module = load('factory-dump')
-    monkeypatch.setattr(module, 'DIRECTORY', tmp_path)
-    fake_docker(tmp_path, monkeypatch, 'printf backup\n')
-    for day in range(1, 10):
-        (tmp_path / f'factory-2000-01-{day:02}.dump').write_text('old')
-    assert module.main() == 0
-    dumps = sorted(tmp_path.glob('*.dump'))
-    assert len(dumps) == 7
-    assert dumps[-1].read_bytes() == b'backup'
-    assert dumps[-1].stat().st_mode & 0o777 == 0o640
-    assert not (tmp_path / 'factory-2000-01-03.dump').exists()
 
 
 def test_restore_mismatch_fails_and_removes_container(tmp_path, monkeypatch, capsys):
