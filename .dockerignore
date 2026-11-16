@@ -57,3 +57,6 @@ history/
 **/.aws
 **/.npmrc
 **/.pypirc
+
+# Prompt markdown files are public application inputs.
+!cplane/prompts/*.md
