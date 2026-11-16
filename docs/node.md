@@ -29,7 +29,9 @@ commit before installation. Do not delete service data or secrets.
    disabled and stopped.
 3. From the reviewed merged tree, install `node/bin/factory-cplane` as
    `/usr/local/bin/factory-cplane`, root:root, mode 0755. Remove
-   `/usr/local/bin/factory-{dump,export,feature-export,install}`.
+   `/usr/local/bin/factory-{dump,export,feature-export,install}`. Also install the
+   updated `node/bin/factory-restore-check` as `/usr/local/bin/factory-restore-check`,
+   root:root, mode 0755, so its default reads the platform backups.
 4. Check that `sudo factory-cplane pending` answers from the container. Check
    `sudo docker exec deployer-factory-runner-1 printenv CPLANE_REVISION` matches
    the merged commit. Also check `sudo factory-cplane show <a-slice>` over SSH.
@@ -68,8 +70,19 @@ the platform launcher socket. The host script does not load code from
 `/opt/factory`; keep the installed script and platform-managed fence assets.
 
 `factory-restore-check` stays for operator backup verification in a disposable,
-network-isolated PostgreSQL container. An explicit dump path is supported. Row
-counts are compared with the live database, so a daily backup may differ after
+network-isolated PostgreSQL container. With no argument, it selects the newest
+file by date in its name matching `factory-YYYY-MM-DD.dump` under
+`/srv/homelab/homelab-v2-data/originals/postgres`. These are the platform
+`homelab-dump` backups, owned by root with mode 0640. It refuses with a clear
+message if none exists and never creates a dump. An explicit dump path remains
+supported:
+
+```sh
+sudo factory-restore-check
+sudo factory-restore-check /path/to/factory-YYYY-MM-DD.dump
+```
+
+Row counts are compared with the live database, so a daily backup may differ after
 subsequent writes.
 
 ## Runner loop and exports

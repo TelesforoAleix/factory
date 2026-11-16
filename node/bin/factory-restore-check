@@ -8,8 +8,7 @@ import sys
 import time
 import uuid
 
-DIRECTORY = Path('/srv/homelab/factory-data/originals/db')
-DUMP_COMMAND = '/usr/local/bin/factory-dump'
+DIRECTORY = Path('/srv/homelab/homelab-v2-data/originals/postgres')
 DATED = re.compile(r'factory-\d{4}-\d{2}-\d{2}\.dump\Z')
 IMAGE = 'pgvector/pgvector:pg17'
 
@@ -49,15 +48,20 @@ def main():
     signal.signal(signal.SIGTERM, interrupted)
     signal.signal(signal.SIGHUP, interrupted)
     name = 'factory-restore-check-' + uuid.uuid4().hex
+    container_started = False
     try:
         if len(sys.argv) > 2:
             raise ValueError('expected at most one dump path')
         if len(sys.argv) == 2:
             dump = Path(sys.argv[1])
         else:
-            subprocess.run([DUMP_COMMAND], check=True)
-            dump = max(p for p in DIRECTORY.iterdir() if DATED.fullmatch(p.name) and p.is_file())
+            dump = max((p for p in DIRECTORY.glob('factory-*.dump')
+                        if DATED.fullmatch(p.name) and p.is_file()), default=None)
+            if dump is None:
+                print(f'restore check failed: no Factory backup matching factory-YYYY-MM-DD.dump in {DIRECTORY}')
+                return 1
         # A unique name allows cleanup even if docker run fails after creating the container.
+        container_started = True
         docker('run', '-d', '--name', name, '--network', 'none',
                '-e', 'POSTGRES_HOST_AUTH_METHOD=trust', IMAGE, stdout=subprocess.DEVNULL)
         for _ in range(60):
@@ -82,11 +86,12 @@ def main():
         print('restore check failed')
         return 1
     finally:
-        try:
-            subprocess.run(['docker', 'rm', '-f', name], stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL, check=False)
-        except OSError:
-            pass
+        if container_started:
+            try:
+                subprocess.run(['docker', 'rm', '-f', name], stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL, check=False)
+            except OSError:
+                pass
     print('restore check passed')
     return 0
 
