@@ -129,7 +129,7 @@ def test_slice_launch_records_only_loaded_files(setup, monkeypatch, mode):
     item = runner.data['slices'][0]
     # Test a subsequent launch with the first synthetic process completed.
     runner.jobs[item['id']]['phase'] = 'collected'
-    if mode in ('cut', 'resume'):
+    if mode in ('cut', 'review', 'resume'):
         item['flow'] = 'tickets'
     if mode in ('review', 'resume'):
         item['session']['id'] = 'resume-id'

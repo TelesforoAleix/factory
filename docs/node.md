@@ -431,6 +431,44 @@ approval on the delivered tip. The owner
 cannot approve a PR they authored, so guard changes come through
 PRs opened by the runner's GitHub App.
 
+### Slice reviews
+
+When a CLI-flow slice opens its PR, the runner starts a fresh fenced copy of
+that PR tip and runs the same `slice-review` skill and `schema/review.schema.json`
+contract as ticket reviews. CI runs alongside it. The `reviewer` role reviews
+light and standard slices (Claude Sonnet, medium effort by default);
+`reviewer-strong` reviews strong slices (Claude Opus, medium effort). Change these
+through Settings → Roles, like the executor roles.
+
+CLI reviews only record findings: `pass` and `fix` both allow merging. They
+never submit tickets or start a repair round. CI must be green and the review
+must have ended before the runner merges. A failed review, unavailable reviewer,
+or expired review records `missing` and releases the review gate. Set
+`CPLANE_REVIEW_TIMEOUT_SECONDS` in the runner environment to change the default
+1200-second (20-minute) limit, measured from the review request when the PR opens,
+including any wait for executor capacity. The next runner pass gives up an
+expired review and stops its fence; an unconfirmed stop continues to reserve
+capacity. Existing title/head checks, change-class rules and ⛔ approval still
+apply. Ticket slices retain their existing review and single repair round.
+
+`cplane show <id>` prints `review_verdict` and a short `review_findings` summary;
+`cplane show <id> --json` includes full findings. These are separate from the
+planner's accepted/corrected verdict: `cplane_slice_outcomes.review_verdict` holds
+`pass`, `fix` or `missing`, and `review_findings` holds the pass title/body or fix
+tickets. A started review also has its own run record and skill context. CLI
+review job files have `record_only: true`; the executor job retains the review
+request/end times (`review_requested_at`/`review_ended_at`), verdict and findings,
+and links its review through `pr_review`.
+The executor's original session resumes for the post-merge handover.
+
+Before installing this revision, dump the database before the install; the
+migration adds two roles and two columns. Migration 030 expands the role CHECK
+list and adds nullable outcome columns, preserving previous-image writers. After
+installing, the orchestrator checks the next three runner slices with `cplane
+show <id>`: each must carry a review verdict, and the recorded request/end times
+must show that no review gate exceeded the configured limit (plus runner polling
+interval). A timeout is recorded as `missing`, never as a passing review.
+
 ### Runner usage and installs
 
 Set `CPLANE_USAGE_SOURCE=launcher` for the contained runner. Each pass shares at most one `usage` launcher run, named

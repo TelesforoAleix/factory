@@ -10,6 +10,11 @@ DEFAULT_LEVELS = {
     'strong': dict(tool='codex', model='gpt-6.1-sol', effort='medium'),
 }
 
+DEFAULT_REVIEWERS = {
+    'reviewer': {'tool': 'claude', 'model': 'sonnet', 'effort': 'medium'},
+    'reviewer-strong': {'tool': 'claude', 'model': 'opus', 'effort': 'medium'},
+}
+
 
 class RoleStore:
     def role_list(self):
@@ -61,3 +66,8 @@ class RoleStore:
             # Imported and historical documents are explicit configurations.
             return {**self.role_get('standard'), **item['executor']}
         return {**self.role_get(policy['level']), **policy['overrides']}
+
+    def slice_reviewer(self, item):
+        policy = self.slice_policy(item['id'])
+        role = 'reviewer-strong' if policy and policy['level'] == 'strong' else 'reviewer'
+        return self.role_get(role)

@@ -158,6 +158,24 @@ class RunRecordStore:
                 self.connection.execute('UPDATE cplane_run_records SET corrects_slice = %s WHERE slice_id = %s',
                                         (corrects, slice_id))
 
+    def slice_review(self, slice_id):
+        with self.locked():
+            row = self.connection.execute(
+                'SELECT review_verdict, review_findings FROM cplane_slice_outcomes WHERE slice_id = %s',
+                (slice_id,)).fetchone()
+            return dict(zip(('review_verdict', 'review_findings'), row)) if row else {}
+
+    def slice_review_record(self, slice_id, verdict, findings):
+        from psycopg.types.json import Jsonb
+        if verdict not in ('pass', 'fix', 'missing'):
+            raise StateError('Invalid review verdict')
+        with self.mutation():
+            self.connection.execute(
+                'INSERT INTO cplane_slice_outcomes (slice_id, review_verdict, review_findings) VALUES (%s, %s, %s) '
+                'ON CONFLICT (slice_id) DO UPDATE SET review_verdict = EXCLUDED.review_verdict, '
+                'review_findings = EXCLUDED.review_findings',
+                (slice_id, verdict, Jsonb(findings)))
+
     def _slice_outcomes(self):
         return {row[0]: row[1:] for row in self.connection.execute(
             'SELECT slice_id, verdict, corrects_slice FROM cplane_slice_outcomes')}
@@ -436,6 +454,26 @@ def review_record(runner, job, answer):
         except Exception:
             print('cplane: run recording failed', file=sys.stderr)
     review.validate(answer, store=store, job=job)
+    findings = ({key: answer[key] for key in ('title', 'body')}
+                if answer['verdict'] == 'pass' else answer['tickets'])
+    review_outcome(runner, {**job, 'review_verdict': answer['verdict'], 'review_findings': findings})
+
+
+def review_outcome(runner, job, *, item=None):
+    """Persist the review separately from the planner verdict, like other accounting."""
+    from . import state
+    if not state.postgres():
+        return
+    try:
+        store = state.store(runner.path)
+        review = job.get('pr_review')
+        if item is not None and review and review.get('ended_at') is not None:
+            slice_record(store, item, review)
+            if job['review_verdict'] in ('pass', 'fix'):
+                outcome(store, review, verdict=job['review_verdict'])
+        store.slice_review_record(job['id'], job['review_verdict'], job.get('review_findings'))
+    except Exception:  # noqa: BLE001 - accounting failures cannot change merge policy
+        print('cplane: review recording failed', file=sys.stderr)
 
 
 def ci_record(runner, item, job, status, failing):

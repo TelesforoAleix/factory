@@ -780,7 +780,7 @@ def main(argv=None):
                 backend = state.store(path)
                 policy = backend.slice_policy(item['id'])
                 item = dict(item, level=policy['level'] if policy else 'standard',
-                            executor=backend.slice_executor(item))
+                            executor=backend.slice_executor(item), **backend.slice_review(item['id']))
             default_runs = '/srv/factory/runs'
             base = Path(os.environ.get('CPLANE_RUNS', default_runs)).expanduser().resolve()
             runs = base / hashlib.sha256(str(path.resolve()).encode()).hexdigest()[:20]
@@ -789,6 +789,8 @@ def main(argv=None):
                 try:
                     job = json.loads(job_path.read_text())
                 except (OSError, ValueError):
+                    continue
+                if job.get('record_only'):
                     continue
                 if job.get('id') == args.id and (latest is None or job.get('started_ns', 0) > latest[0]):
                     latest = (job.get('started_ns', 0), job_path.parent, job)
@@ -816,6 +818,10 @@ def main(argv=None):
             else:
                 details = "\n".join(f"{key}: {json.dumps(value, ensure_ascii=False)}" for key, value in item.items())
                 folder = str(latest[1]) if latest else '(none)'
+                if item.get('review_findings') is not None:
+                    details = "\n".join(
+                        line for line in details.splitlines() if not line.startswith('review_findings:'))
+                    details += '\nreview_findings: ' + cut(json.dumps(item['review_findings'], ensure_ascii=False), 500)
                 print(details + f'\nrun: {folder}')
                 from .installation import REQUEST, runs_path
                 for entry in item['log']:
