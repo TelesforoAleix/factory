@@ -1106,7 +1106,13 @@ class Runner:
         if review:
             job.update(review=True, repair=bool(previous.get("repair")))
             if record_only:
-                job["record_only"] = True
+                timeout = max(1, int(os.environ.get("CPLANE_REVIEW_TIMEOUT_SECONDS", "1200")))
+                deadline = previous["review_requested_at"] + timeout
+                job.update(
+                    record_only=True, container_id="review-" + run.name,
+                    cleanup_turn=time.time_ns(),
+                    timeout_seconds=max(1, deadline - self.clock().timestamp()),
+                )
         if resume and previous:
             for key in (
                 "tip", "repair", "queue_slice", "review_verdict", "review_findings",
@@ -1450,7 +1456,7 @@ class Runner:
         if job.get("review_verdict"):
             if review and review.get("stop_pending"):
                 try:
-                    if not self.processes.poll(review)[0]:
+                    if not (Path(review["run"]) / "exit.json").exists() or not self.processes.poll(review)[0]:
                         self.processes.stop(review)
                 except Exception:  # noqa: BLE001 - keep capacity reserved after failed cleanup
                     self.log(item, "review fence cleanup pending")
@@ -1461,7 +1467,7 @@ class Runner:
                     self.save_job(job)
             run_records.review_outcome(self, job, item=item)
             return True
-        if job.get("sha"):
+        if job.get("sha") and review is None:
             return True
         now = self.instant.timestamp()
         job.setdefault("review_requested_at", now)
@@ -1488,6 +1494,9 @@ class Runner:
                 if not done:
                     return False
                 review.update(session=session or "", final=final, tail=tail)
+                exit_file = Path(review["run"]) / "exit.json"
+                if exit_file.exists() and json.loads(exit_file.read_text()).get("code") != 0:
+                    raise state.StateError("review process failed")
                 if not final or final.get("kind") != "waiting":
                     raise state.StateError("review ended without a verdict")
                 match = re.match(r"\s*```(?:json)?[ \t]*\n(.*?)\n```", final["body"], re.DOTALL)
@@ -1498,7 +1507,9 @@ class Runner:
             reason = "review failed"
         review = job.get("pr_review")
         if review:
-            if reason and not done and review.get("phase") == "running":
+            if reason and review.get("phase") == "running" and (
+                not done or not (Path(review["run"]) / "exit.json").exists()
+            ):
                 try:
                     self.processes.stop(review)
                 except Exception:  # noqa: BLE001 - cleanup failure must retain capacity
@@ -1984,7 +1995,9 @@ class Runner:
                 login_start = fence.github_logins.get()
                 run_records.owner_wait(self, item)
                 saved = self.jobs.get(item["id"])
-                if saved and saved.get("review_verdict"):
+                if saved and (saved.get("review_verdict") or (
+                    saved.get("pr_review") and item["state"] in ("accepted", "dropped")
+                )):
                     self.cli_review(item, saved)
                 if item["state"] in ("accepted", "dropped"):
                     # An accepted slice's finished process must not hold a slot.

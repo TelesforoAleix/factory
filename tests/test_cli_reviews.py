@@ -273,3 +273,115 @@ def test_cli_preparation_failure_records_missing_without_attention(
     assert runner.jobs["voice/W1"]["review_verdict"] == "missing"
     assert item(runner)["attention"] is None
     assert not any(job.get("review") for job in processes.started)
+
+
+@pytest.mark.parametrize("socket", [False, True])
+def test_review_command_carries_stoppable_identity(reviewing, monkeypatch, socket):
+    from cplane.executors import command
+
+    monkeypatch.setenv("CPLANE_FENCE_COMMAND", "socket" if socket else "factory-cli")
+    _, processes, _ = open_pr(reviewing)
+    review = processes.started[-1]
+    assert review["timeout_seconds"] == 1200
+    args = command(review)
+    flag = "--run-id" if socket else "--session-turn"
+    expected = review["container_id"] if socket else str(review["cleanup_turn"])
+    assert args[args.index(flag) + 1] == expected
+
+
+@pytest.mark.parametrize("socket", [False, True])
+@pytest.mark.parametrize("cleanup_fails", [False, True])
+def test_review_supervisor_stops_expired_fence(
+    tmp_path, monkeypatch, socket, cleanup_fails
+):
+    import subprocess
+
+    from cplane import executors
+
+    monkeypatch.setenv("CPLANE_FENCE_COMMAND", "socket" if socket else "factory-cli")
+    job = {
+        "record_only": True,
+        "tool": "claude",
+        "model": "sonnet",
+        "effort": "medium",
+        "run": str(tmp_path),
+        "repo": str(tmp_path),
+        "prompt": "Review only",
+        "timeout_seconds": 12,
+        "container_id": "review-synthetic",
+        "cleanup_turn": 456,
+    }
+    (tmp_path / "request.json").write_text(json.dumps(job))
+    run = Mock(
+        side_effect=[
+            subprocess.TimeoutExpired("review", 12),
+            OSError("stop failed") if cleanup_fails else Mock(returncode=0),
+        ]
+    )
+    monkeypatch.setattr(subprocess, "run", run)
+    if cleanup_fails:
+        with pytest.raises(OSError, match="stop failed"):
+            executors.supervise(tmp_path)
+        assert not (tmp_path / "exit.json").exists()
+    else:
+        executors.supervise(tmp_path)
+        assert json.loads((tmp_path / "exit.json").read_text())["timeout"]
+    assert run.call_args_list[0].kwargs["timeout"] == 12
+    cleanup = ["stop", "review-synthetic"] if socket else ["session-cleanup", "456"]
+    assert run.call_args.args[0][-2:] == cleanup
+    assert run.call_args.kwargs["timeout"] == 15
+
+
+def test_failed_exit_cannot_supply_a_passing_review(reviewing):
+    from pathlib import Path
+
+    runner, processes, github = open_pr(reviewing)
+    review = processes.started[-1]
+    answer(processes, "pass")
+    (Path(review["run"]) / "exit.json").write_text(json.dumps({"code": 1}))
+    runner.run()
+    github.merge.assert_called_once()
+    assert runner.jobs["voice/W1"]["review_verdict"] == "missing"
+
+
+@pytest.mark.parametrize("socket", [False, True])
+def test_review_stop_request_has_a_time_limit(tmp_path, monkeypatch, socket):
+    import subprocess
+
+    from cplane.executors import Processes
+
+    monkeypatch.setenv("CPLANE_FENCE_COMMAND", "socket" if socket else "factory-cli")
+    run = Mock(return_value=Mock(returncode=0))
+    monkeypatch.setattr(subprocess, "run", run)
+    Processes().stop(
+        {"record_only": True, "container_id": "review-synthetic", "cleanup_turn": 789}
+    )
+    assert run.call_args.kwargs["timeout"] == 15
+    cleanup = ["stop", "review-synthetic"] if socket else ["session-cleanup", "789"]
+    assert run.call_args.args[0][-2:] == cleanup
+
+
+def test_accepted_slice_collects_its_review_and_releases_capacity(reviewing):
+    runner, processes, github = open_pr(reviewing)
+    edit(runner, lambda s: s.update(state="accepted"))
+    answer(processes, "pass")
+    runner.run()
+    assert runner.jobs["voice/W1"]["review_verdict"] == "pass"
+    assert runner.jobs["voice/W1"]["pr_review"]["phase"] == "collected"
+    github.merge.assert_not_called()
+
+
+def test_review_is_collected_after_a_merge_outside_the_runner(reviewing):
+    runner, processes, github = open_pr(reviewing)
+    github.merge_info.return_value = {
+        "state": "MERGED",
+        "mergeCommit": {"oid": "outside-sha"},
+    }
+    runner.run()
+    assert runner.jobs["voice/W1"]["sha"] == "outside-sha"
+    assert len(processes.started) == 2
+    answer(processes, "pass")
+    runner.run()
+    assert runner.jobs["voice/W1"]["review_verdict"] == "pass"
+    assert processes.started[-1]["resume"] == "session-1"
+    github.merge.assert_not_called()
