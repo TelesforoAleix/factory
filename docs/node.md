@@ -16,6 +16,15 @@ arguments and exit status. It reads no host environment file, uses the container
 configured service UID, and needs the runner container to be running. Docker
 access remains a host administrator capability.
 
+## Automatic installs
+
+Once `factory` is on the platform deployer's automatic list, the runner's
+post-merge install request installs the merged Factory commit automatically.
+Changes touching a deployer guard path still require the owner's GitHub review;
+the deployer checks that review before installing. To roll back, ask the deployer
+to reinstall the previous known-good commit. Record that commit before an
+installation so it is available if rollback is needed.
+
 ## Remove the old host installation after merging K8f
 
 The orchestrator performs these steps after the deployer installs the merged commit.

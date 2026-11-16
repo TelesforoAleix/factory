@@ -1350,7 +1350,7 @@ def test_github_open_and_merge_are_recoverable():
     gh.call = Mock(return_value='[{"number":12}]')
     request = {'branch': 'feat/example', 'title': 'title', 'body': 'body'}
     assert gh.open('owner/repo', request) == 12
-    assert gh.call.call_count == 1
+    assert gh.call.call_args_list[1].args == ('owner/repo', 'pr', 'edit', '12', '--title', 'title', '--body', 'body')
     gh.call = Mock(side_effect=['[]', 'https://github.com/owner/repo/pull/12'])
     assert gh.open('owner/repo', request) == 12
     gh.call = Mock(return_value='{"state":"MERGED","mergeCommit":{"oid":"sha"}}')
@@ -1360,6 +1360,48 @@ def test_github_open_and_merge_are_recoverable():
     assert gh.merge('owner/repo', 12) == 'sha'
     assert gh.call.call_count == 3
 
+
+
+def test_existing_pr_edit_allows_later_merge_check():
+    from cplane.runner import check_merge_info
+    gh = GitHub()
+    info = {'state': 'OPEN', 'title': 'Old', 'body': 'DO NOT MERGE'}
+
+    def call(repo, *args):
+        if args[:2] == ('pr', 'list'):
+            return '[{"number":12}]'
+        assert args == ('pr', 'edit', '12', '--title', 'New', '--body', 'Ready')
+        info.update(title=args[4], body=args[6])
+        return ''
+
+    gh.call = Mock(side_effect=call)
+    assert gh.open('owner/repo', {'branch': 'feature', 'title': 'New', 'body': 'Ready'}) == 12
+    check_merge_info(info)
+
+
+def test_existing_pr_edit_failure_is_identified():
+    gh = GitHub()
+    gh.call = Mock(side_effect=['[{"number":12}]', state.StateError('gh operation failed')])
+    with pytest.raises(state.StateError, match='PR edit failed'):
+        gh.open('owner/repo', {'branch': 'feature', 'title': 'New', 'body': 'Ready'})
+
+
+def test_waiting_without_commits_asks_and_answer_resumes(setup):
+    r, p, gh = setup
+    r.fence.publish.return_value = 'a' * 40
+    r.run()
+    body = pr_reply() + '\n' + 'Question? ' * 5000
+    p.finish('waiting', body)
+    r.run()
+    assert item(r)['attention']['kind'] == 'question'
+    assert item(r)['attention']['body'] == cut_text(body, ATTENTION_LIMIT)
+    gh.open.assert_not_called()
+    edit(r, lambda s: s['attention'].update(answer='Proceed'))
+    r.run()
+    assert len(p.started) == 2
+    assert p.started[-1]['resume'] == 'session-1'
+    assert_prompt(p.started[-1], 'Proceed')
+    gh.open.assert_not_called()
 
 def test_live_process_group_reserves_capacity_after_supervisor_dies(tmp_path, monkeypatch):
     monkeypatch.setattr('cplane.executors.os.killpg', Mock())
