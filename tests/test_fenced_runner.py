@@ -549,7 +549,7 @@ def test_fenced_approval_stops_and_rechecks_before_merge(delivery, make_state):
     item.update(pr=12, session=dict(tool='codex', id='synthetic-session', folder=str(d['work'])))
     job = d['job']
     d['adapter'].publish(job, request(job))
-    job.update(phase='pr', tip=d['tip'], request=request(job))
+    job.update(phase='pr', tip=d['tip'], request=request(job), review_verdict='missing')
     runner.jobs = {item['id']: job}
     runner.pr_checks(item, job)
     assert item['attention']['kind'] == 'merge'
@@ -691,18 +691,24 @@ def test_fenced_full_runner_delivery_approval_resume_and_handover(delivery, make
     assert state.load(path)['slices'][0]['pr'] == 12
     assert d['g'](d['remote'], 'rev-parse', 'refs/heads/' + first['branch']) == d['tip']
     gh.checks.assert_not_called()
+    review = processes.started[-1]
+    assert review['review'] and review['repo'] != first['repo']
+    assert review['tip'] == d['tip']
+    runner.run()
+    gh.merge.assert_not_called()
+    review_answer(processes)
     runner.run()
     if stop:
         item = state.load(path)['slices'][0]
         assert item['attention']['kind'] == 'merge'
         gh.merge.assert_not_called()
-        assert len(processes.started) == 1
+        assert len(processes.started) == 2
         state.update(path, item['id'], 'approve', 'synthetic-owner',
                      lambda s, *_: (s['attention'].update(approved=True) or None, None))
         runner.run()
     gh.merge.assert_called_once_with('example/repo', 12, expected=d['tip'])
     resumed = processes.started[-1]
-    assert len(processes.started) == 2
+    assert len(processes.started) == 3
     assert resumed['resume'] == 'synthetic-session'
     assert resumed['repo'] == first['repo'] and resumed['run'] != first['run']
     assert {key: resumed[key] for key in metadata} == metadata
@@ -969,6 +975,7 @@ def test_explicit_cli_flow_keeps_existing_delivery(delivery, make_state, monkeyp
     job = delivery['job']
     job['final'] = dict(kind='waiting', body='```json\n' + json.dumps(request(job)) + '\n```')
     runner.at = datetime.now(timezone.utc).isoformat()
+    runner.instant = datetime.fromisoformat(runner.at)
     status = Mock(side_effect=AssertionError('CLI flow never reads the queue'))
     monkeypatch.setattr(cut, 'status', status)
     runner.apply_final(item, job)
@@ -1160,7 +1167,8 @@ def test_change_classes_merge_in_both_flows(delivery, make_state, flow, changed_
     item = state.load(runner.path)['slices'][0]
     item.update(flow=flow, pr=12, stop_before_merge=False,
                 session=dict(tool='codex', id='synthetic-session', folder=str(d['work'])))
-    job = {**d['job'], 'base': base, 'tip': tip, 'phase': 'pr', 'request': request(d['job'])}
+    job = {**d['job'], 'base': base, 'tip': tip, 'phase': 'pr', 'request': request(d['job']),
+           'review_verdict': 'missing'}
     runner.jobs = {item['id']: job}
     runner.launch = Mock()
     runner.pr_checks(item, job)
@@ -1645,7 +1653,7 @@ def test_github_updated_head_is_fetched_in_clean_clone_before_merge(delivery, ma
     runner.at = datetime.now(timezone.utc).isoformat()
     item = state.load(runner.path)['slices'][0]
     item.update(pr=12, stop_before_merge=False)
-    job = dict(d['job'], phase='pr', tip=d['tip'], request=request(d['job']))
+    job = dict(d['job'], phase='pr', tip=d['tip'], request=request(d['job']), review_verdict='missing')
     runner.pr_checks(item, job)
     assert job['updated_head'] and job['tip'] == updated
     gh.checks.assert_called_once_with('example/repo', 12, expected=d['tip'])

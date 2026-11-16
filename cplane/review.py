@@ -30,6 +30,8 @@ def prepare(adapter, previous, copy_id):
                     '+refs/heads/*:refs/remotes/origin/*', auth=True)
         tip = adapter.git(clean, 'rev-parse', '--verify',
                           f'refs/remotes/origin/{branch}^{{commit}}').stdout.strip()
+        if previous.get('record_only') and tip != previous['tip']:
+            raise StateError('review PR tip differs from delivered bundle')
         if adapter.git(clean, 'merge-base', '--is-ancestor', previous['base'], tip,
                        allow_failure=True).returncode:
             raise StateError('review branch does not descend from the slice base')

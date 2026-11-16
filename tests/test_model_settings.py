@@ -179,10 +179,13 @@ def test_claude_update_reports_skips_and_preserves_rows_on_all_refuse(
 
 def test_seven_roles_and_default_limits(pg_store):
     roles = {r['role']: r for r in pg_store.role_list()}
-    assert set(roles) == {'orchestrator', 'project', 'feature', 'secretary', 'light', 'standard', 'strong'}
+    assert set(roles) == {'orchestrator', 'project', 'feature', 'secretary', 'light', 'standard', 'strong', 'reviewer', 'reviewer-strong'}
     assert roles['light']['model'] == 'gpt-6-luna' and roles['light']['effort'] == 'low'
     assert roles['standard']['model'] == 'gpt-6.1-terra'
     assert roles['strong']['model'] == 'gpt-6.1-sol'
+    assert roles['reviewer']['tool'] == 'claude' and roles['reviewer']['model'] == 'sonnet'
+    assert roles['reviewer-strong']['model'] == 'opus'
+    assert roles['reviewer']['effort'] == roles['reviewer-strong']['effort'] == 'medium'
     assert all(roles[k]['effort'] == 'medium' for k in ('orchestrator', 'project', 'feature', 'standard', 'strong'))
     assert roles['secretary']['effort'] == 'low'
     assert pg_store.limit_show() == dict(building_limit=3, waiting_limit=3, chat_auto_turns=5, executors=2, repository_runs=1)

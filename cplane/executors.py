@@ -62,7 +62,7 @@ def command(job):
         if job.get('resume'):
             args += ['--resume', job['resume']]
     identity = []
-    if job.get('eval_attempt'):
+    if job.get('eval_attempt') or job.get('record_only'):
         identity = (['--run-id', job['container_id']] if fence.socket_enabled() else
                     ['--session-turn', str(job['cleanup_turn'])])
     return [*fence.fence_command(), 'run', *identity, '--tool', job['tool'], '--repo', job['repo'],
@@ -96,7 +96,8 @@ class Processes:
                    ['session-cleanup', str(job['cleanup_turn'])])
         subprocess.run([*fence.fence_command(), *cleanup], check=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                       env=fence.host_environment())
+                       env=fence.host_environment(),
+                       **({'timeout': 15} if job.get('record_only') else {}))
 
     def poll(self, job):
         if job.get('eval_attempt'):
@@ -194,7 +195,7 @@ def supervise(folder):
             os.fchmod(errors.fileno(), 0o600)
             code = subprocess.run(command(job), cwd=str(folder), stdin=subprocess.DEVNULL,
                                   stdout=log, stderr=errors, close_fds=True,
-                                  **({'timeout': job['timeout_seconds']} if job.get('eval_attempt') else {})).returncode
+                                  **({'timeout': job['timeout_seconds']} if job.get('eval_attempt') or job.get('record_only') else {})).returncode
     except subprocess.TimeoutExpired:
         timed_out = True
         stopped = False
@@ -203,7 +204,8 @@ def supervise(folder):
         # Do not announce completion until the container is confirmed stopped.
         subprocess.run([*fence.fence_command(), *cleanup], check=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                       env=fence.host_environment())
+                       env=fence.host_environment(),
+                       **({'timeout': 15} if job.get('record_only') else {}))
         stopped = True
     except Exception as error:
         with logfile.open('a') as log:

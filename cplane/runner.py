@@ -893,15 +893,19 @@ class Runner:
     def save_job(self, job):
         atomic_json(Path(job["run"]) / "job.json", job)
 
-    def execution(self, item):
+    def execution(self, item, review=False):
         if state.postgres():
-            return state.store(self.path).slice_executor(item)
-        from .roles import DEFAULT_LEVELS
+            store = state.store(self.path)
+            return store.slice_reviewer(item) if review else store.slice_executor(item)
+        from .roles import DEFAULT_LEVELS, DEFAULT_REVIEWERS
+
+        if review:
+            return DEFAULT_REVIEWERS["reviewer"]
 
         return {**DEFAULT_LEVELS["standard"], **item["executor"]}
 
-    def choose(self, item, resume=False):
-        execution = self.execution(item)
+    def choose(self, item, resume=False, review=False):
+        execution = self.execution(item, review=review)
         model = execution["model"]
         if resume:
             tool = item["session"]["tool"]
@@ -972,7 +976,9 @@ class Runner:
         return {
             **self.data,
             "_eligibility": dict(
-                jobs=self.jobs,
+                jobs={key: job.get("pr_review", job)
+                      if job.get("pr_review", {}).get("phase") == "running" else job
+                      for key, job in self.jobs.items()},
                 limits=limits,
                 resources_only=resources_only,
                 available=None
@@ -1007,13 +1013,20 @@ class Runner:
         if reason:
             self.defer(item, reason)
             return False
-        choice = self.choose(item, resume)
+        record_only = review and item.get("flow", "cli") == "cli"
+        choice = self.choose(item, resume, review=record_only)
         if choice is None:
             self.defer(item, "deferred: capacity unavailable")
             return False
         tool, model = choice
-        effort = self.execution(item)["effort"]
+        effort = self.execution(item, review=record_only)["effort"]
         previous = self.jobs.get(item["id"])
+        pending = previous.get("pr_review") if previous else None
+        if pending and pending.get("phase") == "running" and not record_only:
+            self.cli_review(item, previous)
+            if pending["phase"] == "running":
+                self.defer(item, "deferred: review fence still running")
+                return False
         if resume and previous and not previous.get("fence"):
             raise state.StateError(
                 "resume mode differs from saved job; needs attention"
@@ -1024,7 +1037,9 @@ class Runner:
         metadata = (
             self.fence.resume(previous, item["session"]["id"])
             if resume
-            else reviewer.prepare(self.fence, previous, uuid.uuid4().hex)
+            else reviewer.prepare(
+                self.fence, {**previous, "record_only": record_only}, uuid.uuid4().hex
+            )
             if review
             else self.fence.prepare(
                 item["repo"], "slice/" + item["id"].replace("/", "-"), uuid.uuid4().hex
@@ -1041,7 +1056,10 @@ class Runner:
             and not review
             and not (previous and previous.get("sha"))
         )
-        brief = previous.get("brief", "") if (resume or review) and previous else prompt
+        brief = (
+            previous.get("brief", previous.get("prompt", prompt))
+            if (resume or review) and previous else prompt
+        )
         skills = cutter.skills_version()
         context = []
         if (cut_turn or review) and not resume:
@@ -1084,28 +1102,45 @@ class Runner:
         job["context"] = context
         job["starting_commit"] = metadata.get("base") if not resume else None
         job.update(metadata, fence=True)
-        if item.get("flow", "cli") == "tickets" or item.get("brief_id"):
-            job.update(brief=brief, skills=skills)
+        job["brief"] = brief
         if review:
             job.update(review=True, repair=bool(previous.get("repair")))
+            if record_only:
+                timeout = max(1, int(os.environ.get("CPLANE_REVIEW_TIMEOUT_SECONDS", "1200")))
+                deadline = previous["review_requested_at"] + timeout
+                job.update(
+                    record_only=True, container_id="review-" + run.name,
+                    cleanup_turn=time.time_ns(),
+                    timeout_seconds=max(1, deadline - self.clock().timestamp()),
+                )
         if resume and previous:
-            for key in ("tip", "repair", "queue_slice"):
+            for key in (
+                "tip", "repair", "queue_slice", "review_verdict", "review_findings",
+                "pr_review", "review_requested_at", "review_ended_at",
+            ):
                 if key in previous:
                     job[key] = previous[key]
         if resume and previous and previous.get("sha"):
             job["sha"] = previous["sha"]
-        run_records.owner_wait(self, item, close=True)
+        if not record_only:
+            run_records.owner_wait(self, item, close=True)
         run_records.launch_metadata(self, item, job)
         # Persist intent before starting; an ambiguous handoff reserves a slot.
         if resume and previous and previous.get("noticed") is not None:
             job["noticed"] = previous["noticed"]
         self.save_job(job)
+        if record_only:
+            previous["pr_review"] = job
+            self.save_job(previous)
         try:
             job["pid"] = self.processes.start(job)
         except OSError as error:
             atomic_json(run / "exit.json", {"error": str(error)})
             self.log(item, f"launch failed: {error}")
         self.save_job(job)
+        if record_only:
+            self.save_job(previous)
+            return True
         self.jobs[item["id"]] = job
         item["session"] = {"tool": tool, "id": job["session"], "folder": str(folder)}
         item["state"] = "issued"
@@ -1382,7 +1417,14 @@ class Runner:
                     item, "escalation", "invalid fenced PR request: " + str(error)
                 )
             else:
+                old_tip = job.get("tip")
                 job["tip"] = self.publish(item, job, request)
+                if old_tip != job["tip"]:
+                    for key in (
+                        "review_verdict", "review_findings", "pr_review",
+                        "review_requested_at", "review_ended_at",
+                    ):
+                        job.pop(key, None)
                 if job["tip"] is None:
                     return
                 if final["kind"] == "waiting" and job["tip"] == job["base"]:
@@ -1392,6 +1434,7 @@ class Runner:
                     self.save_job(job)
                     item["pr"] = self.open_pr(self.github_repo(item), request)
                     self.log(item, f"opened PR: {item['pr']}", True)
+                    self.cli_review(item, job)
         else:
             self.attention(item, "node-step", final["body"])
         if job["phase"] == "ended":
@@ -1404,6 +1447,85 @@ class Runner:
             and state.postgres()
         ):
             state.store(self.path).chat_handover(item, final["body"])
+
+    def cli_review(self, item, job):
+        """Record-only review: keep the PR turn/session available for its handover."""
+        if item.get("flow", "cli") != "cli":
+            return True
+        review = job.get("pr_review")
+        if job.get("review_verdict"):
+            if review and review.get("stop_pending"):
+                try:
+                    if not (Path(review["run"]) / "exit.json").exists() or not self.processes.poll(review)[0]:
+                        self.processes.stop(review)
+                except Exception:  # noqa: BLE001 - keep capacity reserved after failed cleanup
+                    self.log(item, "review fence cleanup pending")
+                else:
+                    review.pop("stop_pending")
+                    review["phase"] = "collected"
+                    self.save_job(review)
+                    self.save_job(job)
+            run_records.review_outcome(self, job, item=item)
+            return True
+        if job.get("sha") and review is None:
+            return True
+        now = self.instant.timestamp()
+        job.setdefault("review_requested_at", now)
+        self.save_job(job)
+        review = job.get("pr_review")
+        answer = None
+        reason = None
+        done = False
+        try:
+            timeout = int(os.environ.get("CPLANE_REVIEW_TIMEOUT_SECONDS", "1200"))
+            if now - job["review_requested_at"] >= max(1, timeout):
+                reason = "time limit"
+            elif review is None:
+                if item["paused"] or self.room(item):
+                    return False
+                # Provider unavailability is a failed attempt, never an executor fallback.
+                if self.choose(item, review=True) is None:
+                    reason = "reviewer unavailable"
+                else:
+                    self.launch(item, job.get("brief", job["prompt"]), review=True)
+                    return False
+            else:
+                done, session, final, tail = self.processes.poll(review)
+                if not done:
+                    return False
+                review.update(session=session or "", final=final, tail=tail)
+                exit_file = Path(review["run"]) / "exit.json"
+                if exit_file.exists() and json.loads(exit_file.read_text()).get("code") != 0:
+                    raise state.StateError("review process failed")
+                if not final or final.get("kind") != "waiting":
+                    raise state.StateError("review ended without a verdict")
+                match = re.match(r"\s*```(?:json)?[ \t]*\n(.*?)\n```", final["body"], re.DOTALL)
+                answer = json.loads(match[1]) if match else None
+                reviewer.validate(answer)
+        except Exception:  # noqa: BLE001 - reviewer failures only record missing
+            answer = None
+            reason = "review failed"
+        review = job.get("pr_review")
+        if review:
+            if reason and review.get("phase") == "running" and (
+                not done or not (Path(review["run"]) / "exit.json").exists()
+            ):
+                try:
+                    self.processes.stop(review)
+                except Exception:  # noqa: BLE001 - cleanup failure must retain capacity
+                    # Keep reserving capacity until poll confirms the fence ended.
+                    review["stop_pending"] = True
+            review["phase"] = "running" if review.get("stop_pending") else "collected"
+            review["ended_at"] = now
+            self.save_job(review)
+        verdict = answer["verdict"] if answer else "missing"
+        findings = ({key: answer[key] for key in ("title", "body")}
+                    if answer and verdict == "pass" else answer["tickets"] if answer else None)
+        job.update(review_verdict=verdict, review_findings=findings, review_ended_at=now)
+        self.save_job(job)
+        self.log(item, "review: " + verdict + (" (" + reason + ")" if reason else ""))
+        run_records.review_outcome(self, job, item=item)
+        return True
 
     def apply_review(self, item, job, body):
         match = re.match(r"\s*```(?:json)?[ \t]*\n(.*?)\n```", body, re.S)
@@ -1555,6 +1677,8 @@ class Runner:
         return True
 
     def merge(self, item, job, *, ready=False, merged=None):
+        if merged is None and not self.cli_review(item, job):
+            return
         if not ready and not self.merge_ready(item, job):
             return
         change_class, guards = classes.changes(self.fence, job)
@@ -1846,6 +1970,8 @@ class Runner:
             self.jobs = {}
             for path in sorted(self.runs.glob("*/job.json")):
                 job = json.loads(path.read_text())
+                if job.get("record_only"):
+                    continue
                 previous = self.jobs.get(job["id"])
                 if previous is None or previous["started_ns"] < job["started_ns"]:
                     self.jobs[job["id"]] = job
@@ -1868,6 +1994,11 @@ class Runner:
                 )
                 login_start = fence.github_logins.get()
                 run_records.owner_wait(self, item)
+                saved = self.jobs.get(item["id"])
+                if saved and (saved.get("review_verdict") or (
+                    saved.get("pr_review") and item["state"] in ("accepted", "dropped")
+                )):
+                    self.cli_review(item, saved)
                 if item["state"] in ("accepted", "dropped"):
                     # An accepted slice's finished process must not hold a slot.
                     job = self.jobs.get(item["id"])
@@ -1951,6 +2082,7 @@ class Runner:
                         else:
                             self.collect(item, job)
                         if phase_before == "pr":
+                            self.cli_review(item, job)
                             self.pr_checks(item, job)
                 except github_app.GitHubAppTransientError:
                     if fence.github_calls.get():
