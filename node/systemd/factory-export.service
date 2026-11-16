@@ -1,9 +1,0 @@
-[Unit]
-Description=Export Factory state
-
-[Service]
-Type=oneshot
-User=root
-ExecStart=/usr/local/bin/factory-export
-UMask=0077
-NoNewPrivileges=yes

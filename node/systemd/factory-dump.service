@@ -1,9 +1,0 @@
-[Unit]
-Description=Dump Factory database
-
-[Service]
-Type=oneshot
-User=root
-ExecStart=/usr/local/bin/factory-dump
-UMask=0027
-NoNewPrivileges=yes

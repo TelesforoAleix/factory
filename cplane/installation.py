@@ -1,4 +1,4 @@
-"""Install requests use the v1 mutation log; host results stay outside shared state."""
+"""Install requests use the v1 mutation log; deployer results stay outside shared state."""
 
 import fcntl
 import hashlib
@@ -24,7 +24,7 @@ def output_tail(value, limit=OUTPUT_LIMIT):
 
 
 def failure_text(answer):
-    text = answer.get("error", "Install failed; inspect the root install unit")
+    text = answer.get("error", "Install failed; inspect the deployer record")
     for stream in ("stderr", "stdout"):
         tail = output_tail(answer.get(stream, ""), 512)
         if tail:
@@ -162,41 +162,6 @@ def runs_path(path):
     )
 
 
-def start_unit(slice_id, request, directory):
-    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-    # Persist intent before launching: a lost transient unit must never replay an install.
-    atomic_json(
-        directory / (request + ".started"), {"unit": "factory-install-" + request}
-    )
-    descriptor = os.open(directory, os.O_RDONLY)
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
-    try:
-        launched = subprocess.run(
-            [
-                "systemd-run",
-                "--no-block",
-                "--unit=factory-install-" + request,
-                "--property=Type=oneshot",
-                "--property=RemainAfterExit=yes",
-                "--property=UMask=0077",
-                "--property=EnvironmentFile=/etc/factory/runner.env",
-                "--property=WorkingDirectory=/",
-                "--",
-                "/usr/local/bin/factory-install",
-                slice_id,
-                "--request",
-                request,
-            ],
-            capture_output=True,
-        )
-        return launched.returncode == 0
-    except OSError:
-        return False
-
-
 def start_deployer(application, sha, request, directory):
     marker = directory / (request + ".started")
     atomic_json(marker, {"deployer": True})
@@ -247,7 +212,6 @@ def process(runner):
         directory = runner.runs / "installs"
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         result = directory / (request + ".json")
-        unit = "factory-install-" + request
         if result.exists():
             try:
                 answer = json.loads(result.read_text())
@@ -284,7 +248,7 @@ def process(runner):
                 runner.attention(
                     item,
                     "escalation",
-                    "Install result invalid or node step changed; inspect the root install unit",
+                    "Install result invalid or node step changed; inspect the deployer record",
                 )
             runner.log(item, FINISHED + request)
             continue
@@ -338,57 +302,9 @@ def process(runner):
             else:
                 runner.defer(item, "install started: " + request)
             continue
-        # A completed unit without a result is an interrupted/failed install, never retried.
-        try:
-            status = subprocess.run(
-                ["systemctl", "show", unit, "--property=LoadState,ActiveState"],
-                capture_output=True,
-                text=True,
-            )
-        except OSError:
-            runner.attention(item, "escalation", "Install service manager unavailable")
-            runner.log(item, FINISHED + request)
-            continue
-        if "LoadState=loaded" in status.stdout:
-            if (
-                "ActiveState=failed" in status.stdout
-                or "ActiveState=inactive" in status.stdout
-            ):
-                runner.attention(
-                    item,
-                    "escalation",
-                    "Install unit ended without a result; inspect the root install unit",
-                )
-                runner.log(item, FINISHED + request)
-            continue
-        if (directory / (request + ".started")).exists():
-            runner.attention(
-                item,
-                "escalation",
-                "Install unit disappeared; inspect the node before retrying",
-            )
-            runner.log(item, FINISHED + request)
-            continue
-        job = runner.jobs.get(item["id"])
-        attention = item["attention"]
-        if (
-            not job
-            or job.get("phase") != "node-step"
-            or not job.get("sha")
-            or not attention
-            or attention["kind"] != "node-step"
-            or attention["answer"] is not None
-        ):
-            runner.attention(
-                item,
-                "escalation",
-                "Install requires recorded merge metadata and an open node step",
-            )
-            runner.log(item, FINISHED + request)
-            continue
-        if not start_unit(item["id"], request, directory):
-            # Do not log subprocess diagnostics or environment values.
-            runner.attention(item, "escalation", "Install unit could not start")
-            runner.log(item, FINISHED + request)
-        else:
-            runner.defer(item, "install started: " + request)
+        runner.attention(
+            item,
+            "escalation",
+            "Install requires CPLANE_DEPLOYER_SOCKET; configure the platform deployer",
+        )
+        runner.log(item, FINISHED + request)

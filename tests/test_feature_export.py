@@ -1,6 +1,5 @@
 """Synthetic tables and real temporary remotes, never private planning data."""
 import os
-from pathlib import Path
 import subprocess
 
 import pytest
@@ -236,18 +235,6 @@ def test_symlink_refused(publication):
     git(seed, 'push', remote, 'main')
     with pytest.raises(StateError, match='refused'):
         adapter.publish(features(), False)
-
-
-def test_timer_wrapper_sanitizes_errors(tmp_path):
-    executable = tmp_path / 'factory-cplane'
-    executable.write_text('#!/bin/sh\necho "private database diagnostic" >&2\nexit 1\n')
-    executable.chmod(0o755)
-    script = Path(__file__).resolve().parents[1] / 'node/bin/factory-feature-export'
-    result = subprocess.run([str(script)], env=os.environ | {'PATH': f'{tmp_path}:/usr/bin:/bin'},
-                            capture_output=True, text=True)
-    assert result.returncode == 1
-    assert result.stdout == ''
-    assert result.stderr == 'Factory feature export failed\n'
 
 
 def test_publish_stored_briefs_exact_and_move(publication):
