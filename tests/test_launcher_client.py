@@ -433,7 +433,7 @@ def test_shared_session_and_export_checks(boundary, service_identity, monkeypatc
     work, _, requests, _, _ = boundary
     monkeypatch.setattr(sessions.skills, 'install', lambda *args: None)
     monkeypatch.setattr(sessions.skills, 'ensure_readable', lambda *args: None)
-    monkeypatch.setattr(sessions, 'export_tree', lambda _, path, ref: path.mkdir())
+    monkeypatch.setattr(sessions, 'export_tree', lambda _, path, ref, **kwargs: path.mkdir())
     original = Path.lstat
     groups = {}
 
@@ -495,7 +495,7 @@ def test_old_session_removed_before_recreation(boundary, service_identity, monke
     monkeypatch.setattr(fence, 'remove', remove)
     monkeypatch.setattr(sessions.os, 'chown', Mock())
     monkeypatch.setattr(sessions.skills, 'install', lambda *args: None)
-    monkeypatch.setattr(sessions, 'export_tree', lambda _, path, ref: path.mkdir())
+    monkeypatch.setattr(sessions, 'export_tree', lambda _, path, ref, **kwargs: path.mkdir())
     session = dict(id=1, cli_session_id=None, workspace_ready=True, repositories=[])
     sessions.workspace(session)
     assert removed == [folder] and not (folder / 'old').exists()

@@ -173,3 +173,57 @@ def test_document_clone_owner(tmp_path, monkeypatch, setting, uid, mode, accepte
         with pytest.raises(state.StateError):
             exporter.refresh()
         execute.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "setting,uid,mode,accepted",
+    [
+        ("21010", 21010, 0o750, True),
+        ("21010", 21010, 0o770, False),
+        ("21010", 21010, 0o752, False),
+        ("21010", 21012, 0o750, False),
+        (None, 21010, 0o750, False),
+        ("invalid", 21010, 0o750, False),
+        ("", 21010, 0o750, False),
+    ],
+)
+def test_factory_workspace_briefs_owner(tmp_path, monkeypatch, setting, uid, mode, accepted):
+    clone = tmp_path / "briefs"
+    subprocess.run(["git", "init", "-q", str(clone)], check=True)
+    (clone / "plan.md").write_text("# Synthetic plan\n")
+    subprocess.run(["git", "-C", str(clone), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(clone), "-c", "user.name=Test", "-c",
+                    "user.email=test@example.test", "commit", "-qm", "fixture"], check=True)
+    work = tmp_path / "work"
+    work.mkdir()
+    monkeypatch.setattr(sessions, "WORK_ROOT", work)
+    monkeypatch.setattr(sessions, "BRIEFS", clone)
+    monkeypatch.setattr(sessions.fence, "require_ownership_support", lambda: None)
+    monkeypatch.setattr(sessions.os, "chown", Mock())
+    monkeypatch.setattr(sessions.skills, "install", Mock())
+    if setting is None:
+        monkeypatch.delenv("CPLANE_BRIEFS_OWNER_UID", raising=False)
+    else:
+        monkeypatch.setenv("CPLANE_BRIEFS_OWNER_UID", setting)
+    synthetic_owners(monkeypatch, {clone: (uid, mode)})
+    environment = sessions.host_environment
+    monkeypatch.setattr(sessions, "host_environment",
+                        lambda: {**environment(), "GIT_TEST_ASSUME_DIFFERENT_OWNER": "1"})
+    session = {"id": 1, "area": "factory", "cli_session_id": None, "repositories": []}
+    if accepted:
+        folder, paths = sessions.workspace(session)
+        assert (folder / "planning/plan.md").read_text() == "# Synthetic plan\n"
+        assert paths == [folder / "repos/factory-planning-export"]
+    else:
+        with pytest.raises(state.StateError):
+            sessions.workspace(session)
+
+
+@pytest.mark.parametrize("uid,mode", [(21010, 0o750), (0, 0o770)])
+def test_briefs_owner_does_not_trust_ancestors(tmp_path, monkeypatch, uid, mode):
+    parent = tmp_path / "parent"
+    clone = parent / "briefs"
+    clone.mkdir(parents=True)
+    synthetic_owners(monkeypatch, {parent: (uid, mode), clone: (21010, 0o750)})
+    with pytest.raises(state.StateError):
+        sessions._trusted_export_clone(clone, 21010)

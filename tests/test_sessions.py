@@ -527,7 +527,7 @@ def test_old_resume_workspace_resets_context(tmp_path, monkeypatch):
     (old / 'old-file').write_text('old context')
     monkeypatch.setattr(sessions, 'WORK_ROOT', tmp_path)
     monkeypatch.setattr(sessions, 'RUNS', tmp_path)
-    monkeypatch.setattr(sessions, 'export_tree', lambda clone, dest, ref: dest.mkdir())
+    monkeypatch.setattr(sessions, 'export_tree', lambda clone, dest, ref, **kwargs: dest.mkdir())
     monkeypatch.setattr(sessions.skills, 'install', lambda *args: None)
     monkeypatch.setattr(sessions.fence, 'require_ownership_support', lambda: None)
     monkeypatch.setattr(sessions.os, 'chown', lambda *args, **kwargs: None)
