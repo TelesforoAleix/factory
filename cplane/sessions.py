@@ -32,11 +32,18 @@ LOCK = Path(os.environ.get('CPLANE_SESSIONS_LOCK', '/run/factory-sessions.lock')
 LOG = logging.getLogger(__name__)
 
 
+def _briefs_owner_uid():
+    setting = os.environ.get('CPLANE_BRIEFS_OWNER_UID')
+    if setting is not None and (not setting.isascii() or not setting.isdecimal()):
+        raise StateError('Invalid CPLANE_BRIEFS_OWNER_UID')
+    return int(setting) if setting is not None else None
+
+
 def _trusted_export_clone(clone, owner_uid):
     if owner_uid is None:
         return trusted_directory(clone)
     # Only the clone itself may have this additional owner; ancestors retain
-    # their usual checks. This exception is used only by DocumentExporter.
+    # their usual checks. This exception is used only for the briefs clone.
     trusted_directory(clone.parent)
     info = clone.lstat()
     if (not stat.S_ISDIR(info.st_mode) or info.st_uid not in (0, os.geteuid(), owner_uid)
@@ -81,10 +88,7 @@ class DocumentExporter:
         self.head = None
 
     def refresh(self):
-        setting = os.environ.get('CPLANE_BRIEFS_OWNER_UID')
-        if setting is not None and (not setting.isascii() or not setting.isdecimal()):
-            raise StateError('Invalid CPLANE_BRIEFS_OWNER_UID')
-        owner_uid = int(setting) if setting is not None else None
+        owner_uid = _briefs_owner_uid()
         _trusted_export_clone(self.clone, owner_uid)
         head = subprocess.run(
             ['git', '-C', str(self.clone), '-c', f'safe.directory={self.clone}',
@@ -187,7 +191,7 @@ def workspace(session):
         else:
             # Reuse the existing read-only repository mount contract. Repository
             # The reserved export name is rejected in repository lists.
-            export_tree(BRIEFS, repos / PLANNING_EXPORT, 'HEAD')
+            export_tree(BRIEFS, repos / PLANNING_EXPORT, 'HEAD', owner_uid=_briefs_owner_uid())
             (repos / PLANNING_EXPORT).chmod(0o755)
             (folder / 'planning').symlink_to('repos/' + PLANNING_EXPORT)
         adapter = repository_fence() if session['repositories'] else None
