@@ -23,7 +23,7 @@ test('project sections, usage, links, inline save and shared attention action', 
   expect(screen.getByRole('link',{name:'Public site ↗'}).getAttribute('href')).toBe('https://example.test');
   expect(screen.getByRole('link',{name:'Open Factory in the Library →'}).getAttribute('href')).toBe('/library?project=FAC');
   expect(screen.getByText('Building').closest('a').getAttribute('href')).toBe('/pipeline?project=FAC');
-  expect([...document.querySelectorAll('.project-page .home-strip span')].map(e => e.textContent)).toEqual(['Shortlist','Grilling','Ready','Next','Building','Testing','Parked']);
+  expect([...document.querySelectorAll('.project-page .home-strip span')].map(e => e.textContent)).toEqual(['Shortlist','Grilling','Ready','Next','Building','Acceptance','Testing','Parked']);
   expect(screen.queryByText('Done')).toBeNull();
   expect(screen.getByText('150')).toBeTruthy(); expect(screen.getByText('1.5')).toBeTruthy();
   expect(screen.getByText(/Costs come with Insights/)).toBeTruthy();

@@ -4,7 +4,7 @@ import re
 from .state import StateError
 
 COLUMNS = ('Feature', 'Kind', 'Area', 'Repo', 'Horizon', 'Order', 'Slices', 'Readiness', 'Depends on')
-HORIZONS = {'building': 'now', 'testing': 'now', 'ready': 'next', 'next': 'next',
+HORIZONS = {'building': 'now', 'acceptance': 'now', 'testing': 'now', 'ready': 'next', 'next': 'next',
             'shortlist': 'next', 'grilling': 'next', 'parked': 'parked', 'done': 'done'}
 
 

@@ -100,7 +100,11 @@ def home_data(store, board, clean, view):
         add('limit', 'pipeline', since, project=None, text=f"Waiting limit full ({len(waiting)}/{limits['waiting_limit']})")
     if hasattr(store, 'testing_review_waits'):
         attention.extend({**a, 'title': clean(a['title']), 'text': clean(a['text'])} for a in store.testing_review_waits())
-    order = {k: i for i, k in enumerate(('failure', 'approval', 'install', 'decision', 'question', 'testing-review', 'stuck', 'limit'))}
+    for feature in features:
+        if feature['stage'] == 'acceptance':
+            add('acceptance', feature['id'], None, project=feature['project'],
+                title=clean(feature['title']), text='Run the checks')
+    order = {k: i for i, k in enumerate(('acceptance', 'failure', 'approval', 'install', 'decision', 'question', 'testing-review', 'stuck', 'limit'))}
     attention.sort(key=lambda a: (order[a['kind']], a['since'] or ''))
     ordered = store.ordered_slices(slices) if hasattr(store, 'ordered_slices') else slices
     def slice_summary(s):

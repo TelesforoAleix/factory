@@ -73,7 +73,7 @@ test('groups stages into four columns and toggles compact preview', async () => 
   render(<MemoryRouter initialEntries={['/pipeline']}><App/></MemoryRouter>);
   await screen.findByText('Synthetic feature');
   const groups = [...document.querySelectorAll('.pipeline-group')];
-  expect(groups.map(g => [...g.querySelectorAll('.pipeline-column')].map(c => c.className.match(/stage-\w+/)[0]))).toEqual([['stage-shortlist'],['stage-grilling'],['stage-ready','stage-next'],['stage-building','stage-testing'],['stage-parked']]);
+  expect(groups.map(g => [...g.querySelectorAll('.pipeline-column')].map(c => c.className.match(/stage-\w+/)[0]))).toEqual([['stage-shortlist'],['stage-grilling'],['stage-ready','stage-next'],['stage-building','stage-acceptance','stage-testing'],['stage-parked']]);
   const card = screen.getByRole('button', {name:/Synthetic feature/});
   fireEvent.click(card);
   expect(document.querySelector('.pipeline-layout.has-panel')).toBeTruthy();
@@ -91,7 +91,7 @@ test('phone stages start collapsed except the active three and a card closes on 
   vi.stubGlobal('fetch', vi.fn(async url => ({ok:true,json:async () => url === '/api/pipeline' ? {projects:[],features:[card]} : url === '/api/chats' ? [] : card})));
   render(<MemoryRouter initialEntries={['/pipeline']}><App/></MemoryRouter>);
   await screen.findByText('Synthetic feature');
-  expect([...document.querySelectorAll('.stage-toggle')].map(b => [b.textContent.trim().replace(/\s+\d+$/, ''), b.getAttribute('aria-expanded')])).toEqual([['Shortlist','false'],['Grilling','false'],['Ready','true'],['Next','true'],['Building','true'],['Testing','false'],['Parked','false']]);
+  expect([...document.querySelectorAll('.stage-toggle')].map(b => [b.textContent.trim().replace(/\s+\d+$/, ''), b.getAttribute('aria-expanded')])).toEqual([['Shortlist','false'],['Grilling','false'],['Ready','true'],['Next','true'],['Building','true'],['Acceptance','false'],['Testing','false'],['Parked','false']]);
   const button = screen.getByRole('button',{name:/Synthetic feature/});
   fireEvent.click(button);
   await waitFor(() => expect(document.querySelector('.mobile-panel')).toBeTruthy());
@@ -150,4 +150,15 @@ test('slice chips and relationship panel use board explanations', async () => {
     expect(panel.textContent).toContain(heading);
     expect(within(panel).getByRole('link',{name:id}).getAttribute('href')).toBe('/factory/slices/' + id);
   }
+});
+
+
+test.each([[null, false], ['functional', true], ['experience', true]])('feature kind is shown only when set (%s)', async (kind, visible) => {
+  const item = {...feature, kind};
+  vi.stubGlobal('fetch', vi.fn(async url => ({ok:true, json:async () => url === '/api/pipeline' ? {projects:[],features:[item]} : url === '/api/chats' ? [] : item})));
+  render(<MemoryRouter initialEntries={['/pipeline?feature=FAC-F1']}><App/></MemoryRouter>);
+  await waitFor(() => expect(document.querySelector('.feature-meta')).toBeTruthy());
+  const text = document.querySelector('.feature-meta').textContent;
+  expect(text.includes('Functional') || text.includes('Experience')).toBe(visible);
+  if (kind) expect(text).toContain(kind === 'functional' ? 'Functional' : 'Experience');
 });

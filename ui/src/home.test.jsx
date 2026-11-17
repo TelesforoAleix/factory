@@ -149,3 +149,10 @@ test.each([false, true])('log follows unlinked and starts folded only on phone (
   expect(screen.getByRole('link',{name:'FAC-F1'}).getAttribute('href')).toBe('/pipeline/FAC-F1');
   expect(screen.getByText('Showing the most recent 200 moves.')).toBeTruthy();
 });
+
+test('acceptance links to the feature checks', () => {
+  render(<MemoryRouter><Attention item={{kind:'acceptance',id:'FAC-F1',title:'Checks',text:'Run the checks'}} act={() => {}}/></MemoryRouter>);
+  expect(screen.getByText('Acceptance')).toBeTruthy();
+  expect(screen.getByText('Run the checks')).toBeTruthy();
+  expect(screen.getByRole('link', {name:'Open feature'}).getAttribute('href')).toBe('/pipeline/FAC-F1');
+});

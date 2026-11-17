@@ -411,3 +411,15 @@ def test_board_slice_relationships_include_other_features(monkeypatch):
     assert item['depends_on'] == []
     assert item['dependants'] == ['demo/two']
     assert item['eligibility']['status'] == 'ready'
+
+
+def test_home_includes_acceptance_features():
+    from factory_ui.home import home_data
+    class Store:
+        def load(self): return {'slices': []}
+        def chats(self, **kwargs): return []
+        def notices(self): return []
+        def limit_show(self): return {'waiting_limit': 2}
+    board = {'features': [{'id': 'FAC-F1', 'title': 'Checks', 'project': 'FAC', 'stage': 'acceptance'}], 'projects': []}
+    attention = home_data(Store(), board, lambda x: x, None)['attention']
+    assert attention == [{'kind': 'acceptance', 'id': 'FAC-F1', 'since': None, 'project': 'FAC', 'title': 'Checks', 'text': 'Run the checks'}]
