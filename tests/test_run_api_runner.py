@@ -2,7 +2,7 @@
 
 import copy
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock, patch
 
 import pytest
@@ -215,6 +215,366 @@ def edit(r, fn):
 def current(r):
     job = r.jobs["voice/W1"]
     return job["requests"][job["active"]]["run_id"]
+
+
+ANSWER_HEADING = (
+    "Answers given during the slice (they replace the brief where they differ):"
+)
+REVIEW_ANSWERS = [
+    {
+        "at": "2026-11-17T00:00:00+00:00",
+        "question": "Pause on failure?\nThe brief says yes.",
+        "answer": "Continue instead.\nKeep the café output.",
+    },
+    {
+        "at": "2026-11-17T00:01:00+00:00",
+        "question": "Pause on failure?\nThe brief says yes.",
+        "answer": "For the second case, pause.",
+    },
+]
+
+
+def expected_review_answers(answers):
+    if not answers:
+        return ""
+    return (
+        "\n\n"
+        + ANSWER_HEADING
+        + "".join(
+            "\n\nQuestion:\n" + entry["question"] + "\n\nAnswer:\n" + entry["answer"]
+            for entry in answers
+        )
+    )
+
+
+@pytest.mark.parametrize("history", [None, [], REVIEW_ANSWERS])
+def test_review_answers_formatter(history):
+    # Missing answers is a legacy job, not a request to migrate it.
+    job = {"brief": "Original brief"}
+    if history is not None:
+        job["answers"] = copy.deepcopy(history)
+    before = copy.deepcopy(job)
+    assert Runner.review_answers(job) == expected_review_answers(history)
+    assert job == before
+
+
+@pytest.mark.parametrize("target", ["slice", "pr-review"])
+@pytest.mark.parametrize("kind", ["question", "escalation"])
+def test_answer_history_delivery(setup, monkeypatch, target, kind):
+    r, api, _ = setup
+    r.run()
+    run_id = current(r)
+    if target == "pr-review":
+        api.finish(run_id, body=pr_reply())
+        r.run()
+        run_id = r.jobs["voice/W1"]["requests"]["review-1"]["run_id"]
+    requests_before = copy.deepcopy(api.requests)
+    question, answer = "Which rule?\nInclude café output?", "Continue.\nKeep café."
+    api.finish(
+        run_id,
+        status="question" if kind == "question" else "escalated",
+        kind=kind,
+        body=question,
+    )
+    r.run()
+    attention_before = copy.deepcopy(item(r)["attention"])
+    with patch("cplane.state.now", return_value=NOW):
+        assert (
+            main(
+                [
+                    "--state",
+                    str(r.path),
+                    "--actor",
+                    "planner",
+                    "answer",
+                    "voice/W1",
+                    answer,
+                ]
+            )
+            == 0
+        )
+    answered = item(r)
+    assert answered["attention"] == {**attention_before, "answer": answer}
+    assert set(answered["log"][-1]) == {"at", "actor", "event"}
+    assert answered["log"][-1]["event"] == "answer"
+    log_before = copy.deepcopy(answered["log"])
+    expected = [{"at": NOW.isoformat(), "question": question, "answer": answer}]
+    snapshots = []
+    original = api.message
+
+    def observe_saved_intent(key, body):
+        path = next(r.runs.glob("*/job.json"))
+        snapshots.append(json.loads(path.read_text()))
+        return original(key, body)
+
+    monkeypatch.setattr(api, "message", observe_saved_intent)
+    r.run()
+    job = r.jobs["voice/W1"]
+    assert job.get("answers") == expected
+    assert snapshots[0].get("answers") == expected
+    assert (
+        json.loads(next(r.runs.glob("*/job.json")).read_text())["answers"] == expected
+    )
+    message = next(iter(api.messages.values()))
+    assert set(message) == {"contract", "message_id", "text"}
+    assert message == {
+        "contract": 1,
+        "message_id": message["message_id"],
+        "text": answer,
+    }
+    assert next(iter(api.messages))[0] == run_id
+    assert api.requests == requests_before
+    after = item(r)
+    assert after["attention"] is None and "answers" not in after
+    assert after["log"] == log_before + [
+        {"at": NOW.isoformat(), "actor": "runner", "event": "resumed"}
+    ]
+
+
+def test_answer_history_only_on_delivery(setup):
+    r, api, _ = setup
+    r.run()
+    run_id = current(r)
+    api.finish(run_id, kind="question", body="Choose a rule")
+    r.run()
+    edit(r, lambda s: (s.update(paused=True), s["attention"].update(answer="Use A")))
+    before = item(r)["attention"]
+    r.run()
+    assert not r.jobs["voice/W1"].get("answers") and not api.messages
+    assert item(r)["attention"] == before
+    edit(r, lambda s: s.update(paused=False))
+    api.records[run_id]["resumable"] = False
+    r.run()
+    assert not r.jobs["voice/W1"].get("answers") and not api.messages
+    assert item(r)["attention"] == before
+    api.records[run_id]["resumable"] = True
+    r.clock = lambda: NOW + timedelta(minutes=3)
+    r.run()
+    assert r.jobs["voice/W1"].get("answers") == [
+        {
+            "at": (NOW + timedelta(minutes=3)).isoformat(),
+            "question": "Choose a rule",
+            "answer": "Use A",
+        }
+    ]
+
+
+@pytest.mark.parametrize("accepted", [False, True])
+def test_answer_history_message_retry(setup, monkeypatch, accepted):
+    from cplane.run_platform import Unavailable
+
+    r, api, gh = setup
+    r.run()
+    run_id = current(r)
+    api.finish(run_id, kind="question", body="Original question")
+    r.run()
+    edit(r, lambda s: s["attention"].update(answer="Original answer"))
+    original = api.message
+
+    def unavailable(key, body):
+        if accepted:
+            original(key, body)
+        raise Unavailable("Response unavailable")
+
+    monkeypatch.setattr(api, "message", unavailable)
+    r.run()
+    saved = json.loads(next(r.runs.glob("*/job.json")).read_text())
+    expected = [
+        {
+            "at": NOW.isoformat(),
+            "question": "Original question",
+            "answer": "Original answer",
+        }
+    ]
+    assert saved.get("answers") == expected
+    message = saved["requests"]["slice"]["message"]
+    # A changed attention must not replace the answer belonging to the saved ID.
+    edit(
+        r, lambda s: s["attention"].update(body="Later question", answer="Later answer")
+    )
+    monkeypatch.setattr(api, "message", original)
+    restarted = Runner(
+        r.path,
+        run_client=api,
+        github=gh,
+        git=Mock(),
+        clock=lambda: NOW + timedelta(minutes=5),
+        runs=r.runs.parent,
+    )
+    restarted.run()
+    restarted.run()
+    assert list(api.messages.values()) == [message]
+    assert restarted.jobs["voice/W1"]["answers"] == expected
+    assert item(restarted)["attention"] is None
+
+
+def test_answer_history_state_save_retry(setup, monkeypatch):
+    r, api, _ = setup
+    r.run()
+    api.finish(current(r), kind="question", body="Choose")
+    r.run()
+    edit(r, lambda s: s["attention"].update(answer="Use A"))
+    with monkeypatch.context() as m:
+        m.setattr(state, "save", Mock(side_effect=OSError("interrupted state save")))
+        with pytest.raises(OSError, match="interrupted state save"):
+            r.run()
+    assert len(api.messages) == 1
+    r.run()
+    job = r.jobs["voice/W1"]
+    expected = [{"at": NOW.isoformat(), "question": "Choose", "answer": "Use A"}]
+    assert job.get("answers") == expected
+    assert len(api.messages) == 1 and item(r)["attention"] is None
+    # Re-enter the explicit last_message_id guard with the old attention present.
+    replay = item(r)
+    replay["attention"] = {
+        "kind": "question",
+        "body": "Choose",
+        "since": NOW.isoformat(),
+        "answer": "Use A",
+        "approved": False,
+    }
+    message_id = next(iter(api.messages.values()))["message_id"]
+    r.send_message(replay, job, "Use A", "answer-" + message_id.rsplit("-", 1)[1])
+    assert job["answers"] == expected and len(api.messages) == 1
+
+
+def test_answer_history_order_and_nonanswer_messages(setup):
+    r, api, _ = setup
+    r.run()
+    run_id = current(r)
+    expected = []
+    for minute in (1, 2):
+        instant = NOW + timedelta(minutes=minute)
+        r.clock = lambda instant=instant: instant
+        api.finish(run_id, kind="question", body="Same question")
+        r.run()
+        edit(r, lambda s: s["attention"].update(answer="Same answer"))
+        r.run()
+        expected.append(
+            {
+                "at": instant.isoformat(),
+                "question": "Same question",
+                "answer": "Same answer",
+            }
+        )
+    job = r.jobs["voice/W1"]
+    assert job.get("answers") == expected
+    # Resumable start and merge notices are messages, but are not answers.
+    for purpose, text in (
+        ("start-99", "Resume work"),
+        ("merged", "merged as " + "c" * 40),
+    ):
+        api.finish(run_id, kind="question", body="Unanswered question")
+        job["requests"]["slice"]["record"] = api.get(run_id)
+        r.send_message(item(r), job, text, purpose)
+        assert job["answers"] == expected
+    assert len(api.messages) == 4
+
+
+@pytest.mark.parametrize("flow", ["cli", "tickets"])
+@pytest.mark.parametrize("history", [None, [], REVIEW_ANSWERS])
+def test_review_answer_context_goals(setup, flow, history):
+    r, api, _ = setup
+    edit(r, lambda s: s.update(flow=flow))
+    r.run()
+    job = r.jobs["voice/W1"]
+    if history is not None:
+        job["answers"] = copy.deepcopy(history)
+    else:
+        job.pop("answers", None)
+    r.save_job(job)
+    if flow == "cli":
+        api.finish(current(r), body=pr_reply())
+    else:
+        api.finish(current(r), body=block(PLAN))
+        r.run()
+        for key, req in list(api.requests.items()):
+            if req["role"] == "ticket":
+                api.finish(key)
+    r.run()
+    job = r.jobs["voice/W1"]
+    reviews = [req for req in api.requests.values() if req["role"] == "review"]
+    assert len(reviews) == 1
+    from cplane.skills import instructions
+
+    expected_goal = (
+        instructions("slice-review")
+        + job["brief"]
+        + expected_review_answers(history)
+        + Runner.assignment(job)
+        + '\nFor this run, end with kind "handover" (superseding the skill final kind). Return the verdict JSON first; prose may follow.'
+    )
+    review = reviews[0]
+    assert review["work"]["goal"] == expected_goal
+    assert set(review) == {
+        "contract",
+        "request_id",
+        "attribution",
+        "repository",
+        "base_commit",
+        "branch",
+        "mode",
+        "role",
+        "level",
+        "work",
+        "assets",
+        "after",
+        "priority",
+    }
+    assert review["work"] == {
+        "goal": expected_goal,
+        "allowed_files": None,
+        "pinned_paths": [],
+        "check_command": None,
+        "history": "full",
+    }
+    assert review["mode"] == "read" and review["base_commit"] == TIP
+    assert review["branch"] == job["branch"] and review["level"] == job["level"]
+    assert job.get("answers") == history
+    assert ("answers" in job) == (history is not None)
+    assert not api.messages
+
+
+@pytest.mark.parametrize("flow", ["cli", "tickets"])
+def test_review_answer_context_followup(setup, flow):
+    r, api, _ = setup
+    edit(r, lambda s: s.update(flow=flow))
+    r.run()
+    job = r.jobs["voice/W1"]
+    job["answers"] = copy.deepcopy(REVIEW_ANSWERS[:1])
+    r.save_job(job)
+    if flow == "cli":
+        api.finish(current(r), body=pr_reply())
+    else:
+        api.finish(current(r), body=block(PLAN))
+        r.run()
+        for key, req in list(api.requests.items()):
+            if req["role"] == "ticket":
+                api.finish(key)
+    r.run()
+    job = r.jobs["voice/W1"]
+    first_goal = job["requests"]["review-1"]["request"]["work"]["goal"]
+    assert expected_review_answers(REVIEW_ANSWERS[:1]) in first_goal
+    if flow == "cli":
+        # A new PR tip gets another record-only review.
+        job["answers"].append(copy.deepcopy(REVIEW_ANSWERS[1]))
+        job["tip"] = "d" * 40
+        r.launch_review(item(r), job, record_only=True)
+    else:
+        api.finish(current(r), body=block({"verdict": "fix", **PLAN}))
+        r.run()
+        job = r.jobs["voice/W1"]
+        job["answers"].append(copy.deepcopy(REVIEW_ANSWERS[1]))
+        r.save_job(job)
+        for key, req in list(api.requests.items()):
+            if req["role"] == "ticket" and "repair-ticket" in key:
+                api.finish(key)
+        r.run()
+        job = r.jobs["voice/W1"]
+    second_goal = job["requests"]["review-2"]["request"]["work"]["goal"]
+    assert expected_review_answers(REVIEW_ANSWERS) in second_goal
+    assert second_goal.count(ANSWER_HEADING) == 1
+    assert job["requests"]["review-1"]["request"]["work"]["goal"] == first_goal
 
 
 def test_slice_request_and_poll_after_restart(setup):
