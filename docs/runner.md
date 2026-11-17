@@ -42,14 +42,25 @@ evals, and its deny-list mount for PR metadata. The sessions service is unchange
 
 ## Durable requests and messages
 
-Private jobs live under `CPLANE_RUNS/<state hash>/<slice hash>/job.json`. Request ids
-hash the slice identity and append a purpose (`slice`, `cut`, `ticket-N`,
+Private jobs live under
+`CPLANE_RUNS/<state hash>/<slice hash>-attempt-<number>/job.json`. Each job saves its
+slice attempt number. Request ids hash the slice identity and attempt, then append
+a purpose (`slice`, `cut`, `ticket-N`,
 `review-N`, or a repair ticket). The exact body is persisted before POST. A lost
 response retries that same id/body; a confirmed request is recovered by polling.
 Do not delete the ledger or change its state path during active work.
 
+Resetting a terminal, non-resumable run to ready and starting it creates the next
+attempt, with a new job folder and a fresh default-branch base. Old attempt records
+remain available. Before retrying a failed ticket chain, Factory cancels its old
+queued successors and resumable predecessors, waiting for any running turn's
+cancellation to be accepted. A question, waiting or done run that is resumable
+keeps its attempt and continues through messages. Existing jobs without an attempt
+number keep their saved identities and count as attempt one when retried.
+
 Answers and merge notices are messages to the existing resumable run. Message ids
-are deterministic, and their exact text is persisted before POST. No restart
+include the attempt in their hashed identity, and their exact text is persisted
+before POST. Collected-result markers are also scoped to the attempt. No restart
 searches for or stops slice containers. API failures defer work without exposing
 response bodies, keys, App ids or node ids.
 

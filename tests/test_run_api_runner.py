@@ -3,11 +3,12 @@
 import copy
 import json
 from datetime import UTC, datetime
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 
 from cplane import state
+from cplane.cli import main
 from cplane.runner import Runner
 
 NOW = datetime(2026, 11, 17, tzinfo=UTC)
@@ -64,8 +65,11 @@ class FakeRuns:
                 if (
                     self.requests[other]["repository"] == body["repository"]
                     and self.requests[other]["branch"] == body["branch"]
-                    and record["status"]
-                    in ("queued", "running", "question", "waiting", "escalated")
+                    and (
+                        record["status"] in ("queued", "running", "question", "waiting")
+                        or record["status"] == "escalated"
+                        and record["resumable"]
+                    )
                 ):
                     assert other in ancestors, "branch_busy"
             self.requests[key] = copy.deepcopy(body)
@@ -110,8 +114,14 @@ class FakeRuns:
         from cplane.run_platform import NotResumable
 
         self.cancels.append(key)
-        if self.records[key]["status"] == "running":
+        record = self.records[key]
+        if record["status"] == "running":
             raise NotResumable("Platform run not resumable")
+        if (
+            record["status"] in ("failed", "escalated", "cancelled", "done")
+            and not record["resumable"]
+        ):
+            return self.get(key)
         self.records[key].update(status="cancelled", resumable=False)
         return self.get(key)
 
@@ -149,7 +159,7 @@ class FakeRuns:
             )
         record.update(
             status=status,
-            resumable=True,
+            resumable=kwargs.pop("resumable", status not in ("failed", "cancelled")),
             commits=[TIP],
             final_message={"kind": kind, "body": body},
             updated_at=str(int(record["updated_at"]) + 1),
@@ -268,6 +278,214 @@ def test_restart_resends_identical_request_saved_before_post(setup):
     assert len(api.requests) == 1 and len(api.calls) == 2
     assert api.calls[0] == api.calls[1]
     assert item(restarted)["attention"] is None
+
+
+def reset_ready(r):
+    for args in (
+        ("state", "voice/W1", "planned", "--force", "--reason", "Retry terminal run"),
+        ("state", "voice/W1", "ready"),
+        ("start", "voice/W1"),
+    ):
+        with patch("cplane.state.now", return_value=NOW):
+            assert main(["--state", str(r.path), "--actor", "planner", *args]) == 0
+
+
+@pytest.mark.parametrize("flow", ["cli", "tickets"])
+@pytest.mark.parametrize("status", ["failed", "escalated", "cancelled", "done"])
+def test_reset_terminal_run_starts_new_attempt_with_current_base(setup, flow, status):
+    r, api, gh = setup
+    edit(r, lambda s: s.update(flow=flow))
+    r.run()
+    original = current(r)
+    old_job = copy.deepcopy(r.jobs["voice/W1"])
+    api.finish(original, status=status, resumable=False)
+    r.run()
+    reset_ready(r)
+    gh.default_tip.return_value = TIP
+    r.run()
+    replacement = current(r)
+    job = r.jobs["voice/W1"]
+    assert replacement != original
+    assert job["attempt"] == old_job["attempt"] + 1
+    assert job["run"] != old_job["run"]
+    assert len(list(r.runs.glob("*/job.json"))) == 2
+    assert api.requests[replacement]["base_commit"] == TIP
+    assert api.requests[replacement]["role"] == (
+        "cut" if flow == "tickets" else "slice"
+    )
+    assert api.requests[original]["base_commit"] == BASE
+    assert item(r)["state"] == "issued"
+    assert item(r)["session"]["id"] == replacement
+    assert item(r)["attention"] is None
+    assert original not in api.cancels
+    # A new result must not match the previous attempt's collected-turn marker.
+    api.finish(replacement, kind="question", body="Retry question")
+    r.run()
+    assert item(r)["attention"]["body"] == "Retry question"
+    edit(r, lambda s: s["attention"].update(answer="Retry answer"))
+    r.run()
+    assert next(iter(api.messages))[0] == replacement
+    assert gh.default_tip.call_count == 2
+
+
+def test_retry_attempt_is_saved_before_post_and_survives_restart(setup):
+    r, api, gh = setup
+    r.run()
+    api.finish(current(r), status="failed", resumable=False)
+    r.run()
+    reset_ready(r)
+    gh.default_tip.return_value = TIP
+    api.lost_post = True
+    r.run()
+    replacement = next(reversed(api.requests))
+    restarted = Runner(
+        r.path,
+        run_client=api,
+        github=gh,
+        git=Mock(),
+        clock=lambda: NOW,
+        runs=r.runs.parent,
+    )
+    restarted.run()
+    assert current(restarted) == replacement
+    assert restarted.jobs["voice/W1"]["attempt"] == 2
+    assert api.calls[-1] == api.calls[-2]
+    assert len(api.requests) == 2
+    gh.default_tip.assert_called_with("example/repo")
+    assert gh.default_tip.call_count == 2
+
+
+@pytest.mark.parametrize("status", ["question", "waiting", "done", "escalated"])
+def test_start_keeps_resumable_attempt_and_sends_message(setup, status):
+    r, api, gh = setup
+    r.run()
+    original = current(r)
+    old_job = copy.deepcopy(r.jobs["voice/W1"])
+    for _ in range(2):
+        api.finish(original, status=status)
+        r.collect(r.data["slices"][0], r.jobs["voice/W1"])
+        r.start(r.data["slices"][0])
+    assert current(r) == original
+    assert r.jobs["voice/W1"]["attempt"] == old_job["attempt"]
+    assert len(api.requests) == 1
+    assert next(iter(api.messages))[0] == original
+    assert len(api.messages) == 2
+    gh.default_tip.assert_called_once()
+
+
+def test_retry_failed_ticket_releases_old_chain_before_new_cut(setup):
+    r, api, gh = setup
+    edit(r, lambda s: s.update(flow="tickets"))
+    r.run()
+    api.finish(current(r), body=block(PLAN))
+    r.run()
+    tickets = [key for key, req in api.requests.items() if req["role"] == "ticket"]
+    api.finish(tickets[0], status="failed")
+    r.run()
+    reset_ready(r)
+    gh.default_tip.return_value = TIP
+    r.run()
+    replacement = api.requests[current(r)]
+    assert replacement["role"] == "cut"
+    assert replacement["base_commit"] == TIP
+    assert replacement["after"] == []
+    assert r.jobs["voice/W1"]["attempt"] == 2
+    assert tickets[1] in api.cancels
+    assert api.records[tickets[1]]["status"] == "cancelled"
+
+
+def test_reset_while_paused_records_failure_without_cancelling_or_starting(setup):
+    r, api, gh = setup
+    r.run()
+    original = current(r)
+    edit(r, lambda s: s.update(paused=True))
+    api.finish(original, status="failed")
+    reset_ready(r)
+    r.run()
+    assert current(r) == original
+    assert item(r)["state"] == "ready"
+    assert not api.messages and not api.cancels and len(api.requests) == 1
+    assert r.jobs["voice/W1"]["requests"]["slice"]["record"]["status"] == "failed"
+    edit(r, lambda s: s.update(paused=False))
+    gh.default_tip.return_value = TIP
+    r.run()
+    assert r.jobs["voice/W1"]["attempt"] == 2
+    assert current(r) != original
+
+
+def test_answer_message_ids_are_distinct_across_attempts(setup):
+    r, api, _ = setup
+    r.run()
+    for attempt in (1, 2):
+        api.finish(current(r), kind="question", body="Same question")
+        r.run()
+        edit(r, lambda s: s["attention"].update(answer="Same answer"))
+        r.run()
+        if attempt == 1:
+            api.finish(current(r), status="failed")
+            r.run()
+            reset_ready(r)
+            r.run()
+    assert len(api.messages) == 2
+    assert len({message_id for _, message_id in api.messages}) == 2
+    assert len({message["text"] for message in api.messages.values()}) == 1
+
+
+def test_reset_retires_failed_continuation_after_lost_message_response(
+    setup, monkeypatch
+):
+    from cplane.run_platform import Unavailable
+
+    r, api, _ = setup
+    r.run()
+    original = current(r)
+    api.finish(original, kind="question", body="Which option?")
+    r.run()
+    send = api.message
+
+    def lost_response(key, body):
+        send(key, body)
+        api.finish(key, status="failed")
+        raise Unavailable("Message response unavailable")
+
+    monkeypatch.setattr(api, "message", lost_response)
+    edit(r, lambda s: s["attention"].update(answer="Use the first option"))
+    r.run()
+    assert r.jobs["voice/W1"]["requests"]["slice"].get("message")
+    reset_ready(r)
+    r.run()
+    assert current(r) != original
+    assert r.jobs["voice/W1"]["attempt"] == 2
+    assert len(api.messages) == 1 and len(api.requests) == 2
+
+
+def test_start_queued_attempt_keeps_saved_request(setup):
+    r, api, gh = setup
+    r.run()
+    original = current(r)
+    r.start(r.data["slices"][0])
+    assert current(r) == original
+    assert r.jobs["voice/W1"]["attempt"] == 1
+    assert len(api.calls) == 1 and not api.messages
+    gh.default_tip.assert_called_once()
+
+
+def test_legacy_job_keeps_saved_request_then_restarts_as_attempt_two(setup):
+    r, api, gh = setup
+    r.run()
+    original = current(r)
+    job = r.jobs["voice/W1"]
+    job.pop("attempt")
+    r.save_job(job)
+    r.run()
+    assert current(r) == original and len(api.calls) == 1
+    api.finish(original, status="failed")
+    r.run()
+    reset_ready(r)
+    gh.default_tip.return_value = TIP
+    r.run()
+    assert current(r) != original
+    assert r.jobs["voice/W1"]["attempt"] == 2
 
 
 @pytest.mark.parametrize(

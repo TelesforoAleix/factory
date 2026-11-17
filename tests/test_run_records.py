@@ -548,7 +548,7 @@ def test_api_attempt_metrics_and_repair_task_identity(pg_store, setup, monkeypat
     assert all(row['prompt_truncated'] is False for row in pg_store.run_record_list())
     job['repair'] = True
     for purpose, identity in [('ticket-1', 'initial-ticket'), ('repair-ticket-1', 'repair-ticket')]:
-        ticket = {'run_id': identity, 'request': {'role': 'ticket', 'request_id': runner.request_id(item, purpose)},
+        ticket = {'run_id': identity, 'request': {'role': 'ticket', 'request_id': runner.request_id(item, job, purpose)},
                       'record': {'status': 'done', 'metrics': {}}}
         run_records.platform_record(pg_store, item, job, ticket)
     rows = pg_store.run_record_export(datetime(2000, 1, 1, tzinfo=UTC))

@@ -816,6 +816,8 @@ class Runner:
 
     def deliver(self, item):
         job = self.jobs.get(item["id"])
+        if item["state"] == "ready" and job and self.restartable(job):
+            return
         run_records.owner_wait(self, item, job)
         if item["paused"]:
             return
@@ -1031,11 +1033,26 @@ class Runner:
             )
         return None
 
-    def request_id(self, item, purpose):
-        # IDs are <=64 ASCII characters; hashing avoids slash/length collisions.
+    @staticmethod
+    def restartable(job):
+        entry = job["requests"][job.get("attention_run", job["active"])]
+        record = entry.get("record") or {}
+        return record.get("status") in (
+            "failed",
+            "escalated",
+            "cancelled",
+            "done",
+        ) and not record.get("resumable")
+
+    def request_id(self, item, job, purpose):
+        # Hash the attempt with the slice identity, keeping IDs <=64 characters.
+        # Jobs predating attempts keep their original identity for message retries.
+        identity = item["id"]
+        if "attempt" in job:
+            identity += ":" + str(job["attempt"])
         return (
             "factory-"
-            + hashlib.sha256(item["id"].encode()).hexdigest()[:24]
+            + hashlib.sha256(identity.encode()).hexdigest()[:24]
             + "-"
             + purpose
         )
@@ -1057,7 +1074,7 @@ class Runner:
         if purpose not in job["requests"]:
             body = {
                 "contract": 1,
-                "request_id": self.request_id(item, purpose),
+                "request_id": self.request_id(item, job, purpose),
                 "attribution": {"slice": item["id"][:120]},
                 "repository": item["repo"],
                 "base_commit": base or job["base"],
@@ -1135,6 +1152,30 @@ class Runner:
                 item, previous, record_only=item.get("flow", "cli") == "cli"
             )
             return True
+        if previous:
+            if not self.restartable(previous):
+                entry = previous["requests"][
+                    previous.get("attention_run", previous["active"])
+                ]
+                if (entry.get("record") or {}).get("resumable"):
+                    self.send_message(
+                        item,
+                        previous,
+                        prompt,
+                        "start-" + str(entry["turn"] + 1),
+                    )
+                else:
+                    self.session(item, previous)
+                    item["state"] = "issued"
+                return True
+            # Queued successors and resumable predecessors belong to the old
+            # attempt. Release them before requesting work on the same branch.
+            self.abandon(previous)
+            if any(
+                not entry.get("cancelled") for entry in previous["requests"].values()
+            ):
+                self.defer(item, "deferred: previous attempt cancellation pending")
+                return False
         if self.room(item):
             self.defer(item, self.room(item))
             return False
@@ -1142,17 +1183,25 @@ class Runner:
         base = self.github.default_tip(item["repo"])
         if not re.fullmatch("[0-9a-f]{40}", base):
             raise state.StateError("Default branch tip unavailable")
-        folder = self.runs / hashlib.sha256(item["id"].encode()).hexdigest()[:24]
+        attempt = previous.get("attempt", 1) + 1 if previous else 1
+        folder = self.runs / (
+            hashlib.sha256(item["id"].encode()).hexdigest()[:24]
+            + "-attempt-"
+            + str(attempt)
+        )
         folder.mkdir(mode=0o700, parents=True, exist_ok=True)
         job = {
             "id": item["id"],
+            "attempt": attempt,
             "run": str(folder),
             "repository": item["repo"],
             "branch": branch,
             "base": base,
             "brief": prompt,
             "level": self.execution(item),
-            "started_ns": time.time_ns(),
+            "started_ns": max(
+                time.time_ns(), previous["started_ns"] + 1 if previous else 0
+            ),
             "requests": {},
             "active": "cut" if item.get("flow", "cli") == "tickets" else "slice",
             "phase": "running",
@@ -1180,6 +1229,8 @@ class Runner:
         )
         self.jobs[item["id"]] = job
         item["state"], item["attention"] = "issued", None
+        item["pr"] = None
+        item.pop("final", None)
         self.session(item, job)
         self.send_request(job, entry)
         self.session(item, job)
@@ -1199,7 +1250,7 @@ class Runner:
             return
         target = job.get("attention_run", job["active"])
         entry = job["requests"][target]
-        message_id = self.request_id(item, purpose)
+        message_id = self.request_id(item, job, purpose)
         if entry.get("last_message_id") == message_id:
             item["attention"], item["state"] = None, "issued"
             return
@@ -1239,13 +1290,18 @@ class Runner:
     def collect(self, item, job):
         # Poll all known runs, including queued successors and record-only reviews.
         for entry in job["requests"].values():
+            restarting = item["state"] == "ready" and self.restartable(job)
             if entry["run_id"] is None:
-                if item["paused"]:
+                if item["paused"] or restarting:
                     continue
                 self.send_request(job, entry)
-            if entry.get("message"):
-                self.retry_message(item, job, entry)
             entry["record"] = self.client.get(entry["run_id"])
+            # Observe a finished turn before retrying a saved message: a reset
+            # must be able to retire an attempt whose continuation failed too.
+            restarting = item["state"] == "ready" and self.restartable(job)
+            if entry.get("message") and not restarting and not item["paused"]:
+                self.retry_message(item, job, entry)
+                entry["record"] = self.client.get(entry["run_id"])
             if (
                 entry["record"].get("status") == "waiting"
                 and entry["record"].get("status_reason") == "usage_limit"
@@ -1261,6 +1317,13 @@ class Runner:
             ):
                 run_records.platform_record(state.store(self.path), item, job, entry)
         self.save_job(job)
+        if item["state"] == "ready" and self.restartable(job):
+            if not item["paused"]:
+                self.abandon(job)
+                item["attention"] = None
+                job["phase"] = "restart-ready"
+                self.save_job(job)
+            return
         self.apply_record(item, job)
 
     def apply_record(self, item, job):
@@ -1280,6 +1343,8 @@ class Runner:
         if status in ("queued", "running"):
             return
         marker = "collected turn: " + job["active"] + ":" + str(entry["turn"])
+        if "attempt" in job:
+            marker = "attempt " + str(job["attempt"]) + ": " + marker
         if any(log["event"] == marker for log in item["log"]):
             return
         job["final"] = (
@@ -1465,7 +1530,7 @@ class Runner:
         )
         entry["message"] = {
             "contract": 1,
-            "message_id": self.request_id(item, purpose),
+            "message_id": self.request_id(item, job, purpose),
             "text": (
                 'Factory recorded your result. End with kind "handover" now, without changing files. '
                 "No further work is requested in this turn."
@@ -1712,9 +1777,12 @@ class Runner:
                 self.save_job(job)
                 return
         record = self.client.get(entry["run_id"])
-        if record.get("status") in ("failed", "cancelled") and not record.get(
-            "resumable"
-        ):
+        if record.get("status") in (
+            "failed",
+            "escalated",
+            "cancelled",
+            "done",
+        ) and not record.get("resumable"):
             entry["cancelled"] = True
         else:
             try:
@@ -1793,10 +1861,14 @@ class Runner:
                     if item["state"] in ("accepted", "dropped"):
                         self.abandon(job)
                         continue
-                    if job.get("sha"):
+                    if job.get("sha") and not (
+                        item["state"] == "ready" and self.restartable(job)
+                    ):
                         self.restore_merge(item, job)
                     self.collect(item, job)
-                    if item["paused"]:
+                    if item["paused"] or (
+                        item["state"] == "ready" and self.restartable(job)
+                    ):
                         continue
                     if job["phase"] == "cut-ready":
                         self.submit_tickets(item, job)
