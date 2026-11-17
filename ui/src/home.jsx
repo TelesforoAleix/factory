@@ -23,13 +23,13 @@ function Log({log, phone}) {
 }
 export function Attention({item, act}) {
   const [answer, setAnswer] = useState(''), [confirm, setConfirm] = useState(false);
-  const labels = {'testing-review':'Testing review', failure:'Failure', approval:'Approval', install:'Install', decision:'Decision', question:'Question or escalation', stuck:'Stuck', limit:'Limit full'};
-  return <article className={'home-attention home-' + item.kind}><div className="home-card-heading"><strong>{labels[item.kind]}{item.label && <> · {item.label}</>}</strong><small>{item.id} · {elapsed(item.since)} waiting</small></div>{item.title && <h3>{item.title}</h3>}<p className="text">{item.text}</p>{item.verdict && <p className="text"><strong>Review:</strong> {item.verdict}</p>}
+  const labels = {acceptance:'Acceptance', 'testing-review':'Testing review', failure:'Failure', approval:'Approval', install:'Install', decision:'Decision', question:'Question or escalation', stuck:'Stuck', limit:'Limit full'};
+  return <article className={'home-attention home-' + item.kind}><div className="home-card-heading"><strong>{labels[item.kind]}{item.label && <> · {item.label}</>}</strong><small>{item.id}{item.since && <> · {elapsed(item.since)} waiting</>}</small></div>{item.title && <h3>{item.title}</h3>}<p className="text">{item.text}</p>{item.verdict && <p className="text"><strong>Review:</strong> {item.verdict}</p>}
     <div className="actions">{item.kind === 'approval' && <>{confirm ? <><button onClick={() => act('/api/actions/approve/' + item.id, {pr:item.pr, confirmed:true})}>Confirm PR #{item.pr}</button><button onClick={() => setConfirm(false)}>Cancel</button></> : <button disabled={!item.pr} onClick={() => setConfirm(true)}>Accept</button>}<Link to={item.chat ? '/chats/' + item.chat : slicePath(item.id)}>Review</Link></>}
     {item.kind === 'install' && item.installable && <button onClick={() => act('/api/slices/' + item.id + '/install', {})}>{item.installing ? 'Install requested' : 'Install'}</button>}
     {item.kind === 'failure' && item.retry_install && <button disabled={item.installing} onClick={() => act('/api/slices/' + item.id + '/install', {})}>{item.installing ? 'Install requested' : 'Retry install'}</button>}
     {item.reactivate && <button onClick={() => act('/api/chats/' + item.chat + '/reactivate', {})}>Reactivate</button>}
-    {['decision','testing-review'].includes(item.kind) && <Link to={'/chats/' + item.chat}>Open chat</Link>}{['stuck','failure'].includes(item.kind) && <Link to={slicePath(item.id)}>{item.kind === 'failure' ? 'Review' : 'Open slice'}</Link>}{item.kind === 'limit' && <Link to="/pipeline">Open Pipeline</Link>}</div>
+    {item.kind === 'acceptance' && <Link to={'/pipeline/' + encodeURIComponent(item.id)}>Open feature</Link>}{['decision','testing-review'].includes(item.kind) && <Link to={'/chats/' + item.chat}>Open chat</Link>}{['stuck','failure'].includes(item.kind) && <Link to={slicePath(item.id)}>{item.kind === 'failure' ? 'Review' : 'Open slice'}</Link>}{item.kind === 'limit' && <Link to="/pipeline">Open Pipeline</Link>}</div>
     {item.kind === 'question' && <form onSubmit={e => {e.preventDefault(); act('/api/actions/answer/' + item.id, {value:answer});}}><label>Answer<textarea required value={answer} onChange={e => setAnswer(e.target.value)}/></label><button>Send answer</button></form>}
   </article>;
 }

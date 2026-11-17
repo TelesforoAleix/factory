@@ -15,7 +15,7 @@ LIMIT_DESCRIPTIONS = {
     'repository_runs': 'Stops simultaneous slice runs in the same repository.',
 }
 
-STAGES = ('shortlist', 'grilling', 'ready', 'next', 'building', 'testing', 'done', 'parked')
+STAGES = ('shortlist', 'grilling', 'ready', 'next', 'building', 'acceptance', 'testing', 'done', 'parked')
 TEXT_LIMIT = 16_000  # Same long-text bound as document notes.
 
 
@@ -40,6 +40,9 @@ MOVES = {
     ('ready', 'next'): ('owner', 'chat'),
     ('next', 'building'): ('runner',),
     ('building', 'testing'): ('runner',),
+    ('building', 'acceptance'): ('runner',),
+    ('acceptance', 'done'): ('owner', 'chat'),
+    ('acceptance', 'building'): ('chat', 'runner'),
     ('testing', 'done'): ('owner', 'chat'),
     ('testing', 'building'): ('chat', 'runner'),
     ('next', 'ready'): ('owner', 'chat'),
@@ -132,12 +135,12 @@ class FeatureStore:
 
     def _feature(self, identifier):
         row = self.connection.execute(
-            'SELECT f.feature, f.id, f.project, f.title, f.stage, f.position, f.parked_from, f.backlog, f.design_agreed, f.review_passed '
+            'SELECT f.feature, f.id, f.project, f.title, f.stage, f.position, f.parked_from, f.backlog, f.design_agreed, f.review_passed, f.kind '
             'FROM cplane_feature_ids a JOIN cplane_features f ON f.feature = a.feature WHERE a.id = %s',
             (identifier,)).fetchone()
         if row is None:
             raise StateError(f'Feature not found: {identifier}')
-        return dict(zip(('feature', 'id', 'project', 'title', 'stage', 'position', 'parked_from', 'backlog', 'design_agreed', 'review_passed'), row))
+        return dict(zip(('feature', 'id', 'project', 'title', 'stage', 'position', 'parked_from', 'backlog', 'design_agreed', 'review_passed', 'kind'), row))
 
     def _feature_number(self, project):
         row = self.connection.execute(
@@ -157,18 +160,34 @@ class FeatureStore:
         self.connection.execute('INSERT INTO cplane_feature_events (feature, event, actor) VALUES (%s, %s, %s)',
                                 (feature, event, actor))
 
-    def feature_add(self, project, title, *, stage='shortlist', actor='owner'):
+    def feature_add(self, project, title, *, stage='shortlist', kind=None, actor='owner'):
         bounded(title, 'Title')
         stage_name(stage)
+        self._feature_kind_validate(kind)
         with self.mutation():
             identifier = self._feature_number(project)
             feature = self.connection.execute(
-                'INSERT INTO cplane_features (id, project, title, stage, position, parked_from) VALUES (%s, %s, %s, %s, %s, %s) RETURNING feature',
+                'INSERT INTO cplane_features (id, project, title, stage, position, parked_from, kind) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING feature',
                 (identifier, project, title, stage, self._feature_position(stage),
-                 'shortlist' if stage == 'parked' else None)).fetchone()[0]
+                 'shortlist' if stage == 'parked' else None, kind)).fetchone()[0]
             self.connection.execute('INSERT INTO cplane_feature_ids VALUES (%s, %s)', (identifier, feature))
             self._feature_chat_stage(self._feature(identifier), stage)
             self._feature_event(feature, f'add {identifier}', actor)
+            return self.feature_show(identifier)
+
+    @staticmethod
+    def _feature_kind_validate(kind):
+        if kind not in (None, 'experience', 'functional'):
+            raise StateError('Unknown feature kind')
+
+    def feature_edit(self, identifier, *, kind, actor='owner'):
+        self._feature_kind_validate(kind)
+        actor_kind(actor)
+        with self.mutation():
+            item = self._feature(identifier)
+            self.connection.execute('UPDATE cplane_features SET kind = %s WHERE feature = %s',
+                                    (kind, item['feature']))
+            self._feature_event(item['feature'], f'kind {item["kind"]!r} to {kind!r}', actor)
             return self.feature_show(identifier)
 
     def feature_title(self, identifier, title, *, actor='owner'):
@@ -187,8 +206,8 @@ class FeatureStore:
         bounded(reason, 'Reason', TEXT_LIMIT)
         with self.mutation():
             item = self._feature(identifier)
-            if item['stage'] in ('building', 'testing'):
-                raise StateError('Cannot close a feature in Building or Testing')
+            if item['stage'] in ('building', 'acceptance', 'testing'):
+                raise StateError('Cannot close a feature in Building, Acceptance or Testing')
             if item['stage'] != 'done':
                 self.connection.execute(
                     "UPDATE cplane_features SET stage = 'done', position = %s, parked_from = NULL WHERE feature = %s",
@@ -204,7 +223,7 @@ class FeatureStore:
             rows = self.connection.execute(
                 'SELECT id FROM cplane_features WHERE (%s::text IS NULL OR project = %s) '
                 'AND (%s::text IS NULL OR stage = %s) ORDER BY '
-                "array_position(ARRAY['shortlist','grilling','ready','next','building','testing','done','parked'], stage), position",
+                "array_position(ARRAY['shortlist','grilling','ready','next','building','acceptance','testing','done','parked'], stage), position",
                 (project, project, stage, stage))
             return [self.feature_show(row[0]) for row in rows.fetchall()]
 
@@ -410,7 +429,7 @@ class FeatureStore:
             self.connection.execute(
                 'UPDATE cplane_features SET stage = %s, position = %s, parked_from = %s WHERE feature = %s',
                 (stage, self._feature_position(stage), source if stage == 'parked' else None, item['feature']))
-            if stage == 'building' and source in ('testing', 'parked'):
+            if stage == 'building' and source in ('acceptance', 'testing', 'parked'):
                 self.feature_place(identifier, top=True, actor=actor)
             self._feature_chat_stage(item, stage)
             self._feature_event(item['feature'], f'stage {source} to {stage}', actor)
@@ -459,7 +478,7 @@ class FeatureStore:
                 if group and all(s['state'] in ('accepted', 'dropped') for s in group):
                     # Save accumulated slots/logs before the nested move loads them.
                     self.save(data)
-                    self.feature_stage(feature['id'], 'testing', actor='runner')
+                    self.feature_stage(feature['id'], 'acceptance' if internal['kind'] == 'functional' else 'testing', actor='runner')
                     data = self.load()
                     continue
                 for item in group:
@@ -709,8 +728,8 @@ class FeatureStore:
         with self.mutation():
             model = self.model_choice('codex', model, effort)
             feature = self._feature(identifier)
-            if feature['stage'] not in ('grilling', 'ready', 'building', 'testing'):
-                raise StateError('Slices can only be added in Grilling, Ready, Building or Testing')
+            if feature['stage'] not in ('grilling', 'ready', 'building', 'acceptance', 'testing'):
+                raise StateError('Slices can only be added in Grilling, Ready, Building, Acceptance or Testing')
             repository = self.connection.execute(
                 'SELECT repository FROM cplane_projects WHERE key = %s', (feature['project'],)).fetchone()[0]
             if not repository:

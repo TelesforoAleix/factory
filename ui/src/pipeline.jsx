@@ -9,13 +9,13 @@ import {DndContext, MouseSensor, TouchSensor, useSensor, useSensors, useDroppabl
 import {SortableContext, useSortable, verticalListSortingStrategy} from '@dnd-kit/sortable';
 import {CSS} from '@dnd-kit/utilities';
 
-const stages = ['shortlist','grilling','ready','next','building','testing','done','parked'];
+const stages = ['shortlist','grilling','ready','next','building','acceptance','testing','done','parked'];
 const name = s => s?.[0].toUpperCase() + s?.slice(1);
 const date = value => value && new Intl.DateTimeFormat('en-GB', {timeZone: 'Europe/Copenhagen', dateStyle: 'medium'}).format(new Date(value));
 const openAttention = a => a && (a.kind === 'owner-check' || a.kind === 'merge' && !a.approved || ['question','escalation','node-step'].includes(a.kind) && a.answer == null);
 const attention = f => f.slices.filter(s => s.state !== 'accepted' && openAttention(s.attention));
 function Markdown({text}) { return <div className="markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown></div>; }
-function Header({item}) { return <><small className="feature-meta"><code>{item.id}</code> · {name(item.stage)} · {item.project_name || item.project}</small><h2>{item.title}</h2></>; }
+function Header({item}) { return <><small className="feature-meta"><code>{item.id}</code> · {name(item.stage)} · {name(item.kind || 'experience')} · {item.project_name || item.project}</small><h2>{item.title}</h2></>; }
 function SliceRow({slice, error, select}) {
   const {attributes, listeners, setNodeRef, transform, isDragging} = useSortable({id: slice.id, disabled: {draggable: !slice.movable}});
   const status = slice.eligibility?.status || slice.state;
@@ -97,7 +97,7 @@ export function Pipeline() {
   const features = data.features.map(f => ({...f, inactive:!isActive(data.projects.find(p => p.key === f.project)), project_name:data.projects.find(p => p.key === f.project)?.name || f.project}));
   const visible = features.filter(f => (!project || f.project === project) && !(f.inactive && !project && ['shortlist','parked'].includes(f.stage))); const current = features.find(f => f.id === selected);
   return <div className="pipeline"><div className="page-heading"><h1>Pipeline</h1><ProjectFilter projects={data.projects} value={project} onChange={setProject}/></div>{error && <p role="status" className="pipeline-error">{error}</p>}
-    <div className={'pipeline-layout' + (current ? ' has-panel' : '')}><DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={dragEnd}><div className="pipeline-scroll"><div className="pipeline-grid">{[['shortlist'], ['grilling'], ['ready','next'], ['building','testing'], ['parked']].map(group => <div className={'pipeline-group' + (group[0] === 'parked' ? ' parked-group' : '')} key={group[0]}>{group.map(stage => <Column key={stage} stage={stage} items={visible.filter(f => f.stage === stage)} detail={detail} all={data.features} selected={selected} select={select} act={act} close={() => select(null)} refresh={refresh}/>)}</div>)}</div></div></DndContext>{current && <div className="desktop-panel">{detail?.id === current.id ? <Panel item={detail} act={act} close={() => select(null)} refresh={refresh}/> : <PanelSkeleton close={() => select(null)}/>}</div>}</div>
+    <div className={'pipeline-layout' + (current ? ' has-panel' : '')}><DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={dragEnd}><div className="pipeline-scroll"><div className="pipeline-grid">{[['shortlist'], ['grilling'], ['ready','next'], ['building','acceptance','testing'], ['parked']].map(group => <div className={'pipeline-group' + (group[0] === 'parked' ? ' parked-group' : '')} key={group[0]}>{group.map(stage => <Column key={stage} stage={stage} items={visible.filter(f => f.stage === stage)} detail={detail} all={data.features} selected={selected} select={select} act={act} close={() => select(null)} refresh={refresh}/>)}</div>)}</div></div></DndContext>{current && <div className="desktop-panel">{detail?.id === current.id ? <Panel item={detail} act={act} close={() => select(null)} refresh={refresh}/> : <PanelSkeleton close={() => select(null)}/>}</div>}</div>
   </div>;
 }
 export function FeaturePage() {

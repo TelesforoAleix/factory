@@ -34,7 +34,7 @@ retains `--repository` for the existing executor mapping. Project field updates
 require actor `owner`; no project editing operations were added to chat tools.
 
 The page shares Home's attention projection and action component. It includes
-Building and Testing features with running slices, the Next queue, stage counts
+Building, Acceptance and Testing features with running slices, the Next queue, stage counts
 linking to the project-filtered Pipeline, the project orchestrator followed by
 open feature chats, usage and a project-filtered Library link. Explicit project
 context survives opening/closing a Pipeline preview and opening the Library.

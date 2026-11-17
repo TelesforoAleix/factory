@@ -18,6 +18,9 @@ ALLOWED = {
     ('ready', 'next'): {'owner', 'chat:7'},
     ('next', 'building'): {'runner'},
     ('building', 'testing'): {'runner'},
+    ('building', 'acceptance'): {'runner'},
+    ('acceptance', 'done'): {'owner', 'chat:7'},
+    ('acceptance', 'building'): {'chat:7', 'runner'},
     ('testing', 'done'): {'owner', 'chat:7'},
     ('testing', 'building'): {'chat:7', 'runner'},
     ('next', 'ready'): {'owner', 'chat:7'},
@@ -556,3 +559,40 @@ def test_pipeline_park_blocks_pr_progress_until_return(pg_store, runner_setup, s
     pg_store.feature_stage(feature, 'building')
     r.run()
     assert pg_store.load()['slices'][0]['attention']['kind'] == 'merge'
+
+
+def test_functional_acceptance_and_experience_testing(pg_store, runner_setup, slice_data):  # noqa: F811
+    runner, _, _ = runner_setup
+    functional, experience = runner_board(pg_store, runner, slice_data, [
+        ('building', {'state': 'accepted'}), ('building', {'state': 'dropped'})])
+    pg_store.feature_edit(functional, kind='functional')
+    assert pg_store.feature_show(experience)['kind'] is None
+    pg_store.pipeline_step(NOW)
+    assert pg_store.feature_show(functional)['stage'] == 'acceptance'
+    assert pg_store.feature_show(experience)['stage'] == 'testing'
+    with pg_store.locked():
+        events = list(pg_store.connection.execute(
+            "SELECT f.id, e.kind FROM cplane_chat_events e JOIN cplane_features f ON f.feature = e.feature"))
+    assert (experience, 'testing') in events
+    assert not any(identifier == functional for identifier, _ in events)
+    with pytest.raises(StateError, match='Review has not passed'):
+        pg_store.feature_stage(functional, 'done')
+    pg_store.feature_mark(functional, 'review')
+    assert pg_store.feature_stage(functional, 'done', actor='chat:7')['stage'] == 'done'
+
+
+def test_kind_cli_and_api(pg_store, capsys):  # noqa: F811
+    from factory_ui import create_app
+    assert main(['feature', 'add', 'FAC', 'Functional', '--kind', 'functional']) == 0
+    item = json.loads(capsys.readouterr().out)
+    identifier = item['id']
+    assert item['kind'] == 'functional'
+    assert main(['feature', 'show', identifier]) == 0
+    assert 'functional' in capsys.readouterr().out
+    assert main(['feature', 'list']) == 0
+    assert 'functional' in capsys.readouterr().out
+    client = create_app(pg_store).test_client()
+    assert client.get('/api/pipeline/' + identifier).json['kind'] == 'functional'
+    assert main(['feature', 'edit', identifier, '--kind', 'experience']) == 0
+    assert json.loads(capsys.readouterr().out)['kind'] == 'experience'
+    assert client.get('/api/pipeline/' + identifier).json['kind'] == 'experience'

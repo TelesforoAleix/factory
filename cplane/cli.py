@@ -153,7 +153,7 @@ def parser():
     from .features import STAGES
     feature = commands.add_parser('feature', parents=[common], help='manage Postgres features')
     feature_commands = feature.add_subparsers(dest='feature_command', required=True, parser_class=Parser)
-    for name in ('add', 'list', 'show', 'stage', 'move', 'section', 'history', 'revert', 'place', 'mark', 'title', 'close'):
+    for name in ('add', 'edit', 'list', 'show', 'stage', 'move', 'section', 'history', 'revert', 'place', 'mark', 'title', 'close'):
         sub = feature_commands.add_parser(name, parents=[common])
         if name == 'add':
             sub.add_argument('project')
@@ -164,6 +164,8 @@ def parser():
             sub.add_argument('--stage', choices=STAGES)
         else:
             sub.add_argument('id')
+        if name in ('add', 'edit'):
+            sub.add_argument('--kind', choices=('experience', 'functional'), required=name == 'edit')
         if name in ('list', 'show'):
             sub.add_argument('--json', action='store_true')
         if name == 'title':
@@ -408,7 +410,9 @@ def feature_command(args):
         text = Path(args.file).read_bytes().decode('utf-8')
         result = backend.feature_import_backlog(text, dry_run=args.dry_run, actor=actor)
     elif command == 'add':
-        result = backend.feature_add(args.project, args.title, stage=args.stage, actor=actor)
+        result = backend.feature_add(args.project, args.title, stage=args.stage, kind=args.kind, actor=actor)
+    elif command == 'edit':
+        result = backend.feature_edit(args.id, kind=args.kind, actor=actor)
     elif command == 'list':
         result = backend.feature_list(project=args.project, stage=args.stage)
     elif command == 'show':
@@ -433,9 +437,10 @@ def feature_command(args):
     else:
         result = backend.feature_revert(args.id, args.revision, actor=actor)
     if command == 'list' and not args.json:
-        print('\n'.join(f"{item['id']} [{item['stage']}] {item['title']}" for item in result) or '(none)')
+        print('\n'.join(f"{item['id']} [{item['stage']}] [{item['kind'] or 'experience'}] {item['title']}" for item in result) or '(none)')
     elif command == 'show' and not args.json:
         print(f"{result['id']} [{result['stage']}] {result['title']}")
+        print(f"kind: {result['kind'] or 'experience'}")
         print(f"project: {result['project']}\nposition: {result['position']}\nparked from: {result['parked_from']}")
         print(f"design agreed: {result['design_agreed']}\nreview passed: {result['review_passed']}")
         print('aliases: ' + ', '.join(result['aliases']))
