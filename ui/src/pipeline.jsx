@@ -15,7 +15,7 @@ const date = value => value && new Intl.DateTimeFormat('en-GB', {timeZone: 'Euro
 const openAttention = a => a && (a.kind === 'owner-check' || a.kind === 'merge' && !a.approved || ['question','escalation','node-step'].includes(a.kind) && a.answer == null);
 const attention = f => f.slices.filter(s => s.state !== 'accepted' && openAttention(s.attention));
 function Markdown({text}) { return <div className="markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown></div>; }
-function Header({item}) { return <><small className="feature-meta"><code>{item.id}</code> · {name(item.stage)} · {name(item.kind || 'experience')} · {item.project_name || item.project}</small><h2>{item.title}</h2></>; }
+function Header({item}) { return <><small className="feature-meta"><code>{item.id}</code> · {name(item.stage)}{item.kind && <> · {name(item.kind)}</>} · {item.project_name || item.project}</small><h2>{item.title}</h2></>; }
 function SliceRow({slice, error, select}) {
   const {attributes, listeners, setNodeRef, transform, isDragging} = useSortable({id: slice.id, disabled: {draggable: !slice.movable}});
   const status = slice.eligibility?.status || slice.state;

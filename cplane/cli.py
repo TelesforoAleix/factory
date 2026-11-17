@@ -437,10 +437,11 @@ def feature_command(args):
     else:
         result = backend.feature_revert(args.id, args.revision, actor=actor)
     if command == 'list' and not args.json:
-        print('\n'.join(f"{item['id']} [{item['stage']}] [{item['kind'] or 'experience'}] {item['title']}" for item in result) or '(none)')
+        print('\n'.join(f"{item['id']} [{item['stage']}]" + (f" [{item['kind']}]" if item['kind'] else '') + f" {item['title']}" for item in result) or '(none)')
     elif command == 'show' and not args.json:
         print(f"{result['id']} [{result['stage']}] {result['title']}")
-        print(f"kind: {result['kind'] or 'experience'}")
+        if result['kind'] is not None:
+            print(f"kind: {result['kind']}")
         print(f"project: {result['project']}\nposition: {result['position']}\nparked from: {result['parked_from']}")
         print(f"design agreed: {result['design_agreed']}\nreview passed: {result['review_passed']}")
         print('aliases: ' + ', '.join(result['aliases']))

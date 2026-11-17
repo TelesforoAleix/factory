@@ -151,3 +151,14 @@ test('slice chips and relationship panel use board explanations', async () => {
     expect(within(panel).getByRole('link',{name:id}).getAttribute('href')).toBe('/factory/slices/' + id);
   }
 });
+
+
+test.each([[null, false], ['functional', true], ['experience', true]])('feature kind is shown only when set (%s)', async (kind, visible) => {
+  const item = {...feature, kind};
+  vi.stubGlobal('fetch', vi.fn(async url => ({ok:true, json:async () => url === '/api/pipeline' ? {projects:[],features:[item]} : url === '/api/chats' ? [] : item})));
+  render(<MemoryRouter initialEntries={['/pipeline?feature=FAC-F1']}><App/></MemoryRouter>);
+  await waitFor(() => expect(document.querySelector('.feature-meta')).toBeTruthy());
+  const text = document.querySelector('.feature-meta').textContent;
+  expect(text.includes('Functional') || text.includes('Experience')).toBe(visible);
+  if (kind) expect(text).toContain(kind === 'functional' ? 'Functional' : 'Experience');
+});

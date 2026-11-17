@@ -145,7 +145,9 @@ def test_cli(pg_store, capsys, monkeypatch, tmp_path):
     assert main(['feature', 'list', '--project', 'LAB', '--stage', 'grilling', '--json']) == 0
     assert json.loads(capsys.readouterr().out) == [feature]
     assert main(['feature', 'show', 'FAC-F1']) == 0
-    assert 'File Markdown' in capsys.readouterr().out
+    shown = capsys.readouterr().out
+    assert 'File Markdown' in shown
+    assert 'kind:' not in shown
     assert main(['feature', 'list']) == 0
     assert 'LAB-F1 [grilling] CLI synthetic' in capsys.readouterr().out
     assert main(['feature', 'show', 'FAC-F999']) == 1
@@ -201,11 +203,11 @@ def test_close_correction_bypasses_no_other_moves(pg_store, stage, capsys):
     assert f'stage {stage} to done: correction: Completed outside the pipeline' == event['event']
 
 
-@pytest.mark.parametrize('stage', ['building', 'testing'])
+@pytest.mark.parametrize('stage', ['building', 'acceptance', 'testing'])
 def test_close_rejects_active_stages(pg_store, stage):
     item = pg_store.feature_add('NEW', 'Active', stage=stage)
     before = pg_store.feature_history(item['id'])
-    with pytest.raises(StateError, match='Building or Testing'):
+    with pytest.raises(StateError, match='Building, Acceptance or Testing'):
         pg_store.feature_close(item['id'], 'Finished')
     assert pg_store.feature_show(item['id'])['stage'] == stage
     assert pg_store.feature_history(item['id']) == before
