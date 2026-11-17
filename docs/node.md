@@ -345,8 +345,8 @@ names the shared runs root for trust checks (default `/srv/factory/runs`).
 | `CPLANE_RUNS` | compose: `/srv/factory/runs` | runner, install records and usage-report lookup |
 | `CPLANE_REPOS` | compose: `/srv/factory/work` | runner repository base; replaces code default `~/Code` |
 | `CPLANE_FENCE` | compose: `1` | `executors.fenced` |
-| `CPLANE_FENCE_COMMAND` | compose: `socket` | fenced subprocess launch, bundle export, cleanup and usage probes |
-| `CPLANE_USAGE_SOURCE` | compose: `launcher`; default unset | sealed launcher reads; no login file access |
+| `CPLANE_FENCE_COMMAND` | compose: `socket` | subscription eval subprocess launch, cleanup and usage probes |
+| `CPLANE_USAGE_SOURCE` | compose: `launcher`; default unset | subscription eval usage reads; no slice usage gate |
 | `CPLANE_DEPLOYER_SOCKET` | compose: `/run/homelab-deployer.sock`; default unset | detached install client; missing socket refuses installation |
 | `CPLANE_GITHUB_AUTH` | compose: `app` | selects App authentication instead of the legacy token file |
 | `CPLANE_GITHUB_READ_ONLY` | unset | preserves the runner's full App permissions and separate write-token cache |
@@ -355,13 +355,13 @@ names the shared runs root for trust checks (default `/srv/factory/runs`).
 | `CPLANE_BRIEFS_KEY` | compose: `/run/secrets/briefs-key` | briefs pull and planning fetch identity |
 | `CPLANE_BRIEFS_KNOWN_HOSTS` | compose: `/run/secrets/briefs-known-hosts` | briefs pull and planning SSH host verification |
 | `CPLANE_PLANNING_WRITE_KEY` | compose: `/run/secrets/planning-write-key` | planning export push identity |
-| `CPLANE_DENY_LIST` | compose: `/run/secrets/deny-list` | public-content delivery gate |
-| `CPLANE_EVAL_TASK_URL`, `CPLANE_EVAL_TASK_KEY_FILE` | compose: `http://api:8000`, `/run/secrets/eval-task-key` | authenticated platform eval task endpoint |
+| `CPLANE_DENY_LIST` | compose: `/run/secrets/deny-list` | public PR metadata gate |
+| `CPLANE_EVAL_TASK_URL`, `CPLANE_EVAL_TASK_KEY_FILE` | compose: `http://api:8000`, `/run/secrets/eval-task-key` | authenticated platform run API and existing eval task endpoint |
 | `CPLANE_PLANNING_REMOTE` | `runner.env`; code default empty and refuses export | hourly `feature_export`, SSH remote without credentials |
 | `CPLANE_ORDERS_URL` | `runner.env`; if absent, code falls back to `/srv/factory/orders-url`, which is unmounted | orders collector; empty string explicitly disables collection |
 | `CPLANE_INSTALL_REPOS` | `runner.env`; code default empty allowlist | install eligibility and store chat-event handling |
-| `CPLANE_TASK_SUBMIT` | `runner.env`, matching UI; omit in both to disable | ticket eligibility and `cut.submit` |
-| `CPLANE_TASK_STATUS` | `runner.env`; code default empty, which refuses polling | `cut.status` |
+| `CPLANE_TASK_SUBMIT` | `runner.env`, matching UI; omit in both to disable | legacy manual `cut.submit`; slice runner uses the run API |
+| `CPLANE_TASK_STATUS` | `runner.env`; code default empty, which refuses polling | legacy manual `cut.status`; unused by the slice runner |
 | `CPLANE_BACKLOG_GENERATED` | `runner.env`; code default false, enabled only by `1` | hourly feature export's generated backlog table |
 | `CPLANE_EXPORT_DIR` | compose: `/srv/homelab/factory-state` | daily state/outbox export; code default absent disables the job |
 | `CPLANE_BOT_EXPORT` | compose: `/srv/factory/bot-export` | bot export; code default absent disables the job |
@@ -435,23 +435,18 @@ PRs opened by the runner's GitHub App.
 
 ### Slice reviews
 
-When a CLI-flow slice opens its PR, the runner starts a fresh fenced copy of
-that PR tip and runs the same `slice-review` skill and `schema/review.schema.json`
-contract as ticket reviews. CI runs alongside it. The `reviewer` role reviews
-light and standard slices (Claude Sonnet, medium effort by default);
-`reviewer-strong` reviews strong slices (Claude Opus, medium effort). Change these
-through Settings → Roles, like the executor roles.
+When a CLI-flow slice opens its PR, Factory submits a `review`/`read` run on its
+branch tip with the slice's level and full history. The platform chooses the
+reviewer. CI runs alongside it. The goal embeds `slice-review` and the review schema;
+the verdict parser accepts leading JSON followed by prose.
 
-CLI reviews only record findings: `pass` and `fix` both allow merging. They
-never submit tickets or start a repair round. CI must be green and the review
-must have ended before the runner merges. A failed review, unavailable reviewer,
-or expired review records `missing` and releases the review gate. Set
-`CPLANE_REVIEW_TIMEOUT_SECONDS` in the runner environment to change the default
-1200-second (20-minute) limit, measured from the review request when the PR opens,
-including any wait for executor capacity. The next runner pass gives up an
-expired review and stops its fence; an unconfirmed stop continues to reserve
-capacity. Existing title/head checks, change-class rules and ⛔ approval still
-apply. Ticket slices retain their existing review and single repair round.
+CLI reviews record findings: pass and fix both allow merging under the existing CI
+and owner approval rules. Invalid or expired reviews record missing. Questions,
+escalations, failures and cancellations produce attention; answers to resumable
+reviews go to that review's run. Set `CPLANE_REVIEW_TIMEOUT_SECONDS` to change the
+1200-second default. Expired runs are cancelled through the API, retrying a running
+turn after it ends. Factory has no review container to stop or local capacity to
+reserve. Ticket slices keep their review and one repair round.
 
 `cplane show <id>` prints `review_verdict` and a short `review_findings` summary;
 `cplane show <id> --json` includes full findings. These are separate from the
@@ -471,9 +466,10 @@ show <id>`: each must carry a review verdict, and the recorded request/end times
 must show that no review gate exceeded the configured limit (plus runner polling
 interval). A timeout is recorded as `missing`, never as a passing review.
 
-### Runner usage and installs
+### Subscription eval usage and installs
 
-Set `CPLANE_USAGE_SOURCE=launcher` for the contained runner. For Codex, each
+Subscription evals retain `CPLANE_USAGE_SOURCE=launcher`. The telemetry below is
+owned by `cplane.eval_execution`; slice scheduling never calls these probes. For Codex, each
 pass shares at most one `usage` launcher run, named
 `usage-read-<token>`, and always sends `stop` afterward; `unknown_run` means it
 is already stopped. Invalid, null, refused or failed reads mean unknown usage.
@@ -588,3 +584,27 @@ Use `cplane eval run cancel ID` to stop a run from starting more attempts. An
 attempt already running finishes and keeps its diff and metrics. Usage-limit
 interruptions return an attempt to planned and hold eval starts until reset.
 Grading is separate from execution.
+
+
+### Slice run API switch (FAC-F27a)
+
+The current slice runner is described in [runner operation](runner.md). Its
+execution replaces the historical local slice and usage-probe paths above.
+`CPLANE_EVAL_TASK_URL` and the file named by `CPLANE_EVAL_TASK_KEY_FILE` now also
+connect the slice runner to `/v1/runs`. The key must permit runs read/write and
+name the target repositories. No credential is included in a request body or log.
+The platform must enable slice/cut/review roles and accept write-mode cuts before
+rehearsal. Explicit per-run limits are omitted because the live v1 API rejects them.
+
+The runner keeps the launcher socket, clean/work roots and launcher usage setting
+for subscription evals, whose behavior is unchanged. Slice execution uses none of
+those mounts. The deny-list secret remains necessary for Factory's public PR
+metadata scan; the platform separately scans outgoing commits. The runs mount
+retains Factory's private request ledger. Sessions mounts and settings are unchanged.
+
+Node step: **install at the switch only**, through the deployer. Leave the PR open
+for the owner's GitHub review until rehearsal starts. At the switch, deliver one
+whole-slice slice and one ticket-flow slice through the platform. Roll back by
+reinstalling the previous Factory image. There is no execution-path switch setting
+and no database migration. Coordinate rollback with open platform runs to avoid
+starting work twice; retain private ledgers and state.

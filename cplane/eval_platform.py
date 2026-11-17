@@ -30,7 +30,7 @@ class Client:
         if not self.key or "\n" in self.key or "\r" in self.key:
             raise Unavailable("Platform eval key file unavailable or invalid")
 
-    def request(self, path, body=None):
+    def request(self, path, body=None, *, accepted=None):
         try:
             request = Request(
                 self.url + path,
@@ -50,7 +50,7 @@ class Client:
                     raise Unavailable(f"Platform eval HTTP {error.code}") from None
                 response = error
             with response:
-                if response.status not in ((201, 409) if body is not None else (200,)):
+                if response.status not in (accepted or ((201, 409) if body is not None else (200,))):
                     raise Unavailable(f"Platform eval HTTP {response.status}")
                 # Bound responses (the diff is at most 2 MB before base64 encoding).
                 raw = response.read(4 * 1024 * 1024 + 1)

@@ -198,7 +198,8 @@ def test_installed_guard_comparison_only_for_factory(merged_pr, monkeypatch, rep
         monkeypatch.delenv('CPLANE_REVISION', raising=False)
     assert classes.changes(adapter, job) == expected
 
-    runner = Mock(fence=adapter)
+    runner = Mock()
+    runner.github.changes.return_value = expected
     candidate = {'pr': 12, 'attention': None, 'stop_before_merge': False}
     job['request'] = {'node_steps': None}
     Runner.merge(runner, candidate, job, ready=True)

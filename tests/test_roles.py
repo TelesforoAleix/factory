@@ -1,26 +1,20 @@
-"""Execution levels replace external role-command lookup."""
+"""Slices select levels; model choices are exclusively platform policy."""
 import pytest
 from cplane.cli import main, parser
 from cplane.state import load
-from cplane.roles import DEFAULT_LEVELS
+from cplane.runner import Runner
 
 ADD = ['add', '--id', 'new/W2', '--repo', 'example/repo', '--feature', 'f', '--title', 'T', '--no-feature', 'One-off']
 
 @pytest.mark.parametrize('level', ['light', 'standard', 'strong'])
-def test_file_level_snapshot_and_no_external_command(make_state, tmp_path, monkeypatch, level):
+def test_level_uses_locked_mutation_path(make_state, level):
     path = make_state([])
-    monkeypatch.setenv('CPLANE_RUNS', str(tmp_path / 'runs'))
-    (tmp_path / 'roles-command').write_text('/must/never/run')
-    assert main(['--state', str(path), *ADD, '--level', level]) == 0
-    assert load(path)['slices'][0]['executor'] == DEFAULT_LEVELS[level]
+    assert main(['--state', str(path), '--actor', 'planner', *ADD, '--level', level]) == 0
+    item = load(path)['slices'][0]
+    assert Runner(path).execution(item) == level
+    assert any(e['actor'] == 'planner' and e['event'] == 'level: ' + level for e in item['log'])
 
-
-def test_default_and_explicit_overrides(make_state):
-    path = make_state([])
-    assert main(['--state', str(path), *ADD, '--model', 'custom', '--effort', 'high']) == 0
-    assert load(path)['slices'][0]['executor'] == dict(tool='codex', model='custom', effort='high')
-
-
-def test_role_option_removed():
+@pytest.mark.parametrize('option', ['--tool', '--model', '--effort', '--role'])
+def test_slice_executor_options_removed(option):
     with pytest.raises(SystemExit):
-        parser().parse_args([*ADD, '--role', 'cutter'])
+        parser().parse_args([*ADD, option, 'custom'])

@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 import json
 import hashlib
 import os
-import re
 import stat
 import time
 from pathlib import Path
@@ -13,7 +12,6 @@ import sys
 
 from .features import TEXT_LIMIT
 from .text_bounds import cut
-from . import fence
 from .state import StateError
 
 TOKEN_FIELDS = ('input_tokens', 'cached_tokens', 'cache_write_tokens', 'output_tokens', 'reasoning_tokens')
@@ -358,6 +356,9 @@ class RunRecordStore:
 
 
 def slice_record(store, item, job):
+    if job.get('requests'):
+        entry = job['requests'][job['active']]
+        return platform_record(store, item, job, entry)
     end = job.get('ended_at')
     started = job.get('started_ns')
     record(store, turn_key='slice:' + job['run'], repository=item['repo'], feature=item.get('feature'),
@@ -370,6 +371,7 @@ def slice_record(store, item, job):
            started_at=datetime.fromtimestamp(started / 1e9, timezone.utc) if started else None,
            seconds=max(0, end - started / 1e9) if end is not None and started else None,
            outcome=job.get('final', {}).get('kind') if job.get('final') else 'failed')
+
 
 
 def chat_record(store, turn, accounting):
@@ -407,42 +409,12 @@ def outcome(store, job, **values):
     try:
         if not hasattr(store, 'run_record_outcome'):
             return
-        store.run_record_outcome('slice:' + job['run'], **values)
+        store.run_record_outcome(job.get('record_key', 'slice:' + job['run']), **values)
     except Exception:
         print('cplane: run recording failed', file=sys.stderr)
 
 
-def launch_metadata(runner, item, job):
-    """Capture policy and exact prompt identity before the executor starts."""
-    try:
-        from . import state
-        if not state.postgres():
-            return
-        job['brief_hash'] = hashlib.sha256(job['prompt'].encode('utf-8')).hexdigest()
-        job['owner_wait_seconds'] = 0
-        job['configuration'] = None
-        store = state.store(runner.path)
-        policy = store.slice_policy(item['id'])
-        job['level'] = policy['level'] if policy else 'standard'
-        job['executor_source'] = 'override' if not policy or policy['overrides'] else 'level'
-        # Probe only the CLI version, through the same fence used by execution.
-        args = [job['tool'], 'exec' if job['tool'] == 'codex' else '-p', '--version']
-        if job.get('fence'):
-            (Path(job['run']) / 'version').mkdir(mode=0o700, exist_ok=True)
-            args = [*fence.fence_command(), 'run', '--tool', job['tool'], '--repo', job['repo'],
-                    '--run', str(Path(job['run']) / 'version'), '--', *args]
-        try:
-            result = subprocess.run(args, capture_output=True, text=True, timeout=15)
-        except (OSError, subprocess.SubprocessError):
-            # An absent/unresponsive CLI is an unknown version, not a failed
-            # record write. Synthetic runners need no installed executor.
-            return
-        match = re.fullmatch(r'(?:codex(?:-cli)?(?:-exec)? |claude )?(\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?)(?: \(Claude Code\))?\s*',
-                             result.stdout, re.I) if result.returncode == 0 else None
-        if match:
-            job['configuration'] = f"{job['tool']} {match[1]} {job['model']} {job['effort']}"
-    except Exception:
-        print('cplane: run recording failed', file=sys.stderr)
+
 
 
 def review_record(runner, job, answer):
@@ -467,13 +439,20 @@ def review_outcome(runner, job, *, item=None):
     try:
         store = state.store(runner.path)
         review = job.get('pr_review')
-        if item is not None and review and review.get('ended_at') is not None:
+        if item is not None and isinstance(review, dict) and review.get('ended_at') is not None:
             slice_record(store, item, review)
             if job['review_verdict'] in ('pass', 'fix'):
                 outcome(store, review, verdict=job['review_verdict'])
+        if isinstance(review, str) and job['review_verdict'] in ('pass', 'fix'):
+            entry = job['requests'][review]
+            record = entry.get('record') or {}
+            attempts = record.get('attempts') or [{'number': entry['turn'] + 1}]
+            key = 'slice:' + job['run'] + ':' + entry['request']['request_id'] + ':' + str(attempts[-1]['number'])
+            outcome(store, {**job, 'record_key': key}, verdict=job['review_verdict'])
         store.slice_review_record(job['id'], job['review_verdict'], job.get('review_findings'))
     except Exception:  # noqa: BLE001 - accounting failures cannot change merge policy
         print('cplane: review recording failed', file=sys.stderr)
+
 
 
 def ci_record(runner, item, job, status, failing):
@@ -533,5 +512,53 @@ def owner_wait(runner, item, job=None, *, close=False):
         job['owner_wait_seconds'] = total
         outcome(state.store(runner.path), job, owner_wait_seconds=total)
         runner.save_job(job)
+    except Exception:
+        print('cplane: run recording failed', file=sys.stderr)
+
+
+def platform_record(store, item, job, entry):
+    """Account checked API attempts without reading local harness output."""
+    try:
+        saved = entry.get('record') or {}
+        request = entry['request']
+        if request['role'] == 'ticket':
+            if not hasattr(store, 'task_record_poll'):
+                return
+            attempts = saved.get('attempts') or [{'number': 1, 'metrics': saved.get('metrics') or {}}]
+            position = int(request['request_id'].rsplit('-', 1)[-1])
+            status = saved['status']
+            for attempt in attempts:
+                metrics = attempt.get('metrics') or {}
+                values = list((metrics.get('tokens') or {}).values())
+                store.task_record_poll(item['id'] + ('/repair' if '-repair-ticket-' in request['request_id'] else ''), [{
+                    'id': entry['run_id'], 'position': position, 'title': '', 'attempt': attempt['number'],
+                    'status': status if status in ('queued', 'running', 'done', 'failed', 'escalated') else 'queued',
+                    'reason': saved.get('status_reason'), 'tokens': sum(values) if values and all(v is not None for v in values) else None,
+                    'seconds': metrics.get('minutes') * 60 if metrics.get('minutes') is not None else None,
+                    'cost': metrics.get('usd')}])
+            return
+        executor = saved.get('executor') or {}
+        harness = executor.get('harness') or executor.get('tool')
+        if harness not in ('codex', 'claude'):
+            return
+        attempts = saved.get('attempts') or [{'number': entry['turn'] + 1, 'metrics': saved.get('metrics') or {}}]
+        for attempt in attempts:
+            key = 'slice:' + job['run'] + ':' + request['request_id'] + ':' + str(attempt['number'])
+            metrics = attempt.get('metrics') or {}
+            tokens = metrics.get('tokens') or {}
+            fresh, cached = tokens.get('fresh'), tokens.get('cached')
+            store.run_record_add(key, repository=item['repo'], feature=item.get('feature'), kind='slice',
+                slice_id=item['id'], session_id=entry['run_id'] + ':' + str(attempt['number']), tool=harness, model=executor.get('model'),
+                effort=executor.get('effort'), starting_commit=request['base_commit'], skill_version=job.get('skills'),
+                level=request['level'], executor_source='level', configuration=attempt.get('configuration_hash') or saved.get('configuration_hash'),
+                brief_hash=hashlib.sha256(request['work']['goal'].encode()).hexdigest(),
+                started_at=attempt.get('started_at') or saved.get('started_at'),
+                seconds=metrics.get('minutes') * 60 if metrics.get('minutes') is not None else None,
+                input_tokens=fresh + cached if fresh is not None and cached is not None else None,
+                cached_tokens=cached, output_tokens=tokens.get('output'), cache_write_tokens=None, reasoning_tokens=None,
+                outcome=(saved.get('final_message') or {}).get('kind') or saved['status'],
+                context=entry.get('context', []))
+            if request['request_id'] == job['requests'][job['active']]['request']['request_id']:
+                job['record_key'] = key
     except Exception:
         print('cplane: run recording failed', file=sys.stderr)

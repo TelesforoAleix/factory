@@ -10,9 +10,10 @@ from unittest.mock import Mock
 
 import pytest
 
-from cplane import deployer, fence, installation, launcher, runner
+from cplane import eval_execution as runner
+from cplane import deployer, fence, installation, launcher
 from test_launcher_client import server as _server
-from test_runner import setup as _setup, NOW
+from test_eval_execution import setup as _setup, NOW
 from test_install import prepared_runner, SHA
 from test_stores import pg_store as _pg_store
 
@@ -68,26 +69,21 @@ def test_unknown_stop_and_fresh_ids(server):
 
 
 def test_pass_shared_read_and_probe(setup, server, launcher_mode, monkeypatch):
-    r, p, _ = setup
-    server[2][:] = [b'{"primary":{"used_percent":20,"resets_at":9999999999}}\n', b""]
-    r.codex_reader = runner.codex_usage
+    r, _, _ = setup
+    server[2][:] = [b'{"primary":{"used_percent":20,"resets_at":9999999999}}\n', b'']
     probe = Mock()
-    monkeypatch.setattr(runner, "probe_codex_usage", probe)
-    original = r._run_pass
-
-    def run_pass():
-        original()
-        assert runner.codex_limits()[0]["used_percent"] == 20
-        assert runner.codex_usage() == 20
-
-    monkeypatch.setattr(r, "_run_pass", run_pass)
-    r.run()
-    assert len(p.started) == 1
-    assert len(server[0]) == 2
-    probe.assert_called_once()
-    r.run()
+    monkeypatch.setattr(runner, 'probe_codex_usage', probe)
+    monkeypatch.setattr(runner.state, 'postgres', lambda: False)
+    for _ in range(2):
+        token = runner._USAGE_PASS.set({'runner': r})
+        try:
+            assert runner.codex_usage() == 20
+            assert runner.codex_limits()[0]['used_percent'] == 20
+        finally:
+            runner._USAGE_PASS.reset(token)
     assert len(server[0]) == 4
     probe.assert_called_once()
+
 
 
 @pytest.mark.parametrize("age,probe_count", [(1800, 0), (1801, 1), (0, 0)])
@@ -304,27 +300,20 @@ def test_default_usage_paths(tmp_path, monkeypatch, setting):
 
 def test_eval_shares_launcher_read(setup, server, launcher_mode, monkeypatch):
     from cplane import eval_runner
-
     r, _, _ = setup
-    monkeypatch.setattr(runner.time, "time", lambda: NOW.timestamp())
     reset = NOW.timestamp() + 7200
-    server[2][:] = [
-        json.dumps({"primary": {"used_percent": 100, "resets_at": reset}}).encode()
-        + b"\n",
-        b"",
-    ]
-    r.codex_reader = runner.codex_usage
-    monkeypatch.setattr(runner, "probe_codex_usage", Mock())
-    original = r._run_pass
-
-    def run_pass():
-        original()
-        assert eval_runner._reset(r, "codex", "") == reset
-        assert not eval_runner.available(r, "codex")
-
-    monkeypatch.setattr(r, "_run_pass", run_pass)
-    r.run()
+    monkeypatch.setattr(runner.time, 'time', lambda: NOW.timestamp())
+    server[2][:] = [json.dumps({'primary': {'used_percent': 100, 'resets_at': reset}}).encode() + b'\n', b'']
+    monkeypatch.setattr(runner, 'probe_codex_usage', Mock())
+    monkeypatch.setattr(runner.state, 'postgres', lambda: False)
+    token = runner._USAGE_PASS.set({'runner': r})
+    try:
+        assert eval_runner._reset(r, 'codex', '') == reset
+        assert not eval_runner.available(r, 'codex')
+    finally:
+        runner._USAGE_PASS.reset(token)
     assert len(server[0]) == 2
+
 
 
 def test_probe_respects_executor_capacity(setup, launcher_mode, monkeypatch):
@@ -339,7 +328,8 @@ def test_probe_respects_executor_capacity(setup, launcher_mode, monkeypatch):
 
 
 def test_age_real_run_records(tmp_path, pg_store, monkeypatch):
-    r = runner.Runner(tmp_path / "slices.json", runs=tmp_path / "runs")
+    from cplane.runner import Runner
+    r = runner.Context(Runner(tmp_path / 'slices.json', runs=tmp_path / 'runs'))
     r.runs.mkdir(parents=True)
     (r.runs / "usage-probe.json").write_text(json.dumps({"at": NOW.timestamp() - 5000}))
     pg_store.run_record_add(

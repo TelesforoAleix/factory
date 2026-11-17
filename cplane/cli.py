@@ -7,7 +7,6 @@ import os
 import re
 from pathlib import Path
 import sys
-import subprocess
 
 from . import state
 from . import planner
@@ -286,16 +285,13 @@ def parser():
             sub.add_argument("--id", dest="new_id", default=argparse.SUPPRESS)
         else:
             sub.add_argument("--id", required=True)
-        for field in ("repo", "feature", "title", "brief", "model"):
+        for field in ("repo", "feature", "title", "brief"):
             sub.add_argument(f"--{field.replace('_', '-')}", required=command == "add" and field in ("repo", "feature", "title"), default=argparse.SUPPRESS)
         association = sub.add_mutually_exclusive_group()
         association.add_argument('--feature-id', default=argparse.SUPPRESS)
         association.add_argument('--no-feature', default=argparse.SUPPRESS, metavar='REASON')
-        sub.add_argument("--effort", choices=("low", "medium", "high", "xhigh", "max", "ultra"), default=argparse.SUPPRESS)
         sub.add_argument("--flow", choices=("cli", "tickets"), default=argparse.SUPPRESS)
-        sub.add_argument("--tool", choices=("codex", "claude"), default=argparse.SUPPRESS)
-        if command == "add":
-            sub.add_argument("--level", choices=("light", "standard", "strong"), default="standard")
+        sub.add_argument("--level", choices=("light", "standard", "strong"), default="standard" if command == "add" else argparse.SUPPRESS)
         sub.add_argument("--stop-before-merge", action=argparse.BooleanOptionalAction, default=argparse.SUPPRESS)
         sub.add_argument("--allowed-files", nargs="*", default=argparse.SUPPRESS, metavar="GLOB")
         sub.add_argument("--depends-on", nargs="*", action="extend", default=argparse.SUPPRESS, metavar="ID")
@@ -805,7 +801,7 @@ def main(argv=None):
                     print('final: unavailable (no run recorded)')
                 else:
                     job = latest[2]
-                    final = job.get('final')
+                    final = ((job.get('requests', {}).get(job.get('active'), {}).get('record') or {}).get('final_message') or job.get('final'))
                     last = latest[1] / ('last.json' if job.get('tool') == 'codex' else 'claude.json')
                     if job.get('fence') and job.get('tool') == 'codex':
                         last = latest[1] / 'io/last.json'

@@ -32,7 +32,7 @@ def test_store_selects_postgres(synthetic_store, monkeypatch, tmp_path):
 
 @pytest.fixture
 def pg_store(monkeypatch, request):
-    url = os.environ.get('CPLANE_TEST_DATABASE_URL')
+    url = os.environ.get('CPLANE_TEST_DATABASE_URL') or os.environ.get('HOMELAB_TEST_DATABASE_URL')
     if not url:
         if os.environ.get('CI'):
             pytest.fail('CI must set CPLANE_TEST_DATABASE_URL')
@@ -146,8 +146,8 @@ def test_runner_pass_excludes_writers(backend, tmp_path):
             state.update_locked(path, 'voice/W1', 'start', 'order', change_for('start'))
             return True
 
-    runner = Runner(path, runs=tmp_path / 'runs', repos=tmp_path / 'repos',
-                    git=Mock(), orders=Orders(), codex_reader=lambda: None)
+    runner = Runner(path, runs=tmp_path / 'runs',
+                    git=Mock(), orders=Orders(), )
 
     def writer():
         attempted.set()
@@ -321,7 +321,7 @@ def test_collector_uses_store(backend, tmp_path, monkeypatch, drop):
         queued['expect']['paused'] = True
     client = Client([queued])
     monkeypatch.setenv('CPLANE_ORDERS_URL', 'http://synthetic.invalid')
-    runner = Runner(path, runs=tmp_path / 'runs', repos=tmp_path / 'repos',
+    runner = Runner(path, runs=tmp_path / 'runs',
                     orders=Collector(client=client), git=Mock())
     runner.run()
     assert client.acks[0][1]['outcome'] == ('dropped' if drop else 'done')
@@ -351,55 +351,39 @@ def test_export_stdout_refuses_notices(backend, capsys):
     assert store.snapshot() == before
 
 
-def test_runner_uses_stored_brief_and_keeps_resume_copy(pg_store, tmp_path, monkeypatch):
+def test_runner_uses_stored_brief_and_same_run_on_answer(pg_store, tmp_path):
     from conftest import seed_model_choices
-    seed_model_choices(pg_store)
     from datetime import datetime, timezone
-    from test_runner import FakeProcesses, FakeGitHub, assert_prompt
+    from test_run_api_runner import FakeRuns, BASE, TIP
     from cplane.workshop import Workshop
+    seed_model_choices(pg_store)
     store = pg_store
     with store.mutation():
         store.connection.execute("UPDATE cplane_projects SET repository = 'example/repo' WHERE key = 'FAC'")
     feature = store.feature_add('FAC', 'Synthetic', stage='grilling')['id']
     chat = store.chats(kind='feature')[0]
     brief = '---\nkeep: stored frontmatter\n---\n## Do not\r\nChange this.  \r\n'
-    created = Workshop(store, chat['id'], Mock()).call('add_slice', dict(
-        feature=feature, title='Task', brief=brief, model='example-model', effort='high'))
+    created = Workshop(store, chat['id'], Mock()).call('add_slice', dict(feature=feature, title='Task', brief=brief, model='example-model', effort='high'))
     store.feature_mark(feature, 'design', actor=f"chat:{chat['id']}")
     store.feature_stage(feature, 'ready', actor=f"chat:{chat['id']}")
     store.feature_stage(feature, 'next', actor=f"chat:{chat['id']}")
-    repo = tmp_path / 'repos' / 'repo'
-    (repo / '.git').mkdir(parents=True)
-    processes = FakeProcesses()
-    runner = Runner(tmp_path / 'missing-briefs-clone' / 'slices.json',
-                    processes=processes, github=FakeGitHub(), git=Mock(),
-                    clock=lambda: datetime(2026, 11, 8, tzinfo=timezone.utc),
-                    codex_reader=lambda: 10, claude_reader=lambda: None,
-                    runs=tmp_path / 'runs', repos=tmp_path / 'repos')
-    from cplane import fence
-    trusted = fence.trusted_directory
-    monkeypatch.setattr(fence, 'trusted_directory',
-                        lambda path: None if Path(path) == runner.runs else trusted(path))
-    metadata = dict(repo=str(repo), repository='example/repo',
-                    branch='slice/' + created['id'].replace('/', '-'), base='a' * 40)
-    runner.fence = Mock()
-    runner.fence.prepare.return_value = metadata
-    runner.fence.resume.side_effect = lambda previous, session: {
-        key: previous[key] for key in metadata}
+    api, gh = FakeRuns(), Mock()
+    gh.default_tip.return_value = BASE
+    gh.branch_tip.return_value = TIP
+    runner = Runner(tmp_path / 'missing-briefs-clone' / 'slices.json', run_client=api, github=gh, git=Mock(),
+                    clock=lambda: datetime(2026, 11, 8, tzinfo=timezone.utc), runs=tmp_path / 'runs')
     runner.run()
-    assert len(processes.started) == 1
-    assert_prompt(processes.started[0], brief)
+    assert len(api.requests) == 1
+    request = next(iter(api.requests.values()))
+    assert request['work']['goal'].startswith(brief)
+    key = next(iter(api.records))
     assert store.load()['slices'][0]['state'] == 'issued'
-    job = runner.jobs[created['id']]
-    assert job['brief'] == brief
     runner.run()
-    assert len(processes.started) == 1
-    assert store.stored_brief(created['brief_id']) == brief
-    processes.finish(kind='question', body='Which local detail?')
+    assert len(api.requests) == 1
+    api.finish(key, 'question', 'question', 'Which local detail?')
     runner.run()
     assert main(['answer', created['id'], 'Use the agreed value']) == 0
     runner.run()
-    assert len(processes.started) == 2
-    assert processes.started[-1]['resume'] == 'session-1'
-    assert processes.started[-1]['brief'] == brief
-    runner.fence.resume.assert_called_once()
+    assert len(api.requests) == 1 and len(api.messages) == 1
+    assert next(iter(api.messages.values()))['text'] == 'Use the agreed value'
+    assert store.stored_brief(created['brief_id']) == brief

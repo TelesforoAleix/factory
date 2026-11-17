@@ -763,7 +763,7 @@ class FeatureStore:
             self.connection.execute(
                 'INSERT INTO cplane_slice_briefs (slice_id, feature, text, actor) VALUES (%s, %s, %s, %s)',
                 (slice_id, feature['feature'], brief, actor))
-            self.slice_level(slice_id, 'standard', item['executor'])
+            self.slice_level(slice_id, 'standard')
             data['slices'].append(item)
             self.save(data, [dict(at=at, id=slice_id, event='add_slice', text=f'Added {slice_id}')])
             self._feature_event(feature['feature'], f'add_slice {slice_id}', actor)

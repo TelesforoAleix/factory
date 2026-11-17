@@ -13,7 +13,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from cplane import executors, fence, launcher, models, planning, primer, review, runner, sessions
+from cplane import eval_execution as runner
+from cplane import executors, fence, launcher, models, planning, primer, review, sessions
 
 
 @pytest.fixture
@@ -313,23 +314,6 @@ def test_session_delivery_io_ownership(boundary, monkeypatch):
     store.finish_session_turn.assert_called_once_with(turn, 'hello', 'saved-id')
 
 
-@pytest.mark.parametrize('tool', ['codex', 'claude'])
-def test_version_probe(boundary, monkeypatch, tool):
-    from cplane import run_records, state
-    work, runs, requests, _, output = boundary
-    (runs / 'slice').mkdir()
-    output[0] = f'{tool} 1.2.3'.encode()
-    store = Mock()
-    store.slice_policy.return_value = None
-    monkeypatch.setattr(state, 'postgres', lambda: True)
-    monkeypatch.setattr(state, 'store', lambda path: store)
-    job = dict(fence=True, run=str(runs / 'slice'), repo=str(work / 'copy'),
-               tool=tool, model='synthetic', effort='low', prompt='hello')
-    run_records.launch_metadata(Mock(), dict(id='example/W1'), job)
-    assert requests[-1]['profile'] == 'cli-run'
-    assert requests[-1]['folders'] == dict(work='copy', run='slice/version')
-    assert requests[-1]['command'][-1] == '--version'
-    assert job['configuration'] == f'{tool} 1.2.3 synthetic low'
 
 
 @pytest.mark.parametrize('probe', ['catalog', 'usage'])

@@ -1,3 +1,4 @@
+# ruff: noqa: F811 - shared pytest fixtures
 """Pipeline rules using synthetic features and an isolated Postgres 17 schema."""
 import copy
 import json
@@ -213,7 +214,7 @@ def test_slice_link_commands(pg_store, slice_data, capsys):
     seed_model_choices(pg_store)
     identifier = pg_store.feature_add('FAC', 'Link')['id']
     moved = pg_store.feature_move(identifier, 'LAB')['id']
-    args = ['--actor', 'chat:9', 'add', '--id', 'synthetic/1', '--repo', 'repo', '--feature', 'Free text', '--title', 'Slice', '--model', 'test']
+    args = ['--actor', 'chat:9', 'add', '--id', 'synthetic/1', '--repo', 'repo', '--feature', 'Free text', '--title', 'Slice', '--level', 'light']
     assert main([*args, '--feature-id', identifier]) == 0
     item = pg_store.load()['slices'][0]
     assert item['feature_id'] == identifier and item['feature'] == 'Free text'
@@ -381,11 +382,10 @@ def test_runner_pipeline_dependencies_waiting_and_order(pg_store, runner_setup, 
     data['slices'].append(accepted)
     pg_store.save(data)
     r.run()
-    assert [job['id'] for job in p.started] == ['synthetic/1', 'synthetic/0']
+    assert [job['id'] for job in p.started] == ['synthetic/1', 'synthetic/0', 'synthetic/2']
     results = {s['id']: s for s in pg_store.load()['slices']}
     assert results['synthetic/blocked']['slot'] is None
-    assert results['synthetic/2']['state'] == 'ready'
-    assert 'executor limit' in results['synthetic/2']['log'][-1]['event']
+    assert results['synthetic/2']['state'] == 'issued'
     with pg_store.locked():
         assert pg_store.connection.execute(
             "SELECT count(*) FROM cplane_feature_events WHERE actor = 'runner' AND event LIKE 'start:%%'").fetchone()[0] == 3
@@ -467,22 +467,17 @@ def test_runner_pipeline_failure_isolated(pg_store, runner_setup, slice_data, mo
     assert len(p.started) == 1  # Existing slot still executes after rollback.
 
 
-def test_pipeline_deferred_slots_stop_on_park(pg_store, runner_setup, slice_data):
-    r, p, _ = runner_setup
+def test_pipeline_park_holds_platform_submissions(pg_store, runner_setup, slice_data):
+    r, api, _ = runner_setup
     features = runner_board(pg_store, r, slice_data, [('building', {}), ('building', {}), ('building', {})])
-    r.run()
-    assert len(p.started) == 2
-    deferred = pg_store.load()['slices'][2]
-    assert deferred['slot'] is not None and deferred['state'] == 'ready'
     pg_store.feature_stage(features[2], 'parked')
-    assert pg_store.load()['slices'][2]['slot'] is None
-    # Release capacity without any real executor or external repository.
-    p.finish()
     r.run()
-    assert len(p.started) == 2
+    assert len(api.requests) == 2
+    assert pg_store.load()['slices'][2]['slot'] is None
     pg_store.feature_stage(features[2], 'building')
     r.run()
-    assert len(p.started) == 3 and p.started[-1]['id'] == 'synthetic/2'
+    assert len(api.requests) == 3
+    assert api.started[-1]['id'] == 'synthetic/2'
 
 
 def test_pipeline_park_blocks_answer_delivery_until_return(pg_store, runner_setup, slice_data):
@@ -500,7 +495,7 @@ def test_pipeline_park_blocks_answer_delivery_until_return(pg_store, runner_setu
     pg_store.feature_stage(feature, 'building')
     r.run()
     assert len(p.started) == 2
-    assert p.started[-1]['resume'] == 'session-1'
+    assert p.started[-1]['resume'] == next(iter(p.requests))
 
 
 def test_pipeline_keeps_repository_limit(pg_store, runner_setup, slice_data):
@@ -511,7 +506,7 @@ def test_pipeline_keeps_repository_limit(pg_store, runner_setup, slice_data):
     pg_store.save(data)
     r.run()
     assert len(p.started) == 1
-    assert 'repository busy' in pg_store.load()['slices'][1]['log'][-1]['event']
+    assert 'overlapping files' in pg_store.load()['slices'][1]['log'][-1]['event']
 
 
 def test_pipeline_once_with_active_store_under_lock(pg_store, runner_setup, slice_data, monkeypatch):
@@ -543,25 +538,29 @@ def test_other_parking_gates_unchanged(pg_store, slice_data):
 
 def test_pipeline_park_blocks_pr_progress_until_return(pg_store, runner_setup, slice_data):
     r, p, github = runner_setup
+    slice_data['stop_before_merge'] = True
     feature = runner_board(pg_store, r, slice_data, [('building', {})])[0]
     r.run()
-    request = dict(branch=p.started[-1]['branch'], title='Synthetic PR',
-                   body='Synthetic change', node_steps=None)
-    p.finish(kind='waiting', body='```json\n' + json.dumps(request) + '\n```')
+    request = {'branch': p.started[-1]['branch'], 'title': 'Synthetic PR',
+                   'body': 'Synthetic change', 'node_steps': None}
+    p.finish(kind='handover', body='```json\n' + json.dumps(request) + '\n```')
     r.run()
     assert pg_store.load()['slices'][0]['pr'] == 12
-    r.fence.publish.assert_called_once()
+    assert len(p.requests) == 2  # Write slice and read PR review.
     pg_store.feature_stage(feature, 'parked')
     github.checks.return_value = ('green', '')
     r.run()
-    assert len(p.started) == 1
+    assert len(p.started) == 2
     github.merge.assert_not_called()
     pg_store.feature_stage(feature, 'building')
+    from test_run_api_runner import block
+    p.finish(body=block({'verdict': 'pass', 'title': 'Reviewed', 'body': 'Passed'}))
     r.run()
     assert pg_store.load()['slices'][0]['attention']['kind'] == 'merge'
 
 
-def test_functional_acceptance_and_experience_testing(pg_store, runner_setup, slice_data):  # noqa: F811
+
+def test_functional_acceptance_and_experience_testing(pg_store, runner_setup, slice_data):
     runner, _, _ = runner_setup
     functional, experience = runner_board(pg_store, runner, slice_data, [
         ('building', {'state': 'accepted'}), ('building', {'state': 'dropped'})])
@@ -581,7 +580,7 @@ def test_functional_acceptance_and_experience_testing(pg_store, runner_setup, sl
     assert pg_store.feature_stage(functional, 'done', actor='chat:7')['stage'] == 'done'
 
 
-def test_kind_cli_and_api(pg_store, capsys):  # noqa: F811
+def test_kind_cli_and_api(pg_store, capsys):
     from factory_ui import create_app
     assert main(['feature', 'add', 'FAC', 'Functional', '--kind', 'functional']) == 0
     item = json.loads(capsys.readouterr().out)

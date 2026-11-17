@@ -1,3 +1,4 @@
+# ruff: noqa: F811 - shared pytest fixtures
 """Synthetic eval execution: fake harnesses, disposable Postgres, offline Git."""
 from datetime import datetime, timedelta, timezone
 import json
@@ -12,6 +13,7 @@ import pytest
 from cplane import eval_runner, evals, executors, fence, state
 from cplane.cli import main
 from cplane.runner import Runner
+from cplane.eval_execution import Context
 from test_evals import cases  # noqa: F401
 from test_fenced_runner import delivery  # noqa: F401
 from test_stores import pg_store  # noqa: F401
@@ -59,9 +61,10 @@ def execution(pg_store, cases, tmp_path, monkeypatch):
         pg_store.connection.execute("UPDATE cplane_eval_cases SET kind='review'")
     evals.set_create(pg_store, 'synthetic', title='S', filters={'size': 'S'})
     processes = FakeProcesses()
-    runner = Runner(tmp_path / 'state', processes=processes, git=Mock(), orders=Mock(),
-                    runs=tmp_path / 'runs', codex_reader=lambda: 0,
-                    claude_reader=lambda: dict(at=time.time() - 1, rate_limits=dict(five_hour=dict(used_percentage=0, resets_at=time.time() + 60))))
+    runner = Context(Runner(tmp_path / 'state', git=Mock(), orders=Mock(), runs=tmp_path / 'runs'))
+    runner.processes = processes
+    runner.codex_reader = lambda: 0
+    runner.claude_reader = lambda: dict(at=time.time() - 1, rate_limits=dict(five_hour=dict(used_percentage=0, resets_at=time.time() + 60)))
     runner.instant = datetime.now(timezone.utc)
     runner.jobs = {}
     runner.data = dict(version=1, slices=[])
@@ -185,7 +188,7 @@ def test_safe_failures(pg_store, execution, failure):
 @pytest.mark.parametrize('tool', ['codex', 'claude'])
 def test_usage_limit_replans_and_holds_until_reset(pg_store, execution, monkeypatch, tool):
     runner, processes, _ = execution
-    monkeypatch.setattr('cplane.runner.codex_limits', lambda: None)
+    monkeypatch.setattr('cplane.eval_execution.codex_limits', lambda: None)
     run = create(pg_store, tool=tool)
     step(pg_store, runner)
     processes.output = (json.dumps(dict(type='turn.failed', error=dict(message='usage limit; try again at 11:59 PM')))
@@ -225,7 +228,7 @@ def test_shared_capacity_and_repository_lock(pg_store, execution, slice_data):
         pg_store.connection.execute("UPDATE cplane_settings SET value=2 WHERE name='executors'")
     step(pg_store, runner)
     assert len(processes.started) == 1
-    assert runner.room(dict(id='another', repo='example/third', state='ready')).startswith('deferred: executor limit')
+    assert runner.room(dict(id='another', repo='example/third', state='ready')).startswith('executor limit')
     assert evals.run_show(pg_store, run['id'])['attempts'][0]['state'] == 'running'
 
 
@@ -308,33 +311,14 @@ def test_eval_supervisor_timeout_stops_container(tmp_path, monkeypatch):
     assert json.loads((tmp_path / 'exit.json').read_text())['timeout'] is True
 
 
-def test_runner_starts_slices_first_and_slice_can_start_during_eval(pg_store, execution, slice_data, monkeypatch):
+def test_platform_slice_does_not_reserve_local_eval_capacity(pg_store, execution, slice_data):
     runner, processes, _ = execution
-    first = dict(slice_data, repo='example/other', slot=runner.instant.isoformat())
-    pg_store.save(dict(version=1, slices=[first]))
     run = create(pg_store)
-    runner.orders.collect.return_value = False
-    monkeypatch.setattr(runner, 'choose', lambda item, resume=False: ('codex', 'synthetic'))
-    launched = []
-    def start_slice(item):
-        launched.append(item['id'])
-        runner.jobs[item['id']] = dict(phase='running', repository=item['repo'])
-        item.update(state='issued', session=dict(tool='codex', id='synthetic', folder='/synthetic'))
-    monkeypatch.setattr(runner, 'start', start_slice)
+    runner.jobs = {'voice/W1': dict(phase='running', repository='example/other', requests={'slice': {}})}
+    runner.data['slices'] = [dict(slice_data, state='issued', repo='example/other')]
     with pg_store.mutation():
         pg_store.connection.execute("UPDATE cplane_settings SET value=1 WHERE name='executors'")
-    runner._run_pass()
-    assert launched == ['voice/W1'] and not processes.started
-    # The slice's work finished before this pass; now eval has the sole place.
-    pg_store.save(dict(version=1, slices=[]))
-    runner._run_pass()
-    assert len(processes.started) == 1
-    # Raising capacity leaves a place for a newly ready slice during that attempt.
-    with pg_store.mutation():
-        pg_store.connection.execute("UPDATE cplane_settings SET value=2 WHERE name='executors'")
-    pg_store.save(dict(version=1, slices=[dict(first, id='voice/W2')]))
-    runner._run_pass()
-    assert launched == ['voice/W1', 'voice/W2']
+    step(pg_store, runner)
     assert len(processes.started) == 1
     assert evals.run_show(pg_store, run['id'])['attempts'][0]['state'] == 'running'
 
@@ -380,8 +364,8 @@ def test_attempt_reservation_is_global_across_runner_paths(pg_store, execution):
     runner, processes, adapter = execution
     run = create(pg_store)
     step(pg_store, runner)
-    other = Runner(runner.path.parent / 'other-state', runs=runner.runs.parent,
-                   processes=processes, codex_reader=lambda: 0)
+    other = Context(Runner(runner.path.parent / 'other-state', runs=runner.runs.parent))
+    other.processes, other.codex_reader = processes, lambda: 0
     other.jobs, other.data, other.instant = {}, runner.data, runner.instant
     other.fence = adapter
     step(pg_store, other)
@@ -395,7 +379,7 @@ def test_attempt_reservation_is_global_across_runner_paths(pg_store, execution):
     assert other.jobs['eval:' + str(run['attempts'][0]['id'])]['metadata_unavailable']
 
 
-def test_attempt_uses_start_commit_and_diffs_from_that_start(pg_store, execution):  # noqa: F811 - shared pytest fixture
+def test_attempt_uses_start_commit_and_diffs_from_that_start(pg_store, execution):
     runner, processes, adapter = execution
     with pg_store.mutation():
         pg_store.connection.execute('UPDATE cplane_eval_cases SET start_commit=%s', ('b' * 40,))

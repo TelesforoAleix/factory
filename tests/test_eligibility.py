@@ -120,29 +120,15 @@ def test_failed_paused_and_lifecycle_explanations(slice_data):
     assert eligibility(item, data(item))['status'] == 'waiting for a test or approval'
 
 
-def test_resource_limits_and_ended_attention(slice_data):
-    other = dict(slice_data, id='test/other', state='issued', allowed_files=['other/**'],
-                 attention=dict(kind='question', answer=None))
+def test_platform_owns_resource_limits(slice_data):
+    other = dict(slice_data, id='test/other', state='issued', allowed_files=['other/**'])
     item = dict(slice_data, allowed_files=['src/**'])
     job = dict(phase='running', repository=item['repo'])
-    assert eligibility(item, data(item, other, jobs={other['id']: job})) == dict(
-        status='resource busy', reason='repository busy', ids=[other['id']])
-    assert eligibility(item, data(item, other, jobs={other['id']: job},
-                                 limits=dict(executors=1, repository_runs=1)))['reason'] == 'executor limit'
-    job['phase'] = 'ended'
-    assert eligibility(item, data(item, other, jobs={other['id']: job})) == dict(status='ready')
-    assert eligibility(item, data(item, other)) == dict(status='ready')
-    assert eligibility(item, data(item, providers={item['id']: False})) == dict(
-        status='resource busy', reason='provider away')
-    other['attention'] = None
-    assert eligibility(item, data(item, other))['reason'] == 'repository busy'
+    assert eligibility(item, data(item, other, jobs={other['id']: job}, limits=dict(executors=1, repository_runs=1))) == dict(status='ready')
 
 
 def test_allowed_files_cli_atomic_rules_and_why(make_state, capsys, monkeypatch):
-    from cplane import runner
-    monkeypatch.setattr(runner, 'codex_usage', lambda: 0)
     # Runner's default reader is bound at definition time; use an explicit fake.
-    monkeypatch.setattr(runner.Runner, 'choose', lambda *args: ('codex', 'synthetic'))
     path = make_state()
     args = ['--state', str(path), '--actor', 'planner']
     assert main([*args, 'edit', 'voice/W1', '--no-feature', 'One-off', '--allowed-files', 'src/**', '*.toml']) == 0
@@ -213,6 +199,5 @@ def test_tickets_flow_gate(slice_data, monkeypatch, enabled):
         monkeypatch.setenv('CPLANE_TASK_SUBMIT', '["synthetic-submit"]')
     item = dict(slice_data, flow='tickets')
     answer = eligibility(item, data(item))
-    assert answer == (dict(status='ready') if enabled else
-                      dict(status='waiting for a decision', reason='tickets flow off'))
+    assert answer == dict(status='ready')
     assert eligibility(slice_data, data(slice_data)) == dict(status='ready')

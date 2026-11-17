@@ -45,9 +45,9 @@ def build(make_state, tmp_path, monkeypatch):
         client = Client(orders)
         tmux = Mock()
         runner = Runner(path, orders=Collector(client=client, tmux=tmux),
-                        git=Mock(), clock=lambda: NOW, runs=tmp_path / 'app/runs',
-                        repos=tmp_path / 'repos', codex_reader=lambda: None,
-                        claude_reader=lambda: None)
+                        git=Mock(), clock=lambda: NOW, runs=tmp_path / 'app/runs', repos=tmp_path / 'repos',
+
+                        )
         return runner, client, tmux
     return make
 

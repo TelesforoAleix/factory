@@ -1,9 +1,12 @@
+from test_stores import pg_store  # noqa: F401 - shared pytest fixture
+from test_runner import setup  # noqa: F401 - shared pytest fixture
+# ruff: noqa: F811 - shared pytest fixtures
 """Synthetic provider logs and disposable Postgres accounting; no executor calls."""
-from datetime import datetime, timezone
 import json
 import os
-from pathlib import Path
 import subprocess
+from datetime import UTC, datetime, timezone
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -11,8 +14,6 @@ import pytest
 from cplane import run_records, sessions, state
 from cplane.cli import main, parser
 from cplane.features import TEXT_LIMIT
-from test_stores import pg_store
-from test_runner import setup
 
 
 def codex_log():
@@ -144,23 +145,22 @@ def test_file_store_skip_and_clear_command_error(monkeypatch, tmp_path, capsys):
 
 
 def test_runner_records_before_applying_final_and_failure_is_harmless(setup, monkeypatch, capsys):
-    runner, processes, _ = setup
+    from test_run_api_runner import current
+    runner, api, _ = setup
     runner.run()
     job = next(iter(runner.jobs.values()))
-    Path(job['run'], 'turn.jsonl').write_text(codex_log())
     store = Mock()
     store.run_record_add.side_effect = RuntimeError('PRIVATE database diagnostic')
     monkeypatch.setattr(state, 'postgres', lambda: True)
     monkeypatch.setattr(state, 'store', lambda _: store)
-    processes.finish()
+    api.finish(current(runner), metrics={'tokens': {'fresh': 12, 'cached': 8, 'output': 6}, 'minutes': 0.2})
     item = runner.data['slices'][0]
     runner.collect(item, job)
-    assert item['state'] == 'in review'
-    assert job['phase'] == 'collected'
+    assert item['state'] == 'in review' and job['phase'] == 'collected'
     values = store.run_record_add.call_args.kwargs
-    assert values['skill_version'] == job['skills'] and job['skills']
+    assert values['skill_version'] == job['skills']
     assert values['input_tokens'] == 20 and 'prompt' not in values
-    assert values['slice_id'] == item['id'] and values['seconds'] >= 0
+    assert values['slice_id'] == item['id'] and values['seconds'] == 12
     assert capsys.readouterr().err == 'cplane: run recording failed\n'
 
 
@@ -225,78 +225,32 @@ def test_legacy_slice_call_leaves_outcomes_empty(pg_store, tmp_path):
     assert pg_store.run_record_show(row['id'])['prompt'] is None
 
 
-@pytest.mark.parametrize('tool,version', [('codex', 'codex-cli-exec 0.162.1\n'),
-                                         ('claude', '2.1.318 (Claude Code)\n')])
-@pytest.mark.parametrize('overrides', [{}, {'model': 'synthetic'}])
-def test_launch_captures_policy_hash_and_cli_version(setup, monkeypatch, tool, version, overrides):
-    import hashlib
-    monkeypatch.setenv('CPLANE_FENCE_COMMAND', 'homelab-fence')
-    runner, _, _ = setup
-    runner.run()
-    job = next(iter(runner.jobs.values()))
-    job.update(tool=tool, effort='high', model='synthetic', fence=True)
-    store = Mock()
-    store.slice_policy.return_value = dict(level='strong', overrides=overrides)
-    monkeypatch.setattr(state, 'postgres', lambda: True)
-    monkeypatch.setattr(state, 'store', lambda _: store)
-    probe = Mock(return_value=subprocess.CompletedProcess([], 0, version, ''))
-    monkeypatch.setattr(run_records.subprocess, 'run', probe)
-    run_records.launch_metadata(runner, runner.data['slices'][0], job)
-    assert job['level'] == 'strong'
-    assert job['executor_source'] == ('override' if overrides else 'level')
-    assert job['configuration'] == f"{tool} {version.split()[1] if tool == 'codex' else version.split()[0]} synthetic high"
-    assert job['brief_hash'] == hashlib.sha256(job['prompt'].encode()).hexdigest()
-    assert job['prompt'] not in str(probe.call_args)
-    command = [tool, 'exec' if tool == 'codex' else '-p', '--version']
-    command = ['homelab-fence', 'run', '--tool', tool, '--repo', job['repo'],
-               '--run', str(Path(job['run']) / 'version'), '--', *command]
-    assert probe.call_args.args[0] == command
-    store.slice_policy.return_value = None
-    run_records.launch_metadata(runner, runner.data['slices'][0], job)
-    assert job['level'] == 'standard' and job['executor_source'] == 'override'
-
-
-@pytest.mark.parametrize('error', [FileNotFoundError('PRIVATE'), OSError('PRIVATE'),
-                                   subprocess.TimeoutExpired('PRIVATE', 15)])
-def test_unavailable_version_still_captures_launch_identity(setup, monkeypatch, capsys, error):
-    runner, _, _ = setup
-    runner.run()
-    job = next(iter(runner.jobs.values()))
-    store = Mock()
-    store.slice_policy.return_value = dict(level='light', overrides={})
-    monkeypatch.setattr(state, 'postgres', lambda: True)
-    monkeypatch.setattr(state, 'store', lambda _: store)
-    monkeypatch.setattr(run_records.subprocess, 'run', Mock(side_effect=error))
-    run_records.launch_metadata(runner, runner.data['slices'][0], job)
-    assert job['level'] == 'light' and len(job['brief_hash']) == 64
-    assert job.get('configuration') is None
-    assert capsys.readouterr().err == ''
-
-
 def test_ci_red_then_green_keeps_both_in_read_order(pg_store, setup, monkeypatch, capsys):
     from cplane.runner import GitHub
-    runner, _, _ = setup
+    runner, api, _ = setup
     # Launch using the synthetic file scheduler, then attach only accounting to PG.
     monkeypatch.setattr(state, 'postgres', lambda: False)
     runner.run()
     item = runner.data['slices'][0]
     job = runner.jobs[item['id']]
-    Path(job['run'], 'turn.jsonl').write_text(codex_log())
+    entry = job['requests'][job['active']]
+    entry['record'] = api.get(entry['run_id'])
     run_records.slice_record(pg_store, item, job)
     monkeypatch.setattr(state, 'postgres', lambda: True)
     monkeypatch.setattr(state, 'store', lambda _: pg_store)
     github = GitHub()
     tip = 'a' * 40
     github.call = Mock(side_effect=[
-        json.dumps(dict(headRefOid=tip)),
-        json.dumps(dict(workflow_runs=[dict(id=1, status='completed')])),
-        json.dumps(dict(jobs=[dict(name='test', status='completed', conclusion='failure')])),
-        json.dumps(dict(headRefOid=tip)),
-        json.dumps(dict(workflow_runs=[dict(id=2, status='completed')])),
-        json.dumps(dict(jobs=[dict(name='test', status='completed', conclusion='success')])),
+        json.dumps({'headRefOid': tip}),
+        json.dumps({'workflow_runs': [{'id': 1, 'status': 'completed'}]}),
+        json.dumps({'jobs': [{'name': 'test', 'status': 'completed', 'conclusion': 'failure'}]}),
+        json.dumps({'headRefOid': tip}),
+        json.dumps({'workflow_runs': [{'id': 2, 'status': 'completed'}]}),
+        json.dumps({'jobs': [{'name': 'test', 'status': 'completed', 'conclusion': 'success'}]}),
     ])
     runner.github = github
-    job.update(phase='pr', tip=tip)
+    github.changes = Mock(return_value=(1, []))
+    job.update(phase='pr', tip=tip, review_verdict='pass')
     item.update(pr=12, attention=None, stop_before_merge=True)
     runner.pr_checks(item, job)
     assert item['attention']['kind'] == 'escalation'
@@ -305,8 +259,8 @@ def test_ci_red_then_green_keeps_both_in_read_order(pg_store, setup, monkeypatch
     assert item['attention']['kind'] == 'merge'
     assert main(['runs', 'show', item['id']]) == 0
     row, = json.loads(capsys.readouterr().out)
-    assert row['ci_result'] == [dict(sha=tip, status='red', failing_job='test'),
-                                dict(sha=tip, status='green', failing_job=None)]
+    assert row['ci_result'] == [{'sha': tip, 'status': 'red', 'failing_job': 'test'},
+                                {'sha': tip, 'status': 'green', 'failing_job': None}]
     assert 'prompt' not in row
 
 
@@ -524,20 +478,21 @@ def test_empty_export_and_optional_task_metrics(pg_store, capsys):
 
 @pytest.mark.parametrize('change_class', [1, 2, 4])
 def test_runner_records_change_class_before_merge_or_approval(pg_store, setup, monkeypatch, change_class):
-    runner, _, gh = setup
+    runner, api, gh = setup
     monkeypatch.setattr(state, 'postgres', lambda: False)
     runner.run()
     item = runner.data['slices'][0]
     job = runner.jobs[item['id']]
-    Path(job['run'], 'turn.jsonl').write_text(codex_log())
+    entry = job['requests'][job['active']]
+    entry['record'] = api.get(entry['run_id'])
     run_records.slice_record(pg_store, item, job)
     assert pg_store.run_record_list()[0]['change_class'] is None
     monkeypatch.setattr(state, 'postgres', lambda: True)
     monkeypatch.setattr(state, 'store', lambda _: pg_store)
     guards = ['guard/key'] if change_class == 4 else []
-    monkeypatch.setattr('cplane.classes.changes', lambda *args: (change_class, guards))
+    gh.changes.return_value = (change_class, guards)
     item.update(pr=12, attention=None, stop_before_merge=False)
-    job.update(phase='pr', tip='b' * 40, request=dict(node_steps=None))
+    job.update(phase='pr', tip='b' * 40, request={'node_steps': None}, review_verdict='pass')
     gh.checks.return_value = ('green', '')
     runner.pr_checks(item, job)
     row, = pg_store.run_record_list()
@@ -571,3 +526,32 @@ def test_class_record_store_failure_is_private_and_harmless(setup, monkeypatch, 
     monkeypatch.setattr(state, 'store', Mock(side_effect=RuntimeError('PRIVATE')))
     run_records.class_record(runner, dict(run='synthetic'), 2)
     assert capsys.readouterr().err == 'cplane: run recording failed\n'
+
+
+def test_api_attempt_metrics_and_repair_task_identity(pg_store, setup, monkeypatch):
+    runner, api, _ = setup
+    monkeypatch.setattr(state, 'postgres', lambda: False)
+    runner.run()
+    item = runner.data['slices'][0]
+    pg_store.save(runner.data)
+    job = runner.jobs[item['id']]
+    entry = job['requests'][job['active']]
+    entry['record'] = api.get(entry['run_id'])
+    entry['record'].update(status='done', attempts=[
+        {'number': 1, 'metrics': {'tokens': {'fresh': 10, 'cached': 2, 'output': 5}, 'minutes': 1}},
+        {'number': 2, 'metrics': {'tokens': {'fresh': 20, 'cached': 4, 'output': 10}, 'minutes': 2}},
+    ])
+    run_records.platform_record(pg_store, item, job, entry)
+    run_records.platform_record(pg_store, item, job, entry)
+    totals = pg_store.run_record_total(item['id'])
+    assert totals['turns'] == 2 and totals['input_tokens'] == 36 and totals['seconds'] == 180
+    assert all(row['prompt_truncated'] is False for row in pg_store.run_record_list())
+    job['repair'] = True
+    for purpose, identity in [('ticket-1', 'initial-ticket'), ('repair-ticket-1', 'repair-ticket')]:
+        ticket = {'run_id': identity, 'request': {'role': 'ticket', 'request_id': runner.request_id(item, purpose)},
+                      'record': {'status': 'done', 'metrics': {}}}
+        run_records.platform_record(pg_store, item, job, ticket)
+    rows = pg_store.run_record_export(datetime(2000, 1, 1, tzinfo=UTC))
+    tasks = [row for row in rows if row['kind'] == 'task']
+    assert {(row['queue_slice'], row['task_id']) for row in tasks} == {
+        (item['id'], 'initial-ticket'), (item['id'] + '/repair', 'repair-ticket')}

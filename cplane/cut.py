@@ -71,6 +71,19 @@ def validate_plan(plan):
                 raise StateError(f"invalid plan: {name}")
 
 
+def parse_plan(body):
+    """Read the cutter's final JSON block, allowing earlier examples and prose."""
+    blocks = [match for match in re.finditer(r'^```([^\r\n]*)\r?\n(.*?)\r?\n```[ \t]*$', body, re.DOTALL | re.MULTILINE) if match[1].strip() in ('', 'json')]
+    try:
+        plan = json.loads(blocks[-1][2]) if blocks else None
+    except ValueError:
+        plan = None
+    if plan is None:
+        raise StateError('invalid plan: expected fenced JSON')
+    validate_plan(plan)
+    return plan
+
+
 def build_task_file(slice_id, repository, branch, base_commit, plan, brief):
     validate_plan(plan)
     if not isinstance(slice_id, str) or not slice_id.strip():
