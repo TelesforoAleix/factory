@@ -217,6 +217,12 @@ def current(r):
     return job["requests"][job["active"]]["run_id"]
 
 
+COMMIT_INSTRUCTION = (
+    "Commit all of your work on this branch, in one or more commits with plain messages, before you end. "
+    "Do not push and do not open a PR: the platform delivers your commits, and Factory opens the PR."
+)
+
+
 def test_slice_request_and_poll_after_restart(setup):
     r, api, gh = setup
     r.run()
@@ -245,9 +251,10 @@ def test_slice_request_and_poll_after_restart(setup):
     }
     assert request["work"]["goal"].startswith("# Task\n")
     assert "Runner assignment: use branch slice/voice-W1" in request["work"]["goal"]
+    assert COMMIT_INSTRUCTION in request["work"]["goal"]
     assert not any(
         word in request["work"]["goal"].lower()
-        for word in ("the fence", "bundle", "push")
+        for word in ("the fence", "bundle")
     )
     assert not {"tool", "model", "effort", "limits"} & request.keys()
     restarted = Runner(
@@ -555,6 +562,7 @@ def test_answer_and_merge_notice_are_messages_to_original_run(setup):
         req["role"] == "review" and req["mode"] == "read" and req["base_commit"] == TIP
     )
     assert req["work"]["history"] == "full"
+    assert COMMIT_INSTRUCTION not in req["work"]["goal"]
     api.finish(
         review,
         body=block(
@@ -583,6 +591,7 @@ def test_ticket_chain_and_read_review(setup):
         api.requests[cut_id]["role"] == "cut"
         and api.requests[cut_id]["mode"] == "write"
     )
+    assert COMMIT_INSTRUCTION in api.requests[cut_id]["work"]["goal"]
     api.finish(cut_id, body=block(PLAN))
     r.run()
     tickets = [req for req in api.requests.values() if req["role"] == "ticket"]
