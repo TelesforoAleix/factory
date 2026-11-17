@@ -1281,6 +1281,12 @@ class Runner:
             entry["post_merge"] = bool(job.get("sha"))
             entry["turn"] += 1
             entry["message"] = {"contract": 1, "message_id": message_id, "text": text}
+            if purpose.startswith("answer-"):
+                entry["message_answer"] = {
+                    "at": self.instant.isoformat(),
+                    "question": item["attention"]["body"],
+                    "answer": text,
+                }
             job["phase"] = "pr" if target == job.get("pr_review") else "running"
             if target == job.get("pr_review"):
                 job["review_requested_at"] = self.instant.timestamp()
@@ -1293,6 +1299,8 @@ class Runner:
         result = self.client.message(entry["run_id"], entry["message"])
         entry["record"] = result
         entry["last_message_id"] = entry.pop("message")["message_id"]
+        if "message_answer" in entry:
+            job.setdefault("answers", []).append(entry.pop("message_answer"))
         self.save_job(job)
         attention_entry = job["requests"].get(job.get("attention_run"))
         if (
@@ -1586,7 +1594,12 @@ class Runner:
         purpose = "review-" + str(number)
         from .skills import instructions
 
-        goal = instructions("slice-review") + job["brief"] + self.assignment(job)
+        goal = instructions("slice-review") + job["brief"]
+        if job.get("answers"):
+            goal += "\n\nAnswers given during the slice (they replace the brief where they differ):"
+            for answer in job["answers"]:
+                goal += f"\n\nQuestion: {answer['question']}\nAnswer: {answer['answer']}"
+        goal += self.assignment(job)
         # The skill names waiting; either final kind carries the same verdict.
         goal += '\nFor this run, end with kind "handover" (superseding the skill final kind). Return the verdict JSON first; prose may follow.'
         previous = job["requests"][job["active"]]["request"]["request_id"]

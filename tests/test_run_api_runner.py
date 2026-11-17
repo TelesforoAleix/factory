@@ -780,6 +780,9 @@ def test_lost_message_response_retries_saved_message_id(setup, monkeypatch):
     assert count[0] == 2 and len(api.messages) == 1
     assert next(iter(api.messages.values())) == saved
     assert item(r)["attention"] is None
+    assert r.jobs["voice/W1"]["answers"] == [
+        {"at": NOW.isoformat(), "question": "Choose", "answer": "Use A"}
+    ]
 
 
 def test_lost_state_after_message_does_not_send_another_turn(setup, monkeypatch):
@@ -797,7 +800,42 @@ def test_lost_state_after_message_does_not_send_another_turn(setup, monkeypatch)
     assert len(api.messages) == 1
     r.run()
     assert len(api.messages) == 1 and item(r)["attention"] is None
+    assert len(r.jobs["voice/W1"]["answers"]) == 1
     assert state.save == original
+
+
+@pytest.mark.parametrize("flow", ["cli", "tickets"])
+def test_review_goal_includes_delivered_answers_in_order(setup, flow):
+    r, api, _ = setup
+    edit(r, lambda s: s.update(flow=flow))
+    r.run()
+    key = current(r)
+    for question, answer in [("Pause?", "Continue"), ("Which rule?", "Use B")]:
+        api.finish(key, "question", "question", question)
+        r.run()
+        edit(r, lambda s, answer=answer: s["attention"].update(answer=answer))
+        r.run()
+    api.finish(key, body=pr_reply() if flow == "cli" else block(PLAN))
+    r.run()
+    if flow == "tickets":
+        for ticket, request in list(api.requests.items()):
+            if request["role"] == "ticket":
+                api.finish(ticket)
+        r.run()
+    job = r.jobs["voice/W1"]
+    goal = job["requests"]["review-1"]["request"]["work"]["goal"]
+    section = "Answers given during the slice (they replace the brief where they differ):"
+    assert goal.index(job["brief"]) < goal.index(section) < goal.index("Runner assignment:")
+    assert "Question: Pause?\nAnswer: Continue\n\nQuestion: Which rule?\nAnswer: Use B" in goal
+
+
+def test_review_goal_omits_answers_section_when_empty(setup):
+    r, api, _ = setup
+    r.run()
+    api.finish(current(r), body=pr_reply())
+    r.run()
+    goal = r.jobs["voice/W1"]["requests"]["review-1"]["request"]["work"]["goal"]
+    assert "Answers given during the slice" not in goal
 
 
 def test_no_slice_process_or_usage_call_is_possible(setup, monkeypatch):
