@@ -1225,7 +1225,7 @@ class Runner:
             "skills": cutter.skills_version(),
         }
         role = job["active"]
-        goal = prompt + self.assignment(job)
+        goal = prompt + self.assignment(job, write=True)
         if role == "cut":
             from .skills import instructions
 
@@ -1255,12 +1255,18 @@ class Runner:
         return True
 
     @staticmethod
-    def assignment(job):
-        return (
+    def assignment(job, *, write=False):
+        assignment = (
             f"\n\nRunner assignment: use branch {job['branch']}. "
             "This assigned branch overrides any branch named in the brief. "
             f"The pinned base commit is {job['base']}."
         )
+        if write:
+            assignment += (
+                " Commit all of your work on this branch, in one or more commits with plain messages, before you end. "
+                "Do not push and do not open a PR: the platform delivers your commits, and Factory opens the PR."
+            )
+        return assignment
 
     def send_message(self, item, job, text, purpose):
         if item["paused"]:
