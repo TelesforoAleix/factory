@@ -516,6 +516,23 @@ def owner_wait(runner, item, job=None, *, close=False):
         print('cplane: run recording failed', file=sys.stderr)
 
 
+def run_final(record):
+    """Translate the platform record's final message into the runner's final."""
+    message = record.get("final_message")
+    if isinstance(message, dict):
+        return message
+    kinds = {"done": "handover", "question": "question", "escalated": "escalation"}
+    kind = kinds.get(record.get("status"))
+    if (
+        record.get("status") == "waiting"
+        and record.get("status_reason") == "client_step"
+    ):
+        kind = "waiting"
+    if kind and isinstance(message, str):
+        return {"kind": kind, "body": message}
+    return None
+
+
 def platform_record(store, item, job, entry):
     """Account checked API attempts without reading local harness output."""
     try:
@@ -556,7 +573,7 @@ def platform_record(store, item, job, entry):
                 seconds=metrics.get('minutes') * 60 if metrics.get('minutes') is not None else None,
                 input_tokens=fresh + cached if fresh is not None and cached is not None else None,
                 cached_tokens=cached, output_tokens=tokens.get('output'), cache_write_tokens=None, reasoning_tokens=None,
-                outcome=(saved.get('final_message') or {}).get('kind') or saved['status'],
+                outcome=(run_final(saved) or {}).get('kind') or saved['status'],
                 context=entry.get('context', []))
             if request['request_id'] == job['requests'][job['active']]['request']['request_id']:
                 job['record_key'] = key

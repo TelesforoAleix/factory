@@ -43,6 +43,23 @@ BOT_ACCEPTED_FIELDS = frozenset(
 )
 
 
+def platform_paths(paths):
+    """Translate path scopes into the forms accepted by the platform."""
+    if paths is None:
+        return None
+    translated = []
+    for path in paths:
+        directory = path
+        if path.endswith("/**"):
+            directory = path[:-3]
+        elif path.endswith("/*"):
+            directory = path[:-2]
+        if any(char in directory for char in "*?["):
+            raise state.StateError("Platform cannot express path: " + path)
+        translated.append(directory)
+    return translated
+
+
 def stuck_since(item, instant):
     """Return the start and reason of a current stalled interval, if any."""
     if item["state"] != "issued" or not item["log"]:
@@ -1084,8 +1101,8 @@ class Runner:
                 "level": job["level"],
                 "work": {
                     "goal": goal,
-                    "allowed_files": allowed_files,
-                    "pinned_paths": list(pinned_paths),
+                    "allowed_files": platform_paths(allowed_files),
+                    "pinned_paths": platform_paths(pinned_paths),
                     "check_command": check_command,
                 },
                 "assets": [],
@@ -1350,7 +1367,7 @@ class Runner:
         job["final"] = (
             entry.get("completion_final")
             if record.get("status") == "done" and entry.get("completion_final")
-            else record.get("final_message")
+            else run_records.run_final(record)
         )
         job["phase"] = "ended"
         job["ended_at"] = self.instant.timestamp()
@@ -1373,7 +1390,7 @@ class Runner:
                 "Platform run " + status + ": " + str(record.get("status_reason")),
             )
         elif status in ("question", "escalated"):
-            final = record.get("final_message") or {}
+            final = run_records.run_final(record) or {}
             self.attention(
                 item,
                 "question" if status == "question" else "escalation",
@@ -1520,7 +1537,7 @@ class Runner:
             raise state.StateError(
                 "Platform run did not finish after result acknowledgment"
             )
-        entry["completion_final"] = entry["record"]["final_message"]
+        entry["completion_final"] = run_records.run_final(entry["record"])
         entry["turn"] += 1
         purpose = (
             "complete-"
@@ -1605,7 +1622,7 @@ class Runner:
             marker = (entry["turn"], status, record.get("updated_at"))
             if entry.get("attention_marker") != list(marker):
                 entry["attention_marker"] = list(marker)
-                body = (record.get("final_message") or {}).get("body")
+                body = (run_records.run_final(record) or {}).get("body")
                 if status in ("failed", "cancelled"):
                     body = (
                         "Platform run "
@@ -1634,7 +1651,7 @@ class Runner:
             return False
         if not expired:
             try:
-                final = record.get("final_message") or {}
+                final = run_records.run_final(record) or {}
                 if record.get("status") in ("done", "waiting") and final.get(
                     "kind"
                 ) in ("handover", "waiting"):
@@ -1709,6 +1726,9 @@ class Runner:
             return
         previous = job["requests"][job["active"]]["request"]["request_id"]
         purposes = []
+        for task in job["task_file"]["tasks"]:
+            platform_paths(task["allowed_files"])
+            platform_paths(task["pinned_paths"])
         for task in job["task_file"]["tasks"]:
             purpose = (
                 ("repair-" if job.get("repair") else "")

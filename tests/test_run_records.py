@@ -164,6 +164,25 @@ def test_runner_records_before_applying_final_and_failure_is_harmless(setup, mon
     assert capsys.readouterr().err == 'cplane: run recording failed\n'
 
 
+@pytest.mark.parametrize('status,reason,kind', [
+    ('done', None, 'handover'),
+    ('question', None, 'question'),
+    ('escalated', 'executor_gave_up', 'escalation'),
+    ('waiting', 'client_step', 'waiting'),
+])
+def test_platform_record_accounts_string_final(setup, status, reason, kind):
+    runner, api, _ = setup
+    runner.run()
+    item = runner.data['slices'][0]
+    job = runner.jobs[item['id']]
+    entry = job['requests'][job['active']]
+    entry['record'] = api.get(entry['run_id'])
+    entry['record'].update(status=status, status_reason=reason, final_message='Result')
+    store = Mock()
+    run_records.platform_record(store, item, job, entry)
+    assert store.run_record_add.call_args.kwargs['outcome'] == kind
+
+
 @pytest.mark.parametrize('tool', ['codex', 'claude'])
 @pytest.mark.parametrize('code', [0, 124])
 def test_chat_one_record_per_owner_message(tmp_path, monkeypatch, tool, code, capsys):

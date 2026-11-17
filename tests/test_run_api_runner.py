@@ -9,7 +9,8 @@ import pytest
 
 from cplane import state
 from cplane.cli import main
-from cplane.runner import Runner
+from cplane.run_records import run_final
+from cplane.runner import Runner, platform_paths
 
 NOW = datetime(2026, 11, 17, tzinfo=UTC)
 BASE, TIP = "a" * 40, "b" * 40
@@ -152,6 +153,8 @@ class FakeRuns:
         if kind == "question":
             status = "question"
         record = self.records[key]
+        if status == "waiting" and "status_reason" not in kwargs:
+            kwargs["status_reason"] = "client_step"
         if status in ("done", "waiting"):
             assert all(
                 self.records[parent]["status"] == "done"
@@ -161,7 +164,7 @@ class FakeRuns:
             status=status,
             resumable=kwargs.pop("resumable", status not in ("failed", "cancelled")),
             commits=[TIP],
-            final_message={"kind": kind, "body": body},
+            final_message=body,
             updated_at=str(int(record["updated_at"]) + 1),
             **kwargs,
         )
@@ -627,7 +630,7 @@ def test_pause_collects_without_delivery_then_unpause_uses_same_run(setup):
     assert not api.cancels and not api.messages and len(api.requests) == 1
     gh.open.assert_not_called()
     assert (
-        r.jobs["voice/W1"]["requests"]["slice"]["record"]["final_message"]["body"]
+        r.jobs["voice/W1"]["requests"]["slice"]["record"]["final_message"]
         == pr_reply()
     )
     edit(r, lambda s: s.update(paused=False))
@@ -748,7 +751,7 @@ def test_slice_level_and_work_policy_are_forwarded(setup, level):
     r.run()
     request = api.requests[current(r)]
     assert request["level"] == level
-    assert request["work"]["allowed_files"] == ["cplane/**"]
+    assert request["work"]["allowed_files"] == ["cplane"]
 
 
 def test_lost_message_response_retries_saved_message_id(setup, monkeypatch):
@@ -1031,3 +1034,94 @@ def test_ticket_run_statuses_raise_attention(setup, status, reason, kind, expect
     assert (
         reason if status in ("failed", "cancelled") else "Ticket needs attention"
     ) in item(r)["attention"]["body"]
+
+
+@pytest.mark.parametrize(
+    "status,reason,kind",
+    [
+        ("done", None, "handover"),
+        ("question", None, "question"),
+        ("escalated", "executor_gave_up", "escalation"),
+        ("waiting", "client_step", "waiting"),
+    ],
+)
+def test_run_final_from_platform_status(status, reason, kind):
+    record = {"status": status, "status_reason": reason, "final_message": "Verbatim body"}
+    assert run_final(record) == {"kind": kind, "body": "Verbatim body"}
+
+
+def test_run_final_accepts_object_and_missing_final():
+    final = {"kind": "handover", "body": "Existing final"}
+    assert run_final({"final_message": final}) is final
+    assert run_final({"status": "done", "final_message": None}) is None
+    assert (
+        run_final(
+            {"status": "waiting", "status_reason": "usage_limit", "final_message": "body"}
+        )
+        is None
+    )
+
+
+def test_done_slice_string_pr_request_opens_pr(setup):
+    r, api, gh = setup
+    r.run()
+    api.finish(current(r), body=pr_reply())
+    r.run()
+    request = gh.open.call_args.args[1]
+    assert request["title"] == "Deliver slice"
+    assert request["body"] == "Implemented and tested."
+
+
+@pytest.mark.parametrize(
+    "paths,expected",
+    [
+        (None, None),
+        ([], []),
+        (["src/a.py", "tests/**", "src/*"], ["src/a.py", "tests", "src"]),
+    ],
+)
+def test_platform_paths(paths, expected):
+    assert platform_paths(paths) == expected
+
+
+@pytest.mark.parametrize("path", ["src/*.py", "src/?", "src/[ab]", "a*/**", "**"])
+def test_unexpressible_slice_path_escalates_before_post(setup, path):
+    r, api, _ = setup
+    edit(r, lambda s: s.update(allowed_files=[path]))
+    r.run()
+    assert not api.calls
+    assert item(r)["attention"]["kind"] == "escalation"
+    assert path in item(r)["attention"]["body"]
+
+
+def test_ticket_paths_translated_in_post(setup):
+    r, api, _ = setup
+    edit(r, lambda s: s.update(flow="tickets", allowed_files=["src/**"]))
+    plan = copy.deepcopy(PLAN)
+    plan["tickets"][0]["files"] = ["src/*"]
+    plan["test_files"] = ["tests/**"]
+    r.run()
+    cut = current(r)
+    assert api.requests[cut]["work"]["allowed_files"] == ["src"]
+    api.finish(cut, body=block(plan))
+    r.run()
+    ticket = next(req for req in api.requests.values() if req["role"] == "ticket")
+    assert ticket["work"]["allowed_files"] == ["src"]
+    assert ticket["work"]["pinned_paths"] == ["tests"]
+
+
+@pytest.mark.parametrize("field", ["files", "test_files"])
+def test_unexpressible_ticket_path_escalates_before_ticket_posts(setup, field):
+    r, api, _ = setup
+    edit(r, lambda s: s.update(flow="tickets"))
+    plan = copy.deepcopy(PLAN)
+    if field == "files":
+        plan["tickets"][1]["files"] = ["src/*.py"]
+    else:
+        plan["test_files"] = ["tests/*.py"]
+    r.run()
+    api.finish(current(r), body=block(plan))
+    r.run()
+    assert all(req["role"] != "ticket" for req in api.requests.values())
+    assert item(r)["attention"]["kind"] == "escalation"
+    assert "*.py" in item(r)["attention"]["body"]
