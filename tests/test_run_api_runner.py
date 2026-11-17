@@ -669,6 +669,58 @@ def test_abandon_retries_running_cancel_and_cancels_resumable(setup):
     assert item(r)["state"] == "dropped"
 
 
+@pytest.mark.parametrize("slice_state", ["accepted", "dropped", "issued"])
+def test_old_runner_job_is_ignored(setup, slice_state):
+    r, api, _ = setup
+    r.run()
+    path = next(r.runs.glob("*/job.json"))
+    old_job = json.loads(path.read_text())
+    del old_job["requests"]
+    path.write_text(json.dumps(old_job))
+    original_file = path.read_bytes()
+    edit(r, lambda s: s.update(state=slice_state))
+    before = item(r)
+    calls = copy.deepcopy(api.calls)
+
+    r.run()
+
+    assert item(r)["state"] == before["state"]
+    assert item(r)["attention"] == before["attention"]
+    assert "voice/W1" not in r.jobs
+    assert path.read_bytes() == original_file
+    assert api.calls == calls and not api.cancels and not api.messages
+
+
+def test_old_runner_job_does_not_block_fresh_start(setup):
+    r, api, _ = setup
+    path = r.runs / "old" / "job.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"id": "voice/W1", "started_ns": 1}))
+    original_file = path.read_bytes()
+
+    r.run()
+
+    assert item(r)["state"] == "issued" and item(r)["attention"] is None
+    assert len(api.calls) == 1 and current(r) in api.requests
+    assert path.read_bytes() == original_file
+
+
+def test_abandon_failure_does_not_reopen_accepted_slice(setup, monkeypatch, capsys):
+    r, api, _ = setup
+    r.run()
+    edit(r, lambda s: s.update(state="accepted"))
+    before = item(r)
+    monkeypatch.setattr(r, "abandon", Mock(side_effect=RuntimeError("failure")))
+    calls = copy.deepcopy(api.calls)
+
+    r.run()
+
+    assert item(r)["state"] == before["state"]
+    assert item(r)["attention"] == before["attention"]
+    assert api.calls == calls and not api.cancels and not api.messages
+    assert "cplane: abandon failed voice/W1: RuntimeError" in capsys.readouterr().err
+
+
 def test_platform_capacity_does_not_limit_submissions(setup, slice_data):
     r, api, _ = setup
     data = state.load(r.path)

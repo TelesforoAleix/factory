@@ -1830,7 +1830,7 @@ class Runner:
             self.jobs = {}
             for path in sorted(self.runs.glob("*/job.json")):
                 job = json.loads(path.read_text())
-                if job.get("record_only"):
+                if "requests" not in job or job.get("record_only"):
                     continue
                 previous = self.jobs.get(job["id"])
                 if previous is None or previous["started_ns"] < job["started_ns"]:
@@ -1850,6 +1850,15 @@ class Runner:
                 job = self.jobs.get(item["id"])
                 if not job:
                     continue
+                if item["state"] in ("accepted", "dropped"):
+                    try:
+                        self.abandon(job)
+                    except Exception as error:  # noqa: BLE001
+                        print(
+                            f"cplane: abandon failed {item['id']}: {type(error).__name__}",
+                            file=sys.stderr,
+                        )
+                    continue
                 read_start = (
                     self.github.successful_reads
                     if isinstance(self.github, GitHub)
@@ -1858,9 +1867,6 @@ class Runner:
                 login_start = fence.github_logins.get()
                 fence.github_calls.set(0)
                 try:
-                    if item["state"] in ("accepted", "dropped"):
-                        self.abandon(job)
-                        continue
                     if job.get("sha") and not (
                         item["state"] == "ready" and self.restartable(job)
                     ):
