@@ -43,6 +43,23 @@ BOT_ACCEPTED_FIELDS = frozenset(
 )
 
 
+def run_final(record):
+    """Translate the platform record's final message into the runner's final."""
+    message = record.get("final_message")
+    if isinstance(message, dict):
+        return message
+    kinds = {"done": "handover", "question": "question", "escalated": "escalation"}
+    kind = kinds.get(record.get("status"))
+    if (
+        record.get("status") == "waiting"
+        and record.get("status_reason") == "client_step"
+    ):
+        kind = "waiting"
+    if kind and isinstance(message, str):
+        return {"kind": kind, "body": message}
+    return None
+
+
 def stuck_since(item, instant):
     """Return the start and reason of a current stalled interval, if any."""
     if item["state"] != "issued" or not item["log"]:
@@ -1350,7 +1367,7 @@ class Runner:
         job["final"] = (
             entry.get("completion_final")
             if record.get("status") == "done" and entry.get("completion_final")
-            else record.get("final_message")
+            else run_final(record)
         )
         job["phase"] = "ended"
         job["ended_at"] = self.instant.timestamp()
@@ -1373,7 +1390,7 @@ class Runner:
                 "Platform run " + status + ": " + str(record.get("status_reason")),
             )
         elif status in ("question", "escalated"):
-            final = record.get("final_message") or {}
+            final = run_final(record) or {}
             self.attention(
                 item,
                 "question" if status == "question" else "escalation",
@@ -1520,7 +1537,7 @@ class Runner:
             raise state.StateError(
                 "Platform run did not finish after result acknowledgment"
             )
-        entry["completion_final"] = entry["record"]["final_message"]
+        entry["completion_final"] = run_final(entry["record"])
         entry["turn"] += 1
         purpose = (
             "complete-"
@@ -1605,7 +1622,7 @@ class Runner:
             marker = (entry["turn"], status, record.get("updated_at"))
             if entry.get("attention_marker") != list(marker):
                 entry["attention_marker"] = list(marker)
-                body = (record.get("final_message") or {}).get("body")
+                body = (run_final(record) or {}).get("body")
                 if status in ("failed", "cancelled"):
                     body = (
                         "Platform run "
@@ -1634,7 +1651,7 @@ class Runner:
             return False
         if not expired:
             try:
-                final = record.get("final_message") or {}
+                final = run_final(record) or {}
                 if record.get("status") in ("done", "waiting") and final.get(
                     "kind"
                 ) in ("handover", "waiting"):
