@@ -251,3 +251,23 @@ def test_changes_reads_and_fetch_hold_clean_lock(merged_pr, monkeypatch):
     monkeypatch.setattr(adapter, 'git', checked)
     assert classes.changes(adapter, job) == (1, [])
     assert 'fetch' in calls and 'diff' in calls and 'show' in calls
+
+
+@pytest.mark.parametrize('installed_main,fetch_fails,expected', [
+    (True, False, (1, [])),
+    (False, False, (4, ['guard/main'])),
+    (True, True, (4, ['guard/main'])),
+])
+def test_installed_drift_uses_merge_tree_for_stale_branch(
+        merged_pr, monkeypatch, tmp_path, installed_main, fetch_fails, expected):
+    adapter, job, repo, clean, git, import_tip = merged_pr
+    monkeypatch.setattr(adapter, 'clean', lambda _: clean)
+    job['repository'] = 'TelesforoAleix/factory'
+    monkeypatch.setenv('CPLANE_REVISION', git(repo, 'rev-parse', 'main')
+                       if installed_main else job['base'])
+    # Drop the fixture's main merge: the PR only adds feature.py on its old base.
+    git(repo, 'reset', '--hard', 'HEAD^1')
+    import_tip()
+    if fetch_fails:
+        git(clean, 'remote', 'set-url', 'origin', tmp_path / 'missing.git')
+    assert classes.changes(adapter, job) == expected

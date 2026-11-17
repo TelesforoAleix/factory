@@ -425,10 +425,12 @@ sudo homelab-deployer install factory <sha>
 The deployer's compose file, Dockerfile and `ui.env`, `sessions.env` and
 `runner.env` live in `/opt/homelab-deployer/factory/`. An install of a commit
 whose guard files differ from the installed commit requires the owner's
-approving review on that commit's PR. The runner uses `CPLANE_REVISION` to
-account for this difference before merging, and accepts the owner's GitHub
-approval on the delivered tip. The owner
-cannot approve a PR they authored, so guard changes come through
+approving review on that commit's PR. The runner compares `CPLANE_REVISION`
+with the tree produced by merging the PR into freshly fetched `origin/main`.
+A guard merely absent on a stale branch does not count; a guard changed on main but not installed still does. If main
+cannot be fetched, the runner compares with the PR tip instead. Merge conflicts
+fail the check closed. The runner accepts the owner's GitHub approval on the
+delivered tip. The owner cannot approve a PR they authored, so guard changes come through
 PRs opened by the runner's GitHub App.
 
 ### Slice reviews
@@ -471,21 +473,38 @@ interval). A timeout is recorded as `missing`, never as a passing review.
 
 ### Runner usage and installs
 
-Set `CPLANE_USAGE_SOURCE=launcher` for the contained runner. Each pass shares at most one `usage` launcher run, named
+Set `CPLANE_USAGE_SOURCE=launcher` for the contained runner. For Codex, each
+pass shares at most one `usage` launcher run, named
 `usage-read-<token>`, and always sends `stop` afterward; `unknown_run` means it
 is already stopped. Invalid, null, refused or failed reads mean unknown usage.
 The runner opens, lists and stats no path under `/srv/factory/logins` in this
-mode. Claude usage is unknown, as on today's node. Resume skips the transcript
-existence check; a missing session fails its resume turn into attention.
+mode. Resume skips the transcript existence check; a missing session fails its
+resume turn into attention.
 
-Launcher readings have no timestamp. Their age uses the newer of the last
-`usage-probe.json` timestamp and the newest Codex run record's end
+The launcher's Codex readings have no timestamp. Their age uses the newer of
+the last `usage-probe.json` timestamp and the newest Codex run record's end
 (`started_at + seconds`). With neither, usage is stale. When a Codex read is
 needed and that age exceeds 30 minutes, a due probe runs before the shared
 launcher read, at most once per hour and within executor capacity. The probe
 still uses the normal fenced CLI run and stop, but neither deletes login
 transcripts nor writes `usage-report.jsonl`. The existing file-mode usage gate
 and probe rules remain unchanged.
+
+Claude usage comes from a short fenced probe turn in a disposable workspace:
+`claude -p --model haiku --output-format stream-json --verbose "Reply with: ok"`.
+Only the last `rate_limit_event`'s `unifiedWindows` values for `five_hour` and
+`seven_day` survive, as percentages and reset times, with the read time in
+`claude-usage.json` in the runner's state-specific runs folder. The workspace
+and other output are discarded. The launcher usage profile remains Codex-only.
+
+A Claude choice (a review or a Claude slice) requests a probe only when its
+reading is absent or older than 30 minutes, executor capacity is free, and the
+last attempt was at least an hour ago. `claude-usage-probe.json` records attempts,
+including failures. A failed probe or missing event preserves the previous
+reading. Claude remains unavailable without a reading; otherwise the existing
+gate applies: five-hour usage below 90% and a reading less than an hour old,
+or a passed reset. Outside launcher mode, Claude still reads
+`claude/usage-now.json` under the login root.
 
 The runner has `CPLANE_DEPLOYER_SOCKET=/run/homelab-deployer.sock` set in Compose.
 Without a deployer socket, a new install request refuses with a clear escalation;

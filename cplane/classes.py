@@ -125,6 +125,7 @@ def changes(adapter, job):
         table = adapter.git(clean, 'show', f"{job['base']}:.github/change-classes",
                             allow_failure=True)
         revisions = (job['base'], job['tip'])
+        fresh_main = False
         try:
             fetched = adapter.git(clean, 'fetch', '--prune', 'origin',
                                   '+refs/heads/*:refs/remotes/origin/*',
@@ -134,6 +135,7 @@ def changes(adapter, job):
                                        allow_failure=True)
                 if ancestor.returncode == 0:
                     revisions = (f"origin/main...{job['tip']}",)
+                    fresh_main = True
         except (StateError, OSError):
             # Credential setup can fail before Git returns a fetch status.
             pass
@@ -146,10 +148,17 @@ def changes(adapter, job):
                                  deleted=[path for status, path in changes if status == 'D'])
         installed = os.environ.get('CPLANE_REVISION')
         if installed and job['repository'] == 'TelesforoAleix/factory':
-            # Compare file trees, not ancestry: inherited guard changes still gate
-            # installation, while guards restored to installed content do not.
+            target = job['tip']
+            if fresh_main:
+                # Compute the merge in the locked clean object store, without a
+                # checkout or executing anything from the PR. Conflicts fail closed.
+                merged = adapter.git(clean, 'merge-tree', '--write-tree',
+                                     'origin/main', job['tip'])
+                target = merged.stdout.splitlines()[0]
+            # Include uninstalled main changes, but not guards merely absent on
+            # a stale branch. Failed fetches retain the stricter tip comparison.
             paths = adapter.git(clean, 'diff', '--name-only', '-z', '--no-renames',
-                                installed, job['tip'], '--').stdout.split('\0')
+                                installed, target, '--').stdout.split('\0')
             _, installed_guards = classify(paths, policy)
             guards = sorted(set(guards) | set(installed_guards))
             if guards:
