@@ -1,37 +1,30 @@
 """One locked scheduling pass. Adapters keep external effects fakeable."""
 
-from contextvars import ContextVar
-from datetime import datetime, timedelta, timezone
 import hashlib
-from contextlib import redirect_stdout, redirect_stderr
 import io
-import math
-import signal
 import json
+import math
 import os
-from pathlib import Path
 import re
-import shutil
+import signal
 import subprocess
 import sys
 import tempfile
 import time
 import traceback
-import uuid
+from contextlib import redirect_stderr, redirect_stdout
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
-from . import run_records
-from . import classes
-from . import state
-from .orders import Collector
-from .executors import Processes, atomic_json, FENCE_PARAGRAPH
-from . import fence
-from .planning import ssh_command
-from . import github_app
 from . import cut as cutter
+from . import deny, fence, github_app, run_platform, run_records, state
 from . import review as reviewer
+from .eligibility import eligibility
+from .executors import atomic_json
+from .orders import Collector
+from .planning import ssh_command
 from .text_bounds import ATTENTION_LIMIT, LOG_LIMIT, cut, cut_line
 from .times import now
-from .eligibility import eligibility
 
 BOT_EVENTS = frozenset(
     {
@@ -242,328 +235,6 @@ def run_loop(
             signal.signal(sig, handler)
 
 
-_USAGE_PASS = ContextVar("usage_pass", default=None)
-
-
-def codex_usage(folder=None):
-    windows = codex_limits(folder)
-    if not windows:
-        return None
-    used = []
-    for window in windows:
-        if window.get("resets_at") is not None and window["resets_at"] <= time.time():
-            used.append(0)
-        elif isinstance(window.get("used_percent"), (int, float)):
-            used.append(window["used_percent"])
-    return max(used) if used else None
-
-
-def codex_report(folder=None, *, paths=None):
-    """The non-null windows (5-hour primary, weekly secondary) of the newest report."""
-    if fence.launcher_usage():
-        from .launcher import usage
-
-        cache = _USAGE_PASS.get()
-        if cache is None:
-            limits = usage()
-        else:
-            if "limits" not in cache:
-                cache["runner"].prepare_launcher_usage()
-                cache["limits"] = usage()
-            limits = cache["limits"]
-        windows = (
-            [
-                limits[k]
-                for k in ("primary", "secondary")
-                if isinstance(limits.get(k), dict)
-            ]
-            if limits
-            else []
-        )
-        reported = cache["runner"].launcher_usage_at() if cache is not None else 0
-        return (windows, reported) if windows else None
-    root = fence.LOGIN_ROOT / "codex/sessions"
-    if paths is None:
-        paths = list(Path(folder or root).rglob("*.jsonl"))
-        if folder is None:
-            runs = Path(os.environ.get("CPLANE_RUNS", "/srv/factory/runs"))
-            paths.extend(runs.glob("*/usage-report.jsonl"))
-    newest_first = sorted(paths, key=lambda p: p.stat().st_mtime_ns, reverse=True)
-    for session in newest_first:
-        # Walk backwards: the last non-null capacity report is the current one.
-        for line in reversed(session.read_text(errors="replace").splitlines()):
-            try:
-                event = json.loads(line)
-                limits = event.get("payload", {}).get("rate_limits")
-                windows = (
-                    [
-                        limits[k]
-                        for k in ("primary", "secondary")
-                        if isinstance(limits.get(k), dict)
-                    ]
-                    if limits
-                    else []
-                )
-                if windows:
-                    stamp = event.get("timestamp")
-                    reported = (
-                        datetime.fromisoformat(stamp).timestamp()
-                        if isinstance(stamp, str)
-                        else session.stat().st_mtime
-                    )
-                    return windows, reported
-            except (ValueError, KeyError, TypeError, AttributeError):
-                continue
-    return None
-
-
-def codex_limits(folder=None):
-    report = codex_report(folder)
-    return report[0] if report else None
-
-
-def probe_codex_usage(runs):
-    """Discard the probe workspace and output; retain only normal usage telemetry."""
-    fence.trusted_directory(fence.WORK_ROOT)
-    fence.trusted_directory(runs)
-    token = uuid.uuid4().hex
-    work = fence.WORK_ROOT / ("usage-" + token)
-    output = runs / ("usage-" + token)
-    turn = (2 << 128) + int(token, 16)
-    work.mkdir(mode=0o700)
-    output.mkdir(mode=0o700)
-    fence.own(work, "work")
-    options = (
-        ["--run-id", "usage-" + token]
-        if fence.socket_enabled()
-        else ["--session-turn", str(turn)]
-    )
-    session, transcript = None, ""
-    try:
-        result = subprocess.run(
-            [
-                *fence.fence_command(),
-                "run",
-                "--tool",
-                "codex",
-                "--repo",
-                str(work),
-                "--run",
-                str(output),
-                *options,
-                "--",
-                "codex",
-                "exec",
-                "-m",
-                "gpt-6-luna",
-                "-c",
-                'model_reasoning_effort="low"',
-                "--skip-git-repo-check",
-                "-c",
-                'history.persistence="none"',
-                "-c",
-                'sqlite_home="/tmp/cplane-usage"',
-                "-c",
-                'log_dir="/tmp/cplane-usage"',
-                "--json",
-                "--",
-                "Reply only: OK",
-            ],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            text=True,
-            stderr=subprocess.DEVNULL,
-            timeout=120,
-            env=fence.host_environment(),
-        )
-        transcript = result.stdout
-    except subprocess.TimeoutExpired as error:
-        transcript = error.stdout or ""
-        if isinstance(transcript, bytes):
-            transcript = transcript.decode(errors="replace")
-        raise
-    finally:
-        for line in transcript.splitlines():
-            try:
-                event = json.loads(line)
-                if event.get("type") == "thread.started" and re.fullmatch(
-                    r"[A-Za-z0-9-]+", event.get("thread_id", "")
-                ):
-                    session = event["thread_id"]
-            except (ValueError, AttributeError):
-                continue
-        cleanup = (
-            ["stop", "usage-" + token]
-            if fence.socket_enabled()
-            else ["session-cleanup", str(turn)]
-        )
-        subprocess.run(
-            [*fence.fence_command(), *cleanup],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            env=fence.host_environment(),
-        )
-        try:
-            if session and not fence.launcher_usage():
-                root = fence.LOGIN_ROOT / "codex/sessions"
-                paths = [
-                    p
-                    for p in root.rglob("*.jsonl")
-                    if p.name == session + ".jsonl"
-                    or p.name.endswith("-" + session + ".jsonl")
-                ]
-                try:
-                    report = codex_report(paths=paths) if paths else None
-                    windows = report[0] if report else None
-                    if windows:
-                        limits = {
-                            name: {
-                                k: window[k]
-                                for k in ("used_percent", "resets_at")
-                                if isinstance(window.get(k), (int, float))
-                            }
-                            for name, window in zip(("primary", "secondary"), windows)
-                        }
-                        atomic_json(
-                            runs / "usage-report.jsonl",
-                            {"payload": {"rate_limits": limits}},
-                        )
-                finally:
-                    for path in paths:
-                        path.unlink()
-        finally:
-            fence.remove(work, "work")
-            shutil.rmtree(output)
-
-
-def usage_limit_message(tail):
-    for line in tail.splitlines():
-        try:
-            event = json.loads(line)
-        except (ValueError, TypeError):
-            continue
-        if event.get("type") != "turn.failed":
-            continue
-        error = event.get("error")
-        message = error.get("message", "") if isinstance(error, dict) else ""
-        if isinstance(message, str) and re.search(r"usage limit", message, re.I):
-            return message
-    return None
-
-
-def probe_claude_usage(runs):
-    """Read only Claude's last rate-limit windows from a disposable fenced turn."""
-    fence.trusted_directory(fence.WORK_ROOT)
-    fence.trusted_directory(runs)
-    token = uuid.uuid4().hex
-    run_id = "claude-usage-" + token
-    work, output = fence.WORK_ROOT / run_id, runs / run_id
-    turn = (2 << 128) + int(token, 16)
-    work.mkdir(mode=0o700)
-    output.mkdir(mode=0o700)
-    try:
-        fence.own(work, "work")
-        options = (
-            ["--run-id", run_id]
-            if fence.socket_enabled()
-            else ["--session-turn", str(turn)]
-        )
-        result = subprocess.run(
-            [
-                *fence.fence_command(),
-                "run",
-                "--tool",
-                "claude",
-                "--repo",
-                str(work),
-                "--run",
-                str(output),
-                *options,
-                "--",
-                "claude",
-                "-p",
-                "--model",
-                "haiku",
-                "--output-format",
-                "stream-json",
-                "--verbose",
-                "Reply with: ok",
-            ],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-            timeout=120,
-            env=fence.host_environment(),
-        )
-        if result.returncode != 0:
-            return
-        windows = None
-        for line in result.stdout.splitlines():
-            try:
-                event = json.loads(line)
-                if isinstance(event, dict) and event.get("type") == "rate_limit_event":
-                    windows = None
-                    windows = event.get("rate_limit_info", {}).get("unifiedWindows")
-            except (ValueError, AttributeError):
-                continue
-        try:
-            limits = {}
-            for name in ("five_hour", "seven_day"):
-                window = windows[name]
-                used, reset = window["utilization"], window["resetsAt"]
-                if (
-                    type(used) not in (int, float)
-                    or not 0 <= used <= 1
-                    or type(reset) not in (int, float)
-                    or not 0 < reset < float("inf")
-                ):
-                    return
-                limits[name] = {"used_percentage": used * 100, "resets_at": reset}
-            atomic_json(
-                runs / "claude-usage.json", {"at": time.time(), "rate_limits": limits}
-            )
-        except (KeyError, TypeError):
-            return
-    finally:
-        cleanup = (
-            ["stop", run_id]
-            if fence.socket_enabled()
-            else ["session-cleanup", str(turn)]
-        )
-        try:
-            subprocess.run(
-                [*fence.fence_command(), *cleanup],
-                check=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                env=fence.host_environment(),
-            )
-        finally:
-            try:
-                fence.remove(work, "work")
-            finally:
-                shutil.rmtree(output)
-
-
-def claude_usage(path=None):
-    try:
-        if fence.launcher_usage():
-            cache = _USAGE_PASS.get()
-            runs = (
-                cache["runner"].runs
-                if cache is not None
-                else Path(os.environ.get("CPLANE_RUNS", "/srv/factory/runs"))
-            )
-            default = runs / "claude-usage.json"
-        else:
-            default = fence.LOGIN_ROOT / "claude/usage-now.json"
-        return json.loads(Path(path or default).read_text())
-    except (OSError, ValueError):
-        return None
-
-
 class Git:
     def tidy(self, path, *, now=None):
         return
@@ -613,16 +284,18 @@ class GitHubReadError(state.StateError):
 
 def check_merge_info(info, expected=None):
     if expected and info["headRefOid"] != expected:
-        raise state.StateError("PR head differs from delivered bundle")
+        raise state.StateError("PR head differs from platform branch tip")
     if info.get("state") != "MERGED" and (
         info.get("isDraft")
         or re.match(
-            r"(?:\[blocked\]|blocked:|draft:|\[draft\])", info.get("title", ""), re.I
+            r"(?:\[blocked\]|blocked:|draft:|\[draft\])",
+            info.get("title", ""),
+            re.IGNORECASE,
         )
         or re.search(
             r"DO NOT MERGE|MERGE BLOCKER",
             info.get("title", "") + "\n" + (info.get("body") or ""),
-            re.I,
+            re.IGNORECASE,
         )
     ):
         raise BlockedPR("PR marked not for merging")
@@ -632,6 +305,101 @@ OWNER_LOGIN = "TelesforoAleix"
 
 
 class GitHub:
+    def is_public(self, repo):
+        value = json.loads(self.call(repo, "api", f"repos/{repo}"))
+        return value.get("visibility") != "private"
+
+    def default_tip(self, repo):
+        metadata = json.loads(self.call(repo, "api", f"repos/{repo}"))
+        return self.branch_tip(repo, metadata["default_branch"])
+
+    def branch_tip(self, repo, branch):
+        from urllib.parse import quote
+
+        result = json.loads(
+            self.call(repo, "api", f"repos/{repo}/commits/{quote(branch, safe='')}")
+        )
+        sha = result.get("sha")
+        if not isinstance(sha, str) or not re.fullmatch("[0-9a-f]{40}", sha):
+            raise GitHubReadError("GitHub branch tip unavailable")
+        return sha
+
+    def changes(self, job, number):
+        """Read paths and pinned policy with Factory's App, without a checkout."""
+        import base64
+
+        from . import classes
+
+        repo = job["repository"]
+        # A git tree listing distinguishes an absent policy from a failed read.
+        root = json.loads(
+            self.call(repo, "api", f"repos/{repo}/git/trees/{job['base']}?recursive=1")
+        )
+        if root.get("truncated"):
+            raise GitHubReadError("Pinned policy tree listing truncated")
+        policy = None
+        blob = next(
+            (
+                entry
+                for entry in root["tree"]
+                if entry["path"] == ".github/change-classes"
+            ),
+            None,
+        )
+        if blob:
+            value = json.loads(
+                self.call(repo, "api", f"repos/{repo}/git/blobs/{blob['sha']}")
+            )
+            policy = base64.b64decode(value["content"], validate=False).decode("utf-8")
+        paths, deleted = [], []
+        page = 1
+        while True:
+            entries = json.loads(
+                self.call(
+                    repo,
+                    "api",
+                    f"repos/{repo}/pulls/{number}/files?per_page=100&page={page}",
+                )
+            )
+            for entry in entries:
+                paths.append(entry["filename"])
+                if entry["status"] == "removed":
+                    deleted.append(entry["filename"])
+                if entry.get("previous_filename"):
+                    paths.append(entry["previous_filename"])
+                    deleted.append(entry["previous_filename"])
+            if len(entries) < 100:
+                break
+            page += 1
+            if page > 30:
+                raise GitHubReadError("PR path listing exceeds GitHub limit")
+        level, guards = classes.classify(paths, policy, deleted=deleted)
+        installed = os.environ.get("CPLANE_REVISION")
+        if installed and repo == "TelesforoAleix/factory":
+            compared = json.loads(
+                self.call(
+                    repo, "api", f"repos/{repo}/compare/{installed}...{job['tip']}"
+                )
+            )
+            entries = compared.get("files", [])
+            # GitHub's compare endpoint returns at most 300 files. Fail closed
+            # rather than silently omit an uninstalled guard path.
+            if len(entries) >= 300:
+                raise GitHubReadError(
+                    "Installed revision comparison exceeds GitHub limit"
+                )
+            drift = [entry["filename"] for entry in entries]
+            drift.extend(
+                entry["previous_filename"]
+                for entry in entries
+                if entry.get("previous_filename")
+            )
+            _, installed_guards = classes.classify(drift, policy)
+            guards = sorted(set(guards) | set(installed_guards))
+            if guards:
+                level = 4
+        return level, guards
+
     successful_reads = 0
 
     def repository(self, path):
@@ -663,7 +431,7 @@ class GitHub:
         if (
             update
             and re.search(r"\b422\b", result.stderr)
-            and re.search(r"conflict", result.stderr, re.I)
+            and re.search(r"conflict", result.stderr, re.IGNORECASE)
         ):
             raise BranchConflict("PR conflicts with main; needs a new slice from main")
         if read:
@@ -689,8 +457,14 @@ class GitHub:
             number = existing[0]["number"]
             try:
                 self.call(
-                    repo, "pr", "edit", str(number), "--title", request["title"],
-                    "--body", request["body"],
+                    repo,
+                    "pr",
+                    "edit",
+                    str(number),
+                    "--title",
+                    request["title"],
+                    "--body",
+                    request["body"],
                 )
             except state.StateError as error:
                 raise state.StateError("PR edit failed") from error
@@ -743,7 +517,7 @@ class GitHub:
             )
             self.check_info = info
             if info["headRefOid"] != expected:
-                raise state.StateError("PR head differs from delivered bundle")
+                raise state.StateError("PR head differs from platform branch tip")
             if info.get("state") == "MERGED":
                 # Let the runner record the final merge without polling old CI.
                 return "merged", ""
@@ -834,12 +608,19 @@ class GitHub:
         return info["state"] == "OPEN"
 
     def owner_approval(self, repo, number, tip):
-        pages = json.loads(self.call(
-            repo, "api", f"repos/{repo}/pulls/{number}/reviews?per_page=100",
-            "--paginate", "--slurp",
-        ))
+        pages = json.loads(
+            self.call(
+                repo,
+                "api",
+                f"repos/{repo}/pulls/{number}/reviews?per_page=100",
+                "--paginate",
+                "--slurp",
+            )
+        )
         reviews = [
-            review for page in pages for review in page
+            review
+            for page in pages
+            for review in page
             if review.get("user", {}).get("login") == OWNER_LOGIN
             and review.get("state") in ("APPROVED", "CHANGES_REQUESTED", "DISMISSED")
         ]
@@ -902,42 +683,6 @@ class GitHub:
 
 
 class Runner:
-    def __init__(
-        self,
-        path,
-        *,
-        processes=None,
-        github=None,
-        git=None,
-        clock=now,
-        codex_reader=codex_usage,
-        claude_reader=claude_usage,
-        runs=None,
-        repos=None,
-        orders=None,
-    ):
-        self.path = Path(path).expanduser().resolve()
-        self.fence = fence.Fence()
-        self.orders = orders or Collector()
-        self.processes = processes or Processes()
-        self.github = github or GitHub()
-        self.git = git or Git()
-        self.clock = clock
-        self.codex_reader, self.claude_reader = codex_reader, claude_reader
-        default_runs = "/srv/factory/runs"
-        base = (
-            Path(runs or os.environ.get("CPLANE_RUNS", default_runs))
-            .expanduser()
-            .resolve()
-        )
-        self.runs = base / hashlib.sha256(str(self.path).encode()).hexdigest()[:20]
-        self.repos = (
-            Path(repos or os.environ.get("CPLANE_REPOS", "~/Code"))
-            .expanduser()
-            .resolve()
-        )
-        self.notices = []
-
     def log(self, item, event, notice=False, *, actor="runner"):
         event = cut_line(event, LOG_LIMIT)
         item["log"].append({"at": self.at, "actor": actor, "event": event})
@@ -977,771 +722,20 @@ class Runner:
             return
         lines = traceback.format_exc().strip().splitlines()
         summary = f"{stage} failed: {lines[-1] if lines else 'unknown error'}"
-        self.attention(
-            item,
-            "escalation",
-            summary + ("\n" + "\n".join(lines[-8:]) if lines else ""),
-        )
+        body = summary + ("\n" + "\n".join(lines[-8:]) if lines else "")
+        existing = item.get("attention")
+        if (
+            not existing
+            or existing["kind"] != "escalation"
+            or existing["body"] != cut(body, ATTENTION_LIMIT)
+        ):
+            self.attention(item, "escalation", body)
 
     def github_repo(self, item):
         return item["repo"]
 
-    def open_pr(self, repo, request):
-        # All runner PR sends, including review and recovery, use the same gate
-        # and per-pass visibility cache as bundle delivery.
-        self.fence.check_request(repo, request)
-        return self.github.open(repo, request)
-
     def save_job(self, job):
         atomic_json(Path(job["run"]) / "job.json", job)
-
-    def execution(self, item, review=False):
-        if state.postgres():
-            store = state.store(self.path)
-            return store.slice_reviewer(item) if review else store.slice_executor(item)
-        from .roles import DEFAULT_LEVELS, DEFAULT_REVIEWERS
-
-        if review:
-            return DEFAULT_REVIEWERS["reviewer"]
-
-        return {**DEFAULT_LEVELS["standard"], **item["executor"]}
-
-    def choose(self, item, resume=False, review=False):
-        execution = self.execution(item, review=review)
-        model = execution["model"]
-        if resume:
-            tool = item["session"]["tool"]
-            model = self.jobs[item["id"]]["model"]
-        else:
-            tool = execution["tool"]
-        if tool == "codex":
-            if any(
-                j["phase"] == "usage-limit-wait"
-                and j["reset_at"] > self.instant.timestamp()
-                for j in self.jobs.values()
-            ):
-                return None
-            codex = self.codex_reader()
-            if (
-                isinstance(codex, (int, float))
-                and codex >= 99
-                and not fence.launcher_usage()
-                and getattr(self, "_usage_probe_allowed", False)
-                and not self.room(item)
-            ):
-                report = codex_report()
-                if report and self.instant.timestamp() - report[1] > 1800:
-                    self.runs.mkdir(parents=True, mode=0o700, exist_ok=True)
-                    fence.trusted_directory(self.runs)
-                    marker = self.runs / "usage-probe.json"
-                    last = (
-                        json.loads(marker.read_text())["at"]
-                        if marker.exists()
-                        else None
-                    )
-                    if last is None or self.instant.timestamp() - last >= 3600:
-                        atomic_json(marker, {"at": self.instant.timestamp()})
-                        try:
-                            probe_codex_usage(self.runs)
-                        except (OSError, subprocess.SubprocessError):
-                            pass
-                        codex = self.codex_reader()
-            if isinstance(codex, (int, float)) and 0 <= codex < 99:
-                return "codex", model
-            return None
-        if fence.launcher_usage():
-            self.prepare_launcher_usage(tool="claude")
-        usage = (
-            claude_usage(self.runs / "claude-usage.json")
-            if fence.launcher_usage() and self.claude_reader is claude_usage
-            else self.claude_reader()
-        )
-        if usage:
-            try:
-                # A synchronous probe can finish after this pass's snapshot.
-                checked_at = (
-                    self.clock() if fence.launcher_usage() else self.instant
-                ).timestamp()
-                age = checked_at - usage["at"]
-                window = usage["rate_limits"]["five_hour"]
-                used = window.get("used_percentage")
-                reset = window.get("resets_at")
-                expired = reset is not None and reset <= checked_at
-                if expired:
-                    used = 0
-                if (
-                    (expired or 0 <= age < 3600)
-                    and isinstance(used, (int, float))
-                    and 0 <= used < 90
-                ):
-                    return "claude", model
-            except (KeyError, TypeError):
-                pass
-        return None
-
-    def eligibility_data(self, *, resources_only=False):
-        limits = (
-            state.store(self.path).limit_show()
-            if state.postgres()
-            else dict(executors=2, repository_runs=1)
-        )
-        return {
-            **self.data,
-            "_eligibility": dict(
-                jobs={key: job.get("pr_review", job)
-                      if job.get("pr_review", {}).get("phase") == "running" else job
-                      for key, job in self.jobs.items()},
-                limits=limits,
-                resources_only=resources_only,
-                available=None
-                if resources_only
-                else lambda item: self.choose(item) is not None,
-            ),
-        }
-
-    def room(self, item):
-        result = eligibility(item, self.eligibility_data(resources_only=True))
-        if result["status"] != "resource busy":
-            return None
-        reason = result["reason"]
-        ids = ", ".join(result.get("ids", []))
-        detail = (
-            f" (running: {ids})"
-            if reason == "executor limit"
-            else f" ({ids})"
-            if ids
-            else ""
-        )
-        return f"deferred: {reason}{detail}"
-
-    def repo(self, item):
-        name = item["repo"].split("/")[-1]
-        if name in ("", ".", "..") or "\\" in name:
-            raise state.StateError("invalid repository name")
-        return (self.repos / name).resolve()
-
-    def launch(self, item, prompt, resume=False, review=False):
-        reason = self.room(item)
-        if reason:
-            self.defer(item, reason)
-            return False
-        record_only = review and item.get("flow", "cli") == "cli"
-        choice = self.choose(item, resume, review=record_only)
-        if choice is None:
-            self.defer(item, "deferred: capacity unavailable")
-            return False
-        tool, model = choice
-        effort = self.execution(item, review=record_only)["effort"]
-        previous = self.jobs.get(item["id"])
-        pending = previous.get("pr_review") if previous else None
-        if pending and pending.get("phase") == "running" and not record_only:
-            self.cli_review(item, previous)
-            if pending["phase"] == "running":
-                self.defer(item, "deferred: review fence still running")
-                return False
-        if resume and previous and not previous.get("fence"):
-            raise state.StateError(
-                "resume mode differs from saved job; needs attention"
-            )
-        metadata = {}
-        self.runs.mkdir(parents=True, mode=0o700, exist_ok=True)
-        fence.trusted_directory(self.runs)
-        metadata = (
-            self.fence.resume(previous, item["session"]["id"])
-            if resume
-            else reviewer.prepare(
-                self.fence, {**previous, "record_only": record_only}, uuid.uuid4().hex
-            )
-            if review
-            else self.fence.prepare(
-                item["repo"], "slice/" + item["id"].replace("/", "-"), uuid.uuid4().hex
-            )
-        )
-        folder = Path(metadata["repo"])
-        run = self.runs / uuid.uuid4().hex
-        run.mkdir(parents=True, mode=0o700)
-        review = review or bool(
-            resume and previous and previous.get("review") and not previous.get("sha")
-        )
-        cut_turn = (
-            item.get("flow", "cli") == "tickets"
-            and not review
-            and not (previous and previous.get("sha"))
-        )
-        brief = (
-            previous.get("brief", previous.get("prompt", prompt))
-            if (resume or review) and previous else prompt
-        )
-        skills = cutter.skills_version()
-        context = []
-        if (cut_turn or review) and not resume:
-            from .skills import ROOT, instructions
-
-            name = "slice-review" if review else "cut"
-            prompt = instructions(name) + brief
-            # These launches embed the source skill; no installed copy exists.
-            context = run_records.context(skill_files=[(name, ROOT / (name + ".md"))])
-        prompt += (
-            f"\n\nRunner assignment: use branch {metadata['branch']}. "
-            f"This assigned branch overrides any branch named in the brief. "
-            f"The pinned base commit is {metadata['base']}."
-            + (
-                '\nCommit the tests on the assigned branch. End with kind "waiting", '
-                "ending the reply with the fenced JSON plan described above. "
-                "The runner delivers the commit and submits the tickets."
-                if cut_turn
-                else (
-                    "\nReview only; change nothing. End waiting with schema/review.schema.json."
-                    if review
-                    else FENCE_PARAGRAPH
-                )
-            )
-        )
-        job = {
-            "id": item["id"],
-            "repo": str(folder),
-            "run": str(run),
-            "tool": tool,
-            "model": model,
-            "effort": effort,
-            "prompt": prompt,
-            "started_ns": time.time_ns(),
-            "session": item["session"]["id"] if resume else "",
-            "resume": item["session"]["id"] if resume else None,
-            "phase": "running",
-        }
-        job["skills"] = skills
-        job["context"] = context
-        job["starting_commit"] = metadata.get("base") if not resume else None
-        job.update(metadata, fence=True)
-        job["brief"] = brief
-        if review:
-            job.update(review=True, repair=bool(previous.get("repair")))
-            if record_only:
-                timeout = max(1, int(os.environ.get("CPLANE_REVIEW_TIMEOUT_SECONDS", "1200")))
-                deadline = previous["review_requested_at"] + timeout
-                job.update(
-                    record_only=True, container_id="review-" + run.name,
-                    cleanup_turn=time.time_ns(),
-                    timeout_seconds=max(1, deadline - self.clock().timestamp()),
-                )
-        if resume and previous:
-            for key in (
-                "tip", "repair", "queue_slice", "review_verdict", "review_findings",
-                "pr_review", "review_requested_at", "review_ended_at",
-            ):
-                if key in previous:
-                    job[key] = previous[key]
-        if resume and previous and previous.get("sha"):
-            job["sha"] = previous["sha"]
-        if not record_only:
-            run_records.owner_wait(self, item, close=True)
-        run_records.launch_metadata(self, item, job)
-        # Persist intent before starting; an ambiguous handoff reserves a slot.
-        if resume and previous and previous.get("noticed") is not None:
-            job["noticed"] = previous["noticed"]
-        self.save_job(job)
-        if record_only:
-            previous["pr_review"] = job
-            self.save_job(previous)
-        try:
-            job["pid"] = self.processes.start(job)
-        except OSError as error:
-            atomic_json(run / "exit.json", {"error": str(error)})
-            self.log(item, f"launch failed: {error}")
-        self.save_job(job)
-        if record_only:
-            self.save_job(previous)
-            return True
-        self.jobs[item["id"]] = job
-        item["session"] = {"tool": tool, "id": job["session"], "folder": str(folder)}
-        item["state"] = "issued"
-        item["attention"] = None
-        self.log(item, "resumed" if resume else "started", True)
-        return True
-
-    def collect(self, item, job):
-        if job["phase"] != "running":
-            return
-        done, session, final, tail = self.processes.poll(job)
-        if session and (
-            not isinstance(session, str) or not re.fullmatch(r"[A-Za-z0-9-]+", session)
-        ):
-            raise state.StateError(
-                "fenced turn returned an invalid session; needs attention"
-            )
-        if job.get("resume") and session and session != job["resume"]:
-            raise state.StateError(
-                "fenced resume returned a different session; needs attention"
-            )
-        if session:
-            job["session"] = session
-        item["session"] = {
-            "tool": job["tool"],
-            "id": job["session"],
-            "folder": job["repo"],
-        }
-        item["state"] = "issued"
-        if not done:
-            self.save_job(job)
-            self.log(item, "collect: still running")
-            return
-        # Save the reply for replay if state persistence is interrupted.
-        job["final"], job["tail"] = final, tail
-        job["phase"] = "ended"
-        job["ended_at"] = run_records.end_time(job)
-        self.save_job(job)
-        self.apply_final(item, job)
-
-    def limit_reset(self, message):
-        """The reset time named in a usage-limit message, if it is still ahead."""
-        match = re.search(
-            r"try again at (?:([A-Za-z]{3}) (\d{1,2})(?:st|nd|rd|th)?, (\d{4}) )?"
-            r"(\d{1,2}:\d{2}\s*[AP]M)",
-            message,
-            re.I,
-        )
-        if not match:
-            return None
-        try:
-            instant = self.instant.astimezone(timezone.utc)
-            clock = datetime.strptime(
-                match[4].upper().replace(" ", ""), "%I:%M%p"
-            ).time()
-            if match[1]:
-                day = datetime.strptime(
-                    f"{match[1].title()} {match[2]} {match[3]}", "%b %d %Y"
-                )
-                retry = instant.replace(
-                    year=day.year,
-                    month=day.month,
-                    day=day.day,
-                    hour=clock.hour,
-                    minute=clock.minute,
-                    second=0,
-                    microsecond=0,
-                )
-            else:
-                retry = instant.replace(
-                    hour=clock.hour, minute=clock.minute, second=0, microsecond=0
-                )
-                if retry <= instant:
-                    retry += timedelta(days=1)
-        except ValueError:
-            return None
-        return retry.timestamp() if retry > instant else None
-
-    def publish(self, item, job, request):
-        try:
-            return self.fence.publish(job, request)
-        except state.StateError as error:
-            if str(error) == "branch was rewritten; merge main instead of rebasing":
-                job["phase"] = "publish-blocked"
-                self.save_job(job)
-                self.attention(item, "escalation", str(error))
-                return None
-            raise
-
-    def apply_final(self, item, job):
-        if state.postgres():
-            try:
-                run_records.slice_record(state.store(self.path), item, job)
-            except Exception:
-                print("cplane: run recording failed", file=sys.stderr)
-        final = job.get("final")
-        if (
-            isinstance(final, dict)
-            and isinstance(final.get("kind"), str)
-            and isinstance(final.get("body"), str)
-        ):
-            item["final"] = {
-                "kind": final["kind"],
-                "body": cut(final["body"], ATTENTION_LIMIT),
-                "at": self.at,
-            }
-        if final and not job.get("session"):
-            raise state.StateError(
-                "fenced turn has no session to resume; needs attention"
-            )
-        cut_message = (
-            usage_limit_message(job.get("tail", ""))
-            if job["tool"] == "codex" and not final
-            else None
-        )
-        if job["tool"] == "codex" and job.get("pr"):
-            item["pr"] = job["pr"]
-        if cut_message:
-            now_ts = self.instant.timestamp()
-            windows = [
-                w
-                for w in (codex_limits() or [])
-                if isinstance(w.get("used_percent"), (int, float))
-                and w["used_percent"] >= 99
-                and isinstance(w.get("resets_at"), (int, float))
-                and w["resets_at"] > now_ts
-            ]
-            reset_at = float(max(w["resets_at"] for w in windows)) if windows else None
-            limit = None
-            if reset_at is None:
-                reset_at = self.limit_reset(cut_message)
-            if reset_at is None:
-                reset_at, limit = (
-                    (self.instant + timedelta(minutes=60)).timestamp(),
-                    "fixed",
-                )
-            else:
-                limit = reset_at
-            job["phase"], job["reset_at"] = "usage-limit-wait", reset_at
-            resume_time = datetime.fromtimestamp(reset_at, self.instant.tzinfo)
-            resumes = resume_time.strftime(
-                "%H:%M" if resume_time.date() == self.instant.date() else "%b %d %H:%M"
-            )
-            noticed = job.get("noticed")
-            same = noticed == limit == "fixed" or (
-                isinstance(noticed, (int, float))
-                and isinstance(limit, (int, float))
-                and abs(noticed - limit) < 60
-            )  # a message names the minute, a report the second
-            if not same:
-                job["noticed"] = limit
-            self.log(
-                item, f"cut by Codex's usage limit; resumes after {resumes}", not same
-            )
-        elif not final:
-            tail = job.get("tail", "")
-            first, _, rest = tail.partition("\n")
-            summary = (
-                first
-                if re.match(r"(?:codex|claude) exec exited \d+: ", first)
-                else "the run ended without a final message"
-            )
-            detail = rest if summary == first else tail
-            self.attention(
-                item, "escalation", summary + ("\n\n" + detail if detail else "")
-            )
-        elif job.get("review") and not job.get("sha") and final["kind"] == "handover":
-            self.attention(
-                item, "escalation", "invalid review: expected waiting with review JSON"
-            )
-        elif final["kind"] == "handover":
-            item["state"], item["attention"] = "in review", None
-            self.log(item, "finished", True)
-        elif final["kind"] in ("question", "escalation"):
-            self.attention(item, final["kind"], final["body"])
-        elif job.get("sha"):
-            # A post-merge turn only collects replies; it can never publish again.
-            node_steps = final["body"].strip()
-            match = re.match(r"\s*```(?:json)?\s*\n(.*?)\n```", final["body"], re.S)
-            try:
-                if match or node_steps.startswith("{"):
-                    request = json.loads(match[1] if match else node_steps)
-                    if not isinstance(request, dict) or "node_steps" not in request:
-                        raise ValueError("expected node_steps")
-                    node_steps = request["node_steps"]
-                    if node_steps is not None and not isinstance(node_steps, str):
-                        raise ValueError("invalid node_steps")
-                    node_steps = (node_steps or "").strip()
-            except ValueError as error:
-                self.attention(
-                    item, "escalation", "invalid post-merge request: " + str(error)
-                )
-            else:
-                if node_steps:
-                    job["phase"] = "node-step"
-                    self.attention(item, "node-step", node_steps)
-                else:
-                    item["state"], item["attention"] = "in review", None
-                    self.log(item, "finished", True)
-        elif job.get("review") and final["kind"] == "waiting":
-            self.apply_review(item, job, final["body"])
-        elif item.get("flow", "cli") == "tickets" and final["kind"] == "waiting":
-            try:
-                blocks = list(
-                    re.finditer(
-                        r"^```(?:json)?[ \t]*\r?\n(.*?)\r?\n```[ \t]*$",
-                        final["body"],
-                        re.S | re.M,
-                    )
-                )
-                if not blocks:
-                    raise state.StateError("invalid plan: expected fenced JSON")
-                try:
-                    plan = json.loads(blocks[-1][1])
-                except ValueError:
-                    raise state.StateError(
-                        "invalid plan: expected fenced JSON"
-                    ) from None
-                cutter.validate_plan(plan)
-                # Validate brief rules before publishing anything.
-                cutter.sections(job["brief"], item["id"])
-            except state.StateError:
-                # Record the rejected turn alongside its escalation in state, so
-                # an answer can resume it without replaying the same final.
-                self.log(item, "collected turn: " + Path(job["run"]).name)
-                raise
-            if item["attention"] and item["attention"]["answer"] is not None:
-                item["attention"] = None
-            tickets = cutter.status(item["id"])
-            if tickets:
-                # Workers may already have advanced the branch; only follow it.
-                self.follow_tickets(item, job, tickets)
-            else:
-                job["tip"] = job.get("tip") or self.publish(
-                    item, job, {"branch": job["branch"]}
-                )
-                if job["tip"] is None:
-                    return
-                job["task_file"] = cutter.build_task_file(
-                    item["id"],
-                    item["repo"],
-                    job["branch"],
-                    job["tip"],
-                    plan,
-                    job["brief"],
-                )
-                job["phase"] = "cut-ready"
-                self.save_job(job)
-                self.submit_tickets(item, job)
-        elif (final["kind"] == "waiting" or job["tool"] == "claude") and re.match(
-            r"\s*```", final["body"]
-        ):
-            match = re.match(r"\s*```(?:json)?\s*\n(.*?)\n```", final["body"], re.S)
-            try:
-                request = json.loads(match[1]) if match else None
-                if not isinstance(request, dict) or set(request) != {
-                    "branch",
-                    "title",
-                    "body",
-                    "node_steps",
-                }:
-                    raise ValueError("expected branch, title, body, node_steps")
-                if not all(
-                    isinstance(request[k], str) and request[k]
-                    for k in ("branch", "title", "body")
-                ):
-                    raise ValueError("invalid PR fields")
-                if request["node_steps"] is not None and not isinstance(
-                    request["node_steps"], str
-                ):
-                    raise ValueError("invalid node_steps")
-            except ValueError as error:
-                self.attention(
-                    item, "escalation", "invalid fenced PR request: " + str(error)
-                )
-            else:
-                old_tip = job.get("tip")
-                job["tip"] = self.publish(item, job, request)
-                if old_tip != job["tip"]:
-                    for key in (
-                        "review_verdict", "review_findings", "pr_review",
-                        "review_requested_at", "review_ended_at",
-                    ):
-                        job.pop(key, None)
-                if job["tip"] is None:
-                    return
-                if final["kind"] == "waiting" and job["tip"] == job["base"]:
-                    self.attention(item, "question", final["body"])
-                else:
-                    job["request"], job["phase"] = request, "pr"
-                    self.save_job(job)
-                    item["pr"] = self.open_pr(self.github_repo(item), request)
-                    self.log(item, f"opened PR: {item['pr']}", True)
-                    self.cli_review(item, job)
-        else:
-            self.attention(item, "node-step", final["body"])
-        if job["phase"] == "ended":
-            job["phase"] = "collected"
-        self.log(item, "collected turn: " + Path(job["run"]).name)
-        self.save_job(job)
-        if (
-            item["state"] == "in review"
-            and final["kind"] == "handover"
-            and state.postgres()
-        ):
-            state.store(self.path).chat_handover(item, final["body"])
-
-    def cli_review(self, item, job):
-        """Record-only review: keep the PR turn/session available for its handover."""
-        if item.get("flow", "cli") != "cli":
-            return True
-        review = job.get("pr_review")
-        if job.get("review_verdict"):
-            if review and review.get("stop_pending"):
-                try:
-                    if not (Path(review["run"]) / "exit.json").exists() or not self.processes.poll(review)[0]:
-                        self.processes.stop(review)
-                except Exception:  # noqa: BLE001 - keep capacity reserved after failed cleanup
-                    self.log(item, "review fence cleanup pending")
-                else:
-                    review.pop("stop_pending")
-                    review["phase"] = "collected"
-                    self.save_job(review)
-                    self.save_job(job)
-            run_records.review_outcome(self, job, item=item)
-            return True
-        if job.get("sha") and review is None:
-            return True
-        now = self.instant.timestamp()
-        job.setdefault("review_requested_at", now)
-        self.save_job(job)
-        review = job.get("pr_review")
-        answer = None
-        reason = None
-        done = False
-        try:
-            timeout = int(os.environ.get("CPLANE_REVIEW_TIMEOUT_SECONDS", "1200"))
-            if now - job["review_requested_at"] >= max(1, timeout):
-                reason = "time limit"
-            elif review is None:
-                if item["paused"] or self.room(item):
-                    return False
-                # Provider unavailability is a failed attempt, never an executor fallback.
-                if self.choose(item, review=True) is None:
-                    reason = "reviewer unavailable"
-                else:
-                    self.launch(item, job.get("brief", job["prompt"]), review=True)
-                    return False
-            else:
-                done, session, final, tail = self.processes.poll(review)
-                if not done:
-                    return False
-                review.update(session=session or "", final=final, tail=tail)
-                exit_file = Path(review["run"]) / "exit.json"
-                if exit_file.exists() and json.loads(exit_file.read_text()).get("code") != 0:
-                    raise state.StateError("review process failed")
-                if not final or final.get("kind") != "waiting":
-                    raise state.StateError("review ended without a verdict")
-                match = re.match(r"\s*```(?:json)?[ \t]*\n(.*?)\n```", final["body"], re.DOTALL)
-                answer = json.loads(match[1]) if match else None
-                reviewer.validate(answer)
-        except Exception:  # noqa: BLE001 - reviewer failures only record missing
-            answer = None
-            reason = "review failed"
-        review = job.get("pr_review")
-        if review:
-            if reason and review.get("phase") == "running" and (
-                not done or not (Path(review["run"]) / "exit.json").exists()
-            ):
-                try:
-                    self.processes.stop(review)
-                except Exception:  # noqa: BLE001 - cleanup failure must retain capacity
-                    # Keep reserving capacity until poll confirms the fence ended.
-                    review["stop_pending"] = True
-            review["phase"] = "running" if review.get("stop_pending") else "collected"
-            review["ended_at"] = now
-            self.save_job(review)
-        verdict = answer["verdict"] if answer else "missing"
-        findings = ({key: answer[key] for key in ("title", "body")}
-                    if answer and verdict == "pass" else answer["tickets"] if answer else None)
-        job.update(review_verdict=verdict, review_findings=findings, review_ended_at=now)
-        self.save_job(job)
-        self.log(item, "review: " + verdict + (" (" + reason + ")" if reason else ""))
-        run_records.review_outcome(self, job, item=item)
-        return True
-
-    def apply_review(self, item, job, body):
-        match = re.match(r"\s*```(?:json)?[ \t]*\n(.*?)\n```", body, re.S)
-        try:
-            answer = json.loads(match[1]) if match else None
-        except ValueError:
-            raise state.StateError("invalid review: expected fenced JSON") from None
-        run_records.review_record(self, job, answer)
-        if answer["verdict"] == "pass":
-            job["request"] = dict(
-                branch=job["branch"],
-                title=answer["title"],
-                body=answer["body"],
-                node_steps=None,
-            )
-            job["phase"] = "pr"
-            self.save_job(job)
-            item["pr"] = self.open_pr(self.github_repo(item), job["request"])
-            self.log(item, f"opened PR: {item['pr']}", True)
-        elif job.get("repair"):
-            self.ticket_attention(
-                item,
-                "escalation",
-                "slice review still needs fixes after repair:\n" + json.dumps(answer),
-            )
-        else:
-            # Save the repair plan before any queue effect; subsequent passes use
-            # the same submission-intent protocol as the initial cut.
-            queue_slice = item["id"] + "/repair"
-            job.update(
-                repair=True,
-                queue_slice=queue_slice,
-                task_file=cutter.build_task_file(
-                    queue_slice,
-                    item["repo"],
-                    job["branch"],
-                    job["tip"],
-                    {key: answer[key] for key in ("tickets", "test_files")},
-                    job["brief"],
-                ),
-                phase="cut-ready",
-            )
-            self.save_job(job)
-            self.submit_tickets(item, job)
-
-    def ticket_attention(self, item, kind, body):
-        body = cut(body, ATTENTION_LIMIT)
-        existing = item["attention"]
-        if not existing or existing["kind"] != kind or existing["body"] != body:
-            self.attention(item, kind, body)
-
-    def follow_tickets(self, item, job, tickets):
-        job["phase"] = "tickets"
-        self.save_job(job)
-        failed = next(
-            (t for t in tickets if t["status"] in ("failed", "escalated")), None
-        )
-        if failed:
-            self.ticket_attention(
-                item,
-                "escalation",
-                f"ticket {failed['id']} ({failed['title']}): {failed['status']}: {failed['reason'] or ''}",
-            )
-        elif tickets and all(t["status"] == "done" for t in tickets):
-            # Continue runs stopped by the former tickets-done placeholder.
-            attention = item["attention"]
-            if (
-                attention
-                and attention["kind"] == "node-step"
-                and attention["body"] == "tickets done"
-            ):
-                item["attention"] = None
-            job["phase"] = "review-ready"
-            self.save_job(job)
-        elif not tickets:
-            self.ticket_attention(
-                item, "escalation", "tickets missing from queue; needs attention"
-            )
-
-    def submit_tickets(self, item, job):
-        tickets = cutter.status(job.get("queue_slice", item["id"]))
-        if tickets:
-            self.follow_tickets(item, job, tickets)
-            return
-        if job["phase"] != "cut-ready":
-            self.ticket_attention(
-                item,
-                "escalation",
-                "ticket submission failed or interrupted; will not retry",
-            )
-            return
-        # Durable before the external call: even a crash or invalid reply cannot retry.
-        job["phase"] = "submitting"
-        self.save_job(job)
-        try:
-            ids = cutter.submit(job["task_file"])
-        except Exception:
-            job["phase"] = "submit-failed"
-            self.save_job(job)
-            raise
-        job["phase"], job["ticket_ids"] = "tickets", ids
-        self.save_job(job)
-        self.log(item, f"cut-submit: skills {job['skills']}")
-        self.log(item, f"Submitted {len(ids)} tickets: " + json.dumps(ids), True)
 
     def merge_ready(self, item, job, info=None):
         try:
@@ -1754,18 +748,6 @@ class Runner:
             if info.get("state") == "MERGED":
                 self.merge(item, job, ready=True, merged=info)
                 return False
-            if job.get("updated_head"):
-                with self.fence.locked_clean(job["repository"], fetch=False) as clean:
-                    self.fence.git(
-                        clean,
-                        "fetch",
-                        "--no-tags",
-                        "origin",
-                        "refs/heads/" + job["branch"],
-                        auth=True,
-                    )
-                job.pop("updated_head")
-                self.save_job(job)
             if (
                 info.get("mergeStateStatus") == "BEHIND"
                 and info.get("mergeable") == "MERGEABLE"
@@ -1793,13 +775,15 @@ class Runner:
             return
         if not ready and not self.merge_ready(item, job):
             return
-        change_class, guards = classes.changes(self.fence, job)
+        change_class, guards = self.github.changes(job, item["pr"])
         job["change_class"] = change_class
         self.save_job(job)
         run_records.class_record(self, job, change_class)
         approval = item["attention"]
-        if merged is None and (guards or item["stop_before_merge"]) and not (
-            approval and approval["kind"] == "merge" and approval["approved"]
+        if (
+            merged is None
+            and (guards or item["stop_before_merge"])
+            and not (approval and approval["kind"] == "merge" and approval["approved"])
         ):
             body = f"Approve PR #{item['pr']}"
             if guards:
@@ -1821,7 +805,7 @@ class Runner:
             self.attention(item, "escalation", str(error))
             return
         run_records.owner_wait(self, item, job, close=True)
-        job["phase"], job["sha"] = "merged", sha
+        job["phase"], job["sha"], job["pr"] = "merged", sha, item["pr"]
         self.save_job(job)
         self.log(item, f"merged: {sha}", True)
         item["attention"] = None
@@ -1831,13 +815,12 @@ class Runner:
             self.save_job(job)
 
     def deliver(self, item):
-        if (
-            item.get("flow", "cli") == "tickets"
-            and "CPLANE_TASK_SUBMIT" not in os.environ
-        ):
-            return
         job = self.jobs.get(item["id"])
+        if item["state"] == "ready" and job and self.restartable(job):
+            return
         run_records.owner_wait(self, item, job)
+        if item["paused"]:
+            return
         attention = item["attention"]
         if job and job["phase"] == "review-ready":
             if attention and attention["answer"] is not None:
@@ -1854,24 +837,8 @@ class Runner:
             "tickets",
         ):
             return
-        if (
-            job
-            and job["phase"] == "usage-limit-wait"
-            and not attention
-            and not item["paused"]
-            and self.instant.timestamp() >= job["reset_at"]
-        ):
-            self.launch(
-                item,
-                "Your turn was cut by the usage limit. Your uncommitted work is in your working tree. Continue the slice.",
-                resume=True,
-            )
-            return
         if attention and attention["answer"] is not None:
-            if not item["session"] or not item["session"]["id"]:
-                if item["state"] in ("ready", "issued", "escalated"):
-                    self.start(item)
-            elif not job:
+            if not item["session"] or not item["session"]["id"] or not job:
                 self.defer(item, "deferred: session unavailable")
             else:
                 self.launch(item, attention["answer"], resume=True)
@@ -1949,19 +916,16 @@ class Runner:
             self.merge(item, job, ready=True)
 
     def start(self, item):
-        if (
-            item.get("flow", "cli") == "tickets"
-            and "CPLANE_TASK_SUBMIT" not in os.environ
-        ):
-            return
         reason = self.room(item)
-        if reason or self.choose(item) is None:
-            self.defer(item, reason or "deferred: capacity unavailable")
+        if reason:
+            self.defer(item, reason)
             return
         if item.get("brief_id"):
             try:
                 prompt = state.store(self.path).stored_brief(item["brief_id"])
                 self.launch(item, prompt)
+            except run_platform.Unavailable:
+                self.defer(item, "deferred: platform run API unavailable")
             except Exception:
                 self.slice_failure(item, "start")
             return
@@ -1987,100 +951,863 @@ class Runner:
                 if closing is not None:
                     prompt = "".join(lines[closing + 1 :])
             self.launch(item, prompt)
+        except run_platform.Unavailable:
+            self.defer(item, "deferred: platform run API unavailable")
         except Exception:
             self.slice_failure(item, "start")
 
-    def launcher_usage_at(self):
-        stamps = []
-        try:
-            stamps.append(
-                float(json.loads((self.runs / "usage-probe.json").read_text())["at"])
-            )
-        except (OSError, ValueError, KeyError, TypeError):
-            pass
-        if state.postgres():
-            for record in state.store(self.path).run_record_list():
-                if (
-                    record["tool"] == "codex"
-                    and record.get("started_at")
-                    and record.get("seconds") is not None
-                ):
-                    stamps.append(
-                        datetime.fromisoformat(record["started_at"]).timestamp()
-                        + record["seconds"]
-                    )
-        return max(stamps, default=0)
+    def __init__(
+        self,
+        path,
+        *,
+        run_client=None,
+        github=None,
+        git=None,
+        clock=now,
+        runs=None,
+        orders=None,
+        repos=None,
+    ):
+        self.path = Path(path).expanduser().resolve()
+        self.orders = orders or Collector()
+        self._client = run_client
+        self.github, self.git, self.clock = github or GitHub(), git or Git(), clock
+        base = (
+            Path(runs or os.environ.get("CPLANE_RUNS", "/srv/factory/runs"))
+            .expanduser()
+            .resolve()
+        )
+        self.runs = base / hashlib.sha256(str(self.path).encode()).hexdigest()[:20]
+        self.notices = []
+        self.repos = (
+            Path(repos or os.environ.get("CPLANE_REPOS", "~/Code"))
+            .expanduser()
+            .resolve()
+        )
 
-    def prepare_launcher_usage(self, tool="codex"):
-        if not getattr(self, "_usage_probe_allowed", False):
-            return
-        # The warm-up is an executor too. Reserve capacity for live and
-        # unrecovered slice turns before starting it in its fresh workspace.
-        jobs = getattr(self, "jobs", {})
-        active = {
-            key
-            for key, job in jobs.items()
-            if job["phase"] == "running"
-            or job.get("pr_review", {}).get("phase") == "running"
-        }
-        active.update(
-            item["id"]
-            for item in getattr(self, "data", {}).get("slices", [])
-            if item["id"] not in jobs
-            and item["state"] in ("issued", "awaiting handover")
-            and not item.get("attention")
-        )
-        limits = (
-            state.store(self.path).limit_show()
+    @property
+    def client(self):
+        if self._client is None:
+            self._client = run_platform.Client()
+        return self._client
+
+    def open_pr(self, repo, request):
+        if self.github.is_public(repo):
+            deny.Check().request(request)
+        return self.github.open(repo, request)
+
+    def execution(self, item):
+        policy = (
+            state.store(self.path).slice_policy(item["id"])
             if state.postgres()
-            else {"executors": 2}
+            else None
         )
-        if len(active) >= limits["executors"]:
-            return
-        attempted_at = (
-            self.clock() if tool == "claude" else self.instant
-        ).timestamp()
-        if tool == "claude":
-            usage = claude_usage(self.runs / "claude-usage.json")
-            try:
-                reported = float(usage["at"])
-            except (KeyError, TypeError, ValueError):
-                reported = 0
+        return (
+            policy["level"]
+            if policy
+            else next(
+                (
+                    entry["event"].removeprefix("level: ")
+                    for entry in reversed(item["log"])
+                    if entry["event"].startswith("level: ")
+                ),
+                "standard",
+            )
+        )
+
+    def eligibility_data(self, *, resources_only=False):
+        return {
+            **self.data,
+            "_eligibility": {"jobs": self.jobs, "resources_only": resources_only},
+        }
+
+    def room(self, item):
+        result = eligibility(item, self.eligibility_data(resources_only=True))
+        if result["status"] == "resource busy":
+            return (
+                "deferred: "
+                + result["reason"]
+                + " ("
+                + ", ".join(result.get("ids", []))
+                + ")"
+            )
+        return None
+
+    @staticmethod
+    def restartable(job):
+        entry = job["requests"][job.get("attention_run", job["active"])]
+        record = entry.get("record") or {}
+        return record.get("status") in (
+            "failed",
+            "escalated",
+            "cancelled",
+            "done",
+        ) and not record.get("resumable")
+
+    def request_id(self, item, job, purpose):
+        # Hash the attempt with the slice identity, keeping IDs <=64 characters.
+        # Jobs predating attempts keep their original identity for message retries.
+        identity = item["id"]
+        if "attempt" in job:
+            identity += ":" + str(job["attempt"])
+        return (
+            "factory-"
+            + hashlib.sha256(identity.encode()).hexdigest()[:24]
+            + "-"
+            + purpose
+        )
+
+    def new_request(
+        self,
+        item,
+        job,
+        purpose,
+        role,
+        goal,
+        *,
+        base=None,
+        after=(),
+        allowed_files=None,
+        pinned_paths=(),
+        check_command=None,
+    ):
+        if purpose not in job["requests"]:
+            body = {
+                "contract": 1,
+                "request_id": self.request_id(item, job, purpose),
+                "attribution": {"slice": item["id"][:120]},
+                "repository": item["repo"],
+                "base_commit": base or job["base"],
+                "branch": job["branch"],
+                "mode": "read" if role == "review" else "write",
+                "role": role,
+                "level": job["level"],
+                "work": {
+                    "goal": goal,
+                    "allowed_files": allowed_files,
+                    "pinned_paths": list(pinned_paths),
+                    "check_command": check_command,
+                },
+                "assets": [],
+                "after": list(after),
+                "priority": 0,
+            }
+            context = []
+            if role in ("cut", "review"):
+                from .skills import ROOT
+
+                name = "cut" if role == "cut" else "slice-review"
+                context = run_records.context(
+                    skill_files=[(name, ROOT / (name + ".md"))]
+                )
+            if role == "review":
+                body["work"]["history"] = "full"
+            job["requests"][purpose] = {
+                "request": body,
+                "run_id": None,
+                "record": None,
+                "turn": 0,
+                "context": context,
+            }
+            self.save_job(job)
+        return job["requests"][purpose]
+
+    def send_request(self, job, entry):
+        if entry["run_id"] is None:
+            # Intent and exact body were saved by new_request, before this POST.
+            entry["run_id"] = self.client.submit(entry["request"])
+            self.save_job(job)
+        return entry["run_id"]
+
+    def session(self, item, job):
+        entry = job["requests"][job["active"]]
+        record = entry.get("record") or {}
+        harness = (record.get("executor") or {}).get("harness", "codex")
+        # v1's executor/session fields are legacy display metadata, never policy.
+        item["session"] = {
+            "tool": harness if harness in ("codex", "claude") else "codex",
+            "id": entry["run_id"] or entry["request"]["request_id"],
+            "folder": str(job["run"]),
+        }
+
+    def launch(self, item, prompt, resume=False, review=False):
+        if item["paused"]:
+            return False
+        previous = self.jobs.get(item["id"])
+        if resume:
+            self.send_message(
+                item,
+                previous,
+                prompt,
+                "merged"
+                if prompt.startswith("merged as ")
+                else "answer-"
+                + hashlib.sha256(
+                    (item["attention"]["since"] + prompt).encode()
+                ).hexdigest()[:20],
+            )
+            return True
+        if review:
+            self.launch_review(
+                item, previous, record_only=item.get("flow", "cli") == "cli"
+            )
+            return True
+        if previous:
+            if not self.restartable(previous):
+                entry = previous["requests"][
+                    previous.get("attention_run", previous["active"])
+                ]
+                if (entry.get("record") or {}).get("resumable"):
+                    self.send_message(
+                        item,
+                        previous,
+                        prompt,
+                        "start-" + str(entry["turn"] + 1),
+                    )
+                else:
+                    self.session(item, previous)
+                    item["state"] = "issued"
+                return True
+            # Queued successors and resumable predecessors belong to the old
+            # attempt. Release them before requesting work on the same branch.
+            self.abandon(previous)
+            if any(
+                not entry.get("cancelled") for entry in previous["requests"].values()
+            ):
+                self.defer(item, "deferred: previous attempt cancellation pending")
+                return False
+        if self.room(item):
+            self.defer(item, self.room(item))
+            return False
+        branch = "slice/" + item["id"].replace("/", "-")
+        base = self.github.default_tip(item["repo"])
+        if not re.fullmatch("[0-9a-f]{40}", base):
+            raise state.StateError("Default branch tip unavailable")
+        attempt = previous.get("attempt", 1) + 1 if previous else 1
+        folder = self.runs / (
+            hashlib.sha256(item["id"].encode()).hexdigest()[:24]
+            + "-attempt-"
+            + str(attempt)
+        )
+        folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+        job = {
+            "id": item["id"],
+            "attempt": attempt,
+            "run": str(folder),
+            "repository": item["repo"],
+            "branch": branch,
+            "base": base,
+            "brief": prompt,
+            "level": self.execution(item),
+            "started_ns": max(
+                time.time_ns(), previous["started_ns"] + 1 if previous else 0
+            ),
+            "requests": {},
+            "active": "cut" if item.get("flow", "cli") == "tickets" else "slice",
+            "phase": "running",
+            "skills": cutter.skills_version(),
+        }
+        role = job["active"]
+        goal = prompt + self.assignment(job)
+        if role == "cut":
+            from .skills import instructions
+
+            goal = (
+                instructions("cut")
+                + goal
+                + '\nCommit the failing tests. End with kind "handover" and the fenced JSON plan.'
+            )
         else:
-            reported = self.launcher_usage_at()
-        if attempted_at - reported <= 1800:
-            return
-        self.runs.mkdir(parents=True, mode=0o700, exist_ok=True)
-        fence.trusted_directory(self.runs)
-        marker = self.runs / (
-            "claude-usage-probe.json" if tool == "claude" else "usage-probe.json"
+            goal += (
+                '\nFor this run, end with kind "handover" (superseding any brief final kind). Begin the body with a fenced JSON object '
+                "with branch, title, body (PR description) and node_steps (text or null). "
+                "Factory opens the PR, checks CI, obtains required approval, and merges it. "
+                'A message "merged as <sha>" asks you for your final handover.'
+            )
+        entry = self.new_request(
+            item, job, role, role, goal, allowed_files=item.get("allowed_files")
         )
-        try:
-            last = json.loads(marker.read_text())["at"]
-        except (OSError, ValueError, KeyError, TypeError):
-            last = 0
-        if attempted_at - last < 3600:
+        self.jobs[item["id"]] = job
+        item["state"], item["attention"] = "issued", None
+        item["pr"] = None
+        item.pop("final", None)
+        self.session(item, job)
+        self.send_request(job, entry)
+        self.session(item, job)
+        self.log(item, "started", True)
+        return True
+
+    @staticmethod
+    def assignment(job):
+        return (
+            f"\n\nRunner assignment: use branch {job['branch']}. "
+            "This assigned branch overrides any branch named in the brief. "
+            f"The pinned base commit is {job['base']}."
+        )
+
+    def send_message(self, item, job, text, purpose):
+        if item["paused"]:
             return
-        atomic_json(marker, {"at": attempted_at})
-        try:
-            if tool == "claude":
-                probe_claude_usage(self.runs)
+        target = job.get("attention_run", job["active"])
+        entry = job["requests"][target]
+        message_id = self.request_id(item, job, purpose)
+        if entry.get("last_message_id") == message_id:
+            item["attention"], item["state"] = None, "issued"
+            return
+        if not (entry.get("record") or {}).get("resumable") and not entry.get(
+            "message"
+        ):
+            self.defer(item, "deferred: platform run is not resumable")
+            return
+        if not entry.get("message"):
+            entry.pop("completion_final", None)
+            entry["post_merge"] = bool(job.get("sha"))
+            entry["turn"] += 1
+            entry["message"] = {"contract": 1, "message_id": message_id, "text": text}
+            job["phase"] = "pr" if target == job.get("pr_review") else "running"
+            if target == job.get("pr_review"):
+                job["review_requested_at"] = self.instant.timestamp()
+            self.save_job(job)
+        self.retry_message(item, job, entry)
+
+    def retry_message(self, item, job, entry):
+        if item["paused"]:
+            return
+        result = self.client.message(entry["run_id"], entry["message"])
+        entry["record"] = result
+        entry["last_message_id"] = entry.pop("message")["message_id"]
+        self.save_job(job)
+        attention_entry = job["requests"].get(job.get("attention_run"))
+        if (
+            entry is job["requests"][job["active"]] or entry is attention_entry
+        ) and not entry.get("completion_final"):
+            run_records.owner_wait(self, item, close=True)
+            item["attention"], item["state"] = None, "issued"
+            job.pop("attention_run", None)
+            self.save_job(job)
+            self.log(item, "resumed", True)
+
+    def collect(self, item, job):
+        # Poll all known runs, including queued successors and record-only reviews.
+        for entry in job["requests"].values():
+            restarting = item["state"] == "ready" and self.restartable(job)
+            if entry["run_id"] is None:
+                if item["paused"] or restarting:
+                    continue
+                self.send_request(job, entry)
+            entry["record"] = self.client.get(entry["run_id"])
+            # Observe a finished turn before retrying a saved message: a reset
+            # must be able to retire an attempt whose continuation failed too.
+            restarting = item["state"] == "ready" and self.restartable(job)
+            if entry.get("message") and not restarting and not item["paused"]:
+                self.retry_message(item, job, entry)
+                entry["record"] = self.client.get(entry["run_id"])
+            if (
+                entry["record"].get("status") == "waiting"
+                and entry["record"].get("status_reason") == "usage_limit"
+            ):
+                self.defer(
+                    item,
+                    "waiting: usage_limit until "
+                    + str(entry["record"].get("resume_at")),
+                )
+            if state.postgres() and entry["record"].get("status") not in (
+                "queued",
+                "running",
+            ):
+                run_records.platform_record(state.store(self.path), item, job, entry)
+        self.save_job(job)
+        if item["state"] == "ready" and self.restartable(job):
+            if not item["paused"]:
+                self.abandon(job)
+                item["attention"] = None
+                job["phase"] = "restart-ready"
+                self.save_job(job)
+            return
+        self.apply_record(item, job)
+
+    def apply_record(self, item, job):
+        self.session(item, job)
+        if item["state"] == "ready":
+            item["state"] = "issued"
+        if item["paused"]:
+            return
+        entry = job["requests"][job["active"]]
+        record = entry.get("record") or {}
+        status = record.get("status")
+        if status == "waiting" and record.get("status_reason") == "usage_limit":
+            self.defer(
+                item, "waiting: usage_limit until " + str(record.get("resume_at"))
+            )
+            return
+        if status in ("queued", "running"):
+            return
+        marker = "collected turn: " + job["active"] + ":" + str(entry["turn"])
+        if "attempt" in job:
+            marker = "attempt " + str(job["attempt"]) + ": " + marker
+        if any(log["event"] == marker for log in item["log"]):
+            return
+        job["final"] = (
+            entry.get("completion_final")
+            if record.get("status") == "done" and entry.get("completion_final")
+            else record.get("final_message")
+        )
+        job["phase"] = "ended"
+        job["ended_at"] = self.instant.timestamp()
+        self.save_job(job)
+        final = job.get("final")
+        if (
+            isinstance(final, dict)
+            and isinstance(final.get("body"), str)
+            and isinstance(final.get("kind"), str)
+        ):
+            item["final"] = {
+                **final,
+                "body": cut(final["body"], ATTENTION_LIMIT),
+                "at": self.at,
+            }
+        if status in ("failed", "cancelled"):
+            self.attention(
+                item,
+                "escalation",
+                "Platform run " + status + ": " + str(record.get("status_reason")),
+            )
+        elif status in ("question", "escalated"):
+            final = record.get("final_message") or {}
+            self.attention(
+                item,
+                "question" if status == "question" else "escalation",
+                final.get("body") or str(record.get("status_reason")),
+            )
+        else:
+            self.apply_final(item, job)
+        self.log(item, marker)
+        if (
+            item["state"] == "in review"
+            and (job.get("final") or {}).get("kind") == "handover"
+            and state.postgres()
+        ):
+            state.store(self.path).chat_handover(item, job["final"]["body"])
+        if job["phase"] == "ended":
+            job["phase"] = "collected"
+        self.save_job(job)
+
+    def apply_final(self, item, job):
+        entry = job["requests"][job["active"]]
+        record = entry["record"]
+        final = job.get("final")
+        if not isinstance(final, dict) or not isinstance(final.get("body"), str):
+            raise state.StateError("Platform run ended without a final message")
+        item["final"] = {
+            **final,
+            "body": cut(final["body"], ATTENTION_LIMIT),
+            "at": self.at,
+        }
+        if record.get("commits"):
+            job["tip"] = record["commits"][-1]
+        if not job.get("sha") and record["status"] == "waiting":
+            needs_completion = False
+            if job["active"] == "cut":
+                cutter.parse_plan(final["body"])
+                cutter.sections(job["brief"], item["id"])
+                needs_completion = True
+            elif job["active"].startswith("review-"):
+                reviewer.validate(reviewer.parse(final["body"]))
+                needs_completion = True
+            elif job["active"] == "slice" and final["body"].lstrip().startswith("```"):
+                self.pr_request(final["body"], job["branch"])
+                needs_completion = True
+            if needs_completion:
+                self.complete_entry(item, job, entry)
+                return
+        if job.get("sha") and not entry.get("post_merge"):
+            self.restore_merge(item, job)
+            job["phase"] = (
+                "node-step" if job["request"]["node_steps"] is not None else "merged"
+            )
+        elif entry.get("post_merge"):
+            if final["kind"] == "handover":
+                self.finished(item, final["body"])
             else:
-                probe_codex_usage(self.runs)
-        except (OSError, subprocess.SubprocessError):
-            pass
+                steps = final["body"].strip()
+                if steps.startswith(("```", "{")):
+                    request = (
+                        reviewer.parse(steps)
+                        if steps.startswith("```")
+                        else json.loads(steps)
+                    )
+                    steps = request.get("node_steps")
+                    if steps is not None and not isinstance(steps, str):
+                        raise state.StateError("invalid post-merge node_steps")
+                if steps:
+                    job["phase"] = "node-step"
+                    self.attention(item, "node-step", steps)
+                else:
+                    self.finished(item, final["body"])
+        elif job["active"].startswith("review-"):
+            self.apply_review(item, job, final["body"])
+        elif "ticket-" in job["active"]:
+            if (
+                record["status"] == "waiting"
+                and record.get("status_reason") == "client_step"
+            ):
+                self.attention(item, "node-step", final["body"])
+            else:
+                job["phase"] = "tickets"
+        elif job["active"] == "cut":
+            plan = cutter.parse_plan(final["body"])
+            cutter.sections(job["brief"], item["id"])
+            if not job.get("task_file"):
+                job["tip"] = self.github.branch_tip(item["repo"], job["branch"])
+                job["task_file"] = cutter.build_task_file(
+                    item["id"],
+                    item["repo"],
+                    job["branch"],
+                    job["tip"],
+                    plan,
+                    job["brief"],
+                )
+            job["phase"] = "cut-ready"
+            self.save_job(job)
+            self.submit_tickets(item, job)
+        elif final["body"].lstrip().startswith("```"):
+            request = self.pr_request(final["body"], job["branch"])
+            job["tip"] = self.github.branch_tip(item["repo"], job["branch"])
+            if job["tip"] == job["base"]:
+                self.attention(item, "question", final["body"])
+                return
+            if job.get("review_tip") and job["review_tip"] != job["tip"]:
+                for key in (
+                    "pr_review",
+                    "review_verdict",
+                    "review_findings",
+                    "review_requested_at",
+                    "review_ended_at",
+                ):
+                    job.pop(key, None)
+            job["request"], job["phase"] = request, "pr"
+            self.save_job(job)
+            item["pr"] = self.open_pr(item["repo"], request)
+            self.log(item, f"opened PR: {item['pr']}", True)
+            self.cli_review(item, job)
+        elif final["kind"] == "handover":
+            self.finished(item, final["body"])
+        else:
+            self.attention(item, "node-step", final["body"])
+
+    @staticmethod
+    def pr_request(body, branch):
+        request = reviewer.parse(body)
+        if (
+            not isinstance(request, dict)
+            or set(request) != {"branch", "title", "body", "node_steps"}
+            or any(
+                not isinstance(request[k], str) or not request[k]
+                for k in ("branch", "title", "body")
+            )
+            or request["node_steps"] is not None
+            and not isinstance(request["node_steps"], str)
+        ):
+            raise state.StateError(
+                "invalid PR request: expected branch, title, body, node_steps"
+            )
+        if request["branch"] != branch:
+            raise state.StateError("PR branch differs from assigned branch")
+        return request
+
+    def complete_entry(self, item, job, entry):
+        if entry.get("completion_final"):
+            raise state.StateError(
+                "Platform run did not finish after result acknowledgment"
+            )
+        entry["completion_final"] = entry["record"]["final_message"]
+        entry["turn"] += 1
+        purpose = (
+            "complete-"
+            + next(key for key, value in job["requests"].items() if value is entry)
+            + "-"
+            + str(entry["turn"])
+        )
+        entry["message"] = {
+            "contract": 1,
+            "message_id": self.request_id(item, job, purpose),
+            "text": (
+                'Factory recorded your result. End with kind "handover" now, without changing files. '
+                "No further work is requested in this turn."
+            ),
+        }
+        if entry is job["requests"][job["active"]]:
+            job["phase"] = "running"
+        self.save_job(job)
+        self.retry_message(item, job, entry)
+
+    def restore_merge(self, item, job):
+        item["pr"] = job.get("pr", item["pr"])
+        if not any(e["event"] == "merged: " + job["sha"] for e in item["log"]):
+            self.log(item, "merged: " + job["sha"], True)
+            item["attention"] = None
+            if job["request"]["node_steps"] is not None:
+                self.attention(item, "node-step", job["request"]["node_steps"])
+            job["phase"] = (
+                "node-step" if job["request"]["node_steps"] is not None else "merged"
+            )
+
+    def finished(self, item, body):
+        item["state"], item["attention"] = "in review", None
+        self.log(item, "finished", True)
+
+    def launch_review(self, item, job, *, record_only=False):
+        if item["paused"]:
+            return
+        number = (
+            (job.get("review_number", 0) + 1)
+            if record_only
+            else (2 if job.get("repair") else 1)
+        )
+        job["review_number"] = number
+        job["review_tip"] = job["tip"]
+        purpose = "review-" + str(number)
+        from .skills import instructions
+
+        goal = instructions("slice-review") + job["brief"] + self.assignment(job)
+        # The skill names waiting; either final kind carries the same verdict.
+        goal += '\nFor this run, end with kind "handover" (superseding the skill final kind). Return the verdict JSON first; prose may follow.'
+        previous = job["requests"][job["active"]]["request"]["request_id"]
+        after = (
+            [job["ticket_purposes"][-1]] if job.get("ticket_purposes") else [previous]
+        )
+        if record_only:
+            job["pr_review"] = purpose
+        else:
+            job["active"], job["phase"] = purpose, "running"
+        entry = self.new_request(
+            item, job, purpose, "review", goal, base=job["tip"], after=after
+        )
+        self.save_job(job)
+        self.send_request(job, entry)
+
+    def cli_review(self, item, job):
+        if item.get("flow", "cli") != "cli" or job.get("review_verdict"):
+            return True
+        if item["paused"]:
+            return False
+        requested = job.setdefault("review_requested_at", self.instant.timestamp())
+        timeout = max(1, int(os.environ.get("CPLANE_REVIEW_TIMEOUT_SECONDS", "1200")))
+        if "pr_review" not in job:
+            self.save_job(job)
+            self.launch_review(item, job, record_only=True)
+            return False
+        entry = job["requests"][job["pr_review"]]
+        record = entry.get("record") or {}
+        answer = None
+        status = record.get("status")
+        if status in ("question", "escalated", "failed", "cancelled"):
+            marker = (entry["turn"], status, record.get("updated_at"))
+            if entry.get("attention_marker") != list(marker):
+                entry["attention_marker"] = list(marker)
+                body = (record.get("final_message") or {}).get("body")
+                if status in ("failed", "cancelled"):
+                    body = (
+                        "Platform run "
+                        + status
+                        + ": "
+                        + str(record.get("status_reason"))
+                    )
+                job["attention_run"] = job["pr_review"]
+                self.attention(
+                    item,
+                    "question" if status == "question" else "escalation",
+                    body or str(record.get("status_reason")),
+                )
+                self.save_job(job)
+            if status in ("question", "escalated") and record.get("resumable"):
+                return False
+        expired = self.instant.timestamp() - requested >= timeout
+        if record.get("status") in ("queued", "running") or not record:
+            if not expired:
+                return False
+        elif (
+            record.get("status") == "waiting"
+            and record.get("status_reason") == "usage_limit"
+            and not expired
+        ):
+            return False
+        if not expired:
+            try:
+                final = record.get("final_message") or {}
+                if record.get("status") in ("done", "waiting") and final.get(
+                    "kind"
+                ) in ("handover", "waiting"):
+                    answer = reviewer.parse(final["body"])
+                    reviewer.validate(answer)
+            except (ValueError, KeyError, state.StateError):
+                answer = None
+        if expired:
+            entry["cancel_pending"] = True
+            self.cancel_entry(job, entry)
+        if (
+            record.get("status") in ("question", "escalated")
+            or record.get("status") == "waiting"
+            and record.get("status_reason") == "client_step"
+        ):
+            entry["cancel_pending"] = True
+            self.cancel_entry(job, entry)
+        verdict = answer["verdict"] if answer else "missing"
+        findings = (
+            {k: answer[k] for k in ("title", "body")}
+            if answer and verdict == "pass"
+            else answer["tickets"]
+            if answer
+            else None
+        )
+        job.update(
+            review_verdict=verdict,
+            review_findings=findings,
+            review_ended_at=self.instant.timestamp(),
+        )
+        self.save_job(job)
+        self.log(item, "review: " + verdict)
+        run_records.review_outcome(self, job, item=item)
+        return True
+
+    def apply_review(self, item, job, body):
+        answer = reviewer.parse(body)
+        run_records.review_record(self, job, answer)
+        if answer["verdict"] == "pass":
+            job["request"] = {
+                "branch": job["branch"],
+                "title": answer["title"],
+                "body": answer["body"],
+                "node_steps": None,
+            }
+            job["phase"] = "pr"
+            self.save_job(job)
+            item["pr"] = self.open_pr(item["repo"], job["request"])
+            self.log(item, f"opened PR: {item['pr']}", True)
+        elif job.get("repair"):
+            self.attention(
+                item,
+                "escalation",
+                "slice review still needs fixes after repair:\n" + json.dumps(answer),
+            )
+        else:
+            job["repair"] = True
+            job["task_file"] = cutter.build_task_file(
+                item["id"] + "/repair",
+                item["repo"],
+                job["branch"],
+                job["tip"],
+                {k: answer[k] for k in ("tickets", "test_files")},
+                job["brief"],
+            )
+            job["phase"] = "cut-ready"
+            self.save_job(job)
+            self.submit_tickets(item, job)
+
+    def submit_tickets(self, item, job):
+        if item["paused"]:
+            return
+        previous = job["requests"][job["active"]]["request"]["request_id"]
+        purposes = []
+        for task in job["task_file"]["tasks"]:
+            purpose = (
+                ("repair-" if job.get("repair") else "")
+                + "ticket-"
+                + str(task["position"])
+            )
+            entry = self.new_request(
+                item,
+                job,
+                purpose,
+                "ticket",
+                task["goal"],
+                base=job["task_file"]["base_commit"],
+                after=[previous],
+                allowed_files=task["allowed_files"],
+                pinned_paths=task["pinned_paths"],
+                check_command=task["check_command"],
+            )
+            self.send_request(job, entry)
+            previous = entry["request"]["request_id"]
+            purposes.append(previous)
+        job["ticket_purposes"], job["phase"] = purposes, "tickets"
+        self.save_job(job)
+        self.log(item, f"Submitted {len(purposes)} tickets", True)
+
+    def follow_tickets(self, item, job, tickets=None):
+        if item["paused"]:
+            return
+        entries = [
+            entry
+            for entry in job["requests"].values()
+            if entry["request"]["request_id"] in job["ticket_purposes"]
+        ]
+        for entry in entries:
+            record = entry.get("record") or {}
+            status = record.get("status")
+            if status in ("question", "escalated", "failed", "cancelled") or (
+                status == "waiting" and record.get("status_reason") == "client_step"
+            ):
+                job["active"] = next(
+                    k for k, v in job["requests"].items() if v is entry
+                )
+                job["phase"] = "running"
+                self.save_job(job)
+                self.apply_record(item, job)
+                return
+            if status == "waiting" and record.get("status_reason") == "usage_limit":
+                self.defer(
+                    item, "waiting: usage_limit until " + str(record.get("resume_at"))
+                )
+        if entries and all(
+            (entry.get("record") or {}).get("status") == "done" for entry in entries
+        ):
+            job["tip"] = self.github.branch_tip(item["repo"], job["branch"])
+            job["phase"] = "review-ready"
+            self.save_job(job)
+
+    def cancel_entry(self, job, entry):
+        if entry.get("cancelled"):
+            return
+        if entry["run_id"] is None:
+            # Lookup avoids creating any new work for an abandoned slice.
+            entry["run_id"] = self.client.find(entry["request"]["request_id"])
+            if entry["run_id"] is None:
+                entry["cancelled"] = True
+                self.save_job(job)
+                return
+        record = self.client.get(entry["run_id"])
+        if record.get("status") in (
+            "failed",
+            "escalated",
+            "cancelled",
+            "done",
+        ) and not record.get("resumable"):
+            entry["cancelled"] = True
+        else:
+            try:
+                record = self.client.cancel(entry["run_id"])
+                entry["cancelled"] = (
+                    record.get("status") == "cancelled"
+                    or not record.get("resumable")
+                    and record.get("status") not in ("queued", "running")
+                )
+            except run_platform.NotResumable:
+                entry["cancel_pending"] = True
+        entry["record"] = record
+        if entry.get("cancelled"):
+            entry.pop("cancel_pending", None)
+        self.save_job(job)
+
+    def abandon(self, job):
+        for entry in job["requests"].values():
+            self.cancel_entry(job, entry)
 
     def run(self):
-        token = _USAGE_PASS.set({"runner": self})
-        try:
-            self._run_pass()
-            export_bot(self.path)
-        finally:
-            _USAGE_PASS.reset(token)
-            self._usage_probe_allowed = False
+        self._run_pass()
+        export_bot(self.path)
 
     def _run_pass(self):
-        self.fence.begin_pass()
         with state.locked(self.path):
             self.git.pull(self.path)
             orders_changed = self.orders.collect(self)
@@ -2109,10 +1836,10 @@ class Runner:
                 if previous is None or previous["started_ns"] < job["started_ns"]:
                     self.jobs[job["id"]] = job
             if state.postgres():
-                from . import eval_runner
+                from . import eval_execution
 
-                eval_runner.collect(self, state.store(self.path))
-            self._usage_probe_allowed = True
+                self.evals = eval_execution.Context(self)
+                self.evals.collect(state.store(self.path))
             read_failures, read_successes, login_failures, login_successes = (
                 set(),
                 set(),
@@ -2120,111 +1847,46 @@ class Runner:
                 set(),
             )
             for item in self.data["slices"]:
+                job = self.jobs.get(item["id"])
+                if not job:
+                    continue
                 read_start = (
                     self.github.successful_reads
                     if isinstance(self.github, GitHub)
                     else 0
                 )
                 login_start = fence.github_logins.get()
-                run_records.owner_wait(self, item)
-                saved = self.jobs.get(item["id"])
-                if saved and (saved.get("review_verdict") or (
-                    saved.get("pr_review") and item["state"] in ("accepted", "dropped")
-                )):
-                    self.cli_review(item, saved)
-                if item["state"] in ("accepted", "dropped"):
-                    # An accepted slice's finished process must not hold a slot.
-                    job = self.jobs.get(item["id"])
-                    if job and job["phase"] == "running":
-                        # In memory only: the accepted slice's files stay as they are.
-                        if self.processes.poll(job)[0]:
-                            job["phase"] = "collected"
-                    continue
-                if (
-                    item.get("flow", "cli") == "tickets"
-                    and "CPLANE_TASK_SUBMIT" not in os.environ
-                ):
-                    continue
                 fence.github_calls.set(0)
                 try:
-                    job = self.jobs.get(item["id"])
-                    if job:
-                        if not job.get("fence"):
-                            raise state.StateError(
-                                "run mode differs from saved job; needs attention"
-                            )
-                        phase_before = job["phase"]
-                        if phase_before == "publish-blocked" and not item["attention"]:
-                            self.attention(
-                                item,
-                                "escalation",
-                                "branch was rewritten; merge main instead of rebasing",
-                            )
-                        if phase_before in (
-                            "cut-ready",
-                            "submitting",
-                            "submit-failed",
-                            "tickets",
-                            "review-ready",
-                        ):
-                            if item["state"] == "ready":
-                                item["state"] = "issued"
-                            item["session"] = {
-                                "tool": job["tool"],
-                                "id": job["session"],
-                                "folder": job["repo"],
-                            }
-                            if phase_before == "tickets":
-                                self.follow_tickets(
-                                    item,
-                                    job,
-                                    cutter.status(job.get("queue_slice", item["id"])),
-                                )
-                            elif phase_before != "review-ready" and (
-                                phase_before != "cut-ready"
-                                or (not item["attention"] and not item["paused"])
-                            ):
-                                self.submit_tickets(item, job)
-                            continue
-                        if phase_before in ("merged", "node-step") and not any(
-                            e["event"] == "merged: " + job["sha"] for e in item["log"]
-                        ):
-                            self.log(item, "merged: " + job["sha"], True)
-                            item["attention"] = None
-                            if phase_before == "node-step":
-                                self.attention(
-                                    item, "node-step", job["request"]["node_steps"]
-                                )
-                        marker = "collected turn: " + Path(job["run"]).name
-                        if (
-                            job["phase"]
-                            in ("ended", "collected", "pr", "usage-limit-wait")
-                            or (
-                                job["phase"] == "node-step"
-                                and job.get("sha")
-                                and (job.get("final") or {}).get("kind") == "waiting"
-                            )
-                        ) and not any(e["event"] == marker for e in item["log"]):
-                            item["session"] = {
-                                "tool": job["tool"],
-                                "id": job["session"],
-                                "folder": job["repo"],
-                            }
-                            item["state"] = "issued"
-                            self.apply_final(item, job)
-                        else:
-                            self.collect(item, job)
-                        if phase_before == "pr":
-                            self.cli_review(item, job)
-                            self.pr_checks(item, job)
-                except github_app.GitHubAppTransientError:
-                    if fence.github_calls.get():
-                        self.slice_failure(item, "collect/deliver")
-                    else:
-                        read_failures.add(item["id"])
-                        login_failures.add(item["id"])
+                    if item["state"] in ("accepted", "dropped"):
+                        self.abandon(job)
+                        continue
+                    if job.get("sha") and not (
+                        item["state"] == "ready" and self.restartable(job)
+                    ):
+                        self.restore_merge(item, job)
+                    self.collect(item, job)
+                    if item["paused"] or (
+                        item["state"] == "ready" and self.restartable(job)
+                    ):
+                        continue
+                    if job["phase"] == "cut-ready":
+                        self.submit_tickets(item, job)
+                    if job["phase"] == "tickets":
+                        self.follow_tickets(item, job)
+                    if job["phase"] == "pr":
+                        self.cli_review(item, job)
+                        self.pr_checks(item, job)
+                    for entry in job["requests"].values():
+                        if entry.get("cancel_pending"):
+                            self.cancel_entry(job, entry)
+                except run_platform.Unavailable:
+                    self.defer(item, "deferred: platform run API unavailable")
                 except GitHubReadError:
                     read_failures.add(item["id"])
+                except github_app.GitHubAppTransientError:
+                    read_failures.add(item["id"])
+                    login_failures.add(item["id"])
                 except Exception:
                     self.slice_failure(item, "collect/deliver")
                 finally:
@@ -2252,6 +1914,8 @@ class Runner:
                     fence.github_calls.set(0)
                     try:
                         self.deliver(item)
+                    except run_platform.Unavailable:
+                        self.defer(item, "deferred: platform run API unavailable")
                     except github_app.GitHubAppTransientError:
                         if fence.github_calls.get():
                             self.slice_failure(item, "delivery")
@@ -2336,7 +2000,7 @@ class Runner:
                         continue
                     self.start(item)
             if state.postgres():
-                eval_runner.start(self, state.store(self.path))
+                self.evals.start(state.store(self.path))
             previous_notices = state.store(self.path).notices()
             seen = {
                 (notice.get("id"), notice.get("since"), notice.get("reason"))
@@ -2344,20 +2008,32 @@ class Runner:
                 if notice.get("event") == "stuck"
             }
             for item in self.data["slices"]:
+                records = [
+                    entry.get("record") or {}
+                    for entry in self.jobs.get(item["id"], {})
+                    .get("requests", {})
+                    .values()
+                ]
+                if any(
+                    record.get("status") == "waiting"
+                    and record.get("status_reason") == "usage_limit"
+                    for record in records
+                ):
+                    continue
                 stalled = stuck_since(item, self.instant)
                 if stalled:
                     since, reason = stalled
                     key = (item["id"], since.isoformat(), reason)
                     if key not in seen:
                         self.notices.append(
-                            dict(
-                                at=self.at,
-                                id=item["id"],
-                                event="stuck",
-                                text=f"Stuck: {reason}",
-                                since=key[1],
-                                reason=reason,
-                            )
+                            {
+                                "at": self.at,
+                                "id": item["id"],
+                                "event": "stuck",
+                                "text": f"Stuck: {reason}",
+                                "since": key[1],
+                                "reason": reason,
+                            }
                         )
             from . import digest
 
@@ -2377,18 +2053,18 @@ class Runner:
                 records = backend.run_record_list() + [
                     r
                     for r in backend.run_record_export(
-                        end.astimezone(timezone.utc) - timedelta(hours=24)
+                        end.astimezone(UTC) - timedelta(hours=24)
                     )
                     if r["kind"] == "task"
                 ]
                 self.notices.append(
-                    dict(
-                        at=self.at,
-                        id="digest",
-                        event="digest",
-                        date=day.isoformat(),
-                        text=digest.build(self.data, records, end),
-                    )
+                    {
+                        "at": self.at,
+                        "id": "digest",
+                        "event": "digest",
+                        "date": day.isoformat(),
+                        "text": digest.build(self.data, records, end),
+                    }
                 )
             changed = (
                 json.dumps(self.data, ensure_ascii=False, separators=(",", ":"))
@@ -2404,15 +2080,3 @@ class Runner:
                     state.save(self.path, self.data, self.notices)
             if orders_changed or changed or self.notices:
                 self.git.commit(self.path)
-            busy = set()
-            for item in self.data["slices"]:
-                job = self.jobs.get(item["id"])
-                is_busy = (
-                    bool(job and job["phase"] == "running")
-                    or item["state"] in ("issued", "escalated")
-                    or bool(
-                        item["attention"] and item["attention"].get("answer") is None
-                    )
-                )
-                if is_busy:
-                    busy.add(self.repo(item))

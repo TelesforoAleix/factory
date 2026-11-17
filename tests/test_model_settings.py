@@ -1,3 +1,4 @@
+from test_stores import pg_store  # noqa: F401 - shared pytest fixture
 """Settings contracts, using synthetic output at the fenced process boundary."""
 import copy
 import json
@@ -7,16 +8,15 @@ from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import Mock
 
 import pytest
+from conftest import seed_model_choices
 
 from cplane import models, sessions, state
 from cplane.cli import main
 from cplane.executors import command
 from cplane.runner import Runner
 from cplane.stores import PostgresStore
-from cplane.workshop import Workshop, TOOLS
+from cplane.workshop import TOOLS
 from factory_ui import create_app
-from test_stores import pg_store
-from conftest import seed_model_choices
 
 HEADERS = {'X-Factory-UI': '1'}
 VISIBLE = dict(slug='gpt-6.1-sol', visibility='list',
@@ -235,26 +235,20 @@ def test_every_chat_and_executor_command_passes_effort(tool, effort, tmp_path):
             assert args[args.index('--effort') + 1] == effort
 
 
-def test_slice_level_resolves_at_launch_and_explicit_fields_win(pg_store, tmp_path):
-    seed_model_choices(pg_store)
+def test_slice_level_is_platform_policy_and_overrides_are_unread(pg_store, tmp_path):
     add = ['add', '--id', 'new/W2', '--repo', 'owner/repo', '--feature', 'Synthetic', '--title', 'Task', '--level', 'light', '--no-feature', 'One-off']
     assert main(add) == 0
     item = pg_store.load()['slices'][0]
-    assert 'level' not in item  # v1 document contract retained
+    assert 'level' not in item
     assert pg_store.slice_policy(item['id']) == dict(level='light', overrides={})
-    assert pg_store.slice_executor(item) == dict(tool='codex', model='gpt-6-luna', effort='low')
-    pg_store.role_set('light', 'claude', 'synthetic', 'high')
-    runner = Runner(tmp_path / 'state', codex_reader=lambda: 0,
-                    claude_reader=lambda: {'at': 1, 'rate_limits': {'five_hour': {'used_percentage': 0, 'resets_at': 2}}})
-    runner.jobs = {}
-    from datetime import datetime, timezone
-    runner.instant = datetime.fromtimestamp(1, timezone.utc)
-    assert runner.choose(item) == ('claude', 'synthetic')
-    assert runner.execution(item)['effort'] == 'high'
-    assert main(['edit', item['id'], '--model', 'synthetic-a', '--effort', 'low']) == 0
-    pg_store.role_set('light', 'claude', 'synthetic-b', 'max')
-    assert pg_store.slice_executor(pg_store.load()['slices'][0]) == dict(tool='claude', model='synthetic-a', effort='low')
-    assert main(['state', item['id'], 'ready']) == 1  # brief gate unchanged
+    with pg_store.mutation():
+        pg_store.connection.execute("UPDATE cplane_slice_levels SET overrides = '{\"model\":\"ignored\"}'::jsonb WHERE slice_id = %s", (item['id'],))
+    runner = Runner(tmp_path / 'state')
+    assert runner.execution(item) == 'light'
+    assert pg_store.slice_policy(item['id']) == dict(level='light', overrides={})
+    assert main(['edit', item['id'], '--level', 'strong']) == 0
+    assert runner.execution(item) == 'strong'
+    assert main(['state', item['id'], 'ready']) == 1
 
 
 @pytest.mark.parametrize('name,value', [('executors', 0), ('executors', 5), ('executors', True), ('repository_runs', 2), ('repository_runs', 0), ('waiting_limit', 0), ('chat_auto_turns', 1.5), ('unknown', 1)])
@@ -265,21 +259,12 @@ def test_invalid_limits_are_atomic(pg_store, name, value):
     assert pg_store.limit_show() == before
 
 
-def test_runner_reads_limits_again_and_counts_missing_sessions(pg_store, slice_data, tmp_path):
+def test_runner_does_not_apply_local_executor_limits(pg_store, slice_data, tmp_path):
     runner = Runner(tmp_path / 'state')
-    runner.jobs = {}
-    active = copy.deepcopy(slice_data)
-    active['state'] = 'issued'
-    active['repo'] = 'owner/busy'
-    runner.data = dict(slices=[active])
-    candidate = {**slice_data, 'id': 'new/W2', 'repo': 'owner/idle'}
-    assert runner.room(candidate) is None
+    runner.jobs = {'other/1': dict(phase='running', repository='example/other')}
+    runner.data = dict(slices=[dict(slice_data, id='other/1', repo='example/other', state='issued')])
     pg_store.limit_set('executors', 1)
-    assert 'executor limit' in runner.room(candidate)
-    pg_store.limit_set('executors', 4)
-    assert runner.room(candidate) is None
-    candidate['repo'] = 'OWNER/BUSY'
-    assert 'repository busy' in runner.room(candidate)
+    assert runner.room(slice_data) is None
 
 
 def test_api_queues_root_refresh_and_guards_all_writes(pg_store, programs):
@@ -343,13 +328,14 @@ def test_issued_title_edit_does_not_change_executor_or_level(pg_store, slice_dat
     updated = pg_store.load()['slices'][0]
     assert updated['executor'] == item['executor']
     assert pg_store.slice_policy(item['id']) == dict(level='light', overrides={})
-    assert main(['edit', item['id'], '--model', 'synthetic']) == 1
+    assert main(['edit', item['id'], '--level', 'strong']) == 1
     assert updated['executor'] == item['executor']
 
 
 def test_invalid_slice_choice_rolls_back_metadata_and_document(pg_store):
     add = ['add', '--id', 'new/W2', '--repo', 'owner/repo', '--feature', 'Synthetic', '--title', 'Task', '--no-feature', 'One-off']
-    assert main([*add, '--model', 'missing']) == 1
+    with pytest.raises(SystemExit):
+        main([*add, '--model', 'missing'])
     assert pg_store.load()['slices'] == []
     assert pg_store.slice_policy('new/W2') is None
 
@@ -413,7 +399,7 @@ def test_021_upgrade_preserves_installed_defaults_overrides_and_sessions(pg_stor
     chat = pg_store.chat_show(secretary)
     assert (chat['tool'], chat['model'], chat['effort'], chat['cli_session_id']) == ('claude', 'custom-old', 'low', 'saved-claude')
     assert pg_store.chat_show(inherited)['overrides'] == {}
-    assert pg_store.slice_executor(item) == dict(tool='codex', model='gpt-6-luna', effort='low')
+    assert pg_store.slice_executor(item) == item['executor']
     assert pg_store.load()['slices'][0] == item
 
 

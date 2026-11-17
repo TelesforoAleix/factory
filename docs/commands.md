@@ -72,3 +72,12 @@ cplane eval run show ID
 
 Repeat `--set` and `--configuration` for multiple selections. Filters are JSON
 objects using `kind`, `tag_kind`, `size`, `language`, and `half` keys.
+
+
+Slice execution uses the platform run API. `add` and `edit` accept `--level
+light|standard|strong`; per-slice `--tool`, `--model` and `--effort` are removed.
+Legacy executor metadata in version 1 documents remains for compatibility and is
+not used to select an executor. `show --final` reads the saved API final message.
+`why` reports platform usage waits with their `resume_at`; Factory no longer
+applies executor or repository slot limits to slice requests. See [runner
+operation](runner.md). Chat settings and model choices remain separate.

@@ -256,12 +256,14 @@ services:
       CPLANE_BRIEFS_KEY: /run/secrets/briefs-key
       CPLANE_BRIEFS_KNOWN_HOSTS: /run/secrets/briefs-known-hosts
       CPLANE_PLANNING_WRITE_KEY: /run/secrets/planning-write-key
+      # PR metadata still passes the public-repository deny-list gate.
       CPLANE_DENY_LIST: /run/secrets/deny-list
       CPLANE_EVAL_TASK_KEY_FILE: /run/secrets/eval-task-key
       HOME: /tmp
       GH_CONFIG_DIR: /tmp/.config/gh
       CPLANE_FENCE: '1'
       CPLANE_FENCE_COMMAND: socket
+      # Subscription evals retain their existing launcher usage behavior.
       CPLANE_USAGE_SOURCE: launcher
       CPLANE_DEPLOYER_SOCKET: /run/homelab-deployer.sock
       CPLANE_EVAL_TASK_URL: http://api:8000

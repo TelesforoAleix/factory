@@ -2,7 +2,6 @@
 from . import state
 from .state import StateError
 
-
 TRANSITIONS = {
     "planned": {"researching", "ready"},
     "researching": {"planned", "ready"},
@@ -22,21 +21,21 @@ FIELDS = ("flow", "repo", "feature", "feature_id", "no_feature", "title", "brief
 
 
 def new_slice(slice_id):
-    return dict(id=slice_id, repo="", feature="", title="", state="planned", brief=None,
-                executor={"tool": "codex", "model": "gpt-6.1-sol"}, stop_before_merge=False,
-                depends_on=[], slot=None, paused=False, session=None, pr=None,
-                attention=None, log=[])
+    return {"id": slice_id, "repo": "", "feature": "", "title": "", "state": "planned", "brief": None,
+                "executor": {"tool": "codex", "model": "gpt-6.1-sol"}, "stop_before_merge": False,
+                "depends_on": [], "slot": None, "paused": False, "session": None, "pr": None,
+                "attention": None, "log": []}
 
 
 def change_for(args):
     def change(item, data, at):
         if args.command in ("add", "edit"):
             values = {key: getattr(args, key) for key in FIELDS if hasattr(args, key)}
-            executor = {key: getattr(args, key) for key in ("tool", "model", "effort") if hasattr(args, key)}
+            level = getattr(args, 'level', None)
             if hasattr(args, "new_id"):
                 values["id"] = args.new_id
             if (args.command == "edit" and item["state"] in ("issued", "awaiting handover")
-                    and (set(values) - {"title", "depends_on"} or executor)):
+                    and (set(values) - {"title", "depends_on"} or level is not None)):
                 raise StateError(f"{item['id']} is {item['state']}; only --title and --depends-on may be edited")
             if 'no_feature' in values:
                 from .features import bounded
@@ -57,30 +56,18 @@ def change_for(args):
                 raise StateError('A slice requires --feature-id or --no-feature REASON')
             if item.get('brief_id') and set(values) & {'brief', 'id', 'repo', 'feature_id', 'no_feature'}:
                 raise StateError('Stored brief identity and repository are immutable; create a new slice')
-            if state.postgres() and (args.command == 'add' or executor or 'id' in values):
+            if state.postgres() and (args.command == 'add' or level is not None or 'id' in values):
                 backend = state.store(None)
-                if args.command == 'add':
-                    level = args.level
-                    overrides = executor
-                else:
-                    policy = backend.slice_policy(item['id'])
-                    level = policy['level'] if policy else 'standard'
-                    overrides = {**(policy['overrides'] if policy else item['executor']), **executor}
-                selected = {**backend.role_get(level), **overrides}
-                if executor:
-                    selected['model'] = backend.model_choice(**selected)
-                    if 'model' in overrides:
-                        overrides['model'] = selected['model']
-                backend.slice_level(values.get('id', item['id']), level, overrides)
+                policy = backend.slice_policy(item['id'])
+                selected_level = level or (policy['level'] if policy else 'standard')
+                backend.slice_level(values.get('id', item['id']), selected_level)
                 if values.get('id') and values['id'] != item['id']:
                     backend.connection.execute('DELETE FROM cplane_slice_levels WHERE slice_id = %s', (item['id'],))
-                item['executor'] = selected
-            elif args.command == 'add':
-                from .roles import DEFAULT_LEVELS
-                item['executor'] = dict(DEFAULT_LEVELS[args.level])
+            elif level is not None:
+                # v1 documents have no level field. File-backed synthetic use
+                # records the selection on the normal validated mutation log.
+                item['log'].append({"at": at, "actor": getattr(args, 'actor', 'owner'), "event": 'level: ' + level})
             item.update(values)
-            if not state.postgres():
-                item["executor"].update(executor)
         elif args.command == "state":
             target = args.target
             if item["state"] == "dropped":
@@ -112,8 +99,8 @@ def change_for(args):
         elif args.command == "review":
             if not item["attention"] or item["attention"]["kind"] != "merge":
                 raise StateError(f"{item['id']} has no merge attention to review")
-            item["attention"]["review"] = dict(verdict=args.verdict, at=at,
-                                               actor=getattr(args, "actor", "owner"))
+            item["attention"]["review"] = {"verdict": args.verdict, "at": at,
+                                               "actor": getattr(args, "actor", "owner")}
             first_line = args.verdict.split("\n", 1)[0].rstrip("\r")
             return f"Reviewed {item['id']}: {first_line}", None
         elif args.command == "attention":
@@ -134,8 +121,8 @@ def change_for(args):
             else:
                 if args.kind is None or args.body is None:
                     raise StateError("attention requires --kind and --body, or --clear")
-                item["attention"] = dict(kind=args.kind, body=args.body, since=at,
-                                         answer=None, approved=False)
+                item["attention"] = {"kind": args.kind, "body": args.body, "since": at,
+                                         "answer": None, "approved": False}
                 return f"Needs attention: {item['id']} ({args.kind}): {args.body}", None
         return None, None
     return change

@@ -1,6 +1,7 @@
 """Slice review validation and fresh copies, using only the clean clone for Git."""
 from importlib.resources import files
 import json
+import re
 
 from jsonschema import Draft202012Validator
 
@@ -64,3 +65,15 @@ def planner_change(args):
             state.store(None).slice_outcome(item['id'], verdict=verdict)
         return result
     return apply
+
+
+def parse(body):
+    """Read the leading verdict/request block; trailing prose is allowed."""
+    match = re.match(r'\s*```(?:json)?[ \t]*\r?\n(.*?)\r?\n```', body, re.DOTALL)
+    try:
+        answer = json.loads(match[1]) if match else None
+    except ValueError:
+        answer = None
+    if not isinstance(answer, dict):
+        raise StateError('invalid review: expected leading fenced JSON')
+    return answer

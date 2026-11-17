@@ -53,7 +53,7 @@ def test_runner_daily_notice_and_cli_read_only(tmp_path, make_state, slice_data,
     clock = [datetime(2026, 10, 16, 6, 59, tzinfo=LOCAL)]
     def make_runner():
         return Runner(path, git=Mock(), clock=lambda: clock[0], runs=tmp_path / 'runs',
-                      repos=tmp_path / 'repos', orders=Mock(collect=Mock(return_value=False)))
+                      orders=Mock(collect=Mock(return_value=False)))
     runner = make_runner()
     runner.run()
     assert not state.store(path).notices()

@@ -3,8 +3,12 @@
 Factory’s core is the `cplane` scheduler and runner.
 
 This repository implements a scheduler's state file, commands, and runner. The runner
-starts and resumes Codex and Claude agents only as the runner slice contract describes: at most two at once, never two in one
-repository, and only through `cplane run` under launchd or an explicit test.
+submits slice, cut, ticket and review work to the platform run API by role and level.
+The platform owns executor choice, usage waits, harness concurrency, repository isolation
+and branch delivery. Factory owns PRs, CI, merge approval, attention and node steps.
+Slice answers and merge notices are messages to the existing run. Paused slices only
+poll and retain results; abandoned slices cancel their runs, retrying running turns
+until cancellation is accepted. Subscription evals and chat execution are separate.
 Keep the version 1 state contract and CLI rules stable. Use Python 3.13 and uv;
 jsonschema and psycopg 3 are the only runtime dependencies. Test against synthetic fixtures and temporary git
 repositories. Never check private state or outbox data into this repository.

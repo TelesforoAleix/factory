@@ -33,7 +33,7 @@ def _end_runs(store):
 
 
 def _reset(runner, tool, message):
-    from .runner import codex_limits
+    from .eval_execution import codex_limits
     now = runner.instant.timestamp()
     if tool == 'codex':
         windows = [w['resets_at'] for w in (codex_limits() or [])
@@ -50,7 +50,7 @@ def _reset(runner, tool, message):
 
 
 def _limit(tool, output):
-    from .runner import usage_limit_message
+    from .eval_execution import usage_limit_message
     if tool == 'codex':
         return usage_limit_message(output)
     reply = json.loads(output)

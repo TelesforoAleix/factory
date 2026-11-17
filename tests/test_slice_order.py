@@ -1,16 +1,16 @@
+from test_stores import pg_store  # noqa: F401 - shared pytest fixture
+from test_runner import setup as runner_setup  # noqa: F401 - shared pytest fixture
 """Slice placement uses synthetic state and isolated Postgres schemas."""
 import copy
 import json
 
 import pytest
+from test_pipeline import runner_board
 
 from cplane.cli import main
 from cplane.state import StateError
 from cplane.stores import PostgresStore
 from factory_ui import create_app
-from test_stores import pg_store
-from test_runner import setup as runner_setup
-from test_pipeline import runner_board
 
 
 def group(store, template, states=('ready', 'planned', 'researching')):
@@ -120,8 +120,6 @@ def test_movable_uses_issuance_evidence(slice_data, fields, expected):
 
 
 def test_allowed_files_database_projection_and_board_eligibility(pg_store, slice_data, monkeypatch):
-    from cplane.runner import Runner
-    monkeypatch.setattr(Runner, 'choose', lambda *args: ('codex', 'synthetic'))
     feature, items = group(pg_store, slice_data, ('escalated', 'ready'))
     items[0].update(allowed_files=['first/**'], attention=dict(
         kind='question', body='Decision', since='2026-11-01T00:00:00Z', answer=None, approved=False))

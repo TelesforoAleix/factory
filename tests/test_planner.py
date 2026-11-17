@@ -43,23 +43,23 @@ def test_add_defaults_and_log(make_state):
     assert invoke(path, *ADD) == 0
     item = load(path)['slices'][0]
     assert item == dict(id='new/W2', repo='example/repo', feature='feature', title='Title',
-                       state='planned', brief=None, executor={'tool': 'codex', 'model': 'gpt-6.1-terra', 'effort': 'medium'},
+                       state='planned', brief=None, executor={'tool': 'codex', 'model': 'gpt-6.1-sol'},
                        stop_before_merge=False, depends_on=[], slot=None, paused=False,
                        session=None, pr=None, attention=None, no_feature='One-off', log=item['log'])
-    assert len(item['log']) == 1
+    assert len(item['log']) == 2
     assert item['log'][0]['actor'] == 'owner'
-    assert item['log'][0]['event'] == 'add'
+    assert item['log'][-1]['event'] == 'add'
     assert datetime.fromisoformat(item['log'][0]['at']).utcoffset() is not None
     assert not notice_path(path).exists()
 
 
 def test_add_all_options(make_state):
     path = make_state()
-    assert invoke(path, *ADD, '--brief', 'brief.md', '--tool', 'claude', '--model', 'opus',
+    assert invoke(path, *ADD, '--brief', 'brief.md', '--level', 'strong',
                   '--stop-before-merge', '--depends-on', 'voice/W1', 'absent/W0', '--actor', 'planner') == 0
     item = load(path)['slices'][1]
     assert item['brief'] == 'brief.md'
-    assert item['executor'] == {'tool': 'claude', 'model': 'opus', 'effort': 'medium'}
+    assert item['log'][0]['event'] == 'level: strong'
     assert item['stop_before_merge']
     assert item['depends_on'] == ['voice/W1', 'absent/W0']
     assert item['log'][0]['actor'] == 'planner'
@@ -84,15 +84,13 @@ def test_concurrent_duplicate_add_is_serialized(make_state):
         results = list(pool.map(lambda _: invoke(path, *ADD), range(2)))
     assert sorted(results) == [0, 1]
     assert len(load(path)['slices']) == 1
-    assert len(load(path)['slices'][0]['log']) == 1
+    assert len(load(path)['slices'][0]['log']) == 2
 
 
 EDIT_OPTIONS = [(['--repo', 'other/repo'], 'repo', 'other/repo'),
                 (['--feature', 'new'], 'feature', 'new'),
                 (['--title', 'new'], 'title', 'new'),
                 (['--brief', 'new.md'], 'brief', 'new.md'),
-                (['--tool', 'claude'], 'executor', {'tool': 'claude', 'model': 'example-model'}),
-                (['--model', 'new'], 'executor', {'tool': 'codex', 'model': 'new'}),
                 (['--no-stop-before-merge'], 'stop_before_merge', False),
                 (['--stop-before-merge'], 'stop_before_merge', True),
                 (['--depends-on', 'absent/W0'], 'depends_on', ['absent/W0']),
@@ -325,7 +323,7 @@ def test_flow_add_edit_and_issued_guard(make_state):
     assert cli.main(prefix + ['edit', 'voice/W1', '--flow', 'cli']) == 0
     assert state.load(path)['slices'][0]['flow'] == 'cli'
     assert cli.main(prefix + ['add', '--id', 'voice/W2', '--repo', 'owner/repo', '--feature', 'f',
-                              '--title', 'Second', '--tool', 'codex', '--flow', 'tickets', '--no-feature', 'One-off']) == 0
+                              '--title', 'Second', '--flow', 'tickets', '--no-feature', 'One-off']) == 0
     assert state.load(path)['slices'][1]['flow'] == 'tickets'
     data = state.load(path)
     data['slices'][0]['state'] = 'issued'

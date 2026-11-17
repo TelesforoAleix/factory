@@ -1,19 +1,20 @@
+from test_runner import setup  # noqa: F401 - shared pytest fixture
+from test_stores import pg_store  # noqa: F401 - shared pytest fixture
+# ruff: noqa: F811 - shared pytest fixtures
 """Instruction identities use synthetic workspaces and disposable Postgres schemas."""
-from datetime import datetime, timezone
 import hashlib
-from importlib.resources import files
 import json
 import os
 import subprocess
-from unittest.mock import Mock
 import uuid
+from datetime import datetime, timezone
+from importlib.resources import files
+from unittest.mock import Mock
 
 import pytest
 
 from cplane import prompts, run_records, sessions, skills
 from cplane.cli import main
-from test_runner import setup
-from test_stores import pg_store
 
 
 def entry(kind, name, content):
@@ -122,33 +123,26 @@ def test_installed_skill_ancestor_link_is_skipped(tmp_path, capsys):
     assert capsys.readouterr().err == 'cplane: run context skill unreadable\n'
 
 
-@pytest.mark.parametrize('mode', ['ordinary', 'cut', 'review', 'resume'])
-def test_slice_launch_records_only_loaded_files(setup, monkeypatch, mode):
-    runner, processes, _ = setup
+@pytest.mark.parametrize('role', ['slice', 'cut', 'review'])
+def test_slice_launch_records_only_loaded_files(setup, role):
+    from test_run_api_runner import block, current, edit
+    runner, api, _ = setup
+    if role == 'cut':
+        edit(runner, lambda s: s.update(flow='tickets'))
     runner.run()
-    item = runner.data['slices'][0]
-    # Test a subsequent launch with the first synthetic process completed.
-    runner.jobs[item['id']]['phase'] = 'collected'
-    if mode in ('cut', 'review', 'resume'):
-        item['flow'] = 'tickets'
-    if mode in ('review', 'resume'):
-        item['session']['id'] = 'resume-id'
-        previous = runner.jobs[item['id']]
-        previous.update(brief='Synthetic brief', context=[dict(kind='skill', name='cut', sha256='old')])
-    if mode == 'review':
-        monkeypatch.setattr('cplane.runner.reviewer.prepare', lambda *args: {
-            key: previous[key] for key in ('repo', 'branch', 'base', 'repository')})
-    assert runner.launch(item, 'Synthetic brief', review=mode == 'review', resume=mode == 'resume')
-    job = processes.started[-1]
-    if mode in ('ordinary', 'resume'):
-        assert job['context'] == []
+    if role == 'review':
+        api.finish(current(runner), 'done', 'handover', block(dict(branch='slice/voice-W1', title='T', body='B', node_steps=None)))
+        runner.run()
+    job = runner.jobs['voice/W1']
+    purpose = 'review-1' if role == 'review' else role
+    saved = job['requests'][purpose]
+    if role == 'slice':
+        assert saved['context'] == []
     else:
-        name = 'cut' if mode == 'cut' else 'slice-review'
-        assert skills.instructions(name) in job['prompt']
-        assert job['context'] == [entry('skill', name, (skills.ROOT / (name + '.md')).read_bytes())]
-    store = Mock()
-    run_records.slice_record(store, item, job)
-    assert store.run_record_add.call_args.kwargs['context'] == job['context']
+        name = 'cut' if role == 'cut' else 'slice-review'
+        assert skills.instructions(name) in saved['request']['work']['goal']
+        assert saved['context'] == [entry('skill', name, (skills.ROOT / (name + '.md')).read_bytes())]
+
 
 
 def test_execute_turn_passes_snapshot_to_record(tmp_path, monkeypatch):

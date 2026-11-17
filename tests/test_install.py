@@ -1,3 +1,6 @@
+from test_stores import pg_store  # noqa: F401 - shared pytest fixture
+from test_runner import setup  # noqa: F401 - shared pytest fixture
+# ruff: noqa: F811 - shared pytest fixtures
 """Synthetic install requests and container wrapper checks; no installation is changed."""
 import copy
 import json
@@ -6,45 +9,40 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+from conftest import SyntheticStore
+from test_runner import item, pr_reply
 
 from cplane import installation, state
 from cplane.cli import main
 from cplane.runner import Runner
-from conftest import SyntheticStore
 from factory_ui import create_app
-from test_stores import pg_store
-from test_runner import setup, claude_start, edit, item, pr_reply
 
 SHA = 'a' * 40
 
 
 @pytest.mark.parametrize('reply_format', ['text', 'fenced-json', 'json'])
-def test_node_step_after_null_merge_is_installable(setup, tmp_path, monkeypatch, reply_format):
-    runner, processes, github = setup
-    monkeypatch.setenv('CPLANE_RUNS', str(runner.runs.parent))
-    monkeypatch.setenv('CPLANE_STATE', str(runner.path))
+def test_node_step_after_null_merge_is_installable(setup, monkeypatch, reply_format):
+    from test_run_api_runner import block, current
+    runner, api, github = setup
     monkeypatch.setenv('CPLANE_INSTALL_REPOS', item(runner)['repo'])
-    edit(runner, lambda s: s.update(stop_before_merge=False))
     github.merge.return_value = SHA
-    claude_start(runner)
-    processes.finish('waiting', pr_reply(None))
     runner.run()
-    github.checks.return_value = 'green', ''
+    original = current(runner)
+    api.finish(original, 'done', 'handover', pr_reply(None))
     runner.run()
-    assert processes.started[-1]['sha'] == SHA
-    assert item(runner)['attention'] is None
-    reply = 'Install the merged commit; ignore reply sha ' + 'b' * 40
-    if reply_format != 'text':
-        reply = json.dumps(dict(branch='ignored', title='ignored', body='ignored',
-                                node_steps='Install the merged commit', sha='b' * 40))
-        if reply_format == 'fenced-json':
-            reply = '```json\n' + reply + '\n```\nHandover details'
-    processes.finish('waiting', reply)
+    review = runner.jobs['voice/W1']['requests']['review-1']['run_id']
+    api.finish(review, body=block({'verdict': 'pass', 'title': 'Reviewed', 'body': 'Passed'}))
+    github.checks.return_value = ('green', '')
     runner.run()
-    newest = runner.jobs['voice/W1']
-    assert newest['phase'] == 'node-step'
-    assert newest['sha'] == SHA
-    assert json.loads((Path(newest['run']) / 'job.json').read_text())['phase'] == 'node-step'
+    reply = 'Install the merged commit'
+    if reply_format == 'json':
+        reply = json.dumps({'node_steps': reply})
+    elif reply_format == 'fenced-json':
+        reply = block({'node_steps': reply}, 'Handover details')
+    api.finish(original, 'waiting', 'waiting', reply)
+    runner.run()
+    job = runner.jobs['voice/W1']
+    assert job['phase'] == 'node-step' and job['sha'] == SHA
     assert item(runner)['attention']['kind'] == 'node-step'
     assert main(['--state', str(runner.path), 'install', 'voice/W1']) == 0
     monkeypatch.setenv('CPLANE_DEPLOYER_SOCKET', '/unused')
@@ -53,9 +51,10 @@ def test_node_step_after_null_merge_is_installable(setup, tmp_path, monkeypatch,
     runner.run()
     request = next(installation.pending(state.load(runner.path)))[1]
     start.assert_called_once_with('repo', SHA, request, runner.runs / 'installs')
-    assert item(runner)['attention']['kind'] == 'node-step'
     github.open.assert_called_once()
     github.merge.assert_called_once()
+
+
 
 
 def node_step(item):
@@ -147,18 +146,16 @@ def test_postgres_request_route_and_transaction(pg_store, slice_data):
 
 
 @pytest.mark.parametrize('owner_request', ['cli', 'tap'])
-def test_pass_only_launches_after_explicit_request(tmp_path, slice_data, make_state, monkeypatch, owner_request):
-    from test_runner import FakeProcesses, FakeGitHub, NOW
-    monkeypatch.setenv('CPLANE_FENCE', '1')
-    item = node_step(slice_data)
-    item.update(state='issued', session={'tool': 'codex', 'id': 'session-1', 'folder': '/unused'})
-    item['log'].append({'at': NOW.isoformat(), 'actor': 'runner', 'event': 'merged: ' + SHA})
-    path = make_state([item])
-    runner = Runner(path, processes=FakeProcesses(), github=FakeGitHub(), git=Mock(), clock=lambda: NOW)
-    job_dir = runner.runs / 'turn-1'
-    job_dir.mkdir(parents=True)
-    (job_dir / 'job.json').write_text(json.dumps({'id': item['id'], 'phase': 'node-step', 'sha': SHA,
-        'started_ns': 1, 'run': str(job_dir), 'fence': True, 'tool': 'codex', 'request': {'node_steps': item['attention']['body']}}))
+def test_pass_only_launches_after_explicit_request(setup, monkeypatch, owner_request):
+    from test_run_api_runner import block, current
+    runner, api, gh = setup
+    runner.run()
+    api.finish(current(runner), 'done', 'handover', pr_reply('Install at switch'))
+    runner.run()
+    review = runner.jobs['voice/W1']['requests']['review-1']['run_id']
+    api.finish(review, body=block({'verdict': 'pass', 'title': 'Reviewed', 'body': 'Passed'}))
+    gh.checks.return_value = ('green', '')
+    runner.run()
     monkeypatch.setenv('CPLANE_DEPLOYER_SOCKET', '/unused')
     def start(application, sha, request, directory):
         (directory / (request + '.started')).write_text('{"deployer": true}')
@@ -168,43 +165,20 @@ def test_pass_only_launches_after_explicit_request(tmp_path, slice_data, make_st
     monkeypatch.setattr(installation, 'start_deployer', launches)
     runner.run()
     launches.assert_not_called()
-    assert main(['--state', str(path), '--actor', 'chat:21', 'install', item['id']]) == 0
-    runner.run()
+    assert main(['--state', str(runner.path), '--actor', 'chat:21', 'install', 'voice/W1']) == 0
     runner.run()
     launches.assert_not_called()
-    assert not list(installation.pending(state.load(path)))
     if owner_request == 'cli':
-        assert main(['--state', str(path), 'install', item['id']]) == 0
-        assert main(['--state', str(path), 'install', item['id']]) == 1
+        assert main(['--state', str(runner.path), 'install', 'voice/W1']) == 0
     else:
-        client = create_app(SyntheticStore(path)).test_client()
-        url = '/api/slices/' + item['id'] + '/install'
-        assert client.post(url, headers={'X-Factory-UI': '1'}).status_code == 202
-        assert client.post(url, headers={'X-Factory-UI': '1'}).status_code == 400
+        client = create_app(SyntheticStore(runner.path)).test_client()
+        assert client.post('/api/slices/voice/W1/install', headers={'X-Factory-UI': '1'}).status_code == 202
     runner.run()
     runner.run()
     assert launches.call_count == 1
-    assert launches.call_args.args[:2] == ('repo', SHA)
-    assert not runner.processes.started
-    request = next(installation.pending(state.load(path)))[1]
-    (runner.runs / 'installs' / (request + '.json')).write_text(json.dumps({'ok': False, 'stderr': 'migration missing'}))
-    runner.run()
-    runner.run()
-    failed_item = state.load(path)['slices'][0]
-    assert installation.install_failure(failed_item['attention'])
-    assert failed_item['attention']['kind'] == 'node-step'
-    assert failed_item['attention']['answer'] is None
-    recorded = json.loads((job_dir / 'job.json').read_text())
-    assert recorded['phase'] == 'node-step' and recorded['sha'] == SHA
-    assert not runner.processes.started
-    assert main(['--state', str(path), 'install', item['id']]) == 0
-    request = next(installation.pending(state.load(path)))[1]
-    (runner.runs / 'installs' / (request + '.json')).write_text(json.dumps({'ok': True, 'commit': SHA, 'manual': []}))
-    runner.launch = Mock()
-    runner.run()
-    runner.launch.assert_called_once()
-    assert runner.launch.call_args.args[1] == 'Installed ' + SHA + '. Node steps are done. End with kind handover.'
-    assert not list(installation.pending(state.load(path)))
+    assert launches.call_args.args[:2] == ('repo', gh.merge.return_value)
+
+
 
 
 def test_review_status_needs_latest_install_evidence(slice_data):

@@ -102,7 +102,7 @@ def test_pr_send_checks_metadata_before_any_github_write(deny_list, tmp_path):
     adapter = fence.Fence()
     adapter.is_public = Mock(return_value=True)
     runner = Runner(tmp_path / 'state.json', github=Mock())
-    runner.fence = adapter
+    runner.github.is_public.return_value = True
     with pytest.raises(deny.Denied, match='PR body'):
         runner.open_pr('example/repo', {'branch': 'slice/test', 'title': 'title', 'body': 'PRIVATE EXAMPLE'})
     runner.github.open.assert_not_called()

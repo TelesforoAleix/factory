@@ -3,10 +3,10 @@
 The optional ``_eligibility`` snapshot is transient: jobs, limits and provider
 availability are observations, never part of the version 1 state document.
 """
-from fnmatch import fnmatchcase
-from functools import lru_cache
 import json
 import os
+from fnmatch import fnmatchcase
+from functools import lru_cache
 from pathlib import Path
 
 from .attention import recipient
@@ -99,9 +99,7 @@ def merged_since_start(item):
 def eligibility(item, data):
     """Return a JSON explanation: status, with reason/ids/for where relevant."""
     if item['state'] == 'dropped':
-        return dict(status='dropped')
-    if item.get('flow', 'cli') == 'tickets' and 'CPLANE_TASK_SUBMIT' not in os.environ:
-        return dict(status='waiting for a decision', reason='tickets flow off')
+        return {'status': 'dropped'}
     context = data.get('_eligibility', {})
     resources_only = context.get('resources_only', False)
     if not resources_only:
@@ -116,54 +114,36 @@ def eligibility(item, data):
             (attention and attention['answer'] is not None)
             or (not attention and job['phase'] in ('merged', 'review-ready'))))
         if item['state'] == 'escalated' and not resumable:
-            return dict(status='failed')
+            return {'status': 'failed'}
         if item['paused']:
-            return dict(status='waiting for a test or approval', reason='paused')
+            return {'status': 'waiting for a test or approval', 'reason': 'paused'}
+        records = [entry.get('record') or {} for entry in (job or {}).get('requests', {}).values()]
+        waiting = next((record for record in records if record.get('status') == 'waiting' and record.get('status_reason') == 'usage_limit'), None)
+        if waiting:
+            return {'status': 'waiting for a test or approval', 'reason': 'usage_limit', 'resume_at': waiting.get('resume_at')}
         if (job and job['phase'] == 'running') or (
                 not job and item['state'] in ('issued', 'awaiting handover')):
-            return dict(status='resource busy', reason='repository busy', ids=[item['id']])
+            return {'status': 'resource busy', 'reason': 'repository busy', 'ids': [item['id']]}
         if item['state'] != 'ready' and not resumable:
             status = ('waiting for a decision' if item['state'] in ('planned', 'researching')
                       else 'waiting for a test or approval')
-            return dict(status=status, reason=item['state'])
+            return {'status': status, 'reason': item['state']}
         if not resumable:
             by_id = {s['id']: s for s in data['slices']}
             blocked = [dep for dep in item['depends_on']
                        if dep not in by_id or not satisfied(by_id[dep])]
             if blocked:
-                return dict(status='blocked', ids=blocked)
-    jobs = context.get('jobs', {})
-    limits = context.get('limits', dict(executors=2, repository_runs=1))
-    running = {key: job.get('repository', '') for key, job in jobs.items()
-               if job['phase'] == 'running' and key != item['id']}
-    # Attention is an ended turn's durable wait when its local job is absent.
-    # A positively live job still holds capacity, even with open attention.
-    for other in data['slices']:
-        if (other['id'] != item['id'] and other['id'] not in jobs
-                and other['state'] in ('issued', 'awaiting handover')
-                and not other.get('attention')):
-            running[other['id']] = other['repo']
-    if len(running) >= limits['executors']:
-        return dict(status='resource busy', reason='executor limit', ids=sorted(running))
-    busy = [key for key, repo in running.items() if repo.casefold() == item['repo'].casefold()]
-    if busy and limits['repository_runs'] == 1:
-        return dict(status='resource busy', reason='repository busy', ids=sorted(busy))
+                return {'status': 'blocked', 'ids': blocked}
     conflicting = [s['id'] for s in data['slices'] if s['id'] != item['id']
                    and s['state'] in ('issued', 'awaiting handover', 'escalated')
                    and not merged_since_start(s) and overlaps(item, s)]
     if conflicting:
-        return dict(status='resource busy', reason='overlapping files', ids=conflicting)
-    available = context.get('available')
-    if (context.get('providers', {}).get(item['id']) is False
-            or (available is not None and not available(item))):
-        return dict(status='resource busy', reason='provider away')
-    return dict(status='ready')
+        return {'status': 'resource busy', 'reason': 'overlapping files', 'ids': conflicting}
+    return {'status': 'ready'}
 
 
 def observed(data, path=None, *, limits=None):
     """Attach a read-only snapshot for UI/CLI; absence of a job is conservative."""
-    from . import state
-    from .runner import Runner
     path = Path(path or os.environ.get('CPLANE_STATE') or 'slices.json')
     jobs = {}
     for file in runs_path(path).glob('*/job.json'):
@@ -173,9 +153,4 @@ def observed(data, path=None, *, limits=None):
                 jobs[job['id']] = job
         except (OSError, ValueError, KeyError, TypeError):
             continue
-    runner = Runner(path)
-    from .times import now
-    runner.instant, runner.jobs = now(), jobs
-    providers = {item['id']: runner.choose(item) is not None for item in data['slices']}
-    return {**data, '_eligibility': dict(jobs=jobs, limits=limits or dict(executors=2, repository_runs=1),
-                                        providers=providers)}
+    return {**data, '_eligibility': {'jobs': jobs}}

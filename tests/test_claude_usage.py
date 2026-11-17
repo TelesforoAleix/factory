@@ -1,15 +1,16 @@
 """Launcher Claude telemetry using synthetic fenced output and temporary folders."""
 
-from datetime import timedelta
 import json
 import shutil
 import subprocess
 from unittest.mock import Mock
 
 import pytest
+from test_eval_execution import NOW
+from test_eval_execution import setup as setup
 
-from cplane import fence, launcher, runner, state
-from test_runner import NOW, setup as setup
+from cplane import eval_execution as runner
+from cplane import fence, launcher
 
 
 def reading(age=600):
@@ -26,19 +27,6 @@ def reading(age=600):
 def launcher_mode(monkeypatch):
     monkeypatch.setenv("CPLANE_USAGE_SOURCE", "launcher")
     monkeypatch.setattr(fence, "LOGIN_ROOT", None)
-
-
-def test_launcher_stored_reading_selects_claude_reviewer(setup, launcher_mode):
-    r, _, _ = setup
-    r.instant = NOW
-    r.jobs = {}
-    r.claude_reader = runner.claude_usage
-    r.runs.mkdir(parents=True)
-    (r.runs / "claude-usage.json").write_text(json.dumps(reading()))
-    assert r.choose(state.load(r.path)["slices"][0], review=True) == (
-        "claude",
-        "sonnet",
-    )
 
 
 @pytest.mark.parametrize(
@@ -128,85 +116,3 @@ def test_probe_keeps_only_last_windows(tmp_path, launcher_mode, monkeypatch, out
     assert json.loads(marker.read_text()) == (
         reading() if outcome == "success" else {"previous": True}
     )
-
-
-@pytest.mark.parametrize(
-    "age,attempt_age,active,allowed,expected",
-    [
-        (600, None, 0, True, 0),
-        (1800, None, 0, True, 0),
-        (1801, None, 0, True, 1),
-        (3601, 3599, 0, True, 0),
-        (3601, 3600, 0, True, 1),
-        (None, None, 0, True, 1),
-        (None, None, 2, True, 0),
-        (None, None, 0, False, 0),
-    ],
-)
-def test_claude_probe_due_only_for_needed_choice(
-    setup, launcher_mode, monkeypatch, age, attempt_age, active, allowed, expected
-):
-    r, _, _ = setup
-    r.instant = NOW
-    r._usage_probe_allowed = allowed
-    r.jobs = {str(i): {"phase": "running"} for i in range(active)}
-    r.claude_reader = runner.claude_usage
-    r.runs.mkdir(parents=True)
-    if age is not None:
-        (r.runs / "claude-usage.json").write_text(json.dumps(reading(age)))
-    if attempt_age is not None:
-        (r.runs / "claude-usage-probe.json").write_text(
-            json.dumps({"at": NOW.timestamp() - attempt_age})
-        )
-    probe = Mock(side_effect=OSError("synthetic failure"))
-    monkeypatch.setattr(runner, "probe_claude_usage", probe)
-    candidate = state.load(r.path)["slices"][0]
-    r.choose(candidate)  # Codex choice must not probe Claude.
-    probe.assert_not_called()
-    for _ in range(2):
-        choice = r.choose(candidate, review=True)
-    assert probe.call_count == expected
-    if age is None:
-        assert choice is None
-    else:
-        assert json.loads((r.runs / "claude-usage.json").read_text()) == reading(age)
-
-
-@pytest.mark.parametrize("reserved", ["review", "unrecovered"])
-def test_claude_probe_reserves_other_executor_work(
-    setup, launcher_mode, monkeypatch, reserved
-):
-    r, _, _ = setup
-    r.instant = NOW
-    r._usage_probe_allowed = True
-    r.jobs = {"live": {"phase": "running"}}
-    if reserved == "review":
-        r.jobs["review"] = {"phase": "pr", "pr_review": {"phase": "running"}}
-    else:
-        r.data = {"slices": [{"id": "lost", "state": "issued", "attention": None}]}
-    probe = Mock()
-    monkeypatch.setattr(runner, "probe_claude_usage", probe)
-    r.choose(state.load(r.path)["slices"][0], review=True)
-    probe.assert_not_called()
-
-
-def test_claude_probe_read_immediately_enables_review(
-    setup, launcher_mode, monkeypatch
-):
-    r, _, _ = setup
-    r.instant = NOW
-    r._usage_probe_allowed = True
-    r.jobs = {}
-    r.claude_reader = runner.claude_usage
-
-    def probe(runs):
-        fresh = reading(0)
-        fresh["at"] += 2
-        r.clock = lambda: NOW + timedelta(seconds=2)
-        (runs / "claude-usage.json").write_text(json.dumps(fresh))
-
-    monkeypatch.setattr(runner, "probe_claude_usage", probe)
-    candidate = state.load(r.path)["slices"][0]
-    assert r.choose(candidate, review=True) == ("claude", "sonnet")
-    candidate["executor"] = {"tool": "claude", "model": "opus"}
-    assert r.choose(candidate) == ("claude", "opus")

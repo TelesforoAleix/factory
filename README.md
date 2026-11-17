@@ -63,7 +63,7 @@ this repository contains only the schema and synthetic test fixtures.
 | `primer-wake-plist` | Print the root wake-schedule LaunchDaemon plist; never installs it. |
 
 `add` and `edit` accept `--repo`, `--feature`, `--title`, `--brief`,
-`--tool codex|claude`, `--model`, `--effort low|medium|high|xhigh|max|ultra`,
+`--level light|standard|strong`,
 `--stop-before-merge` (or
 `--no-stop-before-merge`), and `--depends-on <id> …`. Dependencies replace the
 list; `--depends-on` with no IDs clears it, and repeated occurrences extend the
@@ -71,15 +71,12 @@ replacement list. `edit` also accepts `--id` to change the ID; references in oth
 slices are left as recorded. IDs remain unique. While issued or awaiting handover,
 only the title and dependencies can be edited.
 
-New slices default to executor `codex` / `gpt-6.1-sol`, no effort override, no brief,
-no dependencies,
-`stop_before_merge` and `paused` false, and null slot, session, PR, and attention.
-Codex effort defaults to `low` for models containing `luna` and `medium` for other
-models. `--effort` overrides that default for starts and resumes; Codex's supported
-levels are `low`, `medium`, `high`, `xhigh`, and `max`, with `ultra` also available
-for Sol and Terra models.
-The command creates the first log entry. Brief paths are stored without reading
-the file. A brief must be set before moving to ready.
+New slices default to level `standard`, no brief or dependencies,
+`stop_before_merge` and `paused` false, and null slot, session, PR and attention.
+The platform chooses the tool, model and effort by role and level; legacy executor
+fields in version 1 documents are retained as metadata. Planner writes use the
+locked, validated update path and log the actor. Brief paths are stored without
+reading the file. A brief must be set before moving to ready.
 
 Allowed state transitions are:
 
@@ -295,7 +292,7 @@ Without that variable they skip locally; in CI its absence fails the tests. CI's
 
 ## Runner
 
-At the end of each pass, the runner restores clean detached clones to their default branch and removes old, removable Codex worktrees for repositories with no busy slices.
+Slice workspaces and cleanup belong to the platform; Factory retains its own private run ledger.
 
 ```sh
 export CPLANE_REPOS="$HOME/Code"
@@ -305,42 +302,17 @@ uv run cplane --state /path/to/state.json install-agent
 uv run cplane uninstall-agent
 ```
 
-The following describes the Mac runner with `CPLANE_FENCE` unset. The Ubuntu deployment runs four contained services through the platform deployer.
-The runner (`CPLANE_FENCE=1`) uses the launcher socket for agent containers and
-delivers their commits from offline bundles. `sudo factory-cplane` runs the
-installed code inside `deployer-factory-runner-1`, with its environment and state.
-Installs require `CPLANE_DEPLOYER_SOCKET`; the host installer and systemd units
-are removed. Deployment, backups and host cleanup are in
-[docs/node.md](docs/node.md).
+The Ubuntu deployment runs four contained services through the platform deployer.
+Slice execution uses the platform run API. Subscription evals and chats retain their
+separate launcher execution. `sudo factory-cplane` runs installed code inside the
+runner container with its environment and state. Installs require
+`CPLANE_DEPLOYER_SOCKET`. Deployment and backups are in [docs/node.md](docs/node.md).
 
-Only `run` starts or resumes executors. It makes one pass under the state lock:
-pull the state repository, collect finished turns, deliver answers and approvals,
-start due slices, validate and save state, append notices, then commit and push.
-With the file store, the runner always syncs state in a git repository; it does not need `--commit`.
-Outside git it still saves state and notices, which is useful for temporary tests.
-Brief paths resolve relative to the state file's directory. Repository checkouts
-resolve as `$CPLANE_REPOS/<repository-name>` (default `~/Code`). Existing owner
-commands, the version 1 schema, and the outbox format are unchanged.
-
-Runner details: the pull uses `--autostash`, so an uncommitted outbox line does not
-stop it. A `CANCELLED` check is not red when another check of the same name on the
-rollup succeeded (a stalled hosted runner); any other red conclusion stays red. An
-accepted slice whose process has ended no longer holds a slot or its repository; a
-live process still counts. For the Claude tool, a model of `opus` or `sonnet` is used
-as written; any other name maps to `opus` if it holds `sol`, else `sonnet`. A
-`node-step` attention can be answered with `cplane answer`, and the runner resumes
-the session with the text, as for an escalation.
-
-Role defaults: `cplane add --role <name>` (default `cutter`) takes the slice's
-executor from a table of roles when neither `--tool` nor `--model` is given. The
-local file `roles-command`, beside `orders-url` (the parent of the `runs` folder), holds
-a command line that prints one JSON object from role name to an ordered list of
-routes. It is split with `shlex` and run without a shell, with stdin closed and a
-10-second timeout. The first route of kind `cli` sets `tool` (`codex` or `claude`),
-`model` and, if present, `effort`; `--effort` always overrides. If the file is
-missing, the command fails or times out, the output is invalid or the role has no
-valid `cli` route, cplane keeps its own defaults and prints one line on stderr.
-Only `add` reads the table; the runner and existing slices do not.
+`run` makes one locked scheduling pass: synchronize planning state, collect API
+records, deliver messages and PR/CI actions, schedule due slices, validate and save
+state and notices, then commit the planning changes. Each slice selects a level;
+Factory has no role-command model lookup, usage gate or local slice execution path.
+Paused work sends no requests or messages. See [runner operation](docs/runner.md).
 
 At the start of every pass, after pulling state and before scheduling, the runner
 collects confirmed owner orders from the node's HTTP endpoint. It handles `start`,
@@ -378,56 +350,28 @@ existing window of that name is refused. The window runs `claude` with the owner
 task verbatim in one prompt argument; order text never enters a shell. Answers and
 tasks longer than 4000 characters are refused.
 
-A slice starts when ready, unpaused, at or after its slot, with every dependency
-accepted. Accepted slices are skipped with a log entry on each pass; the runner
-does not start, resume, deliver to, merge for, or collect into them, including when
-saved jobs or attention remain. A slice runs only on its configured executor.
-Codex needs known five-hour usage below 99%; when its window is full, Codex slices
-are deferred until capacity returns and are never moved to Claude. A Codex turn cut
-by its usage limit waits in its run record and resumes the same session after the
-reset; other failed turns still raise escalation. Claude slices use their configured
-model and require a usage file less than an hour old and below 90% for five hours.
-Missing usage is unavailable capacity. The next pass retries deferred work.
-Resumes retain the session's tool and model and wait for that tool's capacity;
-sessions cannot transfer between providers. At most two turns run concurrently,
-and only one per repository. Sessions whose local run metadata is missing still
-occupy a slot until reconciled. Use a single state file and consistent run directory
-for the scheduler.
+A slice starts when ready, unpaused and due, with its dependencies satisfied. The
+runner submits a version 1 platform run request by role and level. Whole-slice work
+uses `slice`/`write`; ticket work uses `cut`/`write`, an ordered chain of
+`ticket`/`write` requests, then `review`/`read`. PR reviews also use read runs.
+The platform selects the executor, handles usage waits and repository concurrency,
+checks changes and delivers the branch. Factory never launches a slice harness,
+imports a bundle or pushes the implementation branch.
 
-Codex receives the brief unchanged. Claude receives it followed by the GitHub
-instructions in `cplane/executors.py`: push the branch and return a waiting message
-with a fenced JSON PR request (`branch`, `title`, `body`, `node_steps`). The runner
-creates the PR and checks it on later passes. Failing checks raise escalation;
-pending checks wait. Green checks allow a merge, with owner approval first when
-`stop_before_merge` is true. After merging it resumes Claude with the merge SHA,
-or raises node-step attention if the request requires owner-node work. Codex
-handles its own GitHub work. When it returns `waiting` with an open PR found by
-branch lookup or a PR number in its reply, the runner watches CI on later passes.
-Red checks raise escalation naming the failing check; pending checks wait. Green
-checks create `Approve PR #<n>` merge attention for `stop_before_merge` slices,
-requiring a planner review before owner approval. Otherwise the runner resumes
-Codex with `CI is green on PR #<n>; merge it and continue.` Approved Codex merge
-attention resumes it with the owner's approval. `answer` and `approve` only record
-the response; the next pass delivers it subject to capacity and concurrency limits.
+Factory still opens the PR, reads CI, enforces merge guards and owner approval,
+merges, and handles attention and node steps. Answers and merge notices use
+idempotent messages to the same run. A paused slice sends no requests or messages;
+it polls running work and records its result for unpause. Closing or dropping a
+slice cancels its open runs; running cancellation retries each pass until its turn
+ends. Usage waits show `resume_at` without attention and resume on the platform.
 
-A handover moves the slice to `in review` and emits `finished`. Questions and
-escalations create attention; an escalation sets `escalated`. Ordinary waiting
-messages without a PR to watch create node-step attention. A terminated turn
-without a valid, fresh final message raises escalation with a summary of the tool, exit code and first
-stderr error line, followed by the last 40 log lines. All runner actions
-append log entries with actor `runner`. Notices go to the selected store (the local outbox in file mode);
-there is no external notification sender.
+Private request bodies, API records and pending message ids are saved before
+external effects under `CPLANE_RUNS/<state hash>/<slice hash>/job.json`. Keep that
+ledger and the same absolute state path across restarts. Confirmed requests are
+only polled; ambiguous POSTs retry their saved body and id. There are no slice
+containers for Factory to find or stop. See [runner operation](docs/runner.md) for
+the protocol, deployment boundary and rollback.
 
-The detached supervisor writes executor output, final replies, session IDs, exit
-markers and private turn metadata under `CPLANE_RUNS` (default
-`~/Library/Application Support/cplane/runs`). Each state path has its own directory,
-with one subdirectory per turn. Session IDs are recorded when they appear in the
-executor output, even while a turn is running. When a Codex turn is collected,
-the runner records the PR number for the repository's current branch when one
-exists. Codex final files must be newer than the turn's start; Claude replies come from
-`structured_output`. Run metadata supports collection across CLI restarts. Keep
-these files private like state and outbox: they contain prompts and answers.
-Do not delete them while a turn is active. Retain the same absolute state path.
 
 `show <id>` names the newest run folder; `show <id> --final` prints that run's
 final kind and body.
