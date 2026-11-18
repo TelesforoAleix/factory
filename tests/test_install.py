@@ -273,38 +273,184 @@ def test_factory_cplane_wrapper_command():
     assert 'exec docker exec -i deployer-factory-runner-1 cplane "$@"' in script
     assert 'runner.env' not in script
     assert '/opt/factory' not in script
+    # Environment files must not be sourced, even under a different name.
+    import re
+    assert not re.search(r'(^|[;\n])\s*(?:\.|source)\s', script)
+
+
+@pytest.fixture
+def factory_cplane_process(tmp_path, monkeypatch):
+    """Run the real shell wrapper with only synthetic host commands on PATH."""
+    import os
+    import subprocess
+    import sys
+    import textwrap
+
+    fake_bin = tmp_path / 'bin'
+    fake_bin.mkdir()
+    fake_id = fake_bin / 'id'
+    fake_id.write_text('#!/bin/sh\n[ "$#" = 1 ] && [ "$1" = -u ] || exit 99\nprintf "%s\\n" "$FACTORY_TEST_UID"\n')
+    fake_id.chmod(0o755)
+    fake_docker = fake_bin / 'docker'
+    fake_docker.write_text('#!' + sys.executable + '\n' + textwrap.dedent('''\
+        import json
+        import os
+        import sys
+
+        args = sys.argv[1:]
+        with open(os.environ['FACTORY_TEST_CALLS'], 'a') as stream:
+            stream.write(json.dumps(args) + '\\n')
+        containers = json.loads(os.environ['FACTORY_TEST_CONTAINERS'])
+        if len(args) == 4 and args[:3] == ['inspect', '--format', '{{.State.Running}}']:
+            if args[3] not in containers:
+                sys.stderr.write('unexpected container name\\n')
+                sys.exit(98)
+            running = containers[args[3]]
+            if running == 'missing':
+                sys.stderr.write('No such container\\n')
+                sys.exit(1)
+            print(running)
+            sys.exit(0)
+        if len(args) >= 4 and args[:2] == ['exec', '-i'] and args[2] in containers and args[3] == 'cplane':
+            print(json.dumps({'argv': args, 'stdin': sys.stdin.read()}))
+            sys.stderr.write('synthetic cplane stderr\\n')
+            sys.exit(int(os.environ['FACTORY_TEST_EXIT']))
+        sys.stderr.write('unexpected docker command\\n')
+        sys.exit(99)
+    '''))
+    fake_docker.chmod(0o755)
+    monkeypatch.setenv('PATH', str(fake_bin))
+    calls_path = tmp_path / 'docker-calls.jsonl'
+    wrapper = Path('node/bin/factory-cplane').resolve()
+
+    def run(*, runner='true', sessions='true', uid='0', status=7,
+            args=('pending',), stdin='synthetic input\n'):
+        calls_path.write_text('')
+        env = dict(os.environ, FACTORY_TEST_UID=uid,
+                   FACTORY_TEST_CALLS=str(calls_path),
+                   FACTORY_TEST_CONTAINERS=json.dumps({
+                       'deployer-factory-runner-1': runner,
+                       'deployer-factory-sessions-1': sessions,
+                   }), FACTORY_TEST_EXIT=str(status))
+        result = subprocess.run(
+            ['/bin/sh', str(wrapper), *args], cwd=tmp_path, env=env,
+            input=stdin, capture_output=True, text=True, check=False, timeout=5,
+        )
+        calls = [json.loads(line) for line in calls_path.read_text().splitlines()]
+        return result, calls
+
+    return run
 
 
 @pytest.mark.parametrize('uid', ['0', '21000'])
-def test_factory_cplane_wrapper_preserves_process_io(tmp_path, monkeypatch, uid):
-    import os
-    import subprocess
-    fake_id = tmp_path / 'id'
-    fake_id.write_text('#!/bin/sh\necho ' + uid + '\n')
-    fake_id.chmod(0o755)
-    fake_docker = tmp_path / 'docker'
-    fake_docker.write_text(
-        '#!/usr/bin/env python3\n'
-        'import json, sys\n'
-        'print(json.dumps(sys.argv[1:]))\n'
-        'print(sys.stdin.read(), end="")\n'
-        'sys.exit(7)\n'
-    )
-    fake_docker.chmod(0o755)
-    monkeypatch.setenv('PATH', str(tmp_path) + os.pathsep + os.environ['PATH'])
-    result = subprocess.run(
-        ['sh', 'node/bin/factory-cplane', 'show', 'slice with spaces', '', '$(literal)'],
-        input='synthetic input\n', capture_output=True, text=True, check=False,
-    )
+def test_factory_cplane_wrapper_preserves_process_io(factory_cplane_process, tmp_path, uid):
+    args = ['show', 'slice with spaces', '', '$(touch injected)', '$(literal)',
+            '--actor', 'owner; echo unsafe', '*', 'line one\nline two']
+    stdin = 'synthetic input\n\n$(touch stdin-injected)\nlast line without newline'
+    result, calls = factory_cplane_process(uid=uid, args=args, stdin=stdin)
+    assert not (tmp_path / 'injected').exists()
+    assert not (tmp_path / 'stdin-injected').exists()
     if uid == '0':
-        args, content = result.stdout.split('\n', 1)
-        assert json.loads(args) == [
-            'exec', '-i', 'deployer-factory-runner-1', 'cplane',
-            'show', 'slice with spaces', '', '$(literal)',
+        expected = ['exec', '-i', 'deployer-factory-runner-1', 'cplane', *args]
+        assert calls == [
+            ['inspect', '--format', '{{.State.Running}}', 'deployer-factory-runner-1'],
+            expected,
         ]
-        assert content == 'synthetic input\n'
+        assert json.loads(result.stdout) == {'argv': expected, 'stdin': stdin}
+        assert result.stderr == 'synthetic cplane stderr\n'
         assert result.returncode == 7
     else:
+        assert calls == []
         assert result.returncode == 1
         assert result.stdout == ''
         assert result.stderr == 'factory-cplane requires root\n'
+
+
+@pytest.mark.parametrize('sessions', ['true', 'false', 'missing'])
+def test_factory_cplane_running_runner(factory_cplane_process, sessions):
+    result, calls = factory_cplane_process(sessions=sessions, status=0, args=(), stdin='')
+    expected = ['exec', '-i', 'deployer-factory-runner-1', 'cplane']
+    assert calls == [
+        ['inspect', '--format', '{{.State.Running}}', 'deployer-factory-runner-1'],
+        expected,
+    ]
+    assert result.returncode == 0
+    assert json.loads(result.stdout) == {'argv': expected, 'stdin': ''}
+    assert result.stderr == 'synthetic cplane stderr\n'
+
+
+@pytest.mark.parametrize('status', [0, 1, 7, 125, 137])
+def test_factory_cplane_runner_exit_status(factory_cplane_process, status):
+    result, calls = factory_cplane_process(status=status)
+    assert calls == [
+        ['inspect', '--format', '{{.State.Running}}', 'deployer-factory-runner-1'],
+        ['exec', '-i', 'deployer-factory-runner-1', 'cplane', 'pending'],
+    ]
+    assert result.returncode == status
+    assert result.stderr == 'synthetic cplane stderr\n'
+
+
+@pytest.mark.parametrize('runner', ['false', 'missing'])
+@pytest.mark.parametrize('status', [0, 1, 7, 125, 137])
+def test_factory_cplane_sessions_fallback(factory_cplane_process, tmp_path, runner, status):
+    args = ['show', 'slice with spaces', '', '$(touch injected)', '--actor', 'owner']
+    stdin = 'first\n\n$(touch stdin-injected)\nlast line without newline'
+    result, calls = factory_cplane_process(runner=runner, status=status, args=args, stdin=stdin)
+    expected = ['exec', '-i', 'deployer-factory-sessions-1', 'cplane', *args]
+    assert calls == [
+        ['inspect', '--format', '{{.State.Running}}', 'deployer-factory-runner-1'],
+        ['inspect', '--format', '{{.State.Running}}', 'deployer-factory-sessions-1'],
+        expected,
+    ]
+    assert result.returncode == status
+    assert json.loads(result.stdout) == {'argv': expected, 'stdin': stdin}
+    assert result.stderr == 'synthetic cplane stderr\n'
+    assert not (tmp_path / 'injected').exists()
+    assert not (tmp_path / 'stdin-injected').exists()
+
+
+@pytest.mark.parametrize('runner', ['false', 'missing', 'True', 'running'])
+@pytest.mark.parametrize('sessions', ['false', 'missing', 'True', 'running'])
+def test_factory_cplane_no_running_container(factory_cplane_process, runner, sessions):
+    result, calls = factory_cplane_process(runner=runner, sessions=sessions)
+    assert calls == [
+        ['inspect', '--format', '{{.State.Running}}', 'deployer-factory-runner-1'],
+        ['inspect', '--format', '{{.State.Running}}', 'deployer-factory-sessions-1'],
+    ]
+    assert result.returncode == 1
+    assert result.stdout == ''
+    assert result.stderr == 'factory-cplane: no Factory container is running\n'
+
+
+@pytest.mark.parametrize('runner,sessions', [('true', 'true'), ('false', 'true'), ('missing', 'missing')])
+def test_factory_cplane_nonroot_before_inspection(factory_cplane_process, runner, sessions):
+    result, calls = factory_cplane_process(uid='21000', runner=runner, sessions=sessions)
+    assert calls == []
+    assert result.returncode == 1
+    assert result.stdout == ''
+    assert result.stderr == 'factory-cplane requires root\n'
+
+
+def test_factory_cplane_fallback_documentation():
+    document = ' '.join(Path('docs/node.md').read_text().split())
+    wrapper_section = document.split('## Automatic installs', 1)[0]
+    assert (
+        "Operator commands use a running Factory container's code, environment and state."
+        in wrapper_section
+    )
+    for sentence in (
+        'The wrapper uses `deployer-factory-runner-1` when it is running, otherwise '
+        '`deployer-factory-sessions-1` when it is running.',
+        'Running state is checked with `docker inspect`; the wrapper never starts or restarts containers.',
+        'If neither container is running, it prints `factory-cplane: no Factory container is running` '
+        'to stderr and exits 1.',
+    ):
+        assert sentence in wrapper_section
+    for preserved in ('root-only', '-i', 'stdin', 'arguments', 'exit status',
+                      'no host environment file', "configured service UID"):
+        assert preserved in wrapper_section
+    assert 'needs the runner container to be running' not in wrapper_section
+    assert (
+        'install `node/bin/factory-cplane` as `/usr/local/bin/factory-cplane`, root:root, mode 0755.'
+        in document
+    )

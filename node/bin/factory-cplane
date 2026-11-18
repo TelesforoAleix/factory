@@ -1,4 +1,11 @@
 #!/bin/sh
 set -eu
 [ "$(id -u)" = 0 ] || { echo 'factory-cplane requires root' >&2; exit 1; }
-exec docker exec -i deployer-factory-runner-1 cplane "$@"
+if running=$(docker inspect --format '{{.State.Running}}' deployer-factory-runner-1 2>/dev/null </dev/null) && [ "$running" = true ]; then
+    exec docker exec -i deployer-factory-runner-1 cplane "$@"
+fi
+if running=$(docker inspect --format '{{.State.Running}}' deployer-factory-sessions-1 2>/dev/null </dev/null) && [ "$running" = true ]; then
+    exec docker exec -i deployer-factory-sessions-1 cplane "$@"
+fi
+echo 'factory-cplane: no Factory container is running' >&2
+exit 1
