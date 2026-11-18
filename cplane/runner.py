@@ -341,6 +341,22 @@ class GitHub:
             raise GitHubReadError("GitHub branch tip unavailable")
         return sha
 
+    def eval_diff(self, repo, base, tip):
+        return self.call(repo, "api", f"repos/{repo}/compare/{base}...{tip}",
+                         "-H", "Accept: application/vnd.github.diff", raw=True)
+
+    def delete_eval_branch(self, repo, branch):
+        from urllib.parse import quote
+
+        if not re.fullmatch(r"eval/[0-9]+/[0-9]+", branch):
+            raise state.StateError("Refusing non-attempt branch deletion")
+        ref = quote("heads/" + branch, safe="/")
+        # A lost DELETE response is recovered without treating absence as an
+        # error. This App read and delete only address this attempt's exact ref.
+        refs = json.loads(self.call(repo, "api", f"repos/{repo}/git/matching-refs/{ref}"))
+        if any(entry.get("ref") == "refs/heads/" + branch for entry in refs):
+            self.call(repo, "api", "--method", "DELETE", f"repos/{repo}/git/refs/{ref}")
+
     def changes(self, job, number):
         """Read paths and pinned policy with Factory's App, without a checkout."""
         import base64
@@ -422,7 +438,7 @@ class GitHub:
     def repository(self, path):
         raise state.StateError("host origin read refused in fenced mode")
 
-    def call(self, repo, *args):
+    def call(self, repo, *args, raw=False):
         options = {"env": fence.github_environment([repo]), "cwd": "/"}
         command = (
             ["gh", *args] if args and args[0] == "api" else ["gh", *args, "-R", repo]
@@ -442,7 +458,7 @@ class GitHub:
             if not result.returncode:
                 if read:
                     self.successful_reads += 1
-                return result.stdout.strip()
+                return result.stdout if raw else result.stdout.strip()
             if attempt + 1 < attempts:
                 time.sleep(5)
         if (
@@ -1058,8 +1074,11 @@ class Runner:
         )
 
     def eligibility_data(self, *, resources_only=False):
+        reservations = [job['item'] for job in self.jobs.values()
+                        if job.get('eval_attempt') and job['phase'] != 'eval-ended']
         return {
             **self.data,
+            "slices": self.data["slices"] + reservations,
             "_eligibility": {"jobs": self.jobs, "resources_only": resources_only},
         }
 
@@ -1261,6 +1280,11 @@ class Runner:
             "phase": "running",
             "skills": cutter.skills_version(),
         }
+        return self.launch_work(item, job)
+
+    def launch_work(self, item, job):
+        """Submit the initial slice or cut using a durable job ledger."""
+        prompt = job["brief"]
         role = job["active"]
         goal = prompt + self.assignment(job, write=True)
         if role == "cut":
@@ -1554,13 +1578,17 @@ class Runner:
                 return
             job["request"], job["phase"] = request, "pr"
             self.save_job(job)
-            item["pr"] = self.open_pr(item["repo"], request)
-            self.log(item, f"opened PR: {item['pr']}", True)
+            self.present_pr(item, job)
             self.cli_review(item, job)
         elif final["kind"] == "handover":
             self.finished(item, final["body"])
         else:
             self.attention(item, "node-step", final["body"])
+
+    def present_pr(self, item, job):
+        """The boundary between delivered work and PR orchestration."""
+        item["pr"] = self.open_pr(item["repo"], job["request"])
+        self.log(item, f"opened PR: {item['pr']}", True)
 
     @staticmethod
     def pr_request(body, branch):
@@ -1784,8 +1812,7 @@ class Runner:
             }
             job["phase"] = "pr"
             self.save_job(job)
-            item["pr"] = self.open_pr(item["repo"], job["request"])
-            self.log(item, f"opened PR: {item['pr']}", True)
+            self.present_pr(item, job)
         elif job.get("repair"):
             self.attention(
                 item,
@@ -1883,8 +1910,7 @@ class Runner:
             }
             job["phase"] = "pr"
             self.save_job(job)
-            item["pr"] = self.open_pr(item["repo"], job["request"])
-            self.log(item, f"opened PR: {item['pr']}", True)
+            self.present_pr(item, job)
 
     def cancel_entry(self, job, entry):
         if entry.get("cancelled"):

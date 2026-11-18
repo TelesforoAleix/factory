@@ -1,8 +1,9 @@
 # Eval store
 
 An eval compares quality, speed and cost on the same work across configurations.
-The runner executes slice and review attempts in the fence and sends ticket attempts
-to the platform, which grades them with their pinned check.
+Each attempt runs the normal runner pipeline through the platform run API, with
+the named configuration selecting each role's exact executor. Slice cases finish
+with a review and sealed hidden-test check; ticket component cases use their own check.
 All commands require Postgres through `CPLANE_DATABASE_URL` or
 `CPLANE_DATABASE_URL_FILE`, and emit JSON. Mutations accept `--actor` (default
 `owner`) to record who created a configuration, set version or run.
@@ -125,25 +126,29 @@ cplane eval config add slice-example --path slice \
   --role 'reviewer={"harness":"claude","model":"example-model"}' \
   --note 'Synthetic slice configuration' --actor planner
 cplane eval config add tickets-example --path tickets \
-  --role 'cutter={"configuration":"pi/base"}' \
+  --role 'cutter={"harness":"claude","model":"example-model"}' \
   --role 'ticket={"configuration":"pi/base"}' \
-  --role 'reviewer={"configuration":"pi/base"}'
+  --role 'reviewer={"harness":"claude","model":"example-model"}'
 cplane eval config list
 cplane eval config show slice-example
 ```
 
-Migration 032 adds store records only. Run creation still takes its existing
-inline configuration objects; named records do not change existing eval runs,
-execution or the Workshop run form.
+New runs select one or more stored configuration IDs. The run stores the complete
+selected records, including roles, notes and creation metadata. Configuration records
+are immutable, and the run snapshot is never resolved against a later catalogue.
+Old runs retain their inline objects and remain readable in both CLI and Workshop.
+New inline objects are refused. Workshop lists named records with their paths and roles.
 
-An attempt can retain all its platform runs in `cplane_eval_attempt_runs`, with
-`attempt`, one-based `position`, `role`, `purpose` and the platform's text `run_id`.
-`attempt_run_add` records them and `attempt_run_list` returns position order.
-Positions are unique within an attempt; a run ID cannot repeat within the same
-attempt and purpose. Several ticket runs may share a role and purpose. The same
-run can serve another purpose. Role and purpose are nonempty text so later
-orchestration can label cut, ticket, slice, review and grading work. Existing
-`run_record` and `platform_task` links and run-show output are unchanged.
+The platform accepts Pi only for a `ticket` request. A slice case therefore refuses
+Pi in its executor, cutter or reviewer. A ticket component uses only the `ticket`
+entry of a tickets configuration. A private-repository case refuses a configuration
+containing **any** Pi entry, even in an unused role; Factory checks repository
+visibility through its App at creation and fails closed if that read is unavailable.
+
+Every request is retained in `cplane_eval_attempt_runs`, with one-based `position`,
+`role`, `purpose` and platform `run_id`, in pipeline order. Run show includes these
+as an attempt's `runs` when present. Existing `run_record` and `platform_task` values
+remain untouched. Old attempts without new links retain their previous show shape.
 
 ## Commands
 
@@ -157,7 +162,7 @@ cplane eval set list
 cplane eval set show small --version 1
 # Import ticket starts as described below before creating a ticket run.
 cplane eval run create --title 'Synthetic comparison' --set small:1 --set small:2 \
-  --configuration '{"id":"pi-base","harness":"pi","model":"base","route":"platform","configuration":"base"}' \
+  --configuration tickets-example \
   --repeats 2 --at '2026-12-01T12:00:00Z' --actor planner
 cplane eval run list
 cplane eval run show 1
@@ -172,8 +177,10 @@ change, and cases must already exist.
 
 An omitted set version selects the latest version at run creation. The run records
 those resolved versions. Overlapping sets contribute each case once. Configuration
-IDs must be unique, and each configuration requires nonempty string `id`, `harness`,
-`model` and `route` fields; extra configuration fields are retained. Repeats are
+IDs must be unique and must name existing configurations. Ticket cases require a
+`tickets` configuration and an imported start commit. New runs support slice and
+ticket cases; historical review cases and runs remain readable. A slice case needs
+`merge_commit`, nonempty `hidden_paths` and `check_command`, unless its grade is `judge`. Repeats are
 numbered from 1. Runs and expanded attempts start in `planned`. Omit `--at` for
 immediate scheduling (`scheduled_for` is null); otherwise provide an ISO timestamp
 with a timezone. The runner starts due runs during its next pass.
@@ -223,77 +230,65 @@ them and completes the import. An identical rerun reports zero updated cases.
 Ordinary case imports preserve the start metadata. Case list reports `has_start`
 as `yes` or `no` without exposing commit content.
 
-Ticket attempts require `start_commit` and the platform route described below.
-Slice and review attempts keep the fence path, using `start_commit` when set and
-otherwise `base_commit`. Their output diff is against the actual start.
+## Attempt execution and grading
 
-## Platform ticket attempts
+All attempts use `POST /v1/runs` and the ordinary run polling and cancellation API.
+Configure the same runner connection as real slices:
 
-Tickets run only through the platform's sealed Pi task path. Run creation refuses
-Codex or Claude configurations paired with tickets, and tickets without a start
-commit. Pi configurations require `route` of `platform` and a platform
-`configuration` name; Pi accepts ticket cases only. For example, after importing
-starts and creating a ticket set `T`:
+- `CPLANE_EVAL_TASK_URL` is the platform run service URL.
+- `CPLANE_EVAL_TASK_KEY_FILE` names its bearer key file. The key needs `runs:write`,
+  `runs:read` and `runs:eval`. Factory never logs or stores it.
 
-```sh
-cplane eval run create --title 'One ticket' --set T \
-  --configuration '{"id":"pi-base","harness":"pi","model":"base","route":"platform","configuration":"base"}' \
-  --repeats 1 --actor planner
-```
+Every attempt owns `eval/<run id>/<attempt id>`. Slice work begins at the case's
+`base_commit`, with its `task` as the brief and its stored level. The `slice` path
+runs slice then review. The `tickets` path runs cut, its ordered tickets on the
+same branch, then review. These use the runner's job, request, collection, ticket
+and review code. Each request carries an eval mark and the exact configuration
+entry for that role; the platform performs no catalogue lookup or fallback.
+The platform owns delivery, isolation, concurrency and automatic usage-limit waits.
+One eval attempt runs at a time, and uses the runner's `room` check and repository
+reservation alongside real slices. No local harness or usage probe gates an eval.
 
-The set should contain one ticket for the initial node verification. Configuration
-names match `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`; today the platform provides `base`.
-Ticket `files` are retained as `allowed_files`. Reimporting an unchanged source
-backfills that column once, preserving starts, content and creation timestamps.
-Migration 029 adds only nullable `allowed_files` and `platform_task` columns.
+A brief without Fixed decisions or Do not sections receives an eval-only Do not
+section before cutting, so the normal ticket builder can carry its rules. Eval
+requests and their synthetic item live only in the private job ledger. They do not
+create or change a slice, feature, board, attention, phone notice, PR or merge.
+Questions and escalations fail the attempt with their reason. An eval review
+records `pass` or `fix`; it does not launch repairs or approve a merge.
 
-Set both settings in the **runner's environment**:
+At the PR boundary Factory instead submits one sealed `check` run. Its
+`base_commit` is the delivered branch tip, its overlay is the case's `merge_commit`
+and `hidden_paths`, and its command is the case's `check_command`. This mark has
+no executor. Hidden test content and the reference diff are never sent to the
+slice, cutter, ticket or reviewer. The platform overlays the paths and runs the
+command without network, committing or pushing nothing. Setup failure fails the
+attempt. A `judge` case skips this run; judge execution remains future work.
 
-- `CPLANE_EVAL_TASK_URL=http://127.0.0.1:8000`
-- `CPLANE_EVAL_TASK_KEY_FILE=/etc/factory/eval-task-key`
+Ticket component attempts use one marked `ticket` request with the configuration's
+`ticket` entry, on their own attempt branch. The case's `start_commit`,
+`allowed_files`, `pinned_paths` and `check_command` become its normal work policy.
+They use that run's own check outcome, without a separate review or sealed check.
 
-The runner reads and strips the secret file, as with the database URL file. The
-node key file is root-owned, mode `0600`, and contains one line; the runner runs
-as root. No key is logged or stored. Without both settings (or with an unreadable
-or invalid key file), Pi attempts remain planned and a reason is logged once per
-pass. HTTP errors also leave submission planned for retry, without retaining
-response diagnostics. Redirects are refused.
+Completed grading records `result.tests` as `pass` for exit code zero, otherwise
+`fail`, `result.exit_code`, and `result.review` (the review verdict, or null for a
+component). Judge-only cases record null tests and exit code. A completed grading
+attempt is `done` even when tests fail; execution failures are `failed` with
+`result.error`. Metrics sum input tokens (fresh plus cached), output tokens, cost
+USD and wall seconds over every linked run and its internal attempts. Unknown
+metrics remain absent.
 
-The runner submits `POST /v1/tasks/eval` with the stable name `factory-<attempt id>`.
-The body uses the case's repository, start branch, start commit, title, task,
-allowed files, check command and pinned paths. Eval labels are `run<run id>`,
-`<repository name>.pr<pr>-t<n>`, and the platform configuration name. A 201 or
-409 response records its task ID and marks the attempt running in the same
-transaction. A lost response is recovered by submitting the same name again.
-The running attempt's metrics temporarily include `started_at`, a Unix submission
-timestamp used across runner restarts; terminal metrics replace it.
+Before deleting the branch, Factory reads the diff through its repository-scoped
+App, against the slice case base or ticket start. It writes `attempt.patch` with
+mode `0600` beneath the private run folder and stores `output_ref`. Empty diffs
+are retained too. After grading it deletes only that attempt's `eval/…` branch.
+The durable completion, output and link intents survive scheduler rollback and
+restart; failed App reads or branch deletion retry while retaining the reservation.
+Cancelling an eval stops active work, retrying running-turn cancellations until
+accepted, then removes its branch. Remaining planned attempts are not started.
 
-Every pass polls `GET /v1/tasks/eval/<id>`. The platform restores pinned paths from
-the base commit, runs the check, and retains the attempt only on a pass. A failed
-check retries once with its output as feedback. A completed task produces:
+The retired task endpoint, base64 diff transport, fenced CLI attempt and fence
+eval snapshot path have been removed. Historical stored eval data is unchanged.
+No migration or reimport is required for reading it.
 
-```json
-{"tests":"pass","first":"fail","attempts":2,"reason":"eval_kept"}
-```
-
-`tests` is `pass` only for task status `done`; `first` is `pass` only if platform
-attempt 1 is `done`. `attempts` counts the platform attempts and `reason` retains
-the task reason or null. Task status `failed` produces `tests: fail` and a failed
-Factory attempt. Escalated or cancelled tasks fail the Factory attempt with a
-reason and no `tests`. After 60 minutes the Factory attempt fails with
-`Attempt timed out`; its platform task is left alone.
-
-Terminal metrics include wall seconds from first start to last end, input tokens
-(fresh plus cached), output tokens and cost in USD, summed over platform attempts
-when known. Unknown metrics are absent. A returned diff, including an empty diff,
-is saved as `attempt.patch` with mode `0600` under the runner's private run folder
-and linked by `output_ref`. An absent or oversized diff leaves `output_ref` null.
-Only one eval attempt runs at a time across both paths. Pi tasks consume no local
-executor place and do not read Codex or Claude usage. Slice and review execution
-retains its existing fence behavior.
-
-Node step after merge: **install with a dump first; set CPLANE_EVAL_TASK_URL and
-CPLANE_EVAL_TASK_KEY_FILE for the runner; reimport set T; one pi-base attempt**.
-The orchestrator dumps the `factory` database before installing, sets both runner
-environment settings, reimports the ticket folder, then runs one ticket with
-`pi-base`. Verify it ends with `result.tests` and a diff.
+Node step after merge: **Install the merged commit**. The client then runs one
+slice case with one configuration per path to verify the installed pipeline.

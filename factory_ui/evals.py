@@ -34,6 +34,10 @@ def register_evals(app, backend):
             return set_detail(backend(), identifier, int(version) if version is not None else None)
         return respond(read)
 
+    @app.get('/api/evals/configurations')
+    def configurations():
+        return respond(lambda: evals.config_list(backend()))
+
     @app.get('/api/evals/runs')
     def runs():
         def read():
@@ -64,7 +68,9 @@ def register_evals(app, backend):
                 for attempt in evals.run_show(store, run['id'])['attempts']:
                     config = configs.get(attempt['configuration_id'])
                     if attempt['state'] == 'done' and config:
-                        result.append(dict(harness=config['harness'], model=config['model'], metrics=attempt.get('metrics') or {}))
+                        result.append(dict(configuration_id=config['id'], metrics=attempt.get('metrics') or {})
+                                      if 'roles' in config else
+                                      dict(harness=config['harness'], model=config['model'], metrics=attempt.get('metrics') or {}))
             return result
         return respond(read)
 
@@ -74,7 +80,7 @@ def register_evals(app, backend):
         if (not isinstance(payload, dict) or not {'title', 'sets', 'configurations', 'repeats'} <= set(payload)
                 or set(payload) - {'title', 'sets', 'configurations', 'repeats', 'scheduled_for'}):
             return jsonify(error='Invalid eval run'), 400
-        if not isinstance(payload.get('sets'), list) or not all(isinstance(s, str) for s in payload['sets']) or not isinstance(payload.get('configurations'), list):
+        if not isinstance(payload.get('sets'), list) or not all(isinstance(s, str) for s in payload['sets']) or not isinstance(payload.get('configurations'), list) or not all(isinstance(c, str) for c in payload['configurations']):
             return jsonify(error='Invalid eval run'), 400
         response = respond(lambda: evals.run_create(backend(), actor='owner', **payload))
         return response if isinstance(response, tuple) else (response, 201)

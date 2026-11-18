@@ -62,7 +62,7 @@ def command(job):
         if job.get('resume'):
             args += ['--resume', job['resume']]
     identity = []
-    if job.get('eval_attempt') or job.get('record_only'):
+    if job.get('record_only'):
         identity = (['--run-id', job['container_id']] if fence.socket_enabled() else
                     ['--session-turn', str(job['cleanup_turn'])])
     return [*fence.fence_command(), 'run', *identity, '--tool', job['tool'], '--repo', job['repo'],
@@ -100,17 +100,6 @@ class Processes:
                        **({'timeout': 15} if job.get('record_only') else {}))
 
     def poll(self, job):
-        if job.get('eval_attempt'):
-            folder = Path(job['run'])
-            done = (folder / 'exit.json').exists()
-            if not done and job.get('pid'):
-                try:
-                    os.killpg(job['pid'], 0)
-                except ProcessLookupError:
-                    done = True
-                except PermissionError:
-                    pass
-            return done, '', None, ''
         folder = Path(job['run'])
         session = job.get('session', '')
         final = None
@@ -195,7 +184,7 @@ def supervise(folder):
             os.fchmod(errors.fileno(), 0o600)
             code = subprocess.run(command(job), cwd=str(folder), stdin=subprocess.DEVNULL,
                                   stdout=log, stderr=errors, close_fds=True,
-                                  **({'timeout': job['timeout_seconds']} if job.get('eval_attempt') or job.get('record_only') else {})).returncode
+                                  **({'timeout': job['timeout_seconds']} if job.get('record_only') else {})).returncode
     except subprocess.TimeoutExpired:
         timed_out = True
         stopped = False

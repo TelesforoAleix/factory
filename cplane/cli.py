@@ -375,7 +375,7 @@ def parser():
             elif action == 'create':
                 command.add_argument('--title', required=True)
                 command.add_argument('--set', dest='sets', action='append', required=True)
-                command.add_argument('--configuration', action='append', required=True)
+                command.add_argument('--configuration', action='append', required=True, metavar='ID', help='Named configuration id (repeatable)')
                 command.add_argument('--repeats', type=int, required=True)
                 command.add_argument('--at')
             elif action in ('show', 'cancel'):
@@ -507,7 +507,7 @@ def eval_command(args):
             result = evals.set_list(backend)
     elif args.eval_action == 'create':
         result = evals.run_create(backend, title=args.title, sets=args.sets,
-                                 configurations=[json.loads(c) for c in args.configuration],
+                                 configurations=args.configuration,
                                  repeats=args.repeats, scheduled_for=args.at, actor=actor)
     elif args.eval_action == 'cancel':
         result = evals.run_cancel(backend, args.id)

@@ -348,8 +348,8 @@ names the shared runs root for trust checks (default `/srv/factory/runs`).
 | `CPLANE_RUNS` | compose: `/srv/factory/runs` | runner, install records and usage-report lookup |
 | `CPLANE_REPOS` | compose: `/srv/factory/work` | runner repository base; replaces code default `~/Code` |
 | `CPLANE_FENCE` | compose: `1` | `executors.fenced` |
-| `CPLANE_FENCE_COMMAND` | compose: `socket` | subscription eval subprocess launch, cleanup and usage probes |
-| `CPLANE_USAGE_SOURCE` | compose: `launcher`; default unset | subscription eval usage reads; no slice usage gate |
+| `CPLANE_FENCE_COMMAND` | compose: `socket` | retained launcher helpers for sessions and usage telemetry |
+| `CPLANE_USAGE_SOURCE` | compose: `launcher`; default unset | retained launcher usage telemetry; no slice or eval usage gate |
 | `CPLANE_DEPLOYER_SOCKET` | compose: `/run/homelab-deployer.sock`; default unset | detached install client; missing socket refuses installation |
 | `CPLANE_GITHUB_AUTH` | compose: `app` | selects App authentication instead of the legacy token file |
 | `CPLANE_GITHUB_READ_ONLY` | unset | preserves the runner's full App permissions and separate write-token cache |
@@ -359,7 +359,7 @@ names the shared runs root for trust checks (default `/srv/factory/runs`).
 | `CPLANE_BRIEFS_KNOWN_HOSTS` | compose: `/run/secrets/briefs-known-hosts` | briefs pull and planning SSH host verification |
 | `CPLANE_PLANNING_WRITE_KEY` | compose: `/run/secrets/planning-write-key` | planning export push identity |
 | `CPLANE_DENY_LIST` | compose: `/run/secrets/deny-list` | public PR metadata gate |
-| `CPLANE_EVAL_TASK_URL`, `CPLANE_EVAL_TASK_KEY_FILE` | compose: `http://api:8000`, `/run/secrets/eval-task-key` | authenticated platform run API and existing eval task endpoint |
+| `CPLANE_EVAL_TASK_URL`, `CPLANE_EVAL_TASK_KEY_FILE` | compose: `http://api:8000`, `/run/secrets/eval-task-key` | authenticated platform run API for slices and marked evals |
 | `CPLANE_PLANNING_REMOTE` | `runner.env`; code default empty and refuses export | hourly `feature_export`, SSH remote without credentials |
 | `CPLANE_ORDERS_URL` | `runner.env`; if absent, code falls back to `/srv/factory/orders-url`, which is unmounted | orders collector; empty string explicitly disables collection |
 | `CPLANE_INSTALL_REPOS` | `runner.env`; code default empty allowlist | install eligibility and store chat-event handling |
@@ -469,41 +469,11 @@ show <id>`: each must carry a review verdict, and the recorded request/end times
 must show that no review gate exceeded the configured limit (plus runner polling
 interval). A timeout is recorded as `missing`, never as a passing review.
 
-### Subscription eval usage and installs
+### Launcher telemetry and installs
 
-Subscription evals retain `CPLANE_USAGE_SOURCE=launcher`. The telemetry below is
-owned by `cplane.eval_execution`; slice scheduling never calls these probes. For Codex, each
-pass shares at most one `usage` launcher run, named
-`usage-read-<token>`, and always sends `stop` afterward; `unknown_run` means it
-is already stopped. Invalid, null, refused or failed reads mean unknown usage.
-The runner opens, lists and stats no path under `/srv/factory/logins` in this
-mode. Resume skips the transcript existence check; a missing session fails its
-resume turn into attention.
-
-The launcher's Codex readings have no timestamp. Their age uses the newer of
-the last `usage-probe.json` timestamp and the newest Codex run record's end
-(`started_at + seconds`). With neither, usage is stale. When a Codex read is
-needed and that age exceeds 30 minutes, a due probe runs before the shared
-launcher read, at most once per hour and within executor capacity. The probe
-still uses the normal fenced CLI run and stop, but neither deletes login
-transcripts nor writes `usage-report.jsonl`. The existing file-mode usage gate
-and probe rules remain unchanged.
-
-Claude usage comes from a short fenced probe turn in a disposable workspace:
-`claude -p --model haiku --output-format stream-json --verbose "Reply with: ok"`.
-Only the last `rate_limit_event`'s `unifiedWindows` values for `five_hour` and
-`seven_day` survive, as percentages and reset times, with the read time in
-`claude-usage.json` in the runner's state-specific runs folder. The workspace
-and other output are discarded. The launcher usage profile remains Codex-only.
-
-A Claude choice (a review or a Claude slice) requests a probe only when its
-reading is absent or older than 30 minutes, executor capacity is free, and the
-last attempt was at least an hour ago. `claude-usage-probe.json` records attempts,
-including failures. A failed probe or missing event preserves the previous
-reading. Claude remains unavailable without a reading; otherwise the existing
-gate applies: five-hour usage below 90% and a reading less than an hour old,
-or a passed reset. Outside launcher mode, Claude still reads
-`claude/usage-now.json` under the login root.
+The retained usage helpers in `cplane.eval_execution` support launcher telemetry.
+Neither slice nor eval scheduling calls their probes or gates work on local
+Codex/Claude readings. The platform owns usage waits for both through `/v1/runs`.
 
 The runner has `CPLANE_DEPLOYER_SOCKET=/run/homelab-deployer.sock` set in Compose.
 Without a deployer socket, a new install request refuses with a clear escalation;
@@ -567,27 +537,12 @@ earlier tool context was reset. The next turn starts a fresh CLI session.
 The contained services use `CPLANE_FENCE_COMMAND=socket` and group 21000 for
 agent output access. No root fallback is available.
 
-Eval runs execute through the runner's normal fence with Codex or Claude. A due
-planned run becomes running; slices start first, then an attempt may use a free
-`executors` place. Only one eval attempt runs at a time across Factory, and it
-also respects the repository execution limit. Pi is not available yet.
-
-Each attempt uses a fresh detached work copy at the case's pinned base commit,
-after fetching the clean clone. It has a 30-minute limit and does not publish or
-install. Its diff, including untracked and binary files, lives at
-`/srv/factory/runs/<state-hash>/<turn-id>/attempt.patch` (or the configured runner
-run area). The attempt's `output_ref` names that file. The enclosing attempt
-folder is mode 0700 and the diff is mode 0600. Eval work copies grant group 21000 read/traversal before ownership transfer, so
-the non-root runner can snapshot them without executing agent Git metadata.
-An agent file that cannot be read fails collection without privilege fallback.
-The work copy is removed after collection. Token metrics come from the CLI output; subscription attempts have
-no `cost_usd` value. No slice/chat run record is created.
-
-Use `cplane eval run cancel ID` to stop a run from starting more attempts. An
-attempt already running finishes and keeps its diff and metrics. Usage-limit
-interruptions return an attempt to planned and hold eval starts until reset.
-Grading is separate from execution.
-
+Eval attempts use the runner's platform job pipeline with named configurations.
+They share repository reservations with slices, run one at a time, and retain
+their delivered diff privately before deleting `eval/<run>/<attempt>`. Slice cases
+run the configured slice or tickets path, review, then a sealed hidden-test check;
+ticket component cases use their own run check. See [evals](evals.md) for setup,
+configuration selection, grading, cancellation and historical data compatibility.
 
 ### Slice run API switch (FAC-F27a)
 
@@ -599,9 +554,8 @@ name the target repositories. No credential is included in a request body or log
 The platform must enable slice/cut/review roles and accept write-mode cuts before
 rehearsal. Explicit per-run limits are omitted because the live v1 API rejects them.
 
-The runner keeps the launcher socket, clean/work roots and launcher usage setting
-for subscription evals, whose behavior is unchanged. Slice execution uses none of
-those mounts. The deny-list secret remains necessary for Factory's public PR
+Slice and eval execution use the platform; retained launcher and clean/work
+settings still support other local helpers, including sessions and ticket-start imports. The deny-list secret remains necessary for Factory's public PR
 metadata scan; the platform separately scans outgoing commits. The runs mount
 retains Factory's private request ledger. Sessions mounts and settings are unchanged.
 
