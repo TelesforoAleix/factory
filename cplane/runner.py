@@ -870,7 +870,12 @@ class Runner:
         ):
             return
         if attention and attention["answer"] is not None:
-            if not item["session"] or not item["session"]["id"] or not job:
+            if (job and job.get("sha") and item.get("flow", "cli") == "tickets"
+                    and job["phase"] == "node-step" and attention["kind"] == "node-step"):
+                self.finished(item, attention["answer"])
+                job["phase"] = "handed-over"
+                self.save_job(job)
+            elif not item["session"] or not item["session"]["id"] or not job:
                 self.defer(item, "deferred: session unavailable")
             else:
                 self.launch(item, attention["answer"], resume=True)

@@ -941,6 +941,12 @@ def test_full_ticket_pr_review_has_no_repair_and_postmerge_handover(setup, steps
     output = capsys.readouterr().out
     final = json.loads(output.split("body: ", 1)[1])
     assert final == {"request": request, "review_verdict": "fix", "review_findings": PLAN["tickets"]}
+    if expected is not None:
+        edit(r, lambda s: s["attention"].update(answer="Installed"))
+        r.run()
+        assert item(r)["state"] == "in review"
+        assert not any(msg["text"] in ("Installed", "merged as " + "c" * 40)
+                       for msg in api.messages.values())
     assert len(api.requests) == 4
 
 
