@@ -21,7 +21,10 @@ own diff against the ticket and check, correcting mismatches before finishing.
 The platform runs the check, commits and pushes; the ticket executor does not.
 The cut ends with a handover so its platform status is done and successors can
 run. After the last ticket is done, Factory opens the PR with the slice title and
-a body listing every ticket's title and check. New ticket flows have no blocking
+a body listing every ticket's title and check. The cut plan supplies the node step
+from the brief, or null when none is declared. After merge, Factory records the PR
+request and review verdict and findings as the final handover, then moves to the
+node step or in review without messaging the cut run. New ticket flows have no blocking
 slice review or repair tickets. Saved jobs already in `review-ready` or a repair
 round can finish through their existing path.
 
@@ -75,7 +78,7 @@ cancellation to be accepted. A question, waiting or done run that is resumable
 keeps its attempt and continues through messages. Existing jobs without an attempt
 number keep their saved identities and count as attempt one when retried.
 
-Answers and merge notices are messages to the existing resumable run. Message ids
+Answers and whole-slice merge notices are messages to the existing resumable run. Message ids
 include the attempt in their hashed identity, and their exact text is persisted
 before POST. Collected-result markers are also scoped to the attempt. No restart
 searches for or stops slice containers. API failures defer work without exposing

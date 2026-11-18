@@ -10,7 +10,7 @@ from cplane import cli, cut, state
 BRIEF = "# Task\n\n## Fixed decisions (do not reopen)\nKeep this exact.\n\n## Do not — ever\nNever do that.\n\n## Handover\nOther text.\n"
 PLAN = {"tickets": [{"title": "SECRET TITLE", "files": ["src/a.py"], "change": "SECRET CHANGE", "check": "pytest -k a"},
                     {"title": "Next", "files": ["src/b.py"], "change": "Do next", "check": "pytest -k b"}],
-        "test_files": ["tests/test_a.py"]}
+        "test_files": ["tests/test_a.py"], "node_steps": "Install the merged commit"}
 
 
 @pytest.fixture
@@ -37,7 +37,8 @@ def setup(tmp_path, make_state, monkeypatch):
 
 def test_build_copies_rules_and_chains():
     result = cut.build_task_file("voice/W1", "owner/repo", "work", "a" * 40, PLAN, BRIEF)
-    assert result.keys() == {"slice", "repository", "branch", "base_commit", "tasks"}
+    assert result.keys() == {"slice", "repository", "branch", "base_commit", "node_steps", "tasks"}
+    assert result["node_steps"] == PLAN["node_steps"]
     for i, task in enumerate(result["tasks"]):
         assert "## Fixed decisions (do not reopen)\nKeep this exact.\n\n" in task["goal"]
         assert "## Do not — ever\nNever do that.\n\n" in task["goal"]
@@ -68,7 +69,7 @@ def test_submit_and_notice(setup):
 
 def test_invalid_plan_does_not_submit(setup, capsys):
     path, plan, capture, args, _ = setup
-    plan.write_text(json.dumps({"tickets": [{"title": "SECRET TITLE", "files": [], "change": "SECRET CHANGE", "check": "x"}], "test_files": ["tests/t.py"]}))
+    plan.write_text(json.dumps({"tickets": [{"title": "SECRET TITLE", "files": [], "change": "SECRET CHANGE", "check": "x"}], "test_files": ["tests/t.py"], "node_steps": None}))
     before = path.read_bytes()
     assert cli.main(args) == 1
     assert "position 1 files" in capsys.readouterr().err
