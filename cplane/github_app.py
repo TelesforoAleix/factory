@@ -47,12 +47,14 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def mint(fd, app_id, installation_id, repositories, now, *, read_only=False):
+def mint(fd, app_id, installation_id, repositories, now, *, read_only=False, pull_requests=False):
     read_only = read_only or os.environ.get('CPLANE_GITHUB_READ_ONLY') == '1'
     assertion = jwt(fd, app_id, now)
     body = {'repositories': [repo.split('/')[1] for repo in repositories]}
     if read_only:
         body['permissions'] = {'contents': 'read'}
+        if pull_requests:
+            body['permissions']['pull_requests'] = 'read'
     request = urllib.request.Request(
         f'https://api.github.com/app/installations/{installation_id}/access_tokens',
         data=json.dumps(body).encode(),
@@ -78,7 +80,7 @@ def mint(fd, app_id, installation_id, repositories, now, *, read_only=False):
             or expiry.tzinfo is None or expiry.timestamp() <= now + 60
             or {r['full_name'].lower() for r in data['repositories']} != set(repositories)
             or (read_only and data.get('permissions') not in (
-                {'contents': 'read'}, {'contents': 'read', 'metadata': 'read'}))):
+                body['permissions'], dict(body['permissions'], metadata='read')))):
         raise StateError('GitHub App token response is invalid')
     return token, expiry.timestamp()
 
@@ -93,11 +95,11 @@ def repositories_checked(repositories):
     return repos
 
 
-def installation_token(repositories):
+def installation_token(repositories, *, read_only=False, pull_requests=False):
     """Reuse tokens in this process, renewing within five minutes of expiry."""
     try:
         repos = repositories_checked(repositories)
-        read_only = os.environ.get('CPLANE_GITHUB_READ_ONLY') == '1'
+        read_only = read_only or os.environ.get('CPLANE_GITHUB_READ_ONLY') == '1'
         app_id = os.environ['CPLANE_GITHUB_APP_ID']
         installation_id = os.environ['CPLANE_GITHUB_INSTALLATION_ID']
         if not all(re.fullmatch(r'[1-9][0-9]*', value) for value in (app_id, installation_id)):
@@ -111,14 +113,14 @@ def installation_token(repositories):
                 raise StateError('GitHub App key must be a root-owned regular file with mode 0600')
             # Keep distinct scopes, installations and key revisions isolated. A
             # fork must mint its own token rather than use its parent's cache.
-            context = (os.getpid(), app_id, installation_id, repos, read_only, info.st_dev,
+            context = (os.getpid(), app_id, installation_id, repos, read_only, pull_requests, info.st_dev,
                        info.st_ino, info.st_mtime_ns, info.st_ctime_ns)
             with _TOKEN_LOCK:
                 now = time.time()
                 cached = _TOKENS.get(context)
                 if cached is None or cached[1] <= now + 300:
                     cached = mint(key.fileno(), app_id, installation_id, repos, now,
-                                  read_only=read_only)
+                                  read_only=read_only, **({'pull_requests': True} if pull_requests else {}))
                     _TOKENS[context] = cached
                 return cached[0]
     except StateError:
@@ -129,3 +131,18 @@ def installation_token(repositories):
     except Exception:
         # Neither HTTP bodies, OpenSSL diagnostics nor exception details are safe.
         raise StateError('GitHub App authentication failed') from None
+
+
+def read_repository(repository, path, *, accept='application/vnd.github+json'):
+    """Read one GitHub API resource using a repository-scoped read-only token."""
+    repositories_checked([repository])
+    token = installation_token([repository], read_only=True, pull_requests=True)
+    request = urllib.request.Request(
+        f'https://api.github.com/repos/{repository}/{path}',
+        headers={'Authorization': 'Bearer ' + token, 'Accept': accept,
+                 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'factory-cplane'})
+    try:
+        with urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect()).open(request, timeout=30) as response:
+            return response.read().decode('utf-8')
+    except Exception:
+        raise StateError('GitHub repository read failed') from None

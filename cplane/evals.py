@@ -427,3 +427,102 @@ def run_cancel(store, identifier):
                 (identifier,)).fetchone():
             raise StateError('Eval run not found')
         return run_show(store, identifier)
+
+
+def _brief(root, path):
+    import subprocess
+    if not isinstance(path, str) or not path or Path(path).is_absolute() or '..' in Path(path).parts:
+        raise StateError('Slice brief path is invalid')
+
+    def git(*args):
+        return subprocess.run(['git', '-C', str(root), '-c', 'core.hooksPath=/dev/null',
+                               '-c', 'core.fsmonitor=false', *args], capture_output=True)
+
+    result = git('show', 'HEAD:' + path)
+    if result.returncode:
+        deletion = git('log', '-1', '--format=%H', '--diff-filter=D', '--', path)
+        commit = deletion.stdout.decode('ascii', errors='replace').strip()
+        if not re.fullmatch(r'[0-9a-f]{40}', commit):
+            raise StateError('Slice brief cannot be found')
+        result = git('show', commit + '^:' + path)
+    try:
+        if result.returncode:
+            raise ValueError()
+        return _text(result.stdout.decode('utf-8'), 'brief', 'slice')
+    except (UnicodeError, ValueError):
+        raise StateError('Slice brief cannot be found') from None
+
+
+def case_from_slice(store, slice_id, briefs, *, kind, check, grade, validation, hidden=None, reader=None):
+    """Store a qualified slice once; repository and brief access are read-only."""
+    import sys
+    from .github_app import read_repository
+    reader = reader or read_repository
+    _text(slice_id, 'id', 'slice')
+    _text(check, 'check', slice_id)
+    _text(validation, 'validation', slice_id)
+    if kind not in FILTERS['tag_kind'] or grade not in ('tests_and_judge', 'judge'):
+        raise StateError('Invalid case kind or grade')
+    if hidden is not None and (not isinstance(hidden, list) or any(not isinstance(p, str) or not p.strip() for p in hidden)):
+        raise StateError('Invalid hidden paths')
+    identifier = 'slice:' + slice_id
+    with store.mutation():
+        prior = _rows(store, 'SELECT * FROM cplane_eval_cases WHERE id=%s', (identifier,))
+        if prior:
+            print(f'{identifier}: already exists; unchanged', file=sys.stderr)
+            return prior[0]
+        rows = _rows(store, 'SELECT s.document, l.level, o.verdict FROM cplane_slices s '
+                     'LEFT JOIN cplane_slice_levels l ON l.slice_id=s.id '
+                     'LEFT JOIN cplane_slice_outcomes o ON o.slice_id=s.id WHERE s.id=%s', (slice_id,))
+        if not rows or rows[0]['verdict'] != 'accepted':
+            raise StateError(f'{slice_id}: slice is not accepted')
+        if _rows(store, 'SELECT slice_id FROM cplane_slice_outcomes WHERE corrects_slice=%s', (slice_id,)):
+            raise StateError(f'{slice_id}: slice has been corrected')
+        item, level = rows[0]['document'], rows[0]['level'] or 'standard'
+        repo, pr = item.get('repo'), item.get('pr')
+        if not isinstance(repo, str) or not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repo) or type(pr) is not int or pr < 1:
+            raise StateError(f'{slice_id}: slice has no repository or PR')
+        task = _brief(briefs, item.get('brief'))
+        try:
+            pull = json.loads(reader(repo, f'pulls/{pr}'))
+            merge = pull.get('merge_commit_sha')
+            if not pull.get('merged_at') or not isinstance(merge, str) or not re.fullmatch(r'[0-9a-f]{40}', merge):
+                raise StateError(f'{slice_id}: PR is not merged')
+            commit = json.loads(reader(repo, f'commits/{merge}'))
+            base = commit['parents'][0]['sha']
+            if not re.fullmatch(r'[0-9a-f]{40}', base):
+                raise ValueError()
+            patch = reader(repo, f'compare/{base}...{merge}', accept='application/vnd.github.v3.diff')
+            paths = []
+            for page in range(1, 32):
+                entries = json.loads(reader(repo, f'pulls/{pr}/files?per_page=100&page={page}'))
+                if not isinstance(entries, list):
+                    raise ValueError()
+                paths.extend(entry['filename'] for entry in entries)
+                if len(paths) >= 3000:
+                    raise StateError('PR file listing exceeds GitHub limit')
+                if len(entries) < 100:
+                    break
+            else:
+                raise StateError('PR file listing exceeds GitHub limit')
+        except (ValueError, KeyError, IndexError, TypeError):
+            raise StateError('Invalid GitHub PR response') from None
+        extensions = {'.py': 'python', '.swift': 'swift', '.ts': 'typescript', '.tsx': 'typescript'}
+        counts = {language: sum(Path(p).suffix.lower() in [ext for ext, lang in extensions.items() if lang == language]
+                                for p in paths) for language in FILTERS['language']}
+        language = max(counts, key=counts.get)
+        if not counts[language]:
+            raise StateError(f'{slice_id}: no supported language in changed files')
+        if hidden is None:
+            hidden = [p for p in paths if any(part in ('test', 'tests') for part in Path(p).parts[:-1])
+                      or Path(p).name.startswith('test_') or re.search(r'_test\.[^.]+$|\.test\.', Path(p).name)]
+        if grade == 'tests_and_judge' and not hidden:
+            raise StateError(f'{slice_id}: tests_and_judge requires hidden paths')
+        case = dict(id=identifier, kind='slice', level=level, repository=repo, pr=pr, base_commit=base,
+                    title=_text(item.get('title'), 'title', slice_id), task=task, check_command=check,
+                    reference_diff=patch, tag_kind=kind, size=size(store, patch), language=language,
+                    half=half(store, repo, pr), allowed_files=None, source_slice=slice_id, merge_commit=merge,
+                    hidden_paths=hidden, grade=grade, validation=validation)
+        fields = IMPORT_FIELDS + SLICE_FIELDS
+        return _rows(store, 'INSERT INTO cplane_eval_cases (' + ', '.join(fields) + ') VALUES (' +
+                     ', '.join(['%s'] * len(fields)) + ') RETURNING *', tuple(case[k] for k in fields))[0]
