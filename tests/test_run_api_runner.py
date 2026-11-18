@@ -1169,6 +1169,7 @@ def test_ticket_paths_translated_in_post(setup):
     r, api, _ = setup
     edit(r, lambda s: s.update(flow="tickets", allowed_files=["src/**"]))
     plan = copy.deepcopy(PLAN)
+    plan["node_steps"] = None
     plan["tickets"][0]["files"] = ["src/*"]
     plan["test_files"] = ["tests/**"]
     r.run()
@@ -1186,6 +1187,7 @@ def test_unexpressible_ticket_path_escalates_before_ticket_posts(setup, field):
     r, api, _ = setup
     edit(r, lambda s: s.update(flow="tickets"))
     plan = copy.deepcopy(PLAN)
+    plan["node_steps"] = None
     if field == "files":
         plan["tickets"][1]["files"] = ["src/*.py"]
     else:
