@@ -14,7 +14,9 @@ FILTERS = {'kind': ('ticket', 'slice', 'review'),
            'half': ('development', 'held-out')}
 IMPORT_FIELDS = ('id', 'kind', 'level', 'repository', 'pr', 'base_commit', 'title', 'task',
                  'check_command', 'reference_diff', 'tag_kind', 'size', 'language', 'half', 'allowed_files')
-CASE_FIELDS = IMPORT_FIELDS + ('start_commit', 'start_branch', 'pinned_paths')
+SLICE_FIELDS = ('source_slice', 'merge_commit', 'hidden_paths', 'grade', 'validation')
+CASE_FIELDS = IMPORT_FIELDS + ('start_commit', 'start_branch', 'pinned_paths') + SLICE_FIELDS
+CONFIGURATION_ROLES = {'slice': {'executor', 'reviewer'}, 'tickets': {'cutter', 'ticket', 'reviewer'}}
 
 
 def _rows(store, sql, parameters=()):
@@ -78,6 +80,77 @@ def _text(value, field, identifier):
     return value
 
 
+def validate_configuration(path, roles):
+    """Validate a named configuration's exact platform executor shapes for reuse."""
+    if not isinstance(path, str) or path not in CONFIGURATION_ROLES:
+        raise StateError('Configuration path must be slice or tickets')
+    if not isinstance(roles, dict) or set(roles) != CONFIGURATION_ROLES[path]:
+        raise StateError(f'Configuration {path} roles must be exactly ' + ', '.join(sorted(CONFIGURATION_ROLES[path])))
+    for role, entry in roles.items():
+        if not isinstance(entry, dict):
+            raise StateError(f'{role}: executor entry must be an object')
+        if set(entry) == {'configuration'}:
+            if not isinstance(entry['configuration'], str) or not re.fullmatch(
+                    r'pi/[A-Za-z0-9][A-Za-z0-9._-]{0,63}', entry['configuration']):
+                raise StateError(f'{role}: invalid Pi configuration name')
+            continue
+        harness = entry.get('harness')
+        if harness not in ('codex', 'claude'):
+            raise StateError(f'{role}: unknown executor harness')
+        expected = {'harness', 'model', 'effort'} if harness == 'codex' else {'harness', 'model'}
+        if set(entry) != expected:
+            raise StateError(f'{role}: {harness} entry requires exactly ' + ', '.join(sorted(expected)))
+        for field in expected:
+            _text(entry[field], field, role)
+
+
+def config_add(store, identifier, *, path, roles, note='', actor='owner'):
+    from psycopg.types.json import Jsonb
+    _text(identifier, 'id', 'configuration')
+    _text(actor, 'actor', identifier)
+    if not isinstance(note, str):
+        raise StateError('Configuration note must be text')
+    validate_configuration(path, roles)
+    with store.mutation():
+        if _rows(store, 'SELECT id FROM cplane_eval_configurations WHERE id=%s', (identifier,)):
+            raise StateError(f'Eval configuration already exists: {identifier}')
+        return _rows(store, 'INSERT INTO cplane_eval_configurations (id, path, roles, note, created_by) '
+                     'VALUES (%s,%s,%s,%s,%s) RETURNING *', (identifier, path, Jsonb(roles), note, actor))[0]
+
+
+def config_list(store):
+    with store.locked():
+        return _rows(store, 'SELECT * FROM cplane_eval_configurations ORDER BY id')
+
+
+def config_show(store, identifier):
+    with store.locked():
+        rows = _rows(store, 'SELECT * FROM cplane_eval_configurations WHERE id=%s', (identifier,))
+        if not rows:
+            raise StateError(f'Eval configuration not found: {identifier}')
+        return rows[0]
+
+
+def _slice_fields(item, source, identifier):
+    fields = {key: item.get(key, source.get(key)) for key in SLICE_FIELDS if key in item or key in source}
+    for key, value in fields.items():
+        if value is None:
+            continue
+        if key == 'hidden_paths':
+            valid = isinstance(value, list) and all(isinstance(p, str) and p.strip() for p in value)
+        elif key == 'grade':
+            valid = value in ('tests_and_judge', 'judge')
+        elif key == 'merge_commit':
+            valid = isinstance(value, str) and re.fullmatch(r'[0-9a-fA-F]{40}', value)
+        elif key == 'source_slice':
+            valid = isinstance(value, str) and re.fullmatch(r'[^/\s]+/[^/\s]+', value)
+        else:
+            valid = isinstance(value, str) and bool(value.strip())
+        if not valid:
+            raise StateError(f'{identifier}: invalid {key}')
+    return fields
+
+
 def import_folder(store, folder):
     folder = Path(folder)
     if not folder.is_dir():
@@ -116,7 +189,7 @@ def import_folder(store, folder):
                     raise StateError(f'{key}: missing or invalid {field}')
                 tags[field] = value
             level = item.get('level') if kind == 'slice' else None
-            if kind == 'slice' and level not in ('light', 'standard'):
+            if kind == 'slice' and level not in ('light', 'standard', 'strong'):
                 raise StateError(f'{key}: missing or invalid level')
             files = item.get('files') if kind == 'ticket' else None
             if kind == 'ticket' and (not isinstance(files, list) or not files or
@@ -128,7 +201,7 @@ def import_folder(store, folder):
                         task=_text(item.get('change'), 'change', key),
                         check_command=(_text(item.get('check'), 'check', key) if kind == 'ticket' else item.get('check')),
                         reference_diff=patch, allowed_files=files, size=size(store, patch, files),
-                        half=half(store, repository, pr), **tags)
+                        half=half(store, repository, pr), **tags, **_slice_fields(item, source, key))
             if key in cases:
                 raise StateError(f'{key}: duplicate case in import')
             cases[key] = case
@@ -139,10 +212,11 @@ def import_folder(store, folder):
             if prior and all(prior[0][k] == v for k, v in case.items()):
                 counts['unchanged'] += 1
                 continue
-            assignments = ', '.join(f'{k} = EXCLUDED.{k}' for k in IMPORT_FIELDS if k != 'id')
-            store.connection.execute('INSERT INTO cplane_eval_cases (' + ', '.join(IMPORT_FIELDS) + ') VALUES (' +
-                                     ', '.join(['%s'] * len(IMPORT_FIELDS)) + ') ON CONFLICT (id) DO UPDATE SET ' + assignments,
-                                     tuple(case[k] for k in IMPORT_FIELDS))
+            fields = IMPORT_FIELDS + tuple(k for k in SLICE_FIELDS if k in case)
+            assignments = ', '.join(f'{k} = EXCLUDED.{k}' for k in fields if k != 'id')
+            store.connection.execute('INSERT INTO cplane_eval_cases (' + ', '.join(fields) + ') VALUES (' +
+                                     ', '.join(['%s'] * len(fields)) + ') ON CONFLICT (id) DO UPDATE SET ' + assignments,
+                                     tuple(case[k] for k in fields))
             counts['updated' if prior else 'inserted'] += 1
     return counts
 
@@ -186,6 +260,7 @@ def case_list(store, **filters):
         raise StateError('Invalid eval case filter')
     with store.locked():
         return _rows(store, 'SELECT id, kind, level, repository, pr, title, tag_kind, size, language, half, created_at, '
+                     + ', '.join(SLICE_FIELDS) + ', '
                      "CASE WHEN start_commit IS NULL THEN 'no' ELSE 'yes' END AS has_start "
                      'FROM cplane_eval_cases' + (' WHERE ' + ' AND '.join(f'{k} = %s' for k in filters) if filters else '') +
                      ' ORDER BY id', tuple(filters.values()))
@@ -302,6 +377,22 @@ def run_create(store, *, title, sets, configurations, repeats, scheduled_for=Non
 def run_list(store):
     with store.locked():
         return _rows(store, 'SELECT * FROM cplane_eval_runs ORDER BY id')
+
+
+def attempt_run_add(store, attempt, *, position, role, purpose, run_id):
+    """Record a platform run without using the legacy local run_record link."""
+    if type(position) is not int or position < 1:
+        raise StateError('Attempt run position must be >= 1')
+    for field, value in (('role', role), ('purpose', purpose), ('run_id', run_id)):
+        _text(value, field, 'attempt run')
+    with store.mutation():
+        return _rows(store, 'INSERT INTO cplane_eval_attempt_runs (attempt, position, role, purpose, run_id) '
+                     'VALUES (%s,%s,%s,%s,%s) RETURNING *', (attempt, position, role, purpose, run_id))[0]
+
+
+def attempt_run_list(store, attempt):
+    with store.locked():
+        return _rows(store, 'SELECT * FROM cplane_eval_attempt_runs WHERE attempt=%s ORDER BY position', (attempt,))
 
 
 def run_show(store, identifier):

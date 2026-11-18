@@ -333,7 +333,8 @@ def parser():
     starts = eval_commands.add_parser('starts', parents=[common])
     starts.add_argument('bundle')
     starts.add_argument('--pr', required=True)
-    for group, actions in (('case', ('list',)), ('set', ('create', 'add', 'list', 'show')),
+    for group, actions in (('case', ('list',)), ('config', ('add', 'list', 'show')),
+                           ('set', ('create', 'add', 'list', 'show')),
                            ('run', ('create', 'list', 'show', 'cancel'))):
         sub = eval_commands.add_parser(group, parents=[common])
         actions_parser = sub.add_subparsers(dest='eval_action', required=True, parser_class=Parser)
@@ -343,6 +344,13 @@ def parser():
                 from .evals import FILTERS
                 for field, choices in FILTERS.items():
                     command.add_argument('--' + field.replace('_', '-'), choices=choices)
+            elif group == 'config':
+                if action in ('add', 'show'):
+                    command.add_argument('id')
+                if action == 'add':
+                    command.add_argument('--path', choices=('slice', 'tickets'), required=True)
+                    command.add_argument('--role', action='append', required=True)
+                    command.add_argument('--note', default='')
             elif group == 'set':
                 if action in ('create', 'add', 'show'):
                     command.add_argument('id')
@@ -460,6 +468,19 @@ def eval_command(args):
         result = evals.import_starts(backend, args.bundle, args.pr)
     elif args.eval_group == 'case':
         result = evals.case_list(backend, **{key: getattr(args, key) for key in evals.FILTERS})
+    elif args.eval_group == 'config':
+        if args.eval_action == 'add':
+            roles = {}
+            for value in args.role:
+                name, separator, entry = value.partition('=')
+                if not separator or not name or name in roles:
+                    raise state.StateError('--role requires unique name=<JSON entry> values')
+                roles[name] = json.loads(entry)
+            result = evals.config_add(backend, args.id, path=args.path, roles=roles, note=args.note, actor=actor)
+        elif args.eval_action == 'show':
+            result = evals.config_show(backend, args.id)
+        else:
+            result = evals.config_list(backend)
     elif args.eval_group == 'set':
         if args.eval_action == 'create':
             result = evals.set_create(backend, args.id, title=args.title, filters=json.loads(args.filter),

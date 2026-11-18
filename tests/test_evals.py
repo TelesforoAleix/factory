@@ -1,6 +1,8 @@
 """Synthetic eval catalogue, versioning and expansion on CI's Postgres 17."""
 import hashlib
 import json
+from pathlib import Path
+import shutil
 
 import pytest
 
@@ -35,6 +37,8 @@ def test_migration_twice(pg_store):
         assert pg_store.connection.execute(
             "SELECT count(*) FROM cplane_migrations WHERE name = '026_eval.sql'").fetchone()[0] == 1
         assert pg_store.connection.execute('SELECT count(*) FROM cplane_eval_cases').fetchone()[0] == 0
+        assert pg_store.connection.execute(
+            "SELECT count(*) FROM cplane_migrations WHERE name = '032_eval_records.sql'").fetchone()[0] == 1
 
 
 def test_import_sizes_half_idempotency_and_updates(pg_store, cases):
@@ -304,3 +308,191 @@ def test_ticket_platform_planning_refusals_are_atomic(pg_store, cases, problem):
     assert evals.run_list(pg_store) == []
     with pg_store.locked():
         assert pg_store.connection.execute('SELECT count(*) FROM cplane_eval_attempts').fetchone()[0] == 0
+
+
+@pytest.mark.parametrize(('path', 'roles'), [
+    ('slice', {'executor': {'harness': 'codex', 'model': 'synthetic', 'effort': 'medium'},
+               'reviewer': {'harness': 'claude', 'model': 'synthetic'}}),
+    ('tickets', {role: {'configuration': 'pi/synthetic-1.0_test'} for role in ('cutter', 'ticket', 'reviewer')})])
+def test_named_configurations_are_stored_once(pg_store, path, roles):
+    config = evals.config_add(pg_store, path, path=path, roles=roles, note='Synthetic', actor='planner')
+    assert config['id'] == path and config['path'] == path and config['roles'] == roles
+    assert config['note'] == 'Synthetic' and config['created_by'] == 'planner' and config['created_at']
+    assert evals.config_list(pg_store) == [config]
+    assert evals.config_show(pg_store, path) == config
+    for replacement in (roles, {role: {'configuration': 'pi/other'} for role in roles}):
+        with pytest.raises(state.StateError, match='already exists'):
+            evals.config_add(pg_store, path, path=path, roles=replacement)
+    for sql in ["UPDATE cplane_eval_configurations SET note='changed'", 'DELETE FROM cplane_eval_configurations']:
+        with pytest.raises(state.StateError), pg_store.mutation():
+            pg_store.connection.execute(sql)
+    assert evals.config_show(pg_store, path) == config
+    with pytest.raises(state.StateError, match='not found'):
+        evals.config_show(pg_store, 'missing')
+
+
+@pytest.mark.parametrize(('path', 'roles'), [
+    ('other', {}), ('slice', {}), ('tickets', {'executor': {}, 'reviewer': {}}),
+    ('slice', {'executor': {}, 'reviewer': {}, 'ticket': {}}),
+    ('slice', []), ('slice', {'executor': None, 'reviewer': {}}),
+])
+def test_configuration_role_sets_are_refused(path, roles):
+    with pytest.raises(state.StateError):
+        evals.validate_configuration(path, roles)
+
+
+@pytest.mark.parametrize('entry', [
+    {'harness': 'codex', 'model': 'synthetic'},
+    {'harness': 'codex', 'model': 'synthetic', 'effort': ' '},
+    {'harness': 'codex', 'model': 42, 'effort': 'medium'},
+    {'harness': 'unknown', 'model': 'synthetic'},
+    {'harness': 'claude', 'model': 'synthetic', 'effort': 'medium'},
+    {'harness': 'claude', 'model': ''},
+    {'configuration': 'pi/bad/name'}, {'configuration': 'base'},
+    {'configuration': 'pi/-bad'}, {'configuration': 'pi/' + 'a' * 65},
+    {'configuration': 'pi/good', 'model': 'synthetic'}, {'configuration': None},
+    {'harness': 'pi', 'configuration': 'pi/base'},
+])
+def test_invalid_executor_entries_are_refused_without_writes(pg_store, entry):
+    with pytest.raises(state.StateError):
+        evals.config_add(pg_store, 'bad', path='slice',
+                         roles={'executor': entry, 'reviewer': {'configuration': 'pi/base'}})
+    assert evals.config_list(pg_store) == []
+
+
+def test_configuration_cli(pg_store, capsys):
+    command = ['eval', 'config', 'add', 'synthetic', '--path', 'slice',
+               '--role', 'executor={"harness":"codex","model":"synthetic","effort":"medium"}',
+               '--role', 'reviewer={"configuration":"pi/base"}', '--note', 'Synthetic', '--actor', 'planner']
+    assert main(command) == 0
+    config = json.loads(capsys.readouterr().out)
+    assert config['created_by'] == 'planner' and config['note'] == 'Synthetic'
+    assert main(['eval', 'config', 'list']) == 0
+    assert json.loads(capsys.readouterr().out) == [config]
+    assert main(['eval', 'config', 'show', 'synthetic']) == 0
+    assert json.loads(capsys.readouterr().out) == config
+    for suffix in ([], ['--role', 'executor={"configuration":"pi/other"}']):
+        assert main(command + suffix) == 1
+        assert capsys.readouterr().err
+    for role in ('executor', 'executor=not-json', 'executor=[]'):
+        assert main(['eval', 'config', 'add', 'bad', '--path', 'slice', '--role', role]) == 1
+        assert capsys.readouterr().err
+    assert evals.config_list(pg_store) == [config]
+
+
+@pytest.mark.parametrize('grade', ['tests_and_judge', 'judge'])
+def test_slice_metadata_import_and_preservation(pg_store, cases, grade):
+    folder, source = cases
+    source.pop('tickets')
+    metadata = dict(source_slice='factory/E6', merge_commit='b' * 40, hidden_paths=['tests/test_synthetic.py'],
+                    grade=grade, validation='Synthetic qualification: the brief fixes the tested names.')
+    source.update(kind='slice', level='strong', title='Synthetic slice', change='Synthetic brief',
+                  tag_kind='change', language='python', **metadata)
+    file = folder / 'synthetic.json'
+    file.write_text(json.dumps(source))
+    assert evals.import_folder(pg_store, folder) == dict(inserted=1, updated=0, unchanged=0)
+    case, = evals.case_list(pg_store)
+    assert case['level'] == 'strong'
+    assert {k: case[k] for k in metadata} == metadata
+    assert evals.import_folder(pg_store, folder) == dict(inserted=0, updated=0, unchanged=1)
+    for k in metadata:
+        del source[k]
+    source['change'] = 'Updated brief'
+    file.write_text(json.dumps(source))
+    assert evals.import_folder(pg_store, folder)['updated'] == 1
+    assert evals.case_list(pg_store) == [case]
+    source.update({k: None for k in metadata})
+    file.write_text(json.dumps(source))
+    assert evals.import_folder(pg_store, folder)['updated'] == 1
+    assert all(evals.case_list(pg_store)[0][k] is None for k in metadata)
+
+
+@pytest.mark.parametrize(('field', 'value'), [
+    ('source_slice', 'no-slice'), ('source_slice', 'too/many/parts'), ('merge_commit', 'not-a-commit'),
+    ('hidden_paths', 'tests/test.py'), ('hidden_paths', [None]), ('hidden_paths', [['nested']]),
+    ('grade', 'tests'), ('validation', ' '),
+])
+def test_invalid_slice_metadata_is_atomic(pg_store, cases, field, value):
+    folder, source = cases
+    source['tickets'][1][field] = value
+    (folder / 'synthetic.json').write_text(json.dumps(source))
+    with pytest.raises(state.StateError, match=f'invalid {field}'):
+        evals.import_folder(pg_store, folder)
+    assert evals.case_list(pg_store) == []
+
+
+def test_attempt_runs_order_and_uniqueness(pg_store, cases):
+    evals.import_folder(pg_store, cases[0])
+    with pg_store.mutation():
+        pg_store.connection.execute('UPDATE cplane_eval_cases SET start_commit=%s', ('b' * 40,))
+    evals.set_create(pg_store, 's', title='Synthetic', filters={})
+    run = evals.run_create(pg_store, title='Synthetic', sets=['s'], repeats=1,
+                          configurations=[dict(id='pi', harness='pi', model='base', route='platform', configuration='base')])
+    attempt, other = [a['id'] for a in run['attempts']]
+    records = [evals.attempt_run_add(pg_store, attempt, position=position, role='ticket', purpose='execute', run_id=run_id)
+               for position, run_id in [(3, 'platform-c'), (1, 'platform-a'), (2, 'platform-b')]]
+    assert evals.attempt_run_list(pg_store, attempt) == sorted(records, key=lambda r: r['position'])
+    assert evals.attempt_run_list(pg_store, other) == []
+    for position, run_id in [(4, 'platform-a'), (1, 'platform-new')]:
+        with pytest.raises(state.StateError):
+            evals.attempt_run_add(pg_store, attempt, position=position, role='ticket', purpose='execute', run_id=run_id)
+    evals.attempt_run_add(pg_store, attempt, position=4, role='check', purpose='grade', run_id='platform-a')
+    evals.attempt_run_add(pg_store, other, position=1, role='ticket', purpose='execute', run_id='platform-a')
+    assert evals.run_show(pg_store, run['id']) == run  # Legacy attempt links/output stay unchanged.
+
+
+def test_records_migration_preserves_populated_legacy_store(request, monkeypatch, tmp_path, cases):
+    # Start from migrations through 031, rather than empty tables already at 032.
+    from cplane import stores
+    old = tmp_path / 'old' / 'migrations'
+    old.mkdir(parents=True)
+    for migration in Path('cplane/migrations').glob('*.sql'):
+        if migration.name < '032':
+            shutil.copyfile(migration, old / migration.name)
+    with monkeypatch.context() as patch:
+        patch.setattr(stores, 'files', lambda _: old.parent)
+        store = request.getfixturevalue('pg_store')
+    evals.import_folder(store, cases[0])
+    with store.mutation():
+        store.connection.execute('UPDATE cplane_eval_cases SET start_commit=%s', ('b' * 40,))
+        store.connection.execute("INSERT INTO cplane_eval_sets VALUES ('legacy','Legacy','')")
+        evals._version(store, 'legacy', 1, ['example/public#53/1', 'example/public#53/2'], {}, '', 'planner')
+    run = evals.run_create(store, title='Legacy', sets=['legacy'], repeats=1, configurations=[
+        dict(id='pi-base', harness='pi', model='base', route='platform', configuration='base')])
+    with store.mutation():
+        record_id = store.connection.execute(
+            "INSERT INTO cplane_run_records (turn_key,kind,tool) VALUES ('legacy','slice','codex') RETURNING id").fetchone()[0]
+        store.connection.execute("UPDATE cplane_eval_runs SET state='done'")
+        store.connection.execute("UPDATE cplane_eval_attempts SET state='done', platform_task=123, run_record=%s", (record_id,))
+        before_cases = evals._rows(store, 'SELECT * FROM cplane_eval_cases ORDER BY id')
+    evals.verdict_add(store, run['attempts'][0]['id'], judge='synthetic@1', prompt_hash='legacy',
+                      verdict='mergeable', reason='Synthetic legacy verdict')
+    before_run = evals.run_show(store, run['id'])
+    # Completed pre-catalogue Codex runs keep their original inline shape too.
+    from psycopg.types.json import Jsonb
+    legacy_codex = [dict(id='codex-luna', harness='codex', model='gpt-6-luna', route='fence', effort='medium')]
+    with store.mutation():
+        codex_id = store.connection.execute(
+            'INSERT INTO cplane_eval_runs (title,created_by,repeats,set_versions,configurations,state) '
+            "VALUES ('Legacy Codex','planner',1,'[]',%s,'done') RETURNING id", (Jsonb(legacy_codex),)).fetchone()[0]
+    before_codex = evals.run_show(store, codex_id)
+    before_runs = evals.run_list(store)
+    store.migrate()
+    store.migrate()
+    assert evals.run_show(store, run['id']) == before_run
+    assert evals.run_show(store, codex_id) == before_codex
+    assert evals.run_list(store) == before_runs
+    with store.locked():
+        after_cases = evals._rows(store, 'SELECT * FROM cplane_eval_cases ORDER BY id')
+        assert [{k: r[k] for k in before_cases[0]} for r in after_cases] == before_cases
+        assert all(r[k] is None for r in after_cases for k in evals.SLICE_FIELDS)
+    assert len(evals.case_list(store)) == 2
+    assert evals.config_list(store) == []
+    assert evals.attempt_run_list(store, before_run['attempts'][0]['id']) == []
+    # Database checks remain effective for the extended level and path domains.
+    for sql in ["UPDATE cplane_eval_cases SET kind='slice', level='invalid'",
+                "UPDATE cplane_eval_cases SET level='strong'",
+                "INSERT INTO cplane_eval_configurations (id,path,roles,created_by) VALUES ('bad','other','{}','test')",
+                "UPDATE cplane_eval_cases SET grade='invalid'"]:
+        with pytest.raises(state.StateError), store.mutation():
+            store.connection.execute(sql)

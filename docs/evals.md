@@ -5,9 +5,11 @@ The runner executes slice and review attempts in the fence and sends ticket atte
 to the platform, which grades them with their pinned check.
 All commands require Postgres through `CPLANE_DATABASE_URL` or
 `CPLANE_DATABASE_URL_FILE`, and emit JSON. Mutations accept `--actor` (default
-`owner`) to record who created a set version or run.
+`owner`) to record who created a configuration, set version or run.
 
-A **case** is work with a known right answer. A **set** is a named selection of
+A new **case** is a validated slice: its brief, start commit and merged result,
+with the orchestrator's qualification reason. Existing ticket and review cases
+remain supported. A **set** is a named selection of
 cases; its numbered **versions** preserve their membership. An **eval run** selects
 set versions, configurations and repeats. An **attempt** is one case × configuration
 × repeat within that run. A **verdict** is a judge's grade of one attempt; multiple
@@ -15,7 +17,7 @@ judges can grade the same attempt.
 
 ## Case files
 
-Cases originate in merged pull requests of public repositories. Import reads every
+Cases originate in merged pull requests from any repository. Import reads every
 `*.json` in one folder, paired with `<branch>.patch` containing the whole slice's
 reference git diff. A ticket source looks like this (all values are synthetic):
 
@@ -46,8 +48,8 @@ the case. Tags are never inferred from task text, filenames or the diff.
 
 For a whole slice or review, use `"kind": "slice"` or `"kind": "review"` and put
 `title`, `change`, `tag_kind` and `language` directly on the source object, alongside
-`repository`, `pr`, `base_commit` and `branch`. Slices require `level` of `light` or
-`standard`. `check` is optional for slices and reviews. Their ID is `repository#pr`;
+`repository`, `pr`, `base_commit` and `branch`. Slices require `level` of `light`,
+`standard` or `strong`. `check` is optional for slices and reviews. Their ID is `repository#pr`;
 a slice and a review of the same PR therefore share the prescribed ID and cannot
 coexist as separate cases. Ticket files default to `kind` of `ticket`.
 
@@ -71,6 +73,71 @@ Output contains only `inserted`, `updated` and `unchanged` counts, never case te
 Case content may be updated by import; versions freeze member IDs, not copies of
 case content. Import is a trusted local operation and does not verify public PR
 metadata or run the supplied check command.
+
+The slice catalogue also stores validated slices from any repository. The brief
+is `task` (imported from `change`), the start is `base_commit` or the existing
+`start_commit`, and the merged result is `merge_commit` plus `reference_diff`.
+These additional source fields are optional and nullable:
+
+| Field | Meaning |
+| --- | --- |
+| `source_slice` | Factory slice ID, `<repo>/<id>`. |
+| `merge_commit` | Full 40-digit hexadecimal merged commit ID. |
+| `hidden_paths` | Array of the merged PR's test file paths. |
+| `grade` | `tests_and_judge` or `judge`. |
+| `validation` | Orchestrator's reason the case qualifies. |
+
+Use hidden tests plus a judge when the merged PR's tests apply to the brief.
+Use judge only when those tests depend on names the brief never fixed; record
+the reason in `validation`. Import validates field shapes, not that qualification
+decision. Case list includes these fields. Omitting them on reimport preserves
+stored values; explicit JSON null clears a value. Ticket entries may override
+source-level defaults. Existing ticket and review cases remain valid.
+
+## Named configurations
+
+A configuration is an immutable named record with `id`, `path`, `roles`, `note`,
+`created_by` and `created_at`. Changes require a new name; a second add of the
+same name is refused, even with identical values. The slice path requires exactly
+`executor` and `reviewer`; the tickets path requires exactly `cutter`, `ticket`
+and `reviewer`. Each role uses one of these exact platform executor shapes:
+
+```json
+{"harness": "codex", "model": "example-model", "effort": "medium"}
+{"harness": "claude", "model": "example-model"}
+{"configuration": "pi/base"}
+```
+
+Models and Codex effort are nonempty text. Pi names after `pi/` match
+`[A-Za-z0-9][A-Za-z0-9._-]{0,63}`. Extra entry fields and unknown harnesses are
+refused. Python callers reuse `validate_configuration(path, roles)`; store APIs
+are `config_add`, `config_list` and `config_show`.
+
+```sh
+cplane eval config add slice-example --path slice \
+  --role 'executor={"harness":"codex","model":"example-model","effort":"medium"}' \
+  --role 'reviewer={"harness":"claude","model":"example-model"}' \
+  --note 'Synthetic slice configuration' --actor planner
+cplane eval config add tickets-example --path tickets \
+  --role 'cutter={"configuration":"pi/base"}' \
+  --role 'ticket={"configuration":"pi/base"}' \
+  --role 'reviewer={"configuration":"pi/base"}'
+cplane eval config list
+cplane eval config show slice-example
+```
+
+Migration 032 adds store records only. Run creation still takes its existing
+inline configuration objects; named records do not change existing eval runs,
+execution or the Workshop run form.
+
+An attempt can retain all its platform runs in `cplane_eval_attempt_runs`, with
+`attempt`, one-based `position`, `role`, `purpose` and the platform's text `run_id`.
+`attempt_run_add` records them and `attempt_run_list` returns position order.
+Positions are unique within an attempt; a run ID cannot repeat within the same
+attempt and purpose. Several ticket runs may share a role and purpose. The same
+run can serve another purpose. Role and purpose are nonempty text so later
+orchestration can label cut, ticket, slice, review and grading work. Existing
+`run_record` and `platform_task` links and run-show output are unchanged.
 
 ## Commands
 
