@@ -102,7 +102,7 @@ def build_task_file(slice_id, repository, branch, base_commit, plan, brief):
                       "allowed_files": ticket["files"], "check_command": ticket["check"],
                       "pinned_paths": plan["test_files"]})
     return {"slice": slice_id, "repository": repository, "branch": branch,
-            "base_commit": base_commit, "node_steps": plan["node_steps"], "tasks": tasks}
+            "base_commit": base_commit, "tasks": tasks}
 
 
 def submit(task_file):

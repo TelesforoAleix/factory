@@ -1,10 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
-  "required": ["tickets", "test_files", "node_steps"],
+  "required": ["tickets", "test_files"],
   "additionalProperties": false,
   "properties": {
-    "node_steps": {"type": ["string", "null"]},
     "tickets": {
       "type": "array", "minItems": 1, "maxItems": 10,
       "items": {

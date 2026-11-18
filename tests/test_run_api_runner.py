@@ -389,7 +389,7 @@ def test_retry_failed_ticket_releases_old_chain_before_new_cut(setup):
     r, api, gh = setup
     edit(r, lambda s: s.update(flow="tickets"))
     r.run()
-    api.finish(current(r), body=block(dict(PLAN, node_steps=None)))
+    api.finish(current(r), body=block(PLAN))
     r.run()
     tickets = [key for key, req in api.requests.items() if req["role"] == "ticket"]
     api.finish(tickets[0], status="failed")
@@ -594,7 +594,7 @@ def test_ticket_chain_and_read_review(setup):
         and api.requests[cut_id]["mode"] == "write"
     )
     assert COMMIT_INSTRUCTION in api.requests[cut_id]["work"]["goal"]
-    api.finish(cut_id, body=block(dict(PLAN, node_steps=None)))
+    api.finish(cut_id, body=block(PLAN))
     r.run()
     tickets = [req for req in api.requests.values() if req["role"] == "ticket"]
     assert len(tickets) == 2
@@ -827,7 +827,7 @@ def test_review_goal_includes_delivered_answers_in_order(setup, flow):
         r.run()
         edit(r, lambda s, answer=answer: s["attention"].update(answer=answer))
         r.run()
-    api.finish(key, body=pr_reply() if flow == "cli" else block(dict(PLAN, node_steps=None)))
+    api.finish(key, body=pr_reply() if flow == "cli" else block(PLAN))
     r.run()
     if flow == "tickets":
         for ticket, request in list(api.requests.items()):
@@ -899,7 +899,7 @@ def test_full_ticket_pr_review_has_no_repair_and_postmerge_handover(setup):
     edit(r, lambda s: s.update(flow="tickets"))
     r.run()
     cut_run = current(r)
-    api.finish(cut_run, body=block(dict(PLAN, node_steps=None)))
+    api.finish(cut_run, body=block(PLAN))
     r.run()
     tickets = [key for key, req in api.requests.items() if req["role"] == "ticket"]
     api.finish(tickets[0])
@@ -984,7 +984,7 @@ def test_cut_accepts_plan_after_prose_and_earlier_code_block(setup, kind):
         key,
         "done" if kind == "handover" else "waiting",
         kind,
-        "Plan follows.\n```python\nexample()\n```\n\n" + block(dict(PLAN, node_steps=None)),
+        "Plan follows.\n```python\nexample()\n```\n\n" + block(PLAN),
     )
     r.run()
     if kind == "waiting":
@@ -1077,7 +1077,7 @@ def test_ticket_run_statuses_raise_attention(setup, status, reason, kind, expect
     r, api, _ = setup
     edit(r, lambda s: s.update(flow="tickets"))
     r.run()
-    api.finish(current(r), body=block(dict(PLAN, node_steps=None)))
+    api.finish(current(r), body=block(PLAN))
     r.run()
     first = next(key for key, req in api.requests.items() if req["role"] == "ticket")
     api.finish(first, status, kind, "Ticket needs attention", status_reason=reason)

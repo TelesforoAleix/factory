@@ -23,7 +23,6 @@ End your reply with one fenced `json` block containing a JSON object with exactl
 - `tickets`: an array of 1 to 10 objects. Each object has exactly `title`, `files`, `change`,
   and `check`. `title`, `change`, and `check` are nonempty strings; `files` is a nonempty
   array of nonempty repository-relative path strings.
-- `node_steps`: copy the node step the brief tells the executor to declare (for example, `Install the merged commit`), or null if the brief declares none.
 - `test_files`: a nonempty array of nonempty repository-relative path strings naming the test
   files you wrote. Paths must not be absolute, contain `..` components, backslashes, or NULs,
   or be `.`. The same path rules apply to `files`.
