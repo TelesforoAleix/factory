@@ -94,13 +94,13 @@ Unpause therefore never needs a cancelled run.
 
 Slice levels remain in the existing Postgres table; overrides and old role rows
 are no longer read for execution. Columns and tables remain untouched. Version 1
-state retains its legacy executor/session fields for compatibility. `show` and
-the slice detail API expose `runs`, a list of role/executor pairs from the current
-attempt's platform records. Workshop displays those executors, including Pi
-configuration names. Before any run there are none; the legacy slice executor is
-never displayed. Reading records does not migrate them, and finished slices are
-left unchanged by runner passes. Synthetic file-store planner tests retain level selection in mutation log entries because
-that document contract has no level field. There is no model fallback in Factory.
+state retains its legacy executor/session fields for compatibility. `show`, the
+slice detail API and Workshop display the slice's run records newest first, with
+role, tool, model, effort and start time. Records created before roles were stored
+have an empty role; slices without records have no runs to display. Reading records
+does not migrate them, and finished slices are left unchanged by runner passes.
+Synthetic file-store planner tests retain level selection in mutation log entries
+because that document contract has no level field. There is no model fallback in Factory.
 
 ## Switch and rollback
 

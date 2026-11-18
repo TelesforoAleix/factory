@@ -51,28 +51,18 @@ class RoleStore:
                 'ON CONFLICT (slice_id) DO UPDATE SET level = EXCLUDED.level', (identifier, level))
 
     def slice_executor(self, item):
-        """Executors observed on the current attempt's platform runs."""
-        return slice_runs(item)
+        return slice_runs(item, self)
 
 
-def slice_runs(item, *, path=None, job=None):
-    """Read the latest ledger without converting or writing stored records."""
-    import json
-    import os
-    from pathlib import Path
-    from .installation import runs_path
-
-    if job is None:
-        anchor = Path(path or os.environ.get('CPLANE_STATE') or 'slices.json')
-        for file in runs_path(anchor).glob('*/job.json'):
-            try:
-                candidate = json.loads(file.read_text())
-                if candidate.get('id') != item['id'] or candidate.get('record_only'):
-                    continue
-                if job is None or candidate.get('started_ns', 0) > job.get('started_ns', 0):
-                    job = candidate
-            except (OSError, ValueError, TypeError):
-                continue
-    return [dict(role=entry['request']['role'], executor=record['executor'])
-            for entry in (job or {}).get('requests', {}).values()
-            if (record := entry.get('record') or {}).get('executor')]
+def slice_runs(item, store=None):
+    """Project persisted run records without exposing accounting data."""
+    if store is None or not hasattr(store, 'connection'):
+        return []
+    with store.locked():
+        rows = store.connection.execute(
+            'SELECT role, tool, model, effort, started_at FROM cplane_run_records '
+            'WHERE slice_id = %s ORDER BY started_at DESC NULLS LAST, id DESC',
+            (item['id'],)).fetchall()
+    return [dict(role=role, tool=tool, model=model, effort=effort,
+                 started_at=started.isoformat() if started else None)
+            for role, tool, model, effort, started in rows]

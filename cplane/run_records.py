@@ -17,7 +17,7 @@ from .state import StateError
 TOKEN_FIELDS = ('input_tokens', 'cached_tokens', 'cache_write_tokens', 'output_tokens', 'reasoning_tokens')
 OUTCOME_FIELDS = ('level', 'executor_source', 'configuration', 'brief_hash', 'ci_result',
                   'verdict', 'corrects_slice', 'owner_wait_seconds', 'change_class')
-FIELDS = ('kind', 'project', 'feature_id', 'slice_id', 'session_id', 'tool', 'model', 'effort',
+FIELDS = ('role', 'kind', 'project', 'feature_id', 'slice_id', 'session_id', 'tool', 'model', 'effort',
           *TOKEN_FIELDS, 'seconds', 'started_at', 'outcome', 'starting_commit', 'prompt',
           'prompt_truncated', 'skill_version', 'eval_candidate', *OUTCOME_FIELDS, 'context')
 
@@ -565,7 +565,7 @@ def platform_record(store, item, job, entry):
             tokens = metrics.get('tokens') or {}
             fresh, cached = tokens.get('fresh'), tokens.get('cached')
             store.run_record_add(key, repository=item['repo'], feature=item.get('feature'), kind='slice',
-                slice_id=item['id'], session_id=entry['run_id'] + ':' + str(attempt['number']), tool=harness, model=executor.get('model'),
+                role=request['role'], slice_id=item['id'], session_id=entry['run_id'] + ':' + str(attempt['number']), tool=harness, model=executor.get('model'),
                 effort=executor.get('effort'), starting_commit=request['base_commit'], skill_version=job.get('skills'),
                 level=request['level'], executor_source='level', configuration=attempt.get('configuration_hash') or saved.get('configuration_hash'),
                 brief_hash=hashlib.sha256(request['work']['goal'].encode()).hexdigest(),

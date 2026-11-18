@@ -75,9 +75,7 @@ def create_app(store=None):
 
     def runs(item, store):
         from cplane.roles import slice_runs
-        # Executor descriptors are structured platform identifiers, including
-        # pi/name configurations; free-text path redaction would corrupt them.
-        return slice_runs(item, path=getattr(store, 'path', None))
+        return slice_runs(item, store)
 
     def board_data(identifier=None):
         from cplane.eligibility import eligibility, observed

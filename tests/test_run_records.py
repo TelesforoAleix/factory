@@ -181,6 +181,7 @@ def test_platform_record_accounts_string_final(setup, status, reason, kind):
     store = Mock()
     run_records.platform_record(store, item, job, entry)
     assert store.run_record_add.call_args.kwargs['outcome'] == kind
+    assert store.run_record_add.call_args.kwargs['role'] == entry['request']['role']
 
 
 @pytest.mark.parametrize('tool', ['codex', 'claude'])
@@ -575,3 +576,32 @@ def test_api_attempt_metrics_and_repair_task_identity(pg_store, setup, monkeypat
     tasks = [row for row in rows if row['kind'] == 'task']
     assert {(row['queue_slice'], row['task_id']) for row in tasks} == {
         (item['id'], 'initial-ticket'), (item['id'] + '/repair', 'repair-ticket')}
+
+
+def test_slice_displays_persisted_run_roles(pg_store, slice_data, monkeypatch, capsys, tmp_path):
+    from factory_ui import create_app
+    from cplane.roles import slice_runs
+
+    item = slice_data
+    pg_store.save({'version': 1, 'slices': [item]})
+    pg_store.run_record_add('legacy', kind='slice', slice_id=item['id'], tool='codex', model='old')
+    for role, tool, model, effort, date in [
+        ('slice', 'codex', 'luna', 'low', '2026-11-07T00:00:00Z'),
+        ('review', 'claude', 'sonnet', None, '2026-11-08T00:00:00Z'),
+    ]:
+        request = dict(role=role, request_id=role, level='light', base_commit='abc', work={'goal': 'synthetic'})
+        entry = dict(request=request, run_id=role, turn=0, record=dict(status='done',
+                     executor=dict(harness=tool, model=model, effort=effort), started_at=date))
+        job = dict(run='synthetic', active=role, requests={role: entry})
+        run_records.platform_record(pg_store, item, job, entry)
+    expected = [
+        dict(role='review', tool='claude', model='sonnet', effort=None, started_at='2026-11-08T00:00:00+00:00'),
+        dict(role='slice', tool='codex', model='luna', effort='low', started_at='2026-11-07T00:00:00+00:00'),
+        dict(role=None, tool='codex', model='old', effort=None, started_at=None),
+    ]
+    assert slice_runs(item, pg_store) == expected
+    assert slice_runs({'id': 'missing'}, pg_store) == []
+    monkeypatch.setattr(state, 'store', lambda path: pg_store)
+    assert main(['--state', str(tmp_path / 'state'), 'show', item['id'], '--json']) == 0
+    assert json.loads(capsys.readouterr().out)['runs'] == expected
+    assert create_app(pg_store).test_client().get('/api/slices/' + item['id']).get_json()['runs'] == expected
