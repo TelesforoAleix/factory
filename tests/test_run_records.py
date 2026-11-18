@@ -268,6 +268,7 @@ def test_ci_red_then_green_keeps_both_in_read_order(pg_store, setup, monkeypatch
         json.dumps({'jobs': [{'name': 'test', 'status': 'completed', 'conclusion': 'success'}]}),
     ])
     runner.github = github
+    github.branch_tip = Mock(return_value=tip)
     github.changes = Mock(return_value=(1, []))
     job.update(phase='pr', tip=tip, review_verdict='pass')
     item.update(pr=12, attention=None, stop_before_merge=True)

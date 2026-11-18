@@ -86,12 +86,14 @@ Allowed state transitions are:
 | researching | planned, ready |
 | ready | planned (clears slot), issued (requires `--session`) |
 | issued, awaiting handover | in review, escalated, awaiting handover |
-| escalated | issued |
+| escalated | issued, ready (fresh attempt on start) |
 | in review | accepted, issued |
 
 Every other transition is refused with a reason. From any state,
 `state <id> planned --force --reason <text>` resets to planned and clears the
 slot; the nonempty reason is recorded in the log. Other fields remain recorded.
+An escalated → ready reset requests a fresh attempt on the next start, cancelling
+old runs and using the current default-branch tip with new request ids.
 `--session` is allowed only for ready → issued and records an executor already
 started outside the runner; this command starts no process. The tool must be codex
 or claude, and both ID and folder must be nonempty. Folder paths may contain colons.
@@ -101,7 +103,9 @@ Attention kinds are `question`, `escalation`, `merge`, `node-step`, and
 `owner-check`. Setting attention replaces its body and timestamp, clears its
 answer and approval, and leaves the slice's state as recorded. Clearing attention
 adds no notice. All planner writes accept `--actor` (default `owner`) and
-`--commit`, like the owner commands. `show --json` returns one slice object.
+`--commit`, like the owner commands. `show --json` returns one slice object with `runs`, the current attempt’s
+role/executor pairs from the platform. Legacy slice executor metadata stays stored
+and is omitted from this display.
 
 The runner stores failure tails up to 4,000 characters, attention bodies up to
 8,000 characters, and log events up to 500 characters. `attention` log entries

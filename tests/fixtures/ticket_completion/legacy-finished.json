@@ -1,0 +1,76 @@
+{
+  "slice": {
+    "id": "voice/W1",
+    "repo": "example/repo",
+    "feature": "Synthetic",
+    "title": "Synthetic slice",
+    "state": "in review",
+    "brief": "briefs/W1.md",
+    "executor": {
+      "tool": "codex",
+      "model": "gpt-6.1-sol"
+    },
+    "stop_before_merge": false,
+    "depends_on": [],
+    "slot": null,
+    "paused": false,
+    "session": {
+      "tool": "codex",
+      "id": "old-cut",
+      "folder": "@RUN@"
+    },
+    "pr": null,
+    "attention": null,
+    "log": [],
+    "flow": "cli",
+    "final": {
+      "kind": "handover",
+      "body": "Synthetic handover",
+      "at": "2026-11-17T00:00:00+00:00"
+    }
+  },
+  "job": {
+    "id": "voice/W1",
+    "repo": "/synthetic/work",
+    "run": "@RUN@",
+    "tool": "codex",
+    "model": "gpt-6.1-sol",
+    "effort": "medium",
+    "prompt": "Synthetic brief",
+    "brief": "Synthetic brief",
+    "started_ns": 1,
+    "session": "old-session",
+    "resume": null,
+    "phase": "collected",
+    "skills": "synthetic",
+    "context": [],
+    "starting_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "repository": "example/repo",
+    "branch": "slice/voice-W1",
+    "base": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "tip": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "default": "main",
+    "fence": true,
+    "task_file": {
+      "slice": "voice/W1",
+      "repository": "example/repo",
+      "branch": "slice/voice-W1",
+      "base_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "tasks": []
+    },
+    "tickets": [
+      {
+        "position": 1,
+        "id": "synthetic-ticket",
+        "title": "Ticket",
+        "status": "done",
+        "reason": null
+      }
+    ],
+    "sha": "cccccccccccccccccccccccccccccccccccccccc",
+    "final": {
+      "kind": "handover",
+      "body": "Synthetic handover"
+    }
+  }
+}

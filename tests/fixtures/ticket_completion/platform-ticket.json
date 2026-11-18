@@ -1,0 +1,167 @@
+{
+  "slice": {
+    "id": "voice/W1",
+    "repo": "example/repo",
+    "feature": "Synthetic",
+    "title": "Synthetic slice",
+    "state": "issued",
+    "brief": "briefs/W1.md",
+    "executor": {
+      "tool": "codex",
+      "model": "gpt-6.1-sol"
+    },
+    "stop_before_merge": false,
+    "depends_on": [],
+    "slot": null,
+    "paused": true,
+    "session": {
+      "tool": "claude",
+      "id": "old-cut",
+      "folder": "@RUN@"
+    },
+    "pr": null,
+    "attention": null,
+    "log": [
+      {
+        "at": "2026-11-17T00:00:00+00:00",
+        "actor": "runner",
+        "event": "collected turn: cut:0"
+      }
+    ],
+    "flow": "tickets"
+  },
+  "job": {
+    "id": "voice/W1",
+    "run": "@RUN@",
+    "repository": "example/repo",
+    "branch": "slice/voice-W1",
+    "base": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "brief": "# Synthetic\n\n## Fixed decisions\nKeep the contract.\n",
+    "level": "standard",
+    "started_ns": 2,
+    "requests": {
+      "cut": {
+        "request": {
+          "contract": 1,
+          "request_id": "old-cut",
+          "attribution": {
+            "slice": "voice/W1"
+          },
+          "repository": "example/repo",
+          "base_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "branch": "slice/voice-W1",
+          "mode": "write",
+          "role": "cut",
+          "level": "standard",
+          "work": {
+            "goal": "Synthetic goal before ticket assignments",
+            "allowed_files": null,
+            "pinned_paths": [],
+            "check_command": null
+          },
+          "assets": [],
+          "after": [],
+          "priority": 0
+        },
+        "run_id": "old-cut",
+        "record": {
+          "contract": 1,
+          "run_id": "old-cut",
+          "request_id": "old-cut",
+          "status": "done",
+          "status_reason": null,
+          "final_message": "Synthetic plan",
+          "resumable": true,
+          "resume_at": null,
+          "commits": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "executor": {
+            "harness": "claude",
+            "model": "platform-selected"
+          },
+          "updated_at": "1"
+        },
+        "turn": 0,
+        "context": []
+      },
+      "ticket-1": {
+        "request": {
+          "contract": 1,
+          "request_id": "old-ticket-1",
+          "attribution": {
+            "slice": "voice/W1"
+          },
+          "repository": "example/repo",
+          "base_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "branch": "slice/voice-W1",
+          "mode": "write",
+          "role": "ticket",
+          "level": "standard",
+          "work": {
+            "goal": "Saved ticket goal",
+            "allowed_files": [
+              "cplane/example.py"
+            ],
+            "pinned_paths": [
+              "tests/test_synthetic.py"
+            ],
+            "check_command": "pytest -k synthetic"
+          },
+          "assets": [],
+          "after": [
+            "old-cut"
+          ],
+          "priority": 0
+        },
+        "run_id": "old-ticket-1",
+        "record": {
+          "contract": 1,
+          "run_id": "old-ticket-1",
+          "request_id": "old-ticket-1",
+          "status": "queued",
+          "status_reason": null,
+          "final_message": null,
+          "resumable": false,
+          "resume_at": null,
+          "commits": [],
+          "executor": {
+            "harness": "claude",
+            "model": "platform-selected"
+          },
+          "updated_at": "0"
+        },
+        "turn": 0,
+        "context": []
+      }
+    },
+    "active": "cut",
+    "phase": "tickets",
+    "skills": "synthetic",
+    "tip": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "task_file": {
+      "slice": "voice/W1",
+      "repository": "example/repo",
+      "branch": "slice/voice-W1",
+      "base_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "tasks": [
+        {
+          "position": 1,
+          "depends_on": [],
+          "title": "Synthetic ticket",
+          "goal": "Saved ticket goal",
+          "allowed_files": [
+            "cplane/example.py"
+          ],
+          "check_command": "pytest -k synthetic",
+          "pinned_paths": [
+            "tests/test_synthetic.py"
+          ]
+        }
+      ]
+    },
+    "ticket_purposes": [
+      "old-ticket-1"
+    ]
+  }
+}

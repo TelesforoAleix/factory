@@ -18,7 +18,7 @@ ALLOWED = {
     ('ready', 'planned'), ('ready', 'issued'),
     ('issued', 'in review'), ('issued', 'escalated'), ('issued', 'awaiting handover'),
     ('awaiting handover', 'in review'), ('awaiting handover', 'escalated'),
-    ('awaiting handover', 'awaiting handover'), ('escalated', 'issued'),
+    ('awaiting handover', 'awaiting handover'), ('escalated', 'issued'), ('escalated', 'ready'),
     ('in review', 'accepted'), ('in review', 'issued'),
 }
 ADD = ['add', '--id', 'new/W2', '--repo', 'example/repo', '--feature', 'feature', '--title', 'Title', '--no-feature', 'One-off']
@@ -217,10 +217,12 @@ def test_show_complete_read_only(make_state, capsys):
     path = make_state()
     before = path.read_bytes()
     assert invoke(path, 'show', 'voice/W1', '--json') == 0
-    assert json.loads(capsys.readouterr().out) == load(path)['slices'][0]
+    expected = dict(load(path)['slices'][0], runs=[])
+    expected.pop('executor')
+    assert json.loads(capsys.readouterr().out) == expected
     assert invoke(path, 'show', 'voice/W1') == 0
     output = capsys.readouterr().out
-    assert 'voice/W1' in output and 'First slice' in output and 'executor:' in output
+    assert 'voice/W1' in output and 'First slice' in output and 'runs: []' in output
     assert path.read_bytes() == before
     assert not path.with_name(path.name + '.lock').exists()
 

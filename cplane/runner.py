@@ -833,7 +833,7 @@ class Runner:
 
     def deliver(self, item):
         job = self.jobs.get(item["id"])
-        if item["state"] == "ready" and job and self.restartable(job):
+        if item["state"] == "ready" and job and self.restartable(job, item):
             return
         run_records.owner_wait(self, item, job)
         if item["paused"]:
@@ -861,6 +861,8 @@ class Runner:
                 self.launch(item, attention["answer"], resume=True)
             return
         if attention and attention["kind"] == "merge":
+            if job and not self.cli_review(item, job):
+                return
             if not job or not item["pr"]:
                 self.defer(item, "deferred: PR metadata unavailable")
                 return
@@ -1051,7 +1053,19 @@ class Runner:
         return None
 
     @staticmethod
-    def restartable(job):
+    def restartable(job, item=None):
+        # A planner reset retires even a resumable escalation. The existing log
+        # carries the intent across cancellation retries without changing v1 state.
+        if item and item["state"] == "ready":
+            for log in reversed(item["log"]):
+                if log["event"] == "started":
+                    break
+                if log["event"].startswith("restart requested: "):
+                    target = log["event"].removeprefix("restart requested: ")
+                    if any(target in (entry.get("run_id"), entry["request"]["request_id"])
+                           for entry in job["requests"].values()):
+                        return True
+                    break
         entry = job["requests"][job.get("attention_run", job["active"])]
         record = entry.get("record") or {}
         return record.get("status") in (
@@ -1170,7 +1184,7 @@ class Runner:
             )
             return True
         if previous:
-            if not self.restartable(previous):
+            if not self.restartable(previous, item):
                 entry = previous["requests"][
                     previous.get("attention_run", previous["active"])
                 ]
@@ -1196,7 +1210,7 @@ class Runner:
         if self.room(item):
             self.defer(item, self.room(item))
             return False
-        branch = "slice/" + item["id"].replace("/", "-")
+        branch = previous["branch"] if previous else "slice/" + item["id"].replace("/", "-")
         base = self.github.default_tip(item["repo"])
         if not re.fullmatch("[0-9a-f]{40}", base):
             raise state.StateError("Default branch tip unavailable")
@@ -1268,6 +1282,14 @@ class Runner:
             )
         return assignment
 
+    @staticmethod
+    def ticket_assignment():
+        return (
+            "\n\nTicket assignment: Before you finish, review your diff against this ticket "
+            "and its check, and correct anything that does not match. Do not commit or push; "
+            "the platform runs the check, commits and pushes."
+        )
+
     def send_message(self, item, job, text, purpose):
         if item["paused"]:
             return
@@ -1321,7 +1343,7 @@ class Runner:
     def collect(self, item, job):
         # Poll all known runs, including queued successors and record-only reviews.
         for entry in job["requests"].values():
-            restarting = item["state"] == "ready" and self.restartable(job)
+            restarting = item["state"] == "ready" and self.restartable(job, item)
             if entry["run_id"] is None:
                 if item["paused"] or restarting:
                     continue
@@ -1329,7 +1351,7 @@ class Runner:
             entry["record"] = self.client.get(entry["run_id"])
             # Observe a finished turn before retrying a saved message: a reset
             # must be able to retire an attempt whose continuation failed too.
-            restarting = item["state"] == "ready" and self.restartable(job)
+            restarting = item["state"] == "ready" and self.restartable(job, item)
             if entry.get("message") and not restarting and not item["paused"]:
                 self.retry_message(item, job, entry)
                 entry["record"] = self.client.get(entry["run_id"])
@@ -1348,7 +1370,7 @@ class Runner:
             ):
                 run_records.platform_record(state.store(self.path), item, job, entry)
         self.save_job(job)
-        if item["state"] == "ready" and self.restartable(job):
+        if item["state"] == "ready" and self.restartable(job, item):
             if not item["paused"]:
                 self.abandon(job)
                 item["attention"] = None
@@ -1434,7 +1456,7 @@ class Runner:
             "body": cut(final["body"], ATTENTION_LIMIT),
             "at": self.at,
         }
-        if record.get("commits"):
+        if record.get("commits") and job["active"] != "slice":
             job["tip"] = record["commits"][-1]
         if not job.get("sha") and record["status"] == "waiting":
             needs_completion = False
@@ -1503,19 +1525,10 @@ class Runner:
             self.submit_tickets(item, job)
         elif final["body"].lstrip().startswith("```"):
             request = self.pr_request(final["body"], job["branch"])
-            job["tip"] = self.github.branch_tip(item["repo"], job["branch"])
+            self.review_head(item, job, self.github.branch_tip(item["repo"], job["branch"]))
             if job["tip"] == job["base"]:
                 self.attention(item, "question", final["body"])
                 return
-            if job.get("review_tip") and job["review_tip"] != job["tip"]:
-                for key in (
-                    "pr_review",
-                    "review_verdict",
-                    "review_findings",
-                    "review_requested_at",
-                    "review_ended_at",
-                ):
-                    job.pop(key, None)
             job["request"], job["phase"] = request, "pr"
             self.save_job(job)
             item["pr"] = self.open_pr(item["repo"], request)
@@ -1622,11 +1635,47 @@ class Runner:
         self.save_job(job)
         self.send_request(job, entry)
 
+    def review_head(self, item, job, tip):
+        """Retire a PR review when slice work moves, retaining its original run."""
+        purpose = job.get("pr_review")
+        if tip != job.get("tip") and isinstance(purpose, str):
+            entry = job["requests"][purpose]
+            # Use the existing log and request ledger for supersession history;
+            # the review's request base remains the commit it actually reviewed.
+            reviewed = job.get("review_tip", entry["request"]["base_commit"])
+            event = f"review: superseded {purpose} on {reviewed} by {tip}"
+            if not any(log["event"] == event for log in item["log"]):
+                self.log(item, event)
+            entry["cancel_pending"] = True
+            self.cancel_entry(job, entry)
+            self.clear_review_attention(item, job)
+            for key in ("pr_review", "review_verdict", "review_findings",
+                        "review_requested_at", "review_ended_at"):
+                job.pop(key, None)
+        job["tip"] = tip
+
+    def clear_review_attention(self, item, job):
+        if job.get("attention_run") == job.get("pr_review") and "attention_run" in job:
+            run_records.owner_wait(self, item, close=True)
+            item["attention"] = None
+            if item["state"] == "escalated":
+                item["state"] = "issued"
+            job.pop("attention_run", None)
+
     def cli_review(self, item, job):
-        if item.get("flow", "cli") != "cli" or job.get("review_verdict"):
-            return True
         if item["paused"]:
             return False
+        # Legacy blocking ticket reviews may finish through their saved path.
+        # A completed legacy review is not converted into another review on load.
+        if (
+            item.get("flow", "cli") == "tickets"
+            and not job.get("pr_review")
+            and (job.get("review_verdict") or job["active"].startswith("review-"))
+        ):
+            return True
+        self.review_head(item, job, self.github.branch_tip(item["repo"], job["branch"]))
+        if job.get("review_verdict"):
+            return True
         requested = job.setdefault("review_requested_at", self.instant.timestamp())
         timeout = max(1, int(os.environ.get("CPLANE_REVIEW_TIMEOUT_SECONDS", "1200")))
         if "pr_review" not in job:
@@ -1637,18 +1686,12 @@ class Runner:
         record = entry.get("record") or {}
         answer = None
         status = record.get("status")
-        if status in ("question", "escalated", "failed", "cancelled"):
+        expired = self.instant.timestamp() - requested >= timeout
+        if status in ("question", "escalated") and not expired:
             marker = (entry["turn"], status, record.get("updated_at"))
             if entry.get("attention_marker") != list(marker):
                 entry["attention_marker"] = list(marker)
                 body = (run_records.run_final(record) or {}).get("body")
-                if status in ("failed", "cancelled"):
-                    body = (
-                        "Platform run "
-                        + status
-                        + ": "
-                        + str(record.get("status_reason"))
-                    )
                 job["attention_run"] = job["pr_review"]
                 self.attention(
                     item,
@@ -1658,7 +1701,6 @@ class Runner:
                 self.save_job(job)
             if status in ("question", "escalated") and record.get("resumable"):
                 return False
-        expired = self.instant.timestamp() - requested >= timeout
         if record.get("status") in ("queued", "running") or not record:
             if not expired:
                 return False
@@ -1696,6 +1738,7 @@ class Runner:
             if answer
             else None
         )
+        self.clear_review_attention(item, job)
         job.update(
             review_verdict=verdict,
             review_findings=findings,
@@ -1759,7 +1802,7 @@ class Runner:
                 job,
                 purpose,
                 "ticket",
-                task["goal"],
+                task["goal"] + self.ticket_assignment(),
                 base=job["task_file"]["base_commit"],
                 after=[previous],
                 allowed_files=task["allowed_files"],
@@ -1802,8 +1845,22 @@ class Runner:
             (entry.get("record") or {}).get("status") == "done" for entry in entries
         ):
             job["tip"] = self.github.branch_tip(item["repo"], job["branch"])
-            job["phase"] = "review-ready"
+            if job.get("repair"):
+                job["phase"] = "review-ready"
+                self.save_job(job)
+                return
+            job["request"] = {
+                "branch": job["branch"], "title": item["title"],
+                "body": "\n\n".join(
+                    f"- {task['title']}\n  Check: {task['check_command']}"
+                    for task in job["task_file"]["tasks"]
+                ),
+                "node_steps": None,
+            }
+            job["phase"] = "pr"
             self.save_job(job)
+            item["pr"] = self.open_pr(item["repo"], job["request"])
+            self.log(item, f"opened PR: {item['pr']}", True)
 
     def cancel_entry(self, job, entry):
         if entry.get("cancelled"):
@@ -1889,6 +1946,8 @@ class Runner:
                 job = self.jobs.get(item["id"])
                 if not job:
                     continue
+                if item["state"] == "in review":
+                    continue
                 if item["state"] in ("accepted", "dropped"):
                     try:
                         self.abandon(job)
@@ -1907,12 +1966,12 @@ class Runner:
                 fence.github_calls.set(0)
                 try:
                     if job.get("sha") and not (
-                        item["state"] == "ready" and self.restartable(job)
+                        item["state"] == "ready" and self.restartable(job, item)
                     ):
                         self.restore_merge(item, job)
                     self.collect(item, job)
                     if item["paused"] or (
-                        item["state"] == "ready" and self.restartable(job)
+                        item["state"] == "ready" and self.restartable(job, item)
                     ):
                         continue
                     if job["phase"] == "cut-ready":
@@ -1953,7 +2012,7 @@ class Runner:
                 )
                 login_start = fence.github_logins.get()
                 if (
-                    item["state"] not in ("accepted", "dropped")
+                    item["state"] not in ("accepted", "dropped", "in review")
                     and item["id"] not in read_failures
                 ):
                     fence.github_calls.set(0)

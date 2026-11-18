@@ -16,17 +16,30 @@ acknowledgment message on the same run asking it to finish done before successor
 Ticket flow submits a write-mode `cut` run to commit the failing tests, then one
 write-mode `ticket` request per plan ticket. Each request includes its goal,
 allowed files, pinned tests and check command. `after` chains request ids in plan
-order, starting with the cut. The cut ends with a handover so its platform status
-is done and successors can run. A read-mode review uses the delivered branch tip
-and full history. One repair round remains supported. Review goals request a
-handover carrying the verdict JSON; the parser also accepts a waiting final and
-allows prose after its leading JSON block.
+order, starting with the cut. A ticket goal ends with an assignment to review its
+own diff against the ticket and check, correcting mismatches before finishing.
+The platform runs the check, commits and pushes; the ticket executor does not.
+The cut ends with a handover so its platform status is done and successors can
+run. After the last ticket is done, Factory opens the PR with the slice title and
+a body listing every ticket's title and check. New ticket flows have no blocking
+slice review or repair tickets. Saved jobs already in `review-ready` or a repair
+round can finish through their existing path.
 
-Whole-slice PR review is a separate read run. It records pass, fix or missing as
-before; CI and the existing approval rules still decide whether to merge. Review
-questions and failures create attention; answers route to the review run. A
-record-only waiting review can be cancelled after its verdict is recorded. Factory
-retains PR creation, red/pending/green CI handling, branch updates, guard-path
+Both flows receive the same PR review beside CI, in a separate read run with full
+history. Review goals request a handover carrying verdict JSON; the parser also
+accepts a waiting final and prose after its leading JSON block. The review records
+pass, fix or missing; its verdict never gates a merge. Factory waits for its end
+or time limit (default 20 minutes); failures and timeouts record missing and let
+CI and approval decide the merge. Questions create attention and answers route to
+the review run; an unanswered question also expires at the deadline. A waiting
+review can be cancelled after its verdict is recorded.
+
+The review's `review_tip` and request base record the commit reviewed. New slice
+commits supersede the prior review and start a new review on the new tip, with a
+new deadline. Supersession is recorded in the slice log with the old purpose and
+tips; its original request remains in the ledger. It is never recorded as missing.
+A BEHIND update from the default branch keeps the existing review and its reviewed
+tip. Factory retains PR creation, red/pending/green CI handling, branch updates, guard-path
 classification, owner GitHub approval, merge, notices and node steps. Policy comes
 from the pinned base; PR paths include deletions and rename sources. Uninstalled
 Factory guard drift is checked with App reads. GitHub truncation fails closed.
@@ -50,10 +63,14 @@ a purpose (`slice`, `cut`, `ticket-N`,
 response retries that same id/body; a confirmed request is recovered by polling.
 Do not delete the ledger or change its state path during active work.
 
-Resetting a terminal, non-resumable run to ready and starting it creates the next
-attempt, with a new job folder and a fresh default-branch base. Old attempt records
-remain available. Before retrying a failed ticket chain, Factory cancels its old
-queued successors and resumable predecessors, waiting for any running turn's
+Moving an escalated slice to ready and starting it creates the next attempt,
+even when its old run is resumable. The mutation log records the restart request
+against the old run. Starting clears its attention, cancels the old attempt's
+runs, and uses a new job folder, new request ids and the default branch's current
+tip. The slice keeps its id, brief, level, flow and branch name. Resetting other
+terminal, non-resumable runs to ready also uses this existing attempt mechanism.
+Old attempt records remain available. Before retrying a failed ticket chain,
+Factory cancels its old queued successors and resumable predecessors, waiting for any running turn's
 cancellation to be accepted. A question, waiting or done run that is resumable
 keeps its attempt and continues through messages. Existing jobs without an attempt
 number keep their saved identities and count as attempt one when retried.
@@ -77,8 +94,12 @@ Unpause therefore never needs a cancelled run.
 
 Slice levels remain in the existing Postgres table; overrides and old role rows
 are no longer read for execution. Columns and tables remain untouched. Version 1
-state retains its legacy executor/session fields for compatibility. Synthetic
-file-store planner tests retain level selection in mutation log entries because
+state retains its legacy executor/session fields for compatibility. `show` and
+the slice detail API expose `runs`, a list of role/executor pairs from the current
+attempt's platform records. Workshop displays those executors, including Pi
+configuration names. Before any run there are none; the legacy slice executor is
+never displayed. Reading records does not migrate them, and finished slices are
+left unchanged by runner passes. Synthetic file-store planner tests retain level selection in mutation log entries because
 that document contract has no level field. There is no model fallback in Factory.
 
 ## Switch and rollback

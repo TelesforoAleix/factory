@@ -13,8 +13,8 @@ matching schema/review.schema.json:
 - fix: verdict "fix", tickets and test_files in the plan's ticket form. Each ticket
   needs exact files, a concrete change and a check command that demonstrates it is
   done. List existing test files to keep pinned; you must not change them. Tickets
-  must carry all remaining work with decisions already made. Only one repair round
-  is allowed; after repair, review the whole slice again by the same standard.
+  must describe the remaining work with decisions already made. Factory records
+  the verdict beside CI; it does not create repair tickets from these findings.
 
 # Brief
 
