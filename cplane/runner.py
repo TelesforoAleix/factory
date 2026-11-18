@@ -826,10 +826,25 @@ class Runner:
         self.save_job(job)
         self.log(item, f"merged: {sha}", True)
         item["attention"] = None
-        if job["request"]["node_steps"] is not None:
+        if item.get("flow", "cli") == "tickets":
+            self.tickets_handover(item, job)
+        elif job["request"]["node_steps"] is not None:
             self.attention(item, "node-step", job["request"]["node_steps"])
             job["phase"] = "node-step"
             self.save_job(job)
+
+    def tickets_handover(self, item, job):
+        final = {"request": job["request"], "review_verdict": job.get("review_verdict"),
+                 "review_findings": job.get("review_findings")}
+        item["final"] = {"kind": "handover", "body": cut(json.dumps(final, ensure_ascii=False), ATTENTION_LIMIT), "at": self.at}
+        steps = job["request"].get("node_steps")
+        if steps is not None:
+            self.attention(item, "node-step", steps)
+            job["phase"] = "node-step"
+        else:
+            self.finished(item, item["final"]["body"])
+            job["phase"] = "handed-over"
+        self.save_job(job)
 
     def deliver(self, item):
         job = self.jobs.get(item["id"])
@@ -855,7 +870,12 @@ class Runner:
         ):
             return
         if attention and attention["answer"] is not None:
-            if not item["session"] or not item["session"]["id"] or not job:
+            if (job and job.get("sha") and item.get("flow", "cli") == "tickets"
+                    and job["phase"] == "node-step" and attention["kind"] == "node-step"):
+                self.finished(item, attention["answer"])
+                job["phase"] = "handed-over"
+                self.save_job(job)
+            elif not item["session"] or not item["session"]["id"] or not job:
                 self.defer(item, "deferred: session unavailable")
             else:
                 self.launch(item, attention["answer"], resume=True)
@@ -901,8 +921,11 @@ class Runner:
             if status != "green":
                 return
             self.merge(item, job)
-        if job and job["phase"] == "merged" and item["session"]["id"]:
-            self.launch(item, "merged as " + job["sha"], resume=True)
+        if job and job["phase"] == "merged":
+            if item.get("flow", "cli") == "tickets":
+                self.tickets_handover(item, job)
+            elif item["session"]["id"]:
+                self.launch(item, "merged as " + job["sha"], resume=True)
 
     def pr_checks(self, item, job):
         if job["phase"] != "pr" or item["paused"]:
@@ -1776,7 +1799,8 @@ class Runner:
                 item["repo"],
                 job["branch"],
                 job["tip"],
-                {k: answer[k] for k in ("tickets", "test_files")},
+                {**{k: answer[k] for k in ("tickets", "test_files")},
+                 "node_steps": job.get("task_file", {}).get("node_steps")},
                 job["brief"],
             )
             job["phase"] = "cut-ready"
@@ -1855,7 +1879,7 @@ class Runner:
                     f"- {task['title']}\n  Check: {task['check_command']}"
                     for task in job["task_file"]["tasks"]
                 ),
-                "node_steps": None,
+                "node_steps": job["task_file"].get("node_steps"),
             }
             job["phase"] = "pr"
             self.save_job(job)
