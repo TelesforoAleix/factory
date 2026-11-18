@@ -399,7 +399,7 @@ def test_021_upgrade_preserves_installed_defaults_overrides_and_sessions(pg_stor
     chat = pg_store.chat_show(secretary)
     assert (chat['tool'], chat['model'], chat['effort'], chat['cli_session_id']) == ('claude', 'custom-old', 'low', 'saved-claude')
     assert pg_store.chat_show(inherited)['overrides'] == {}
-    assert pg_store.slice_executor(item) == item['executor']
+    assert pg_store.slice_executor(item) == []
     assert pg_store.load()['slices'][0] == item
 
 
