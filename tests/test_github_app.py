@@ -387,3 +387,13 @@ def test_failure_reading_response_is_not_transient(key, monkeypatch):
         app.installation_token(REPOS)
     assert type(error.value) is state.StateError
     assert str(error.value) == 'GitHub App authentication failed'
+
+
+def test_case_reader_token_is_read_only_and_repo_scoped(key, monkeypatch):
+    opener = Mock()
+    opener.open.return_value = response(repos=['example/one'], permissions={
+        'contents': 'read', 'pull_requests': 'read', 'metadata': 'read'})
+    monkeypatch.setattr(app.urllib.request, 'build_opener', Mock(return_value=opener))
+    assert app.installation_token(['example/one'], read_only=True, pull_requests=True) == 'synthetic-token'
+    assert json.loads(opener.open.call_args.args[0].data) == {
+        'repositories': ['one'], 'permissions': {'contents': 'read', 'pull_requests': 'read'}}

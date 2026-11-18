@@ -496,3 +496,83 @@ def test_records_migration_preserves_populated_legacy_store(request, monkeypatch
                 "UPDATE cplane_eval_cases SET grade='invalid'"]:
         with pytest.raises(state.StateError), store.mutation():
             store.connection.execute(sql)
+
+
+@pytest.fixture
+def slice_case(pg_store, tmp_path):
+    import subprocess
+    from psycopg.types.json import Jsonb
+    def git(*args):
+        return subprocess.run(['git', '-C', str(tmp_path), *args], check=True, capture_output=True)
+    git('init')
+    git('config', 'user.email', 'synthetic@example.com')
+    git('config', 'user.name', 'Synthetic')
+    (tmp_path / 'briefs').mkdir()
+    (tmp_path / 'briefs' / 'one.md').write_text('Synthetic brief\n')
+    git('add', '.')
+    git('commit', '-m', 'brief')
+    git('rm', 'briefs/one.md')
+    git('commit', '-m', 'accept')
+    item = dict(id='project/one', repo='example/repo', pr=12, title='Synthetic', brief='briefs/one.md')
+    with pg_store.mutation():
+        pg_store.connection.execute('INSERT INTO cplane_slices (id, position, document) VALUES (%s, 1, %s)',
+                                    (item['id'], Jsonb(item)))
+        pg_store.connection.execute("INSERT INTO cplane_slice_outcomes (slice_id, verdict) VALUES (%s, 'accepted')", (item['id'],))
+        pg_store.connection.execute("INSERT INTO cplane_slice_levels (slice_id, level) VALUES (%s, 'light')", (item['id'],))
+    class Reader:
+        merged = True
+        paths = ['src/code.py', 'tests/test_code.py']
+        def __call__(self, repo, path, **kwargs):
+            assert repo == 'example/repo'
+            if path == 'pulls/12':
+                return json.dumps(dict(merged_at='2026-01-01' if self.merged else None, merge_commit_sha='b' * 40))
+            if path.startswith('commits/'):
+                return json.dumps(dict(parents=[dict(sha='a' * 40)]))
+            if path.startswith('compare/'):
+                return patch_file('src/code.py', 2) + patch_file('tests/test_code.py', 2)
+            return json.dumps([dict(filename=p) for p in self.paths])
+    return pg_store, tmp_path, Reader()
+
+
+def build_slice(fixture, **kwargs):
+    store, root, reader = fixture
+    options = dict(kind='fix', check='pytest', grade='tests_and_judge', validation='Reviewed')
+    options.update(kwargs)
+    return evals.case_from_slice(store, 'project/one', root, reader=reader, **options)
+
+
+def test_case_from_slice_deleted_brief_and_idempotence(slice_case, capsys):
+    case = build_slice(slice_case)
+    assert (case['task'], case['base_commit'], case['merge_commit']) == ('Synthetic brief\n', 'a' * 40, 'b' * 40)
+    assert (case['level'], case['language'], case['hidden_paths']) == ('light', 'python', ['tests/test_code.py'])
+    assert case['size'] == 'S' and case['source_slice'] == 'project/one'
+    assert build_slice(slice_case, validation='Different') == case
+    assert 'unchanged' in capsys.readouterr().err
+
+
+def test_case_from_slice_hidden_override(slice_case):
+    assert build_slice(slice_case, hidden=['custom/check.py'])['hidden_paths'] == ['custom/check.py']
+
+
+@pytest.mark.parametrize('failure', ['unaccepted', 'unmerged', 'corrected', 'brief', 'hidden', 'language'])
+def test_case_from_slice_refusals(slice_case, failure):
+    store, root, reader = slice_case
+    if failure == 'unaccepted':
+        with store.mutation():
+            store.connection.execute("UPDATE cplane_slice_outcomes SET verdict='corrected'")
+    elif failure == 'unmerged':
+        reader.merged = False
+    elif failure == 'corrected':
+        with store.mutation():
+            store.connection.execute("INSERT INTO cplane_slice_outcomes (slice_id, corrects_slice) VALUES ('project/two', 'project/one')")
+    elif failure == 'brief':
+        from psycopg.types.json import Jsonb
+        with store.mutation():
+            store.connection.execute("UPDATE cplane_slices SET document = document || %s", (Jsonb({'brief': 'missing.md'}),))
+    elif failure == 'hidden':
+        reader.paths = ['src/code.py']
+    else:
+        reader.paths = ['readme.md']
+    with pytest.raises(state.StateError):
+        build_slice(slice_case)
+    assert evals.case_list(store) == []

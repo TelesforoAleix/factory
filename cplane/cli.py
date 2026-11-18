@@ -333,7 +333,7 @@ def parser():
     starts = eval_commands.add_parser('starts', parents=[common])
     starts.add_argument('bundle')
     starts.add_argument('--pr', required=True)
-    for group, actions in (('case', ('list',)), ('config', ('add', 'list', 'show')),
+    for group, actions in (('case', ('list', 'from-slice')), ('config', ('add', 'list', 'show')),
                            ('set', ('create', 'add', 'list', 'show')),
                            ('run', ('create', 'list', 'show', 'cancel'))):
         sub = eval_commands.add_parser(group, parents=[common])
@@ -342,8 +342,16 @@ def parser():
             command = actions_parser.add_parser(action, parents=[common])
             if group == 'case':
                 from .evals import FILTERS
-                for field, choices in FILTERS.items():
-                    command.add_argument('--' + field.replace('_', '-'), choices=choices)
+                if action == 'list':
+                    for field, choices in FILTERS.items():
+                        command.add_argument('--' + field.replace('_', '-'), choices=choices)
+                else:
+                    command.add_argument('slice_id')
+                    command.add_argument('--kind', choices=FILTERS['tag_kind'], required=True)
+                    command.add_argument('--check', required=True)
+                    command.add_argument('--grade', choices=('tests_and_judge', 'judge'), required=True)
+                    command.add_argument('--validation', required=True)
+                    command.add_argument('--hidden', action='append')
             elif group == 'config':
                 if action in ('add', 'show'):
                     command.add_argument('id')
@@ -467,7 +475,13 @@ def eval_command(args):
     elif args.eval_group == 'starts':
         result = evals.import_starts(backend, args.bundle, args.pr)
     elif args.eval_group == 'case':
-        result = evals.case_list(backend, **{key: getattr(args, key) for key in evals.FILTERS})
+        if args.eval_action == 'list':
+            result = evals.case_list(backend, **{key: getattr(args, key) for key in evals.FILTERS})
+        else:
+            path = Path(getattr(args, 'state', None) or os.environ.get('CPLANE_STATE') or 'slices.json').expanduser()
+            result = evals.case_from_slice(backend, args.slice_id, path.resolve().parent,
+                                           kind=args.kind, check=args.check, grade=args.grade,
+                                           validation=args.validation, hidden=args.hidden)
     elif args.eval_group == 'config':
         if args.eval_action == 'add':
             roles = {}

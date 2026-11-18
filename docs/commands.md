@@ -60,6 +60,7 @@ See [Eval store](evals.md) for the case format and versioning rules.
 
 ```sh
 cplane eval import FOLDER
+cplane eval case from-slice SLICE --kind KIND --check COMMAND --grade {tests_and_judge,judge} --validation TEXT [--hidden PATH ...]
 cplane eval case list [--kind KIND] [--tag-kind TAG] [--size SIZE] [--language LANGUAGE] [--half HALF]
 cplane eval set create ID --title TITLE --filter JSON [--description TEXT] [--note TEXT] [--actor ACTOR]
 cplane eval set add ID CASE... [--note TEXT] [--actor ACTOR]
