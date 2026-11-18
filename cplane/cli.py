@@ -820,7 +820,7 @@ def main(argv=None):
             from .roles import slice_runs
             item = dict(item)
             item.pop('executor', None)
-            item['runs'] = slice_runs(item, path=path, job=latest[2] if latest else None)
+            item['runs'] = slice_runs(item, backend if state.postgres() else None)
             if args.final:
                 if latest is None:
                     print('final: unavailable (no run recorded)')

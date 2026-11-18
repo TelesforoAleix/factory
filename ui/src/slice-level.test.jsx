@@ -18,20 +18,18 @@ test('slice level can be set for a planned slice', async () => {
   expect(fetcher).toHaveBeenCalledWith('/api/slices/demo/one/level',expect.objectContaining({body:JSON.stringify({level:'strong'})}));
 });
 
-test('slice page shows each platform run executor including Pi', async () => {
+test('slice page shows recorded roles, executors and times', async () => {
   const item = {id:'demo/one',title:'Example',state:'issued',repo:'repo',feature:'feature',
-    executor:{tool:'codex',model:'obsolete-sol'},depends_on:[],log:[],attention:null,
-    runs:[{role:'cut',executor:{harness:'claude',model:'opus'}},
-          {role:'ticket',executor:{harness:'codex',model:'platform-model',effort:'high'}},
-          {role:'ticket',executor:{configuration:'pi/fast'}},
-          {role:'review',executor:{harness:'claude',model:'sonnet'}}]};
+    depends_on:[],log:[],attention:null,
+    runs:[{role:'review',tool:'claude',model:'sonnet',effort:null,started_at:'2026-11-08T00:00:00+00:00'},
+          {role:'slice',tool:'codex',model:'luna',effort:'low',started_at:'2026-11-07T00:00:00+00:00'},
+          {role:null,tool:'codex',model:'old',effort:null,started_at:null}]};
   vi.stubGlobal('fetch',vi.fn(async url => ({ok:true,json:async () => url === '/api/projects' ? [] : item})));
   render(<MemoryRouter initialEntries={['/factory/slices/demo/one']}><App/></MemoryRouter>);
-  for (const text of ['cut · claude · opus','ticket · codex · platform-model · high',
-                       'ticket · pi/fast','review · claude · sonnet']) {
+  for (const text of ['review · claude · sonnet · 2026-11-08T00:00:00+00:00',
+                       'slice · codex · luna · low · 2026-11-07T00:00:00+00:00', 'codex · old']) {
     expect(await screen.findByText(text)).toBeTruthy();
   }
-  expect(screen.queryByText(/obsolete-sol/)).toBeNull();
 });
 
 test('slice page shows none before any run', async () => {

@@ -11,7 +11,7 @@ import pytest
 from cplane import state
 from cplane.cli import main
 from cplane.executors import atomic_json
-from cplane.roles import RoleStore, slice_runs
+from cplane.roles import slice_runs
 from factory_ui import create_app
 from conftest import SyntheticStore
 from test_run_api_runner import (  # noqa: F401
@@ -190,38 +190,19 @@ def test_failed_or_expired_review_does_not_hold_merge(setup, flow, review_status
     assert not any('repair-ticket' in key for key in api.requests)
 
 
-@pytest.mark.parametrize('executors', [
-    [{'harness': 'claude', 'model': 'opus'}, {'harness': 'codex', 'model': 'platform', 'effort': 'high'}],
-    [{'configuration': 'pi/fast'}, {'configuration': 'pi/reviewer'}],
-])
-def test_show_and_slice_api_use_platform_executors_read_only(setup, monkeypatch, capsys, executors):
+def test_job_files_do_not_supply_slice_runs(setup, monkeypatch, capsys):
     r, api, _ = setup
     monkeypatch.setenv('CPLANE_RUNS', str(r.runs.parent))
-    monkeypatch.setenv('CPLANE_STATE', str(r.path))
     r.run()
-    api.records[current(r)]['executor'] = executors[0]
+    api.records[current(r)]['executor'] = {'harness': 'codex', 'model': 'synthetic'}
     api.finish(current(r), body=pr_reply())
     r.run()
-    job = r.jobs['voice/W1']
-    api.records[job['requests']['review-1']['run_id']]['executor'] = executors[1]
-    edit(r, lambda s: s.update(paused=True))
-    r.run()
-    saved = r.path.read_bytes()
-    ledgers = {p: p.read_bytes() for p in r.runs.glob('*/job.json')}
-    expected = [{'role': role, 'executor': executor} for role, executor in zip(['slice', 'review'], executors)]
+    assert slice_runs(item(r)) == []
     assert main(['--state', str(r.path), 'show', 'voice/W1', '--json']) == 0
-    shown = json.loads(capsys.readouterr().out)
-    assert shown['runs'] == expected and 'executor' not in shown
-    assert slice_runs(item(r), path=r.path) == expected
-    assert RoleStore().slice_executor(item(r)) == expected
+    assert json.loads(capsys.readouterr().out)['runs'] == []
     store = SyntheticStore(r.path)
     store.slice_policy = lambda identifier: None
-    client = create_app(store).test_client()
-    detail = client.get('/api/slices/voice/W1').get_json()
-    assert detail['runs'] == expected and 'executor' not in detail
-    assert r.path.read_bytes() == saved
-    assert all(p.read_bytes() == content for p, content in ledgers.items())
-    assert item(r)['executor'] == {'tool': 'codex', 'model': 'example-model'}
+    assert create_app(store).test_client().get('/api/slices/voice/W1').get_json()['runs'] == []
 
 
 FIXTURES = Path(__file__).parent / 'fixtures' / 'ticket_completion'

@@ -98,7 +98,6 @@ attempt number. Request ids change and the base is the default branch's current
 tip. The slice keeps its id, brief, level, flow and branch name. Paused slices do
 not start until resumed. The state command itself starts no executor.
 
-`show` and `show --json` display `runs`: one role and platform executor descriptor
-per recorded run in the current attempt. There are no executors before any run;
-legacy `executor` metadata remains stored but is omitted from this projection.
-The slice detail API and Workshop use the same role/executor pairs.
+`show` and `show --json` display `runs` from the slice's run records, newest
+first, with role, tool, model, effort and start time. Older records may have an
+empty role. The slice detail API and Workshop use the same records.
