@@ -513,7 +513,7 @@ def slice_case(pg_store, tmp_path):
     git('commit', '-m', 'brief')
     git('rm', 'briefs/one.md')
     git('commit', '-m', 'accept')
-    item = dict(id='project/one', repo='example/repo', pr=12, title='Synthetic', brief='briefs/one.md')
+    item = dict(id='project/one', repo='example/repo', pr=12, title='Synthetic', brief='briefs/one.md', state='accepted')
     with pg_store.mutation():
         pg_store.connection.execute('INSERT INTO cplane_slices (id, position, document) VALUES (%s, 1, %s)',
                                     (item['id'], Jsonb(item)))
@@ -554,12 +554,25 @@ def test_case_from_slice_hidden_override(slice_case):
     assert build_slice(slice_case, hidden=['custom/check.py'])['hidden_paths'] == ['custom/check.py']
 
 
-@pytest.mark.parametrize('failure', ['unaccepted', 'unmerged', 'corrected', 'brief', 'hidden', 'language'])
+@pytest.mark.parametrize('verdict', [None, 'accepted'])
+def test_case_from_slice_accepted_verdict(slice_case, verdict):
+    store, _, _ = slice_case
+    if verdict is None:
+        with store.mutation():
+            store.connection.execute('DELETE FROM cplane_slice_outcomes WHERE slice_id=%s', ('project/one',))
+    assert build_slice(slice_case)['source_slice'] == 'project/one'
+
+
+@pytest.mark.parametrize('failure', ['unaccepted', 'in review', 'unmerged', 'corrected', 'brief', 'hidden', 'language'])
 def test_case_from_slice_refusals(slice_case, failure):
     store, root, reader = slice_case
     if failure == 'unaccepted':
         with store.mutation():
             store.connection.execute("UPDATE cplane_slice_outcomes SET verdict='corrected'")
+    elif failure == 'in review':
+        from psycopg.types.json import Jsonb
+        with store.mutation():
+            store.connection.execute("UPDATE cplane_slices SET document = document || %s", (Jsonb({'state': 'in review'}),))
     elif failure == 'unmerged':
         reader.merged = False
     elif failure == 'corrected':
@@ -573,6 +586,8 @@ def test_case_from_slice_refusals(slice_case, failure):
         reader.paths = ['src/code.py']
     else:
         reader.paths = ['readme.md']
-    with pytest.raises(state.StateError):
+    with pytest.raises(state.StateError) as exc:
         build_slice(slice_case)
+    if failure in ('unaccepted', 'in review'):
+        assert str(exc.value) == 'project/one: slice is not accepted'
     assert evals.case_list(store) == []
