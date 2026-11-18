@@ -64,7 +64,9 @@ class FakeRuns:
                     pending.extend(self.requests[predecessor]["after"])
             for other, record in self.records.items():
                 if (
-                    self.requests[other]["repository"] == body["repository"]
+                    body["mode"] == "write"
+                    and self.requests[other]["mode"] == "write"
+                    and self.requests[other]["repository"] == body["repository"]
                     and self.requests[other]["branch"] == body["branch"]
                     and (
                         record["status"] in ("queued", "running", "question", "waiting")
@@ -605,7 +607,8 @@ def test_ticket_chain_and_read_review(setup):
         assert PLAN["tickets"][n]["change"] in req["work"]["goal"]
         api.finish(req["request_id"])
     r.run()
-    review = api.requests[current(r)]
+    job = r.jobs["voice/W1"]
+    review = job["requests"][job["pr_review"]]["request"]
     assert review["role"] == "review" and review["mode"] == "read"
     assert review["base_commit"] == TIP and review["after"] == [
         tickets[-1]["request_id"]
@@ -891,39 +894,41 @@ def test_abandon_lost_submit_response_only_looks_up_and_cancels(setup):
     assert api.records[next(iter(api.records))]["status"] == "cancelled"
 
 
-def test_full_ticket_review_repair_and_postmerge_handover(setup):
+def test_full_ticket_pr_review_has_no_repair_and_postmerge_handover(setup):
     r, api, gh = setup
     edit(r, lambda s: s.update(flow="tickets"))
     r.run()
-    api.finish(current(r), body=block(PLAN))
+    cut_run = current(r)
+    api.finish(cut_run, body=block(PLAN))
     r.run()
-    for key, req in list(api.requests.items()):
-        if req["role"] == "ticket":
-            api.finish(key)
+    tickets = [key for key, req in api.requests.items() if req["role"] == "ticket"]
+    api.finish(tickets[0])
     r.run()
-    api.finish(current(r), body=block({"verdict": "fix", **PLAN}))
+    gh.open.assert_not_called()
+    api.finish(tickets[1])
     r.run()
-    repairs = [key for key in api.requests if "repair-ticket" in key]
-    assert len(repairs) == 2
-    for key in repairs:
-        api.finish(key)
-    r.run()
-    assert r.jobs["voice/W1"]["active"] == "review-2"
-    review = current(r)
-    api.finish(
-        review, body=block({"verdict": "pass", "title": "Complete", "body": "Passed"})
+    job = r.jobs["voice/W1"]
+    request = gh.open.call_args.args[1]
+    assert request["title"] == item(r)["title"]
+    assert request["body"] == "\n\n".join(
+        f"- {ticket['title']}\n  Check: {ticket['check']}" for ticket in PLAN["tickets"]
     )
-    r.run()
+    assert job["phase"] == "pr" and not job.get("repair")
+    review = job["requests"][job["pr_review"]]["run_id"]
     gh.checks.return_value = ("green", "")
     r.run()
-    assert any(
-        key[0] == review and msg["text"].startswith("merged as ")
-        for key, msg in api.messages.items()
-    )
-    api.finish(review, body="Ticket flow delivered and reviewed.")
+    gh.merge.assert_not_called()
+    api.finish(review, body=block({"verdict": "fix", **PLAN}))
+    r.run()
+    assert r.jobs["voice/W1"]["review_verdict"] == "fix"
+    assert not any("repair-ticket" in key for key in api.requests)
+    gh.merge.assert_called_once()
+    assert any(key[0] == cut_run and msg["text"].startswith("merged as ")
+               for key, msg in api.messages.items())
+    api.finish(cut_run, body="Ticket flow delivered and reviewed.")
     r.run()
     assert item(r)["state"] == "in review"
-    assert len(api.requests) == 7
+    assert len(api.requests) == 4
 
 
 def test_review_question_routes_answer_to_review_run(setup):

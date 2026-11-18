@@ -81,3 +81,24 @@ not used to select an executor. `show --final` reads the saved API final message
 `why` reports platform usage waits with their `resume_at`; Factory no longer
 applies executor or repository slot limits to slice requests. See [runner
 operation](runner.md). Chat settings and model choices remain separate.
+
+
+An escalated slice may move to `issued` to continue its existing run, or to `ready`
+to request a fresh attempt. Ready still requires a brief. Use the locked planner
+commands and identify the planner:
+
+```sh
+cplane state SLICE ready --actor planner
+cplane start SLICE --actor planner
+```
+
+On the next start, Factory cancels the previous attempt's runs (retrying running
+turns until cancellation is accepted), clears attention and raises the existing
+attempt number. Request ids change and the base is the default branch's current
+tip. The slice keeps its id, brief, level, flow and branch name. Paused slices do
+not start until resumed. The state command itself starts no executor.
+
+`show` and `show --json` display `runs`: one role and platform executor descriptor
+per recorded run in the current attempt. There are no executors before any run;
+legacy `executor` metadata remains stored but is omitted from this projection.
+The slice detail API and Workshop use the same role/executor pairs.

@@ -782,7 +782,7 @@ def main(argv=None):
                 backend = state.store(path)
                 policy = backend.slice_policy(item['id'])
                 item = dict(item, level=policy['level'] if policy else 'standard',
-                            executor=backend.slice_executor(item), **backend.slice_review(item['id']))
+                            **backend.slice_review(item['id']))
             default_runs = '/srv/factory/runs'
             base = Path(os.environ.get('CPLANE_RUNS', default_runs)).expanduser().resolve()
             runs = base / hashlib.sha256(str(path.resolve()).encode()).hexdigest()[:20]
@@ -796,6 +796,10 @@ def main(argv=None):
                     continue
                 if job.get('id') == args.id and (latest is None or job.get('started_ns', 0) > latest[0]):
                     latest = (job.get('started_ns', 0), job_path.parent, job)
+            from .roles import slice_runs
+            item = dict(item)
+            item.pop('executor', None)
+            item['runs'] = slice_runs(item, path=path, job=latest[2] if latest else None)
             if args.final:
                 if latest is None:
                     print('final: unavailable (no run recorded)')

@@ -8,7 +8,7 @@ TRANSITIONS = {
     "ready": {"planned", "issued"},
     "issued": {"in review", "escalated", "awaiting handover"},
     "awaiting handover": {"in review", "escalated", "awaiting handover"},
-    "escalated": {"issued"},
+    "escalated": {"issued", "ready"},
     "in review": {"accepted", "issued"},
     "accepted": set(),
     "dropped": set(),
@@ -95,6 +95,9 @@ def change_for(args):
                 raise StateError("ready to issued requires --session <tool>:<id>:<folder>")
             if target == "planned":
                 item["slot"] = None
+            if item["state"] == "escalated" and target == "ready":
+                item["log"].append({"at": at, "actor": getattr(args, "actor", "owner"),
+                                    "event": "restart requested: " + ((item.get("session") or {}).get("id") or "")})
             item["state"] = target
         elif args.command == "review":
             if not item["attention"] or item["attention"]["kind"] != "merge":

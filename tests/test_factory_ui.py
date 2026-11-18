@@ -6,9 +6,6 @@ class Store:
     def slice_policy(self, identifier):
         return None
 
-    def slice_executor(self, item):
-        return item['executor']
-
     def load(self):
         return {'slices': [{
             'id': 'demo/one', 'title': 'Example', 'state': 'ready', 'repo': 'owner/repo',
@@ -30,7 +27,7 @@ def test_slice_views_omit_private_fields_and_redact_paths():
     assert 'brief' not in item and 'session' not in item
     assert item['final'] is None
     assert '<script>' in item['attention']['body']
-    assert client.get('/api/slices/demo/one').get_json() == {**item, 'level': None}
+    assert client.get('/api/slices/demo/one').get_json() == {**item, 'level': None, 'runs': []}
     assert client.get('/api/slices/demo/missing').status_code == 404
 
 

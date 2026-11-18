@@ -34,7 +34,7 @@ def view(item):
         'repo': clean(item['repo']), 'feature': clean(item['feature']),
         'movable': slice_movable(item),
         'paused': item['paused'], 'slot': item['slot'], 'depends_on': item['depends_on'],
-        'executor': {key: clean(value) for key, value in item['executor'].items()}, 'pr': item['pr'],
+        'pr': item['pr'],
         'final': None if final is None else {
             'kind': clean(final['kind']), 'body': clean(final['body']), 'at': final['at'],
         },
@@ -72,6 +72,12 @@ def create_app(store=None):
 
     def slices():
         return backend().load()['slices']
+
+    def runs(item, store):
+        from cplane.roles import slice_runs
+        # Executor descriptors are structured platform identifiers, including
+        # pi/name configurations; free-text path redaction would corrupt them.
+        return slice_runs(item, path=getattr(store, 'path', None))
 
     def board_data(identifier=None):
         from cplane.eligibility import eligibility, observed
@@ -260,7 +266,7 @@ def create_app(store=None):
                     return jsonify(error='Level can only change while planned or ready'), 400
                 policy = store.slice_policy(slice_id)
                 store.slice_level(slice_id, payload['level'], policy['overrides'] if policy else {})
-                return jsonify(level=payload['level'], executor={k: clean(v) for k, v in store.slice_executor(item).items()})
+                return jsonify(level=payload['level'], runs=runs(item, store))
         except state.StateError as error:
             return jsonify(error=clean(str(error))), 400
         except Exception:
@@ -274,7 +280,7 @@ def create_app(store=None):
                 return jsonify(error='Slice not found'), 404
             store = backend()
             policy = store.slice_policy(slice_id)
-            return jsonify({**view(item), 'level': policy['level'] if policy else None, 'executor': {k: clean(v) for k, v in store.slice_executor(item).items()}})
+            return jsonify({**view(item), 'level': policy['level'] if policy else None, 'runs': runs(item, store)})
         except Exception:
             return jsonify(error='State unavailable'), 503
 

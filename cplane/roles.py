@@ -51,5 +51,28 @@ class RoleStore:
                 'ON CONFLICT (slice_id) DO UPDATE SET level = EXCLUDED.level', (identifier, level))
 
     def slice_executor(self, item):
-        """Legacy v1 display metadata; execution selection belongs to the platform."""
-        return item['executor']
+        """Executors observed on the current attempt's platform runs."""
+        return slice_runs(item)
+
+
+def slice_runs(item, *, path=None, job=None):
+    """Read the latest ledger without converting or writing stored records."""
+    import json
+    import os
+    from pathlib import Path
+    from .installation import runs_path
+
+    if job is None:
+        anchor = Path(path or os.environ.get('CPLANE_STATE') or 'slices.json')
+        for file in runs_path(anchor).glob('*/job.json'):
+            try:
+                candidate = json.loads(file.read_text())
+                if candidate.get('id') != item['id'] or candidate.get('record_only'):
+                    continue
+                if job is None or candidate.get('started_ns', 0) > job.get('started_ns', 0):
+                    job = candidate
+            except (OSError, ValueError, TypeError):
+                continue
+    return [dict(role=entry['request']['role'], executor=record['executor'])
+            for entry in (job or {}).get('requests', {}).values()
+            if (record := entry.get('record') or {}).get('executor')]
