@@ -841,6 +841,12 @@ def main(argv=None):
                 else:
                     job = latest[2]
                     final = ((job.get('requests', {}).get(job.get('active'), {}).get('record') or {}).get('final_message') or job.get('final'))
+                    if item.get('flow', 'cli') == 'tickets' and job.get('sha') and job.get('request'):
+                        final = {'kind': 'handover', 'body': json.dumps({
+                            'request': job['request'],
+                            'review_verdict': job.get('review_verdict'),
+                            'review_findings': job.get('review_findings'),
+                        }, ensure_ascii=False)}
                     last = latest[1] / ('last.json' if job.get('tool') == 'codex' else 'claude.json')
                     if job.get('fence') and job.get('tool') == 'codex':
                         last = latest[1] / 'io/last.json'

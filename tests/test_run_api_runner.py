@@ -389,7 +389,7 @@ def test_retry_failed_ticket_releases_old_chain_before_new_cut(setup):
     r, api, gh = setup
     edit(r, lambda s: s.update(flow="tickets"))
     r.run()
-    api.finish(current(r), body=block(PLAN))
+    api.finish(current(r), body=block(dict(PLAN, node_steps=None)))
     r.run()
     tickets = [key for key, req in api.requests.items() if req["role"] == "ticket"]
     api.finish(tickets[0], status="failed")
@@ -594,7 +594,7 @@ def test_ticket_chain_and_read_review(setup):
         and api.requests[cut_id]["mode"] == "write"
     )
     assert COMMIT_INSTRUCTION in api.requests[cut_id]["work"]["goal"]
-    api.finish(cut_id, body=block(PLAN))
+    api.finish(cut_id, body=block(dict(PLAN, node_steps=None)))
     r.run()
     tickets = [req for req in api.requests.values() if req["role"] == "ticket"]
     assert len(tickets) == 2
@@ -827,7 +827,7 @@ def test_review_goal_includes_delivered_answers_in_order(setup, flow):
         r.run()
         edit(r, lambda s, answer=answer: s["attention"].update(answer=answer))
         r.run()
-    api.finish(key, body=pr_reply() if flow == "cli" else block(PLAN))
+    api.finish(key, body=pr_reply() if flow == "cli" else block(dict(PLAN, node_steps=None)))
     r.run()
     if flow == "tickets":
         for ticket, request in list(api.requests.items()):
@@ -894,13 +894,18 @@ def test_abandon_lost_submit_response_only_looks_up_and_cancels(setup):
     assert api.records[next(iter(api.records))]["status"] == "cancelled"
 
 
-def test_full_ticket_pr_review_has_no_repair_and_postmerge_handover(setup):
+@pytest.mark.parametrize("steps", [None, "Install the merged commit", "legacy"])
+def test_full_ticket_pr_review_has_no_repair_and_postmerge_handover(setup, steps, monkeypatch, capsys):
     r, api, gh = setup
     edit(r, lambda s: s.update(flow="tickets"))
     r.run()
     cut_run = current(r)
-    api.finish(cut_run, body=block(PLAN))
+    api.finish(cut_run, body=block(dict(PLAN, node_steps=None if steps == "legacy" else steps)))
     r.run()
+    if steps == "legacy":
+        job = r.jobs["voice/W1"]
+        job["task_file"].pop("node_steps")
+        r.save_job(job)
     tickets = [key for key, req in api.requests.items() if req["role"] == "ticket"]
     api.finish(tickets[0])
     r.run()
@@ -923,11 +928,19 @@ def test_full_ticket_pr_review_has_no_repair_and_postmerge_handover(setup):
     assert r.jobs["voice/W1"]["review_verdict"] == "fix"
     assert not any("repair-ticket" in key for key in api.requests)
     gh.merge.assert_called_once()
-    assert any(key[0] == cut_run and msg["text"].startswith("merged as ")
-               for key, msg in api.messages.items())
-    api.finish(cut_run, body="Ticket flow delivered and reviewed.")
-    r.run()
-    assert item(r)["state"] == "in review"
+    assert not any(msg["text"].startswith("merged as ") for msg in api.messages.values())
+    expected = None if steps == "legacy" else steps
+    assert request["node_steps"] == expected
+    if expected is None:
+        assert item(r)["state"] == "in review"
+    else:
+        assert item(r)["attention"]["kind"] == "node-step"
+        assert item(r)["attention"]["body"] == expected
+    monkeypatch.setenv("CPLANE_RUNS", str(r.runs.parent))
+    assert main(["--state", str(r.path), "show", "voice/W1", "--final"]) == 0
+    output = capsys.readouterr().out
+    final = json.loads(output.split("body: ", 1)[1])
+    assert final == {"request": request, "review_verdict": "fix", "review_findings": PLAN["tickets"]}
     assert len(api.requests) == 4
 
 
@@ -984,7 +997,7 @@ def test_cut_accepts_plan_after_prose_and_earlier_code_block(setup, kind):
         key,
         "done" if kind == "handover" else "waiting",
         kind,
-        "Plan follows.\n```python\nexample()\n```\n\n" + block(PLAN),
+        "Plan follows.\n```python\nexample()\n```\n\n" + block(dict(PLAN, node_steps=None)),
     )
     r.run()
     if kind == "waiting":
@@ -1077,7 +1090,7 @@ def test_ticket_run_statuses_raise_attention(setup, status, reason, kind, expect
     r, api, _ = setup
     edit(r, lambda s: s.update(flow="tickets"))
     r.run()
-    api.finish(current(r), body=block(PLAN))
+    api.finish(current(r), body=block(dict(PLAN, node_steps=None)))
     r.run()
     first = next(key for key, req in api.requests.items() if req["role"] == "ticket")
     api.finish(first, status, kind, "Ticket needs attention", status_reason=reason)

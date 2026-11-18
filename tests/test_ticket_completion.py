@@ -23,7 +23,7 @@ def test_ticket_goals_end_with_assignment_without_changing_saved_tasks(setup):
     r, api, _ = setup
     edit(r, lambda s: s.update(flow='tickets'))
     r.run()
-    api.finish(current(r), body=block(PLAN))
+    api.finish(current(r), body=block(dict(PLAN, node_steps=None)))
     r.run()
     tasks = r.jobs['voice/W1']['task_file']['tasks']
     tickets = [req for req in api.requests.values() if req['role'] == 'ticket']
@@ -76,7 +76,7 @@ def test_restart_retries_running_old_chain_cancellation(setup):
     edit(r, lambda s: s.update(flow='tickets'))
     r.run()
     cut = current(r)
-    api.finish(cut, body=block(PLAN))
+    api.finish(cut, body=block(dict(PLAN, node_steps=None)))
     r.run()
     tickets = [key for key, req in api.requests.items() if req['role'] == 'ticket']
     api.finish(tickets[0], status='escalated')
@@ -171,7 +171,7 @@ def test_failed_or_expired_review_does_not_hold_merge(setup, flow, review_status
     r, api, gh = setup
     edit(r, lambda s: s.update(flow=flow))
     r.run()
-    api.finish(current(r), body=pr_reply() if flow == 'cli' else block(PLAN))
+    api.finish(current(r), body=pr_reply() if flow == 'cli' else block(dict(PLAN, node_steps=None)))
     r.run()
     if flow == 'tickets':
         for key, req in list(api.requests.items()):
@@ -258,7 +258,7 @@ def test_legacy_review_ready_and_repair_round_can_finish(setup):
     r, api, gh = setup
     edit(r, lambda s: s.update(flow='tickets'))
     r.run()
-    api.finish(current(r), body=block(PLAN))
+    api.finish(current(r), body=block(dict(PLAN, node_steps=None)))
     r.run()
     for key, req in list(api.requests.items()):
         if req['role'] == 'ticket':
