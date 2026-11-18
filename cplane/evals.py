@@ -322,20 +322,9 @@ def run_create(store, *, title, sets, configurations, repeats, scheduled_for=Non
     _text(title, 'title', 'run')
     if type(repeats) is not int or repeats < 1 or not sets or not configurations:
         raise StateError('Eval run requires sets, configurations and repeats >= 1')
-    ids = []
-    for config in configurations:
-        if not isinstance(config, dict) or any(not isinstance(config.get(k), str) or not config[k].strip()
-                                                for k in ('id', 'harness', 'model', 'route')):
-            raise StateError('Configuration requires nonempty id, harness, model and route')
-        if config['harness'] not in ('codex', 'claude', 'pi'):
-            raise StateError(f"harness {config['harness']} is not available yet")
-        if config['harness'] == 'pi' and (config['route'] != 'platform' or
-                not isinstance(config.get('configuration'), str) or
-                not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,63}', config['configuration'])):
-            raise StateError('Pi requires route platform and a valid configuration name')
-        if 'effort' in config and (not isinstance(config['effort'], str) or not config['effort'].strip()):
-            raise StateError('Configuration effort must be nonempty text')
-        ids.append(config['id'])
+    if not isinstance(configurations, list) or any(not isinstance(c, str) or not c.strip() for c in configurations):
+        raise StateError('Configurations must be named configuration ids')
+    ids = configurations
     if len(ids) != len(set(ids)):
         raise StateError('Duplicate configuration id')
     if scheduled_for is not None:
@@ -346,6 +335,7 @@ def run_create(store, *, title, sets, configurations, repeats, scheduled_for=Non
         except (ValueError, TypeError):
             raise StateError('--at must be an ISO timestamp with timezone') from None
     with store.mutation():
+        configurations = [config_show(store, identifier) for identifier in ids]
         versions, members = [], set()
         for selection in sets:
             identifier, separator, version = selection.rpartition(':')
@@ -354,15 +344,31 @@ def run_create(store, *, title, sets, configurations, repeats, scheduled_for=Non
             if ref not in versions:
                 versions.append(ref)
             members.update(selected['members'])
+        public = {}
         for member in sorted(members):
-            case = _rows(store, 'SELECT kind, start_commit FROM cplane_eval_cases WHERE id=%s', (member,))[0]
-            if case['kind'] == 'ticket':
-                if any(c['harness'] != 'pi' for c in configurations):
-                    raise StateError(f'{member}: tickets require the platform route')
-                if not case['start_commit']:
-                    raise StateError(f'{member}: ticket requires a start commit')
-            elif any(c['harness'] == 'pi' for c in configurations):
-                raise StateError(f'{member}: platform route requires ticket cases')
+            case = _rows(store, 'SELECT * FROM cplane_eval_cases WHERE id=%s', (member,))[0]
+            if case['kind'] == 'review':
+                raise StateError(f'{member}: new runs support slice and ticket cases')
+            for config in configurations:
+                validate_configuration(config['path'], config['roles'])
+                pi_roles = {role for role, entry in config['roles'].items() if 'configuration' in entry}
+                if pi_roles:
+                    from .runner import GitHub
+                    repo = case['repository']
+                    if repo not in public:
+                        public[repo] = GitHub().is_public(repo)
+                    if not public[repo]:
+                        raise StateError(f'{member}: private cases refuse Pi entries')
+                if case['kind'] == 'ticket':
+                    if config['path'] != 'tickets':
+                        raise StateError(f'{member}: ticket cases require a tickets configuration')
+                    if not case['start_commit']:
+                        raise StateError(f'{member}: ticket requires a start commit')
+                elif pi_roles - {'ticket'}:
+                    raise StateError(f'{member}: Pi is accepted only for the ticket role')
+            if case['kind'] == 'slice' and case['grade'] != 'judge' and (
+                    not case['merge_commit'] or not case['hidden_paths'] or not case['check_command']):
+                raise StateError(f'{member}: hidden-test grading requires merge_commit, hidden_paths and check_command')
         run = store.connection.execute('INSERT INTO cplane_eval_runs '
             '(title, created_by, scheduled_for, repeats, set_versions, configurations) VALUES (%s,%s,%s,%s,%s,%s) RETURNING id',
             (title, actor, scheduled_for, repeats, Jsonb(versions), Jsonb(configurations))).fetchone()[0]
@@ -406,6 +412,9 @@ def run_show(store, identifier):
                          'WHERE a.eval_run = %s ORDER BY v.id', (identifier,))
         for attempt in result['attempts']:
             attempt['verdicts'] = [v for v in verdicts if v['attempt'] == attempt['id']]
+            links = attempt_run_list(store, attempt['id'])
+            if links:
+                attempt['runs'] = links
         return result
 
 

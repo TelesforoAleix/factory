@@ -1,5 +1,6 @@
-"""Legacy subscription eval adapter; slice turns use the platform exclusively."""
+"""Eval runner jobs and retained usage telemetry helpers."""
 
+import hashlib
 import json
 import os
 import re
@@ -11,7 +12,9 @@ from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from . import fence, state
+from . import fence, run_records, state
+from . import review as reviewer
+from .runner import Runner
 from .executors import Processes, atomic_json
 
 _USAGE_PASS = ContextVar("usage_pass", default=None)
@@ -340,7 +343,7 @@ def claude_usage(path=None):
         return None
 
 
-class Context:
+class UsageContext:
     def __init__(self, runner):
         self.parent = runner
         self.path, self.runs = runner.path, runner.runs
@@ -349,50 +352,8 @@ class Context:
         self.codex_reader, self.claude_reader = codex_usage, claude_usage
         self._usage_probe_allowed = True
 
-    def collect(self, store):
-        from . import eval_runner
-
-        self.cache = {"runner": self}
-        token = _USAGE_PASS.set(self.cache)
-        try:
-            return eval_runner.collect(self, store)
-        finally:
-            _USAGE_PASS.reset(token)
-
-    def start(self, store):
-        from . import eval_runner
-
-        token = _USAGE_PASS.set(self.cache)
-        try:
-            return eval_runner.start(self, store)
-        finally:
-            _USAGE_PASS.reset(token)
-
     def __getattr__(self, name):
         return getattr(self.parent, name)
-
-    def room(self, item):
-        limits = state.store(self.path).limit_show()
-        # Platform slice requests never reserve local eval fence capacity.
-        running = {
-            key: j.get("repository", "")
-            for key, j in self.jobs.items()
-            if not j.get("requests") and j["phase"] == "running" and key != item["id"]
-        }
-        for other in self.data.get("slices", []):
-            if (
-                other["id"] not in self.jobs
-                and other["state"] in ("issued", "awaiting handover")
-                and not other.get("attention")
-            ):
-                running[other["id"]] = other["repo"]
-        if len(running) >= limits["executors"]:
-            return "executor limit"
-        if limits["repository_runs"] == 1 and any(
-            repo.casefold() == item["repo"].casefold() for repo in running.values()
-        ):
-            return "repository busy"
-        return None
 
     def limit_reset(self, message):
         """The reset time named in a usage-limit message, if it is still ahead."""
@@ -512,3 +473,147 @@ class Context:
                 probe_codex_usage(self.runs)
         except (OSError, subprocess.SubprocessError):
             pass
+
+
+class Context(Runner):
+    """Use runner jobs with a private item, stopping at the PR boundary.
+
+    The parent owns scheduler state and transport. No synthetic item is inserted
+    into that state, and evals never write slice records or send notices.
+    """
+
+    def __init__(self, parent):
+        self.parent = parent
+
+    def __getattr__(self, name):
+        return getattr(self.parent, name)
+
+    def collect(self, store):
+        from . import eval_runner
+        self.store = store
+        return eval_runner.collect(self, store)
+
+    def start(self, store):
+        from . import eval_runner
+        self.store = store
+        return eval_runner.start(self, store)
+
+    def save_job(self, job):
+        # Stamp before *every* persisted intent, including new_request's first
+        # save. Recovery can therefore never submit an unmarked eval request.
+        role_names = {'slice': 'executor', 'cut': 'cutter', 'ticket': 'ticket', 'review': 'reviewer'}
+        for entry in job['requests'].values():
+            request = entry['request']
+            role = request['role']
+            mark = dict(set=f"run{job['eval_run']}", case='case' + hashlib.sha256(job['case']['id'].encode()).hexdigest()[:32])
+            if role == 'check':
+                request.pop('branch', None)
+                request['work']['overlay'] = {
+                    'commit': job['case']['merge_commit'], 'paths': job['case']['hidden_paths']}
+            else:
+                mark['executor'] = job['configuration']['roles'][role_names[role]]
+            request['eval'] = mark
+        self.parent.save_job(job)
+
+    def send_request(self, job, entry):
+        identity = super().send_request(job, entry)
+        # Stable positions follow saved request insertion order. A rollback or
+        # lost submit response replays both the request and this link safely.
+        position = list(job['requests'].values()).index(entry) + 1
+        purpose = next(k for k, v in job['requests'].items() if v is entry)
+        self.store.connection.execute(
+            'INSERT INTO cplane_eval_attempt_runs (attempt, position, role, purpose, run_id) '
+            'VALUES (%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING',
+            (job['eval_attempt'], position, entry['request']['role'], purpose, identity))
+        return identity
+
+    def log(self, item, event, notice=False, *, actor='runner'):
+        item['log'].append(dict(event=event, actor=actor, at=self.at))
+
+    def defer(self, item, reason):
+        pass  # Usage waits are owned and resumed by the platform.
+
+    def session(self, item, job):
+        pass
+
+    def attention(self, item, kind, body):
+        self.fail(self.jobs[item['id']], body)
+
+    def fail(self, job, reason):
+        job.update(phase='eval-finishing', completion=dict(status='failed', result={'error': reason}))
+        self.save_job(job)
+
+    def apply_record(self, item, job):
+        # Ticket successors are polled together. A question in any of them ends
+        # the attempt before another pipeline stage can be submitted.
+        if job.get('component'):
+            record = job['requests'][job['active']].get('record') or {}
+            if record.get('status') in ('done', 'failed') and type((record.get('check') or {}).get('exit_code')) is int:
+                self.apply_final(item, job)
+                return
+        for entry in job['requests'].values():
+            record = entry.get('record') or {}
+            status = record.get('status')
+            final = run_records.run_final(record) or {}
+            if status in ('question', 'escalated', 'failed', 'cancelled') or final.get('kind') in ('question', 'escalation'):
+                self.fail(job, final.get('body') or str(record.get('status_reason') or status))
+                return
+        if job['active'] == 'check':
+            record = job['requests']['check'].get('record') or {}
+            if record.get('status') == 'done':
+                check = record.get('check') or {}
+                if type(check.get('exit_code')) is not int:
+                    self.fail(job, 'Check run ended without an exit code')
+                else:
+                    self.grade(job, check['exit_code'])
+            return
+        super().apply_record(item, job)
+
+    def apply_final(self, item, job):
+        if job.get('component'):
+            record = job['requests'][job['active']]['record']
+            if record['status'] not in ('done', 'failed'):
+                self.fail(job, 'Ticket ended without a check outcome')
+                return
+            check = record.get('check') or {}
+            if type(check.get('exit_code')) is not int:
+                self.fail(job, 'Ticket run ended without an exit code')
+                return
+            job['tip'] = (record.get('commits') or [None])[-1]
+            if job['tip'] is None:
+                job['tip'] = self.github.branch_tip(item['repo'], job['branch']) if record['status'] == 'done' else job['base']
+            self.grade(job, check['exit_code'])
+            return
+        super().apply_final(item, job)
+
+    def finished(self, item, body):
+        self.fail(self.jobs[item['id']], 'Slice ended without a PR request')
+
+    def present_pr(self, item, job):
+        # Both slice delivery and the ordered ticket chain reach this same
+        # boundary. Eval work gets its configured review before sealed grading.
+        self.launch_review(item, job)
+
+    def cli_review(self, item, job):
+        return False  # present_pr already launched the blocking eval review.
+
+    def apply_review(self, item, job, body):
+        answer = reviewer.parse(body)
+        reviewer.validate(answer)
+        job['review_verdict'] = answer['verdict']
+        job['review_findings'] = answer
+        if job['case']['grade'] == 'judge':
+            self.grade(job, None)
+            return
+        previous = job['requests'][job['active']]['request']['request_id']
+        job['active'], job['phase'] = 'check', 'running'
+        entry = self.new_request(item, job, 'check', 'check', 'Run the sealed case check.',
+                                 base=job['tip'], after=[previous],
+                                 check_command=job['case']['check_command'])
+        self.send_request(job, entry)
+
+    def grade(self, job, exit_code):
+        result = dict(tests=None if exit_code is None else 'pass' if exit_code == 0 else 'fail',
+                      exit_code=exit_code, review=job.get('review_verdict'))
+        job.update(phase='eval-finishing', completion=dict(status='done', result=result))
+        self.save_job(job)

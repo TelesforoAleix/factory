@@ -298,24 +298,6 @@ def test_default_usage_paths(tmp_path, monkeypatch, setting):
     assert runner.claude_usage() == {"synthetic": True}
 
 
-def test_eval_shares_launcher_read(setup, server, launcher_mode, monkeypatch):
-    from cplane import eval_runner
-    r, _, _ = setup
-    reset = NOW.timestamp() + 7200
-    monkeypatch.setattr(runner.time, 'time', lambda: NOW.timestamp())
-    server[2][:] = [json.dumps({'primary': {'used_percent': 100, 'resets_at': reset}}).encode() + b'\n', b'']
-    monkeypatch.setattr(runner, 'probe_codex_usage', Mock())
-    monkeypatch.setattr(runner.state, 'postgres', lambda: False)
-    token = runner._USAGE_PASS.set({'runner': r})
-    try:
-        assert eval_runner._reset(r, 'codex', '') == reset
-        assert not eval_runner.available(r, 'codex')
-    finally:
-        runner._USAGE_PASS.reset(token)
-    assert len(server[0]) == 2
-
-
-
 def test_probe_respects_executor_capacity(setup, launcher_mode, monkeypatch):
     r, _, _ = setup
     r.instant = NOW
@@ -329,7 +311,7 @@ def test_probe_respects_executor_capacity(setup, launcher_mode, monkeypatch):
 
 def test_age_real_run_records(tmp_path, pg_store, monkeypatch):
     from cplane.runner import Runner
-    r = runner.Context(Runner(tmp_path / 'slices.json', runs=tmp_path / 'runs'))
+    r = runner.UsageContext(Runner(tmp_path / 'slices.json', runs=tmp_path / 'runs'))
     r.runs.mkdir(parents=True)
     (r.runs / "usage-probe.json").write_text(json.dumps({"at": NOW.timestamp() - 5000}))
     pg_store.run_record_add(

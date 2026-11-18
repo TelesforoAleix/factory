@@ -13,6 +13,19 @@ from test_fenced_runner import delivery  # noqa: F401
 from test_stores import pg_store  # noqa: F401
 
 
+
+def named(store, identifier='synthetic', path='tickets'):
+    roles = {role: ({'harness': 'claude', 'model': 'synthetic-reviewer'} if role == 'reviewer' else
+                    {'harness': 'codex', 'model': 'synthetic-' + role, 'effort': 'medium'})
+             for role in evals.CONFIGURATION_ROLES[path]}
+    evals.config_add(store, identifier, path=path, roles=roles)
+    return identifier
+
+
+@pytest.fixture(autouse=True)
+def offline_visibility(monkeypatch):
+    monkeypatch.setattr('cplane.runner.GitHub.is_public', lambda self, repo: True)
+
 def patch_file(path, lines):
     return (f'diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n'
             f'@@ -0,0 +1,{lines} @@\n' + '+synthetic\n' * lines)
@@ -75,7 +88,7 @@ def test_versions_run_expansion_and_verdicts(pg_store, cases):
     assert evals.set_show(pg_store, 'synthetic', 1) == v1
     with pg_store.mutation():
         pg_store.connection.execute("UPDATE cplane_eval_cases SET start_commit=%s", ('b' * 40,))
-    configurations = [dict(id=str(n), harness='pi', model='base', route='platform', configuration='base') for n in range(3)]
+    configurations = [named(pg_store, str(n)) for n in range(3)]
     run = evals.run_create(pg_store, title='Synthetic run', sets=['synthetic:1', 'synthetic:2'],
                             configurations=configurations, repeats=2, actor='planner')
     assert len(run['attempts']) == 12
@@ -124,8 +137,9 @@ def test_cli_commands(pg_store, cases, capsys, monkeypatch, tmp_path):
     assert len(json.loads(capsys.readouterr().out)) == 1
     with pg_store.mutation():
         pg_store.connection.execute("UPDATE cplane_eval_cases SET start_commit=%s", ('b' * 40,))
+    named(pg_store, 'cli-config')
     assert main(['eval', 'run', 'create', '--title', 'CLI', '--set', 'cli', '--configuration',
-                 '{"id":"a","harness":"pi","model":"base","route":"platform","configuration":"base"}',
+                 'cli-config',
                  '--repeats', '2', '--at', '2026-12-01T12:00:00Z']) == 0
     run = json.loads(capsys.readouterr().out)
     assert len(run['attempts']) == 4
@@ -154,14 +168,18 @@ def test_whole_slice_cases(pg_store, cases, kind):
     assert case['id'] == 'example/public#53' and case['size'] == 'L'
     assert case['level'] == ('light' if kind == 'slice' else None)
     evals.set_create(pg_store, 'fence', title='Fence', filters={'kind': kind})
-    configs = [{'id': tool, 'harness': tool, 'model': 'synthetic', 'route': 'test'}
-               for tool in ('codex', 'claude')]
-    run = evals.run_create(pg_store, title='Fence', sets=['fence'], configurations=configs, repeats=1)
-    assert len(run['attempts']) == 2
-    with pytest.raises(state.StateError, match='platform route requires ticket cases'):
-        evals.run_create(pg_store, title='Bad', sets=['fence'], repeats=1,
-                         configurations=[{'id': 'pi', 'harness': 'pi', 'model': 'base',
-                                          'route': 'platform', 'configuration': 'base'}])
+    if kind == 'review':
+        with pytest.raises(state.StateError, match='support slice and ticket'):
+            evals.run_create(pg_store, title='Unsupported', sets=['fence'],
+                             configurations=[named(pg_store, 'review')], repeats=1)
+    else:
+        with pg_store.mutation():
+            pg_store.connection.execute("UPDATE cplane_eval_cases SET grade='judge'")
+        configs = [named(pg_store, path, path) for path in ('slice', 'tickets')]
+        run = evals.run_create(pg_store, title='Paths', sets=['fence'], configurations=configs, repeats=1)
+        assert len(run['attempts']) == 2
+        assert [c['id'] for c in run['configurations']] == configs
+
 
 
 def test_invalid_planning_is_atomic(pg_store, cases):
@@ -286,25 +304,31 @@ def test_platform_migration_and_import_backfill(pg_store, cases):  # noqa: F811
     assert evals.import_folder(pg_store, cases[0]) == {'inserted': 0, 'updated': 0, 'unchanged': 2}
 
 
-@pytest.mark.parametrize('problem', ['codex', 'claude', 'start', 'route', 'name', 'missing'])
-def test_ticket_platform_planning_refusals_are_atomic(pg_store, cases, problem):  # noqa: F811
+@pytest.mark.parametrize('problem', ['start', 'path', 'private', 'inline', 'duplicate', 'unknown'])
+def test_ticket_planning_refusals_are_atomic(pg_store, cases, problem, monkeypatch):
     evals.import_folder(pg_store, cases[0])
     evals.set_create(pg_store, 's', title='S', filters={})
-    config = {'id': 'pi-base', 'harness': 'pi', 'model': 'base', 'route': 'platform', 'configuration': 'base'}
-    if problem in ('codex', 'claude'):
-        config['harness'] = problem
+    identifier = named(pg_store, path='slice' if problem == 'path' else 'tickets')
+    if problem != 'start':
         with pg_store.mutation():
             pg_store.connection.execute('UPDATE cplane_eval_cases SET start_commit=%s', ('b' * 40,))
-    elif problem == 'route':
-        config['route'] = 'fence'
-    elif problem == 'name':
-        config['configuration'] = 'bad/name'
-    elif problem == 'missing':
-        del config['configuration']
-    message = ('tickets require' if problem in ('codex', 'claude') else
-               'ticket requires a start commit' if problem == 'start' else 'Pi requires')
+    configurations = [identifier]
+    message = {'start': 'start commit', 'path': 'tickets configuration', 'private': 'private cases',
+               'inline': 'named configuration ids', 'duplicate': 'Duplicate', 'unknown': 'not found'}[problem]
+    if problem == 'private':
+        identifier = evals.config_add(pg_store, 'pi', path='tickets', roles={
+            'cutter': {'harness': 'claude', 'model': 'synthetic'},
+            'ticket': {'configuration': 'pi/base'}, 'reviewer': {'harness': 'claude', 'model': 'synthetic'}})['id']
+        configurations = [identifier]
+        monkeypatch.setattr('cplane.runner.GitHub.is_public', lambda self, repo: False)
+    elif problem == 'inline':
+        configurations = [dict(id='old', harness='codex', model='synthetic', route='fence')]
+    elif problem == 'duplicate':
+        configurations *= 2
+    elif problem == 'unknown':
+        configurations = ['missing']
     with pytest.raises(state.StateError, match=message):
-        evals.run_create(pg_store, title='Bad', sets=['s'], configurations=[config], repeats=1)
+        evals.run_create(pg_store, title='Bad', sets=['s'], configurations=configurations, repeats=1)
     assert evals.run_list(pg_store) == []
     with pg_store.locked():
         assert pg_store.connection.execute('SELECT count(*) FROM cplane_eval_attempts').fetchone()[0] == 0
@@ -427,7 +451,7 @@ def test_attempt_runs_order_and_uniqueness(pg_store, cases):
         pg_store.connection.execute('UPDATE cplane_eval_cases SET start_commit=%s', ('b' * 40,))
     evals.set_create(pg_store, 's', title='Synthetic', filters={})
     run = evals.run_create(pg_store, title='Synthetic', sets=['s'], repeats=1,
-                          configurations=[dict(id='pi', harness='pi', model='base', route='platform', configuration='base')])
+                          configurations=[named(pg_store)])
     attempt, other = [a['id'] for a in run['attempts']]
     records = [evals.attempt_run_add(pg_store, attempt, position=position, role='ticket', purpose='execute', run_id=run_id)
                for position, run_id in [(3, 'platform-c'), (1, 'platform-a'), (2, 'platform-b')]]
@@ -438,7 +462,7 @@ def test_attempt_runs_order_and_uniqueness(pg_store, cases):
             evals.attempt_run_add(pg_store, attempt, position=position, role='ticket', purpose='execute', run_id=run_id)
     evals.attempt_run_add(pg_store, attempt, position=4, role='check', purpose='grade', run_id='platform-a')
     evals.attempt_run_add(pg_store, other, position=1, role='ticket', purpose='execute', run_id='platform-a')
-    assert evals.run_show(pg_store, run['id']) == run  # Legacy attempt links/output stay unchanged.
+    assert evals.run_show(pg_store, run['id'])['attempts'][0]['runs'] == evals.attempt_run_list(pg_store, attempt)
 
 
 def test_records_migration_preserves_populated_legacy_store(request, monkeypatch, tmp_path, cases):
@@ -457,8 +481,25 @@ def test_records_migration_preserves_populated_legacy_store(request, monkeypatch
         store.connection.execute('UPDATE cplane_eval_cases SET start_commit=%s', ('b' * 40,))
         store.connection.execute("INSERT INTO cplane_eval_sets VALUES ('legacy','Legacy','')")
         evals._version(store, 'legacy', 1, ['example/public#53/1', 'example/public#53/2'], {}, '', 'planner')
-    run = evals.run_create(store, title='Legacy', sets=['legacy'], repeats=1, configurations=[
-        dict(id='pi-base', harness='pi', model='base', route='platform', configuration='base')])
+    from psycopg.types.json import Jsonb
+    with store.mutation():
+        run_id = store.connection.execute(
+            'INSERT INTO cplane_eval_runs (title,created_by,repeats,set_versions,configurations) '
+            'VALUES (%s,%s,1,%s,%s) RETURNING id',
+            ('Legacy', 'planner', Jsonb([dict(set='legacy',version=1)]), Jsonb([
+                dict(id='pi-base', harness='pi', model='base', route='platform', configuration='base')]))).fetchone()[0]
+        for member in ('example/public#53/1', 'example/public#53/2'):
+            store.connection.execute('INSERT INTO cplane_eval_attempts (eval_run,"case",configuration_id,repeat) '
+                                     "VALUES (%s,%s,'pi-base',1)", (run_id, member))
+    # Before 032, construct the old display shape without querying its new table.
+    def old_show(identifier):
+        with store.locked():
+            run = evals._rows(store, 'SELECT * FROM cplane_eval_runs WHERE id=%s', (identifier,))[0]
+            run['attempts'] = evals._rows(store, 'SELECT * FROM cplane_eval_attempts WHERE eval_run=%s ORDER BY id', (identifier,))
+            for attempt in run['attempts']:
+                attempt['verdicts'] = evals._rows(store, 'SELECT * FROM cplane_eval_verdicts WHERE attempt=%s ORDER BY id', (attempt['id'],))
+            return run
+    run = old_show(run_id)
     with store.mutation():
         record_id = store.connection.execute(
             "INSERT INTO cplane_run_records (turn_key,kind,tool) VALUES ('legacy','slice','codex') RETURNING id").fetchone()[0]
@@ -467,7 +508,7 @@ def test_records_migration_preserves_populated_legacy_store(request, monkeypatch
         before_cases = evals._rows(store, 'SELECT * FROM cplane_eval_cases ORDER BY id')
     evals.verdict_add(store, run['attempts'][0]['id'], judge='synthetic@1', prompt_hash='legacy',
                       verdict='mergeable', reason='Synthetic legacy verdict')
-    before_run = evals.run_show(store, run['id'])
+    before_run = old_show(run['id'])
     # Completed pre-catalogue Codex runs keep their original inline shape too.
     from psycopg.types.json import Jsonb
     legacy_codex = [dict(id='codex-luna', harness='codex', model='gpt-6-luna', route='fence', effort='medium')]
@@ -475,7 +516,7 @@ def test_records_migration_preserves_populated_legacy_store(request, monkeypatch
         codex_id = store.connection.execute(
             'INSERT INTO cplane_eval_runs (title,created_by,repeats,set_versions,configurations,state) '
             "VALUES ('Legacy Codex','planner',1,'[]',%s,'done') RETURNING id", (Jsonb(legacy_codex),)).fetchone()[0]
-    before_codex = evals.run_show(store, codex_id)
+    before_codex = old_show(codex_id)
     before_runs = evals.run_list(store)
     store.migrate()
     store.migrate()
@@ -591,3 +632,46 @@ def test_case_from_slice_refusals(slice_case, failure):
     if failure in ('unaccepted', 'in review'):
         assert str(exc.value) == 'project/one: slice is not accepted'
     assert evals.case_list(store) == []
+
+
+def test_named_run_stores_full_configuration_snapshots(pg_store, cases, capsys):
+    evals.import_folder(pg_store, cases[0])
+    with pg_store.mutation():
+        pg_store.connection.execute("UPDATE cplane_eval_cases SET kind='slice', level='standard', grade='judge'")
+    evals.set_create(pg_store, 's', title='S', filters={})
+    ids = [named(pg_store, path, path) for path in ('slice', 'tickets')]
+    configs = evals.config_list(pg_store)
+    run = evals.run_create(pg_store, title='Named', sets=['s'], configurations=ids, repeats=1)
+    assert run['configurations'] == configs
+    named(pg_store, 'unrelated')
+    assert evals.run_show(pg_store, run['id']) == run
+    assert main(['eval','run','list']) == 0
+    assert json.loads(capsys.readouterr().out)[0]['configurations'] == configs
+
+
+@pytest.mark.parametrize('path,pi_role', [('slice','executor'),('slice','reviewer'),('tickets','cutter'),('tickets','ticket'),('tickets','reviewer')])
+def test_private_slice_refuses_any_pi_entry(pg_store, cases, monkeypatch, path, pi_role):
+    evals.import_folder(pg_store, cases[0])
+    with pg_store.mutation():
+        pg_store.connection.execute("UPDATE cplane_eval_cases SET kind='slice', level='standard', grade='judge'")
+    evals.set_create(pg_store, 's', title='S', filters={})
+    roles = {role:{'harness':'claude','model':'synthetic'} for role in evals.CONFIGURATION_ROLES[path]}
+    roles[pi_role] = {'configuration':'pi/base'}
+    evals.config_add(pg_store,'pi',path=path,roles=roles)
+    monkeypatch.setattr('cplane.runner.GitHub.is_public', lambda self, repo: False)
+    with pytest.raises(state.StateError,match='private cases refuse Pi'):
+        evals.run_create(pg_store,title='Private',sets=['s'],configurations=['pi'],repeats=1)
+    assert evals.run_list(pg_store) == []
+
+
+def test_legacy_inline_runs_still_list_and_show_in_cli(pg_store, capsys):
+    from psycopg.types.json import Jsonb
+    configs = [dict(id='legacy',harness='codex',model='synthetic',route='fence',effort='medium')]
+    with pg_store.mutation():
+        identity = pg_store.connection.execute(
+            'INSERT INTO cplane_eval_runs (title,created_by,repeats,set_versions,configurations,state) '
+            "VALUES ('Legacy','owner',1,'[]',%s,'done') RETURNING id", (Jsonb(configs),)).fetchone()[0]
+    assert main(['eval','run','list']) == 0
+    assert json.loads(capsys.readouterr().out)[0]['configurations'] == configs
+    assert main(['eval','run','show',str(identity)]) == 0
+    assert json.loads(capsys.readouterr().out)['configurations'] == configs

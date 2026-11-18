@@ -16,26 +16,25 @@ describe('eval pages', () => {
   vi.stubGlobal('fetch', vi.fn(url => Promise.resolve({ok:true,json:() => Promise.resolve(url.includes('settings') ? {models:[]} : [])})));
   const view = render(<MemoryRouter><EvalRuns/></MemoryRouter>); expect(await screen.findByText('No eval runs yet.')).toBeTruthy(); view.unmount();
   const sets = render(<MemoryRouter><EvalSets/></MemoryRouter>); expect(await screen.findByText('No sets yet.')).toBeTruthy(); sets.unmount();
-  render(<MemoryRouter><EvalNew/></MemoryRouter>); expect(await screen.findByText(/no estimate/)).toBeTruthy();
+  render(<MemoryRouter><EvalNew/></MemoryRouter>); expect(await screen.findByText('No named configurations available.')).toBeTruthy();
  });
 });
 
 it('submits a scheduled run with a local offset and selected version', async () => {
  const {fireEvent, waitFor} = await import('@testing-library/react');
  const calls = [];
- vi.stubGlobal('fetch', vi.fn((url, options) => {calls.push([url,options]); const data = options ? {id:9} : url === '/api/evals/sets' ? [{id:'s',title:'Set',version:2,case_count:1}] : url === '/api/evals/sets/s' ? {id:'s',version:2,members:['x']} : url.includes('settings') ? {models:[]} : []; return Promise.resolve({ok:true,json:() => Promise.resolve(data)});}));
+ vi.stubGlobal('fetch', vi.fn((url, options) => {calls.push([url,options]); const data = options ? {id:9} : url === '/api/evals/sets' ? [{id:'s',title:'Set',version:2,case_count:1}] : url === '/api/evals/sets/s' ? {id:'s',version:2,members:['x']} : url === '/api/evals/configurations' ? [{id:'named',path:'slice',roles:{executor:{harness:'codex',model:'synthetic',effort:'medium'},reviewer:{harness:'claude',model:'synthetic'}}}] : []; return Promise.resolve({ok:true,json:() => Promise.resolve(data)});}));
  render(<MemoryRouter><EvalNew/></MemoryRouter>);
  fireEvent.click(await screen.findByLabelText(/Set · version 2/));
  fireEvent.change(screen.getByLabelText('Title'),{target:{value:'Run'}});
- fireEvent.change(screen.getByLabelText('Model'),{target:{value:'m'}});
- fireEvent.change(screen.getByLabelText('Route'),{target:{value:'gateway'}});
+ fireEvent.click(screen.getByLabelText(/named · slice/));
  fireEvent.click(screen.getByLabelText('Schedule'));
  fireEvent.change(screen.getByLabelText('Local date and time'),{target:{value:'2026-12-01T12:30'}});
  fireEvent.click(screen.getByText('Create eval run'));
  await waitFor(() => expect(calls.some(([,o]) => o?.method === 'POST')).toBe(true));
  const [url,options] = calls.find(([,o]) => o?.method === 'POST'); const body = JSON.parse(options.body);
  expect(url).toBe('/api/evals/runs'); expect(options.headers['X-Factory-UI']).toBe('1');
- expect(body.sets).toEqual(['s:2']); expect(body.configurations).toEqual([{id:'pi-m',harness:'pi',model:'m',route:'gateway'}]);
+ expect(body.sets).toEqual(['s:2']); expect(body.configurations).toEqual(['named']);
  expect(body.scheduled_for).toMatch(/^2026-12-01T12:30:00[+-]\d\d:\d\d$/);
 });
 

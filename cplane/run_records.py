@@ -535,6 +535,8 @@ def run_final(record):
 
 def platform_record(store, item, job, entry):
     """Account checked API attempts without reading local harness output."""
+    if job.get('eval_attempt'):
+        return  # Eval runs have their own ordered ledger and aggregate metrics.
     try:
         saved = entry.get('record') or {}
         request = entry['request']

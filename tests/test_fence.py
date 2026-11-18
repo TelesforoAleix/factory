@@ -80,11 +80,7 @@ def test_start_chain_and_idempotent_branches(start_chain):
     pushes = [args for args, _ in d["calls"] if "push" in args]
     assert len(pushes) == 2
     assert all("eval/pr53-t" in args[-1] for args in pushes)
-    # The published start is fetchable and usable by the real fence copy path.
-    job = d["adapter"].prepare_eval("example/repo", starts[1]["start_commit"], "b" * 32)
-    assert job["base"] == commits[1]
-    assert (Path(job["repo"]) / "pinned test.py").exists()
-    assert (Path(job["repo"]) / "implementation.py").read_text() == "synthetic 1\n"
+
 
 
 @pytest.mark.parametrize(

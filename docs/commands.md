@@ -62,11 +62,14 @@ See [Eval store](evals.md) for the case format and versioning rules.
 cplane eval import FOLDER
 cplane eval case from-slice SLICE --kind KIND --check COMMAND --grade {tests_and_judge,judge} --validation TEXT [--hidden PATH ...]
 cplane eval case list [--kind KIND] [--tag-kind TAG] [--size SIZE] [--language LANGUAGE] [--half HALF]
+cplane eval config add ID --path {slice,tickets} --role 'ROLE=JSON'... [--note TEXT] [--actor ACTOR]
+cplane eval config list
+cplane eval config show ID
 cplane eval set create ID --title TITLE --filter JSON [--description TEXT] [--note TEXT] [--actor ACTOR]
 cplane eval set add ID CASE... [--note TEXT] [--actor ACTOR]
 cplane eval set list
 cplane eval set show ID [--version N]
-cplane eval run create --title TITLE --set ID[:VERSION]... --configuration JSON... --repeats N [--at TIME] [--actor ACTOR]
+cplane eval run create --title TITLE --set ID[:VERSION]... --configuration ID... --repeats N [--at TIME] [--actor ACTOR]
 cplane eval run list
 cplane eval run show ID
 ```

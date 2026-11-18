@@ -2,7 +2,8 @@
 
 Factory schedules and coordinates slices. The platform run service executes them.
 The runner uses the existing `CPLANE_EVAL_TASK_URL` connection and the bearer key
-file named by `CPLANE_EVAL_TASK_KEY_FILE`; eval routes and behavior are unchanged.
+file named by `CPLANE_EVAL_TASK_KEY_FILE`. Eval attempts use the same run API;
+see [evals](evals.md) for marked execution and sealed grading.
 
 A whole-slice request uses `role: slice`, `mode: write`, and the slice's level.
 Factory reads the repository's default branch tip with its own App at the start,
@@ -51,10 +52,10 @@ Public PR metadata still passes Factory's deny-list scan before a write.
 The platform owns model/tool/effort selection by role and level, provider fallback,
 usage waits, harness concurrency and repository exclusion, copies, allowed/pinned
 path checks, outgoing public-commit scans and non-force branch delivery. Factory
-neither launches a slice process nor reads Codex/Claude usage. Subscription evals
-keep their separate legacy adapter; chats retain the sessions service and launcher.
-Consequently the runner still needs its existing launcher/clean/work mounts for
-evals, and its deny-list mount for PR metadata. The sessions service is unchanged.
+neither launches a slice process nor reads Codex/Claude usage. Eval attempts use the same runner job code with an eval mark on each request.
+Their private adapter stops at the PR boundary, runs sealed grading and deletes
+the attempt branch; it never opens a PR or changes scheduler slices. Chats retain
+the sessions service and launcher. The deny-list mount still protects PR metadata.
 
 ## Durable requests and messages
 

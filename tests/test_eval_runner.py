@@ -1,394 +1,457 @@
-# ruff: noqa: F811 - shared pytest fixtures
-"""Synthetic eval execution: fake harnesses, disposable Postgres, offline Git."""
-from datetime import datetime, timedelta, timezone
+"""Real runner job methods with a fake run API and synthetic Postgres cases."""
+# ruff: noqa: F811 - shared fixtures
+import copy
+import hashlib
+from datetime import UTC, datetime
 import json
-import os
 from pathlib import Path
-import subprocess
-import time
 from unittest.mock import Mock
 
 import pytest
 
-from cplane import eval_runner, evals, executors, fence, state
-from cplane.cli import main
-from cplane.runner import Runner
+from cplane import eval_runner, evals, run_platform, state
 from cplane.eval_execution import Context
-from test_evals import cases  # noqa: F401
-from test_fenced_runner import delivery  # noqa: F401
+from cplane.runner import GitHub, GitHubReadError, Runner
+from test_evals import cases, named  # noqa: F401
 from test_stores import pg_store  # noqa: F401
 
-OUTPUTS = {
-    'codex': '\n'.join([json.dumps(dict(type='thread.started', thread_id='synthetic')),
-                        json.dumps(dict(type='turn.completed', usage=dict(input_tokens=123, output_tokens=45)))]),
-    'claude': json.dumps(dict(type='result', is_error=False, result='done',
-                              usage=dict(input_tokens=321, output_tokens=54))),
-}
+NOW = datetime(2026, 11, 18, tzinfo=UTC)
 
 
-class FakeProcesses:
+def block(value):
+    return '```json\n' + json.dumps(value) + '\n```'
+
+
+class Runs:
     def __init__(self):
-        self.started = []
-        self.finished = False
-        self.output = None
-        self.exit = None
-        self.failure = False
+        self.requests = {}
+        self.records = {}
+        self.cancel_pending = False
+        self.lost = False
+        self.messages = []
 
-    def start(self, job):
-        if self.failure:
-            raise OSError('synthetic secret /other/run/private')
-        self.started.append(job.copy())
-        return 999999999
+    def submit(self, body):
+        identity = body['request_id']
+        if identity not in self.requests:
+            self.requests[identity] = copy.deepcopy(body)
+            self.records[identity] = dict(status='queued', resumable=False)
+        assert self.requests[identity] == body
+        if self.lost:
+            self.lost = False
+            raise run_platform.Unavailable('Lost response')
+        return identity
 
-    def poll(self, job):
-        return self.finished, '', None, ''
+    def get(self, identity):
+        return copy.deepcopy(self.records[identity])
 
-    def stop(self, job):
-        pass
+    def find(self, request_id):
+        return request_id if request_id in self.records else None
 
-    def finish(self, job):
-        folder = Path(job['run'])
-        name = 'turn.jsonl' if job['tool'] == 'codex' else 'claude.json'
-        (folder / name).write_text(self.output if self.output is not None else OUTPUTS[job['tool']])
-        executors.atomic_json(folder / 'exit.json', self.exit or dict(code=0, at=time.time()))
-        self.finished = True
+    def cancel(self, identity):
+        if self.cancel_pending:
+            raise run_platform.NotResumable('Still running')
+        self.records[identity].update(status='cancelled', resumable=False)
+        return self.get(identity)
+
+    def message(self, identity, body):
+        self.messages.append((identity, body))
+        self.records[identity].update(status='done')
+        return self.get(identity)
+
+    def finish(self, role, body='', *, status='done', check=None, kind='handover', index=-1):
+        identity = [k for k, v in self.requests.items() if v['role'] == role][index]
+        record = dict(status=status, resumable=False, final_message=dict(kind=kind, body=body),
+                      metrics=dict(tokens=dict(fresh=10, cached=2, output=3), minutes=0.5, usd=0.01))
+        if role == 'check':
+            record['metrics'] = dict(minutes=0.5)
+        if check is not None:
+            record['check'] = dict(exit_code=check, tail='synthetic output')
+        self.records[identity] = record
+        return identity
 
 
 @pytest.fixture
-def execution(pg_store, cases, tmp_path, monkeypatch):
+def execution(pg_store, cases, tmp_path):
     evals.import_folder(pg_store, cases[0])
     with pg_store.mutation():
-        pg_store.connection.execute("UPDATE cplane_eval_cases SET kind='review'")
-    evals.set_create(pg_store, 'synthetic', title='S', filters={'size': 'S'})
-    processes = FakeProcesses()
-    runner = Context(Runner(tmp_path / 'state', git=Mock(), orders=Mock(), runs=tmp_path / 'runs'))
-    runner.processes = processes
-    runner.codex_reader = lambda: 0
-    runner.claude_reader = lambda: dict(at=time.time() - 1, rate_limits=dict(five_hour=dict(used_percentage=0, resets_at=time.time() + 60)))
-    runner.instant = datetime.now(timezone.utc)
-    runner.jobs = {}
-    runner.data = dict(version=1, slices=[])
-    adapter = Mock()
-    def prepare(repository, base, copy_id):
-        copy = tmp_path / ('work-' + copy_id)
-        copy.mkdir(mode=0o700)
-        return dict(repo=str(copy), repository=repository, base=base)
-    adapter.prepare_eval.side_effect = prepare
-    adapter.eval_diff.return_value = 'diff --git a/new b/new\nnew content\n'
-    runner.fence = adapter
-    monkeypatch.setattr(fence, 'remove', lambda path, role: __import__('shutil').rmtree(path))
-    return runner, processes, adapter
+        pg_store.connection.execute("UPDATE cplane_eval_cases SET kind='slice', level='strong', "
+                                    "grade='tests_and_judge', merge_commit=%s, hidden_paths=ARRAY['tests/hidden.py']",
+                                    ('c' * 40,))
+    evals.set_create(pg_store, 's', title='Synthetic set', filters={'size': 'S'})
+    api, github = Runs(), Mock(spec=GitHub)
+    github.branch_tip.return_value = 'b' * 40
+    github.eval_diff.return_value = 'diff --git a/small.py b/small.py\n+synthetic\n'
+    parent = Runner(tmp_path / 'state', runs=tmp_path / 'runs', run_client=api, github=github)
+    parent.instant, parent.at = NOW, NOW.isoformat()
+    parent.jobs, parent.data = {}, {'slices': []}
+    return Context(parent), api, github
 
 
-def create(store, *, at=None, tool='codex', effort=None, repeats=1):
-    config = dict(id='synthetic', harness=tool, model='synthetic-model', route='subscription')
-    if effort is not None:
-        config['effort'] = effort
-    return evals.run_create(store, title='Synthetic execution', sets=['synthetic'],
-                            configurations=[config], repeats=repeats, scheduled_for=at)
+def create(store, path='slice', *, repeats=1):
+    return evals.run_create(store, title='Pipeline', sets=['s'], configurations=[named(store, path, path)], repeats=repeats)
 
 
 def step(store, runner, *, start=True):
-    with state.locked(runner.path):
-        backend = state.store(runner.path)
-        eval_runner.collect(runner, backend)
+    with store.mutation():
+        runner.collect(store)
         if start:
-            eval_runner.start(runner, backend)
+            runner.start(store)
 
 
-@pytest.mark.parametrize('when,expected', [('now', True), ('equal', True), ('past', True), ('future', False), ('cancelled', False)])
-def test_schedule(pg_store, execution, when, expected):
-    runner, processes, _ = execution
-    at = None if when in ('now', 'cancelled') else (runner.instant + timedelta(days=1 if when == 'future' else -1)).isoformat()
-    if when == 'equal':
-        at = runner.instant.isoformat()
-    run = create(pg_store, at=at)
-    if when == 'cancelled':
-        evals.run_cancel(pg_store, run['id'])
-    step(pg_store, runner)
-    assert bool(processes.started) is expected
-    assert evals.run_show(pg_store, run['id'])['state'] == ('running' if expected else 'cancelled' if when == 'cancelled' else 'planned')
+def saved(store, run):
+    return evals.run_show(store, run['id'])['attempts'][0]
 
 
-@pytest.mark.parametrize('tool,effort', [('codex', 'low'), ('claude', 'high'), ('codex', None), ('claude', None)])
-def test_attempt_prompt_configuration_diff_metrics_and_completion(pg_store, execution, tool, effort):
-    runner, processes, adapter = execution
-    run = create(pg_store, tool=tool, effort=effort)
-    step(pg_store, runner)
-    job, = processes.started
-    assert job['prompt'] == eval_runner.LEAD + 'Synthetic task'
-    assert job['model'] == 'synthetic-model' and job['effort'] == (effort or 'medium')
-    assert job['timeout_seconds'] == 1800
-    assert adapter.prepare_eval.call_args.args[:2] == ('example/public', 'a' * 40)
-    args = executors.command(job)
-    assert args[-2:] == ['--', job['prompt']]
-    assert 'synthetic-model' in args
-    assert (f'model_reasoning_effort="{effort or "medium"}"' in args if tool == 'codex'
-            else args[args.index('--effort') + 1] == (effort or 'medium'))
-    processes.finish(job)
-    step(pg_store, runner)
-    saved = evals.run_show(pg_store, run['id'])
-    attempt, = saved['attempts']
-    assert saved['state'] == 'done' and attempt['state'] == 'done'
-    assert attempt['run_record'] is None and attempt['result'] is None
-    assert Path(attempt['output_ref']).read_text() == adapter.eval_diff.return_value
-    assert Path(attempt['output_ref']).stat().st_mode & 0o777 == 0o600
-    assert Path(job['run']).stat().st_mode & 0o777 == 0o700
-    assert not Path(job['repo']).exists()
-    assert attempt['metrics']['input_tokens'] == (123 if tool == 'codex' else 321)
-    assert attempt['metrics']['output_tokens'] == (45 if tool == 'codex' else 54)
-    assert attempt['metrics']['wall_seconds'] >= 0
-    assert set(attempt['metrics']) == {'wall_seconds', 'input_tokens', 'output_tokens'}
+def finish_slice(store, runner, api):
+    job = next(j for j in runner.jobs.values() if j.get('eval_attempt'))
+    api.finish('slice', block(dict(branch=job['branch'], title='Synthetic', body='Synthetic change', node_steps='Ignored')))
+    step(store, runner)
+    api.finish('review', block(dict(verdict='pass', title='Reviewed', body='Good')))
+    step(store, runner)
 
 
-def test_one_attempt_id_order_and_cancel_running_finishes(pg_store, execution):
-    runner, processes, _ = execution
-    run = create(pg_store, repeats=3)
-    create(pg_store)
-    step(pg_store, runner)
-    step(pg_store, runner)
-    assert len(processes.started) == 1
-    assert processes.started[0]['eval_attempt'] == run['attempts'][0]['id']
-    processes.finish(processes.started[0])
-    step(pg_store, runner)
-    assert [j['eval_attempt'] for j in processes.started] == [a['id'] for a in run['attempts'][:2]]
-    assert main(['eval', 'run', 'cancel', str(run['id'])]) == 0
-    processes.finish(processes.started[-1])
-    step(pg_store, runner, start=False)
-    saved = evals.run_show(pg_store, run['id'])
-    assert saved['state'] == 'cancelled'
-    assert [a['state'] for a in saved['attempts']] == ['done', 'done', 'planned']
-
-
-@pytest.mark.parametrize('failure', ['start', 'timeout', 'unreadable', 'launch-exit'])
-def test_safe_failures(pg_store, execution, failure):
-    runner, processes, _ = execution
+@pytest.mark.parametrize('exit_code', [0, 1])
+def test_slice_pipeline_links_metrics_diff_and_deletion(pg_store, execution, exit_code):
+    runner, api, github = execution
     run = create(pg_store)
-    processes.failure = failure == 'start'
+    before = pg_store.snapshot()
     step(pg_store, runner)
-    if failure != 'start':
-        job, = processes.started
-        if failure == 'timeout':
-            processes.exit = dict(code=1, at=time.time(), timeout=True)
-        elif failure == 'launch-exit':
-            processes.exit = dict(code=125, at=time.time())
-        processes.finish(job)
-        if failure == 'unreadable':
-            (Path(job['run']) / 'turn.jsonl').unlink()
-        step(pg_store, runner)
-    saved = evals.run_show(pg_store, run['id'])
-    assert saved['state'] == 'done'
-    attempt, = saved['attempts']
-    assert attempt['state'] == 'failed' and attempt['output_ref'] is None
-    assert set(attempt['result']) == {'error'}
-    assert attempt['result']['error'] in ('Attempt could not start', 'Attempt timed out', 'Attempt output unavailable')
-    assert 'secret' not in json.dumps(attempt) and '/other/run' not in json.dumps(attempt)
-
-
-@pytest.mark.parametrize('tool', ['codex', 'claude'])
-def test_usage_limit_replans_and_holds_until_reset(pg_store, execution, monkeypatch, tool):
-    runner, processes, _ = execution
-    monkeypatch.setattr('cplane.eval_execution.codex_limits', lambda: None)
-    run = create(pg_store, tool=tool)
+    request, = api.requests.values()
+    attempt = run['attempts'][0]['id']
+    assert request['branch'] == f"eval/{run['id']}/{attempt}"
+    assert request['base_commit'] == 'a' * 40 and request['level'] == 'strong'
+    assert request['eval'] == dict(set=f"run{run['id']}", case='case' + hashlib.sha256(run['attempts'][0]['case'].encode()).hexdigest()[:32], executor=run['configurations'][0]['roles']['executor'])
+    assert request['work']['goal'].startswith('Synthetic task')
+    finish_slice(pg_store, runner, api)
+    assert [r['role'] for r in api.requests.values()] == ['slice', 'review', 'check']
+    review, check = list(api.requests.values())[1:]
+    assert review['eval']['executor'] == run['configurations'][0]['roles']['reviewer']
+    assert review['base_commit'] == check['base_commit'] == 'b' * 40
+    assert review['work']['history'] == 'full'
+    assert check['role'] == 'check' and check['mode'] == 'write' and 'branch' not in check
+    assert 'executor' not in check['eval']
+    assert check['work']['overlay'] == dict(commit='c' * 40, paths=['tests/hidden.py'])
+    assert check['work']['check_command'] == 'uv run pytest tests/test_small.py'
+    assert 'hidden.py' not in json.dumps(list(api.requests.values())[:2])
+    assert check['after'] == [review['request_id']]
+    api.finish('check', check=exit_code)
     step(pg_store, runner)
-    processes.output = (json.dumps(dict(type='turn.failed', error=dict(message='usage limit; try again at 11:59 PM')))
-                        if tool == 'codex' else json.dumps(dict(is_error=True, result='You have hit your limit')))
-    processes.finish(processes.started[0])
-    step(pg_store, runner)
-    assert evals.run_show(pg_store, run['id'])['attempts'][0]['state'] == 'planned'
-    assert len(processes.started) == 1
-    reset = runner.jobs['eval:' + str(run['attempts'][0]['id'])]['reset_at']
-    runner.instant = datetime.fromtimestamp(reset - 1, timezone.utc)
-    step(pg_store, runner)
-    assert len(processes.started) == 1
-    runner.instant += timedelta(seconds=2)
-    step(pg_store, runner)
-    assert len(processes.started) == 2
-
-
-@pytest.mark.parametrize('harness', ['other'])
-def test_unavailable_harness_creates_nothing(pg_store, execution, harness):
-    with pytest.raises(state.StateError, match=f'harness {harness} is not available yet'):
-        create(pg_store, tool=harness)
-    assert evals.run_list(pg_store) == []
+    attempt = saved(pg_store, run)
+    assert attempt['state'] == 'done'
+    assert attempt['result'] == dict(tests='pass' if exit_code == 0 else 'fail', exit_code=exit_code, review='pass')
+    assert attempt['metrics'] == dict(input_tokens=24, output_tokens=6, wall_seconds=90, cost_usd=0.02)
+    output = Path(attempt['output_ref'])
+    assert output.read_text() == github.eval_diff.return_value
+    assert output.stat().st_mode & 0o777 == 0o600
+    links = attempt['runs']
+    assert [r['position'] for r in links] == [1, 2, 3]
+    assert [r['role'] for r in links] == ['slice', 'review', 'check']
+    assert [r['run_id'] for r in links] == list(api.requests)
+    github.eval_diff.assert_called_once_with('example/public', 'a' * 40, 'b' * 40)
+    github.delete_eval_branch.assert_called_once_with('example/public', request['branch'])
+    github.open.assert_not_called()
+    github.merge.assert_not_called()
+    assert not runner.notices and not api.messages
+    assert pg_store.snapshot() == before
+    assert runner.data == {'slices': []}
+    assert evals.run_show(pg_store, run['id'])['state'] == 'done'
     with pg_store.locked():
-        assert pg_store.connection.execute('SELECT count(*) FROM cplane_eval_attempts').fetchone()[0] == 0
+        assert pg_store.connection.execute('SELECT count(*) FROM cplane_run_records').fetchone()[0] == 0
 
 
-def test_shared_capacity_and_repository_lock(pg_store, execution, slice_data):
-    runner, processes, _ = execution
-    run = create(pg_store)
-    runner.data['slices'] = [dict(slice_data, state='issued', repo='example/other')]
-    runner.jobs = {'voice/W1': dict(phase='running', repository='example/other')}
+def test_tickets_pipeline_uses_ordered_runner_tickets(pg_store, execution):
+    runner, api, github = execution
+    run = create(pg_store, 'tickets')
+    step(pg_store, runner)
+    api.finish('cut', block(dict(tickets=[dict(title=f'Ticket {n}', files=[f'file{n}.py'], change=f'Implement {n}', check=f'check-{n}')
+                                         for n in (1, 2)], test_files=['tests/new.py'], node_steps='Ignored')))
+    step(pg_store, runner)
+    requests = list(api.requests.values())
+    assert [r['role'] for r in requests] == ['cut', 'ticket', 'ticket']
+    assert requests[1]['after'] == [requests[0]['request_id']]
+    assert requests[2]['after'] == [requests[1]['request_id']]
+    assert len({r['branch'] for r in requests}) == 1
+    assert requests[1]['base_commit'] == requests[2]['base_commit'] == 'b' * 40
+    assert requests[1]['work']['allowed_files'] == ['file1.py']
+    assert requests[2]['work']['check_command'] == 'check-2'
+    assert requests[1]['work']['pinned_paths'] == ['tests/new.py']
+    assert 'review your diff' in requests[1]['work']['goal']
+    for r in requests:
+        key = {'cut':'cutter', 'ticket':'ticket'}[r['role']]
+        assert r['eval']['executor'] == run['configurations'][0]['roles'][key]
+    api.finish('ticket', 'Completed', index=0)
+    step(pg_store, runner)
+    assert len(api.requests) == 3
+    api.finish('ticket', 'Completed', index=1)
+    step(pg_store, runner)
+    api.finish('review', block(dict(verdict='pass', title='Good', body='Reviewed')))
+    step(pg_store, runner)
+    api.finish('check', check=0)
+    step(pg_store, runner)
+    assert [r['role'] for r in saved(pg_store, run)['runs']] == ['cut', 'ticket', 'ticket', 'review', 'check']
+    assert saved(pg_store, run)['metrics']['input_tokens'] == 48
+    github.open.assert_not_called()
+    assert not api.messages and not runner.notices
+
+
+def test_judge_grade_skips_check(pg_store, execution):
+    runner, api, github = execution
     with pg_store.mutation():
-        pg_store.connection.execute("UPDATE cplane_settings SET value=1 WHERE name='executors'")
+        pg_store.connection.execute("UPDATE cplane_eval_cases SET grade='judge', merge_commit=NULL, hidden_paths=NULL, check_command=NULL")
+    run = create(pg_store)
     step(pg_store, runner)
-    assert not processes.started
+    finish_slice(pg_store, runner, api)
+    assert [r['role'] for r in api.requests.values()] == ['slice', 'review']
+    assert saved(pg_store, run)['result'] == dict(tests=None, exit_code=None, review='pass')
+    github.delete_eval_branch.assert_called_once()
+
+
+@pytest.mark.parametrize('exit_code', [0, 1])
+def test_ticket_component_uses_own_check(pg_store, execution, exit_code):
+    runner, api, github = execution
     with pg_store.mutation():
-        pg_store.connection.execute("UPDATE cplane_settings SET value=2 WHERE name='executors'")
+        pg_store.connection.execute("UPDATE cplane_eval_cases SET kind='ticket', level=NULL, start_commit=%s, "
+                                    "pinned_paths=ARRAY['tests/pinned.py']", ('d' * 40,))
+    run = create(pg_store, 'tickets')
     step(pg_store, runner)
-    assert len(processes.started) == 1
-    assert runner.room(dict(id='another', repo='example/third', state='ready')).startswith('executor limit')
-    assert evals.run_show(pg_store, run['id'])['attempts'][0]['state'] == 'running'
+    request, = api.requests.values()
+    assert request['role'] == 'ticket' and request['base_commit'] == 'd' * 40
+    assert request['work']['allowed_files'] == ['small.py']
+    assert request['work']['pinned_paths'] == ['tests/pinned.py']
+    api.finish('ticket', 'Completed', check=exit_code)
+    step(pg_store, runner)
+    attempt = saved(pg_store, run)
+    assert attempt['state'] == 'done' and attempt['result']['tests'] == ('pass' if exit_code == 0 else 'fail')
+    assert len(attempt['runs']) == 1
+    github.eval_diff.assert_called_once_with('example/public', 'd' * 40, 'b' * 40)
 
 
-def test_empty_diff_and_unknown_tokens_are_success(pg_store, execution):
-    runner, processes, adapter = execution
+@pytest.mark.parametrize('role,status', [('slice','question'), ('slice','escalated'), ('cut','question'), ('review','question')])
+def test_questions_fail_without_slice_attention(pg_store, execution, role, status):
+    runner, api, github = execution
+    run = create(pg_store, 'tickets' if role == 'cut' else 'slice')
+    step(pg_store, runner)
+    if role == 'review':
+        job = next(iter(runner.jobs.values()))
+        api.finish('slice', block(dict(branch=job['branch'], title='Change', body='Work', node_steps=None)))
+        step(pg_store, runner)
+    api.finish(role, 'Need a decision', status=status, kind='question' if status == 'question' else 'escalation')
+    step(pg_store, runner)
+    assert saved(pg_store, run)['state'] == 'failed'
+    assert saved(pg_store, run)['result'] == {'error': 'Need a decision'}
+    assert len(saved(pg_store, run)['runs']) == (2 if role == 'review' else 1)
+    github.delete_eval_branch.assert_called_once()
+    github.open.assert_not_called()
+    assert not runner.notices
+
+
+def test_recovery_lost_submit_and_transaction_rollback(pg_store, execution):
+    runner, api, github = execution
     run = create(pg_store)
-    adapter.eval_diff.return_value = ''
+    api.lost = True
     step(pg_store, runner)
-    processes.output = '{}'
-    processes.finish(processes.started[0])
-    step(pg_store, runner)
-    attempt, = evals.run_show(pg_store, run['id'])['attempts']
-    assert attempt['state'] == 'done' and Path(attempt['output_ref']).read_text() == ''
-    assert set(attempt['metrics']) == {'wall_seconds'}
-
-
-def test_fresh_copy_pinned_base_and_safe_diff(delivery):
-    d = delivery
-    # Advance remote main: the case must still start at its older pinned commit.
-    seed = d['root'] / 'advanced-main'
-    d['g'](d['root'], 'clone', d['remote'], seed)
-    (seed / 'README').write_text('new main\n')
-    d['g'](seed, 'add', '.')
-    d['g'](seed, 'commit', '-m', 'advance synthetic main')
-    d['g'](seed, 'push', 'origin', 'main')
-    before = d['g'](d['clean'], 'rev-parse', 'refs/heads/' + d['job']['branch'])
-    job = d['adapter'].prepare_eval('example/repo', d['base'], 'a' * 32)
-    work = Path(job['repo'])
-    assert (work / '.git/HEAD').read_text() == d['base'] + '\n'
-    assert work.stat().st_mode & 0o777 == 0o750
-    assert (work / 'README').stat().st_mode & 0o040
-    assert (work / 'README').read_text() == 'base\n'
-    assert d['g'](d['clean'], 'rev-parse', 'refs/heads/' + d['job']['branch']) == before
-    assert not d['g'](d['clean'], 'for-each-ref', 'refs/heads/factory-eval-')
-    # Hostile agent Git config and hooks must never be loaded by host Git.
-    (work / '.git/config').write_text('[core]\n fsmonitor = ' + str(d['marker']) + '\n')
-    (work / 'README').write_text('changed\n')
-    (work / 'untracked').write_text('new\n')
-    (work / 'binary').write_bytes(b'\0binary')
-    (work / 'link').symlink_to('/private/outside')
-    (work / '.gitignore').write_text('ignored\n')
-    (work / 'ignored').write_text('keep this too\n')
-    job['run'] = str(d['folder'])
-    patch = d['adapter'].eval_diff(job)
-    assert all(name in patch for name in ('README', 'untracked', 'binary', 'link', 'ignored'))
-    assert '+/private/outside' in patch and 'GIT binary patch' in patch
-    assert '.git/config' not in patch
-    assert not d['marker'].exists()
-    assert any('fetch' in args for args, _ in d['calls'])
-    assert not any('push' in args for args, _ in d['calls'])
-
-
-@pytest.mark.parametrize('hostile', ['fifo', 'hardlink'])
-def test_diff_rejects_special_files(delivery, hostile):
-    d = delivery
-    path = d['work'] / 'hostile'
-    if hostile == 'fifo':
-        os.mkfifo(path)
-    else:
-        path.hardlink_to(d['work'] / 'README')
-    with pytest.raises(state.StateError, match='invalid eval output file'):
-        d['adapter'].eval_diff(d['job'])
-
-
-def test_eval_supervisor_timeout_stops_container(tmp_path, monkeypatch):
-    job = dict(eval_attempt=1, tool='codex', model='synthetic', repo='/work/copy', run=str(tmp_path),
-               prompt='synthetic', timeout_seconds=1800, container_id='eval-synthetic', cleanup_turn=123)
-    executors.atomic_json(tmp_path / 'request.json', job)
-    monkeypatch.setenv('CPLANE_FENCE_COMMAND', 'socket')
-    calls = []
-    def run(args, **kwargs):
-        calls.append((args, kwargs))
-        if 'run' in args:
-            assert kwargs['timeout'] == 1800
-            raise subprocess.TimeoutExpired(args, 1800)
-        return subprocess.CompletedProcess(args, 0)
-    monkeypatch.setattr(subprocess, 'run', run)
-    executors.supervise(tmp_path)
-    assert calls[-1][0][-2:] == ['stop', 'eval-synthetic']
-    assert json.loads((tmp_path / 'exit.json').read_text())['timeout'] is True
-
-
-def test_platform_slice_does_not_reserve_local_eval_capacity(pg_store, execution, slice_data):
-    runner, processes, _ = execution
-    run = create(pg_store)
-    runner.jobs = {'voice/W1': dict(phase='running', repository='example/other', requests={'slice': {}})}
-    runner.data['slices'] = [dict(slice_data, state='issued', repo='example/other')]
-    with pg_store.mutation():
-        pg_store.connection.execute("UPDATE cplane_settings SET value=1 WHERE name='executors'")
-    step(pg_store, runner)
-    assert len(processes.started) == 1
-    assert evals.run_show(pg_store, run['id'])['attempts'][0]['state'] == 'running'
-
-
-def test_same_repository_waits_for_slice(pg_store, execution, slice_data):
-    runner, processes, _ = execution
-    create(pg_store)
-    runner.jobs = {'voice/W1': dict(phase='running', repository='example/public')}
-    runner.data['slices'] = [dict(slice_data, state='issued', repo='example/public')]
-    step(pg_store, runner)
-    assert not processes.started
-
-
-def test_restart_recovers_uncommitted_launch(pg_store, execution):
-    runner, processes, _ = execution
-    run = create(pg_store)
-    step(pg_store, runner)
-    # The local durable intent survives a rolled-back scheduler transaction.
+    assert len(api.requests) == 1
+    # Simulate the surrounding scheduler transaction rolling back its DB writes.
     with pg_store.mutation():
         pg_store.connection.execute("UPDATE cplane_eval_attempts SET state='planned'")
+        pg_store.connection.execute('DELETE FROM cplane_eval_attempt_runs')
+    runner.parent.jobs = {}
+    runner = Context(runner.parent)
     step(pg_store, runner)
-    assert len(processes.started) == 1
-    assert evals.run_show(pg_store, run['id'])['attempts'][0]['state'] == 'running'
-    processes.finish(processes.started[0])
+    assert len(api.requests) == 1
+    assert saved(pg_store, run)['state'] == 'running'
+    assert len(saved(pg_store, run)['runs']) == 1
+    persisted = json.loads(next(runner.runs.glob('*/job.json')).read_text())
+    assert all(entry['request']['eval']['executor'] for entry in persisted['requests'].values())
+    finish_slice(pg_store, runner, api)
+    api.finish('check', check=0)
     step(pg_store, runner)
-    assert evals.run_show(pg_store, run['id'])['state'] == 'done'
+    assert saved(pg_store, run)['state'] == 'done'
 
 
-def test_failed_timeout_cleanup_reserves_capacity(pg_store, execution, monkeypatch):
-    runner, processes, _ = execution
+def test_usage_wait_keeps_reservation_and_no_fallback(pg_store, execution):
+    runner, api, _ = execution
+    run = create(pg_store, repeats=2)
+    step(pg_store, runner)
+    record = next(iter(api.records.values()))
+    record.update(status='waiting', status_reason='usage_limit', resume_at='2099-01-01')
+    for _ in range(3):
+        step(pg_store, runner)
+    assert len(api.requests) == 1 and not api.messages
+    assert saved(pg_store, run)['state'] == 'running'
+    item = dict(id='real/one', repo='example/public', state='ready')
+    assert runner.parent.room(item)
+    finish_slice(pg_store, runner, api)
+    api.finish('check', check=0)
+    step(pg_store, runner)
+    assert len(api.requests) == 4  # The second attempt now owns the place.
+
+
+def test_real_work_reserves_room_before_eval(pg_store, execution):
+    runner, api, _ = execution
+    create(pg_store)
+    runner.parent.data['slices'].append(dict(id='real/one', repo='example/public', state='issued', log=[]))
+    step(pg_store, runner)
+    assert api.requests == {}
+
+
+def test_cleanup_retries_without_losing_patch(pg_store, execution):
+    runner, api, github = execution
     run = create(pg_store)
     step(pg_store, runner)
-    job = runner.jobs['eval:' + str(run['attempts'][0]['id'])]
-    job['started_ns'] = time.time_ns() - 1801 * 1_000_000_000
-    monkeypatch.setattr(processes, 'stop', Mock(side_effect=OSError('synthetic cleanup failure')))
+    finish_slice(pg_store, runner, api)
+    api.finish('check', check=0)
+    github.delete_eval_branch.side_effect = GitHubReadError('Unavailable')
     step(pg_store, runner)
-    assert evals.run_show(pg_store, run['id'])['attempts'][0]['state'] == 'running'
-    assert len(processes.started) == 1
-    assert Path(job['repo']).exists()
+    assert saved(pg_store, run)['state'] == 'running'
+    github.delete_eval_branch.side_effect = None
+    runner.parent.jobs = {}
+    step(pg_store, Context(runner.parent))
+    assert saved(pg_store, run)['state'] == 'done'
+    github.eval_diff.assert_called_once()
 
 
-def test_attempt_reservation_is_global_across_runner_paths(pg_store, execution):
-    runner, processes, adapter = execution
+def test_cancel_waits_for_running_turn_before_branch_deletion(pg_store, execution):
+    runner, api, github = execution
     run = create(pg_store)
     step(pg_store, runner)
-    other = Context(Runner(runner.path.parent / 'other-state', runs=runner.runs.parent))
-    other.processes, other.codex_reader = processes, lambda: 0
-    other.jobs, other.data, other.instant = {}, runner.data, runner.instant
-    other.fence = adapter
-    step(pg_store, other)
-    assert len(processes.started) == 1
-    assert other.jobs['eval:' + str(run['attempts'][0]['id'])]['phase'] == 'running'
-    # Even missing metadata cannot release capacity for a second live attempt.
-    Path(processes.started[0]['run'], 'job.json').unlink()
-    other.jobs = {}
-    step(pg_store, other)
-    assert len(processes.started) == 1
-    assert other.jobs['eval:' + str(run['attempts'][0]['id'])]['metadata_unavailable']
+    api.cancel_pending = True
+    evals.run_cancel(pg_store, run['id'])
+    step(pg_store, runner)
+    assert saved(pg_store, run)['state'] == 'running'
+    github.delete_eval_branch.assert_not_called()
+    api.cancel_pending = False
+    step(pg_store, runner)
+    assert saved(pg_store, run)['state'] == 'failed'
+    assert saved(pg_store, run)['result'] == {'error':'Eval run cancelled'}
+    github.delete_eval_branch.assert_called_once()
 
 
-def test_attempt_uses_start_commit_and_diffs_from_that_start(pg_store, execution):
-    runner, processes, adapter = execution
+def test_metrics_sum_internal_attempts_and_leave_unknown_absent():
+    rows = [dict(metrics=dict(tokens=dict(fresh=1,cached=2,output=3),minutes=1,usd=0.5)),
+            dict(metrics=dict(tokens=dict(fresh=4,cached=5,output=6),minutes=2,usd=0.75))]
+    job = dict(requests={'one':dict(record=dict(attempts=rows))})
+    assert eval_runner.metrics(job) == dict(input_tokens=12,output_tokens=9,wall_seconds=180,cost_usd=1.25)
+    rows[1]['metrics'].pop('usd')
+    assert 'cost_usd' not in eval_runner.metrics(job)
+
+
+def test_app_deletes_only_attempt_branch_and_absence_is_idempotent():
+    github = GitHub()
+    github.call = Mock(side_effect=[json.dumps([{'ref':'refs/heads/eval/1/2'}]), '', '[]'])
+    github.delete_eval_branch('example/public', 'eval/1/2')
+    github.delete_eval_branch('example/public', 'eval/1/2')
+    assert github.call.call_count == 3
+    assert github.call.call_args_list[1].args == ('example/public','api','--method','DELETE','repos/example/public/git/refs/heads/eval/1/2')
+    for branch in ('main','slice/one','eval/pr53-t1','eval/1/2/extra'):
+        with pytest.raises(state.StateError):
+            github.delete_eval_branch('example/public',branch)
+
+
+def test_fix_review_is_recorded_then_graded_without_repairs(pg_store, execution):
+    runner, api, github = execution
+    run = create(pg_store)
+    step(pg_store, runner)
+    job = next(iter(runner.jobs.values()))
+    api.finish('slice', block(dict(branch=job['branch'],title='Change',body='Work',node_steps=None)))
+    step(pg_store, runner)
+    api.finish('review', block(dict(verdict='fix', tickets=[dict(title='Fix', files=['small.py'],change='Fix it',check='check')],test_files=['tests/new.py'])))
+    step(pg_store, runner)
+    api.finish('check', check=1)
+    step(pg_store, runner)
+    assert [r['role'] for r in api.requests.values()] == ['slice','review','check']
+    assert saved(pg_store, run)['result'] == dict(tests='fail', exit_code=1, review='fix')
+    github.open.assert_not_called()
+
+
+@pytest.mark.parametrize('failure', ['handover', 'setup'])
+def test_incomplete_outputs_fail_without_slice_mutations(pg_store, execution, failure):
+    runner, api, github = execution
+    run = create(pg_store)
+    before = pg_store.snapshot()
+    step(pg_store, runner)
+    if failure == 'handover':
+        api.finish('slice', 'Done, but no PR request')
+        step(pg_store, runner)
+    else:
+        finish_slice(pg_store, runner, api)
+        api.finish('check', 'Check setup failed', status='failed')
+        step(pg_store, runner)
+    assert saved(pg_store, run)['state'] == 'failed'
+    assert saved(pg_store, run)['result'].get('error')
+    assert 'tests' not in saved(pg_store, run)['result']
+    assert pg_store.snapshot() == before
+    github.open.assert_not_called()
+    assert not runner.notices
+
+
+def test_empty_initial_intent_recovers_and_marks_first_request(pg_store, execution, monkeypatch):
+    runner, api, _ = execution
+    run = create(pg_store)
+    with monkeypatch.context() as patch:
+        patch.setattr(eval_runner, '_launch', lambda *a: None)
+        step(pg_store, runner)
+    assert not api.requests
+    runner.parent.jobs = {}
+    step(pg_store, Context(runner.parent))
+    assert len(api.requests) == 1
+    assert next(iter(api.requests.values()))['eval']['executor'] == run['configurations'][0]['roles']['executor']
+
+
+def test_ticket_component_can_use_pi_and_records_failed_check(pg_store, execution, monkeypatch):
+    runner, api, github = execution
     with pg_store.mutation():
-        pg_store.connection.execute('UPDATE cplane_eval_cases SET start_commit=%s', ('b' * 40,))
+        pg_store.connection.execute("UPDATE cplane_eval_cases SET kind='ticket', level=NULL, start_commit=%s", ('d' * 40,))
+    monkeypatch.setattr(GitHub, 'is_public', lambda self, repo: True)
+    config = evals.config_add(pg_store, 'pi-ticket', path='tickets', roles={
+        'cutter': {'harness':'codex','model':'synthetic','effort':'medium'},
+        'ticket': {'configuration':'pi/base'}, 'reviewer': {'harness':'claude','model':'synthetic'}})
+    run = evals.run_create(pg_store,title='Component',sets=['s'],configurations=[config['id']],repeats=1)
+    step(pg_store, runner)
+    request, = api.requests.values()
+    assert request['eval']['executor'] == {'configuration':'pi/base'}
+    api.finish('ticket','Check failed',status='failed',check=1)
+    step(pg_store, runner)
+    attempt = saved(pg_store, run)
+    assert attempt['state'] == 'done' and attempt['result']['tests'] == 'fail'
+    assert Path(attempt['output_ref']).read_text() == ''
+    assert len(attempt['runs']) == 1
+    github.delete_eval_branch.assert_called_once()
+
+
+def test_diff_read_retries_before_branch_deletion(pg_store, execution):
+    runner, api, github = execution
     run = create(pg_store)
     step(pg_store, runner)
-    job, = processes.started
-    assert adapter.prepare_eval.call_args.args[:2] == ('example/public', 'b' * 40)
-    assert job['base'] == 'b' * 40
-    processes.finish(job)
+    finish_slice(pg_store, runner, api)
+    api.finish('check',check=0)
+    github.eval_diff.side_effect = GitHubReadError('Unavailable')
     step(pg_store, runner)
-    assert adapter.eval_diff.call_args.args[0]['base'] == 'b' * 40
-    assert evals.run_show(pg_store, run['id'])['attempts'][0]['state'] == 'done'
+    assert saved(pg_store, run)['state'] == 'running'
+    github.delete_eval_branch.assert_not_called()
+    github.eval_diff.side_effect = None
+    def deleted(*args):
+        assert next(runner.runs.glob('*/attempt.patch')).read_text() == github.eval_diff.return_value
+    github.delete_eval_branch.side_effect = deleted
+    step(pg_store, runner)
+    assert saved(pg_store, run)['state'] == 'done'
+
+
+def test_sealed_check_adds_time_without_harness_usage():
+    metrics = dict(tokens=dict(fresh=1,cached=2,output=3),minutes=1,usd=0.5)
+    job = dict(requests={
+        'slice':dict(request=dict(role='slice'),record=dict(metrics=metrics)),
+        'check':dict(request=dict(role='check'),record=dict(started_at='2026-11-18T12:00:00Z',ended_at='2026-11-18T12:00:10Z'))})
+    assert eval_runner.metrics(job) == dict(input_tokens=3,output_tokens=3,wall_seconds=70,cost_usd=0.5)
+
+
+def test_missing_job_retains_repository_reservation(pg_store, execution):
+    runner, api, _ = execution
+    run = create(pg_store)
+    with pg_store.mutation():
+        pg_store.connection.execute("UPDATE cplane_eval_attempts SET state='running'")
+        pg_store.connection.execute("UPDATE cplane_eval_runs SET state='running'")
+    step(pg_store, runner)
+    assert not api.requests
+    assert saved(pg_store, run)['state'] == 'running'
+    assert runner.parent.room(dict(id='real/one',repo='example/public',state='ready'))

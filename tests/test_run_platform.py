@@ -1,13 +1,63 @@
 # ruff: noqa: F811 - imported pytest fixture
 """Wire responses and credential handling use a loopback fake API."""
 
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
+import threading
 
 import pytest
-from test_eval_platform import server  # noqa: F401
 
 from cplane.run_platform import Client, NotResumable, Unavailable
+
+
+@pytest.fixture
+def server(monkeypatch, tmp_path):
+    # Generate ephemeral authentication material; never place a key in a fixture.
+    import secrets
+
+    key = secrets.token_urlsafe(32)
+    key_file = tmp_path / "credential"
+    key_file.write_text(key + "\n")
+    key_file.chmod(0o600)
+    monkeypatch.setenv("CPLANE_EVAL_TASK_KEY_FILE", str(key_file))
+    calls, replies = [], []
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_POST(self):
+            self.respond()
+
+        def do_GET(self):
+            self.respond()
+
+        def respond(self):
+            assert self.headers["Authorization"] == "Bearer " + key
+            body = (
+                json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                if self.command == "POST"
+                else None
+            )
+            calls.append((self.command, self.path, body))
+            status, response = replies.pop(0)
+            if status == "lost":
+                self.close_connection = True
+                return
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(response).encode())
+
+    http = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=http.serve_forever, daemon=True)
+    thread.start()
+    monkeypatch.setenv("CPLANE_EVAL_TASK_URL", f"http://127.0.0.1:{http.server_port}")
+    yield calls, replies
+    http.shutdown()
+    thread.join()
+    http.server_close()
 
 
 @pytest.mark.parametrize("status", [200, 201])
@@ -78,3 +128,14 @@ def test_key_redacted_from_nested_final(server, monkeypatch):
     value = Client().get("synthetic-run")
     assert secret not in json.dumps(value)
     assert value["final_message"]["body"] == "[redacted]"
+
+
+def test_secret_file_required(monkeypatch, tmp_path):
+    monkeypatch.setenv('CPLANE_EVAL_TASK_URL', 'http://127.0.0.1')
+    path = tmp_path / 'missing'
+    monkeypatch.setenv('CPLANE_EVAL_TASK_KEY_FILE', str(path))
+    for value in (None, '', 'two\nlines'):
+        if value is not None:
+            path.write_text(value)
+        with pytest.raises(Unavailable, match='key file unavailable'):
+            Client()
