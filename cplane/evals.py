@@ -474,7 +474,7 @@ def case_from_slice(store, slice_id, briefs, *, kind, check, grade, validation, 
         rows = _rows(store, 'SELECT s.document, l.level, o.verdict FROM cplane_slices s '
                      'LEFT JOIN cplane_slice_levels l ON l.slice_id=s.id '
                      'LEFT JOIN cplane_slice_outcomes o ON o.slice_id=s.id WHERE s.id=%s', (slice_id,))
-        if not rows or rows[0]['verdict'] != 'accepted':
+        if not rows or rows[0]['document'].get('state') != 'accepted' or rows[0]['verdict'] == 'corrected':
             raise StateError(f'{slice_id}: slice is not accepted')
         if _rows(store, 'SELECT slice_id FROM cplane_slice_outcomes WHERE corrects_slice=%s', (slice_id,)):
             raise StateError(f'{slice_id}: slice has been corrected')

@@ -96,7 +96,7 @@ source-level defaults. Existing ticket and review cases remain valid.
 
 ## Cases from accepted slices
 
-`cplane eval case from-slice project/slice --kind fix --check 'uv run pytest' --grade tests_and_judge --validation 'Reviewed against the brief'` stores a case from an accepted, uncorrected slice with a merged PR. The command reads the brief from the git history of the clone containing `CPLANE_STATE` (or the current directory when unset), and uses a repository-scoped read-only GitHub App token. Set the GitHub App environment as for Factory's runner.
+`cplane eval case from-slice project/slice --kind fix --check 'uv run pytest' --grade tests_and_judge --validation 'Reviewed against the brief'` stores a case from a slice whose document state is `accepted`, whose outcome verdict is absent or not `corrected`, and which has a merged PR. A slice that another slice corrects is also refused. The command reads the brief from the git history of the clone containing `CPLANE_STATE` (or the current directory when unset), and uses a repository-scoped read-only GitHub App token. Set the GitHub App environment as for Factory's runner.
 
 The case ID is `slice:<slice id>`. Repeating the command returns the original case unchanged and reports this on stderr. Changed test paths become hidden paths by default; repeat `--hidden PATH` to replace that selection. `tests_and_judge` requires at least one hidden path. Language is the most frequent supported extension among changed paths, with ties resolved in Python, Swift, TypeScript order. The qualification text and grade are recorded for owner review before adding the case to a set.
 
