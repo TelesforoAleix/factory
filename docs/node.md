@@ -2,7 +2,7 @@
 
 Since 2026-11-15, Factory's `ui`, `intake`, `sessions` and `runner` services run
 in containers installed by the platform deployer. The host checkout is obsolete.
-Operator commands use the installed runner container's code, environment and state.
+Operator commands use a running Factory container's code, environment and state.
 
 ```sh
 sudo factory-cplane pending
@@ -11,10 +11,13 @@ sudo factory-cplane --actor owner install <slice-id>
 ```
 
 `node/bin/factory-cplane` is a root-only wrapper for
-`docker exec -i deployer-factory-runner-1 cplane "$@"`. It preserves stdin,
-arguments and exit status. It reads no host environment file, uses the container's
-configured service UID, and needs the runner container to be running. Docker
-access remains a host administrator capability.
+`docker exec -i <container> cplane "$@"`. It preserves stdin,
+arguments and exit status. It reads no host environment file and uses the container's
+configured service UID. The wrapper uses `deployer-factory-runner-1` when it is
+running, otherwise `deployer-factory-sessions-1` when it is running.
+Running state is checked with `docker inspect`; the wrapper never starts or restarts containers.
+If neither container is running, it prints `factory-cplane: no Factory container is running`
+to stderr and exits 1. Docker access remains a host administrator capability.
 
 ## Automatic installs
 
