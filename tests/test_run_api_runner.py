@@ -1262,11 +1262,12 @@ def test_pr_request_contract_changes(value, valid):
     request = {"branch": "b", "title": "t", "body": "x", "node_steps": None, "contract_changes": value}
     if value == "missing":
         del request["contract_changes"]
+    text = "```json\n" + json.dumps(request) + "\n```\n"
     if valid:
-        assert Runner.pr_request(block(request), "b") == request
+        assert Runner.pr_request(text, "b") == request
     else:
         with pytest.raises(state.StateError, match="invalid PR request"):
-            Runner.pr_request(block(request), "b")
+            Runner.pr_request(text, "b")
 
 
 def test_instruction_names_contract_changes(setup):
