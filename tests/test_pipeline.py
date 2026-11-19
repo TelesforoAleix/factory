@@ -18,7 +18,7 @@ ALLOWED = {
     ('grilling', 'ready'): {'chat:7'},
     ('ready', 'next'): {'owner', 'chat:7'},
     ('next', 'building'): {'runner'},
-    ('building', 'testing'): {'runner'},
+    ('building', 'testing'): {'runner', 'chat:7'},
     ('building', 'acceptance'): {'runner'},
     ('acceptance', 'done'): {'owner', 'chat:7'},
     ('acceptance', 'building'): {'chat:7', 'runner'},
@@ -104,6 +104,26 @@ def test_marks_and_entry_conditions(pg_store, slice_data):
         events = list(store.connection.execute('SELECT event, actor FROM cplane_feature_events WHERE event LIKE %s ORDER BY id', ('mark %',)))
     assert events[0] == ('mark design', 'chat:1')
     assert ('mark review clear', 'owner') in events
+
+
+def test_chat_can_move_building_feature_to_testing(pg_store):
+    identifier = pg_store.feature_add('FAC', 'Completed work', stage='building')['id']
+
+    with pytest.raises(StateError):
+        pg_store.feature_stage(identifier, 'testing', actor='owner')
+
+    assert pg_store.feature_stage(identifier, 'testing', actor='chat:42')['stage'] == 'testing'
+    assert pg_store.feature_stage(identifier, 'building', actor='chat:42')['stage'] == 'building'
+    assert pg_store.feature_stage(identifier, 'testing', actor='runner')['stage'] == 'testing'
+    with pg_store.locked():
+        events = list(pg_store.connection.execute(
+            "SELECT event, actor FROM cplane_feature_events WHERE event LIKE 'stage %%' ORDER BY id"
+        ))
+    assert events == [
+        ('stage building to testing', 'chat:42'),
+        ('stage testing to building', 'chat:42'),
+        ('stage building to testing', 'runner'),
+    ]
 
 
 @pytest.mark.parametrize('slice_state', ['issued', 'awaiting handover', 'planned', 'accepted'])

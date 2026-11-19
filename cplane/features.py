@@ -38,7 +38,7 @@ MOVES = {
     ('grilling', 'ready'): ('chat',),
     ('ready', 'next'): ('owner', 'chat'),
     ('next', 'building'): ('runner',),
-    ('building', 'testing'): ('runner',),
+    ('building', 'testing'): ('runner', 'chat'),
     ('building', 'acceptance'): ('runner',),
     ('acceptance', 'done'): ('owner', 'chat'),
     ('acceptance', 'building'): ('chat', 'runner'),
