@@ -78,9 +78,11 @@ def removed_part(case):
 def request(case, patch, *, request_id, set_id, goal=None):
     goal, digest = (prompt() if goal is None else goal)
     assets = []
-    for name, text in (('task.md', case['task']), ('attempt.patch', visible_diff(case, patch)),
-                       ('reference.patch', visible_diff(case, case['reference_diff']))):
-        assets.append(dict(name=name, text=text, sha256=hashlib.sha256(text.encode()).hexdigest()))
+    for name, asset_type, text in (('task.md', 'text/markdown', case['task']),
+                                   ('attempt.patch', 'text/x-diff', visible_diff(case, patch)),
+                                   ('reference.patch', 'text/x-diff', visible_diff(case, case['reference_diff']))):
+        assets.append(dict(name=name, type=asset_type, version='1', text=text,
+                           sha256=hashlib.sha256(text.encode()).hexdigest()))
     if sum(len(a['text'].encode()) for a in assets) > ASSET_LIMIT or len(goal) > 200_000:
         raise StateError('inputs too large')
     return dict(contract=1, request_id=request_id, attribution={'slice': 'eval-judge'},
