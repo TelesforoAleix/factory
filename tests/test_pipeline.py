@@ -120,9 +120,10 @@ def test_chat_can_move_building_feature_to_testing(pg_store):
             "SELECT event, actor FROM cplane_feature_events ORDER BY id"
         ))
     assert events == [
-        ('stage:testing', 'chat:42'),
-        ('stage:building', 'chat:42'),
-        ('stage:testing', 'runner'),
+        ('add FAC-F1', 'owner'),
+        ('stage building to testing', 'chat:42'),
+        ('stage testing to building', 'chat:42'),
+        ('stage building to testing', 'runner'),
     ]
 
 
