@@ -238,6 +238,22 @@ def test_hidden_renames_are_removed(hidden):
     assert eval_judge.visible_diff(dict(hidden_paths=[hidden]), patch) == ''
 
 
+def test_judge_request_assets_match_platform_contract():
+    case = dict(id='x', task='Tâche', reference_diff=diff('ref.py', 1),
+                repository='example/public', base_commit='a' * 40)
+    request, _ = eval_judge.request(case, diff('attempt.py', 1), request_id='x', set_id='s')
+    expected_types = {'task.md': 'text/markdown', 'attempt.patch': 'text/x-diff',
+                      'reference.patch': 'text/x-diff'}
+    assert len(request['assets']) == len(expected_types)
+    assert {asset['name'] for asset in request['assets']} == set(expected_types)
+    for asset in request['assets']:
+        assert set(asset) == {'name', 'type', 'version', 'sha256', 'text'}
+        assert all(isinstance(value, str) for value in asset.values())
+        assert asset['type'] == expected_types[asset['name']]
+        assert asset['version'] == '1'
+        assert asset['sha256'] == hashlib.sha256(asset['text'].encode('utf-8')).hexdigest()
+
+
 def test_asset_limit_is_in_bytes_and_inclusive():
     case = dict(id='x', task='', reference_diff='', repository='example/public', base_commit='a'*40)
     case['task'] = 'é' * 100_000
