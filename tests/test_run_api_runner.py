@@ -254,6 +254,7 @@ def test_slice_request_and_poll_after_restart(setup):
     assert request["work"]["goal"].startswith("# Task\n")
     assert "Runner assignment: use branch slice/voice-W1" in request["work"]["goal"]
     assert COMMIT_INSTRUCTION in request["work"]["goal"]
+    assert "If blocked before committing, commit nothing and explain why in the PR body; Factory raises that as a question." in request["work"]["goal"]
     assert not any(
         word in request["work"]["goal"].lower()
         for word in ("the fence", "bundle")
@@ -270,6 +271,30 @@ def test_slice_request_and_poll_after_restart(setup):
     restarted.run()
     assert len(api.calls) == 1
     gh.default_tip.assert_called_once()
+
+
+def test_empty_slice_delivery_raises_question_without_github_read(setup):
+    r, api, gh = setup
+    r.run()
+    final = pr_reply() + "Blocked before committing: dependency unavailable."
+    api.finish(current(r), body=final)
+    api.records[current(r)]["commits"] = []
+    r.run()
+    assert item(r)["attention"]["kind"] == "question"
+    assert item(r)["attention"]["body"] == final
+    assert r.jobs["voice/W1"]["tip"] == BASE
+    assert "github_read_failure_since" not in r.jobs["voice/W1"]
+    gh.branch_tip.assert_not_called()
+    gh.open.assert_not_called()
+
+
+def test_slice_delivery_with_commits_opens_pr(setup):
+    r, api, gh = setup
+    r.run()
+    api.finish(current(r), body=pr_reply())
+    r.run()
+    gh.branch_tip.assert_any_call("example/repo", "slice/voice-W1")
+    gh.open.assert_called_once()
 
 
 def test_restart_resends_identical_request_saved_before_post(setup):

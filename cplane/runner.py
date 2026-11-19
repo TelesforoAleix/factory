@@ -1300,8 +1300,10 @@ class Runner:
                 '\nFor this run, end with kind "handover" (superseding any brief final kind). Begin the body with a fenced JSON object '
                 "with branch, title, body (PR description) and node_steps (text or null). "
                 "Factory opens the PR, checks CI, obtains required approval, and merges it. "
-                'A message "merged as <sha>" asks you for your final handover.'
             )
+            if not job.get("eval_attempt"):
+                goal += "If blocked before committing, commit nothing and explain why in the PR body; Factory raises that as a question. "
+            goal += 'A message "merged as <sha>" asks you for your final handover.'
         entry = self.new_request(
             item, job, role, role, goal, allowed_files=item.get("allowed_files")
         )
@@ -1571,8 +1573,15 @@ class Runner:
             self.save_job(job)
             self.submit_tickets(item, job)
         elif final["body"].lstrip().startswith("```"):
-            request = self.pr_request(final["body"], job["branch"])
-            self.review_head(item, job, self.github.branch_tip(item["repo"], job["branch"]))
+            if (
+                job["active"] == "slice"
+                and not job.get("eval_attempt")
+                and record.get("commits") == []
+            ):
+                job["tip"] = job["base"]
+            else:
+                request = self.pr_request(final["body"], job["branch"])
+                self.review_head(item, job, self.github.branch_tip(item["repo"], job["branch"]))
             if job["tip"] == job["base"]:
                 self.attention(item, "question", final["body"])
                 return
