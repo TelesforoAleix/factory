@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 1200 480" width="1200" height="480" role="img" aria-labelledby="title desc" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400">
+<title id="title">From idea to accepted work</title>
+<desc id="desc">A BPMN process in five actor lanes: I log an idea, the orchestrator grills the design and writes slice briefs, Factory requests a run, and an executor writes and reviews the change. CI must pass before merge; required approval also applies. Installation and my testing follow. Questions and escalations pause the affected slice and return an answer to its run; a defect creates a new correction slice.</desc>
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#171717"/></marker>
+  <marker id="signal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#FF4D00"/></marker>
+</defs>
+<rect width="1200" height="480" fill="#F2F2EF"/>
+<text x="24" y="27" fill="#656560" font-size="14" font-weight="400" text-anchor="start" font-family="Consolas, monospace" letter-spacing="1">WORK FLOW</text>
+<path d="M20 44 H1180" fill="none" stroke="#171717" stroke-width="1"/>
+<path d="M20 120 H1180" fill="none" stroke="#CDCDC7" stroke-width="1"/>
+<path d="M20 200 H1180" fill="none" stroke="#CDCDC7" stroke-width="1"/>
+<path d="M20 288 H1180" fill="none" stroke="#CDCDC7" stroke-width="1"/>
+<path d="M20 384 H1180" fill="none" stroke="#CDCDC7" stroke-width="1"/>
+<path d="M20 464 H1180" fill="none" stroke="#171717" stroke-width="1"/>
+<path d="M140 44 V464" fill="none" stroke="#CDCDC7" stroke-width="1"/>
+<text x="22" y="85" fill="#656560" font-size="14" font-weight="600" text-anchor="start">ME</text>
+<text x="22" y="165" fill="#656560" font-size="14" font-weight="600" text-anchor="start">ORCHESTRATOR</text>
+<text x="22" y="249" fill="#656560" font-size="14" font-weight="600" text-anchor="start">FACTORY</text>
+<text x="22" y="341" fill="#656560" font-size="14" font-weight="600" text-anchor="start">EXECUTOR</text>
+<text x="22" y="433" fill="#656560" font-size="14" font-weight="600" text-anchor="start">CI</text>
+<circle cx="162" cy="80" r="10" fill="#F2F2EF" stroke="#171717" stroke-width="1"/>
+<rect x="186" y="62" width="92" height="36" rx="3" fill="#F2F2EF" stroke="#171717" stroke-width="1"/>
+<text x="232.0" y="85.0" fill="#171717" font-size="14" font-weight="400" text-anchor="middle">Log idea</text>
+<path d="M172 80 H184" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#arrow)"/>
+<path d="M278 80 H300 V140" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#signal)"/>
+<rect x="254" y="142" width="92" height="36" rx="3" fill="#F2F2EF" stroke="#171717" stroke-width="1"/>
+<text x="300.0" y="165.0" fill="#171717" font-size="14" font-weight="400" text-anchor="middle">Grill</text>
+<rect x="380" y="142" width="112" height="36" rx="3" fill="#F2F2EF" stroke="#171717" stroke-width="1"/>
+<text x="436.0" y="165.0" fill="#171717" font-size="14" font-weight="400" text-anchor="middle">Cut and brief</text>
+<path d="M346 160 H378" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#signal)"/>
+<path d="M492 160 H546 V225" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#signal)"/>
+<rect x="500" y="227" width="92" height="36" rx="3" fill="#F2F2EF" stroke="#171717" stroke-width="1"/>
+<text x="546.0" y="250.0" fill="#171717" font-size="14" font-weight="400" text-anchor="middle">Request run</text>
+<path d="M546 263 V310 H600 V318" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#signal)"/>
+<rect x="554" y="320" width="92" height="36" rx="3" fill="#F2F2EF" stroke="#171717" stroke-width="1"/>
+<text x="600.0" y="343.0" fill="#171717" font-size="14" font-weight="400" text-anchor="middle">Write</text>
+<path d="M646 338 H678" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#arrow)"/>
+<path d="M696 322 L712 338 L696 354 L680 338 Z" fill="#F2F2EF" stroke="#FF4D00" stroke-width="1"/>
+<path d="M691 333 L701 343 M701 333 L691 343" fill="none" stroke="#171717" stroke-width="1"/>
+<text x="687" y="372" fill="#656560" font-size="14" font-weight="400" text-anchor="middle">Can continue?</text>
+<rect x="750" y="320" width="92" height="36" rx="3" fill="#F2F2EF" stroke="#171717" stroke-width="1"/>
+<text x="796.0" y="343.0" fill="#171717" font-size="14" font-weight="400" text-anchor="middle">Review</text>
+<path d="M712 338 H748" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#signal)"/>
+<text x="728" y="330" fill="#656560" font-size="14" font-weight="400" text-anchor="middle">yes</text>
+<path d="M796 356 V406" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#signal)"/>
+<rect x="750" y="408" width="92" height="36" rx="3" fill="#F2F2EF" stroke="#171717" stroke-width="1"/>
+<text x="796.0" y="431.0" fill="#171717" font-size="14" font-weight="400" text-anchor="middle">Checks</text>
+<path d="M842 426 H884" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#arrow)"/>
+<path d="M902 410 L918 426 L902 442 L886 426 Z" fill="#F2F2EF" stroke="#FF4D00" stroke-width="1"/>
+<path d="M897 421 L907 431 M907 421 L897 431" fill="none" stroke="#171717" stroke-width="1"/>
+<text x="934" y="431" fill="#656560" font-size="14" font-weight="400" text-anchor="start">CI green?</text>
+<path d="M902 410 V265" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#signal)"/>
+<text x="910" y="390" fill="#656560" font-size="14" font-weight="400" text-anchor="start">yes</text>
+<rect x="858" y="227" width="88" height="36" rx="3" fill="#F2F2EF" stroke="#171717" stroke-width="1"/>
+<text x="902.0" y="250.0" fill="#171717" font-size="14" font-weight="400" text-anchor="middle">Merge</text>
+<text x="902" y="219" fill="#656560" font-size="14" font-weight="400" text-anchor="middle">approval if required</text>
+<path d="M946 245 H970" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#signal)"/>
+<rect x="972" y="227" width="92" height="36" rx="3" fill="#F2F2EF" stroke="#171717" stroke-width="1"/>
+<text x="1018.0" y="250.0" fill="#171717" font-size="14" font-weight="400" text-anchor="middle">Install</text>
+<path d="M1064 245 H1080 V100" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#signal)"/>
+<rect x="1034" y="62" width="92" height="36" rx="3" fill="#F2F2EF" stroke="#171717" stroke-width="1"/>
+<text x="1080.0" y="85.0" fill="#171717" font-size="14" font-weight="400" text-anchor="middle">Test</text>
+<path d="M1126 80 H1132" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#arrow)"/>
+<path d="M1150 64 L1166 80 L1150 96 L1134 80 Z" fill="#F2F2EF" stroke="#FF4D00" stroke-width="1"/>
+<path d="M1145 75 L1155 85 M1155 75 L1145 85" fill="none" stroke="#171717" stroke-width="1"/>
+<path d="M1166 80 H1168" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#signal)"/>
+<circle cx="1180" cy="80" r="10" fill="#F2F2EF" stroke="#171717" stroke-width="3"/>
+<text x="1150" y="55" fill="#656560" font-size="14" font-weight="400" text-anchor="middle">pass</text>
+<text x="1169" y="112" fill="#171717" font-size="14" font-weight="400" text-anchor="middle">Done</text>
+<path d="M696 322 V100" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#arrow)"/>
+<text x="704" y="286" fill="#656560" font-size="14" font-weight="400" text-anchor="start">question /</text>
+<text x="704" y="303" fill="#656560" font-size="14" font-weight="400" text-anchor="start">escalation</text>
+<rect x="644" y="62" width="104" height="36" rx="3" fill="#F2F2EF" stroke="#171717" stroke-width="1"/>
+<text x="696.0" y="85.0" fill="#171717" font-size="14" font-weight="400" text-anchor="middle">Resolve</text>
+<path d="M644 80 H620 V298 H600 V318" fill="none" stroke="#171717" stroke-width="1" stroke-dasharray="4 4" marker-end="url(#arrow)"/>
+<text x="628" y="119" fill="#656560" font-size="14" font-weight="400" text-anchor="start">answer to same run</text>
+<path d="M902 442 V450 H600 V358" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#arrow)"/>
+<text x="660" y="442" fill="#656560" font-size="14" font-weight="400" text-anchor="middle">no: repair</text>
+<path d="M1150 96 V160 H1092" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#arrow)"/>
+<text x="1158" y="138" fill="#656560" font-size="14" font-weight="400" text-anchor="end">defect</text>
+<rect x="978" y="142" width="112" height="36" rx="3" fill="#F2F2EF" stroke="#171717" stroke-width="1"/>
+<text x="1034.0" y="165.0" fill="#171717" font-size="14" font-weight="400" text-anchor="middle">New correction</text>
+<path d="M978 160 H956 V188 H436 V180" fill="none" stroke="#171717" stroke-width="1" stroke-dasharray="4 4" marker-end="url(#arrow)"/>
+<text x="795" y="181" fill="#656560" font-size="14" font-weight="400" text-anchor="middle">new slice and brief</text>
+</svg>
