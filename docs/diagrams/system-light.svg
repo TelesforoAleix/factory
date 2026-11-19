@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 1200 360" width="1200" height="360" role="img" aria-labelledby="title desc" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400">
+<title id="title">Factory in the Home Lab system</title>
+<desc id="desc">My phone and laptop reach Workshop, Factory’s console, or the platform’s Telegram bot. Factory sends work through the Home Lab run API to Codex or Claude Code in a sandbox on the Linux node. The platform delivers a branch to GitHub; Factory manages the pull request, CI and merge.</desc>
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#171717"/></marker>
+  <marker id="signal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#FF4D00"/></marker>
+</defs>
+<rect width="1200" height="360" fill="#F2F2EF"/>
+<text x="32" y="34" fill="#656560" font-size="14" font-weight="400" text-anchor="start" font-family="Consolas, monospace" letter-spacing="1">SYSTEM CONTEXT</text>
+<path d="M205 58 H1045 V280 H205 Z" fill="none" stroke="#CDCDC7" stroke-width="1"/>
+<text x="225" y="84" fill="#656560" font-size="14" font-weight="400" text-anchor="start" font-family="Consolas, monospace" letter-spacing="1">LINUX NODE</text>
+<rect x="32" y="151" width="150" height="48" rx="3" fill="#F2F2EF" stroke="#171717" stroke-width="1"/>
+<text x="107.0" y="180.0" fill="#171717" font-size="14" font-weight="400" text-anchor="middle">Phone and laptop</text>
+<rect x="225" y="102" width="150" height="56" rx="3" fill="#F2F2EF" stroke="#171717" stroke-width="1"/>
+<text x="300.0" y="126.0" fill="#171717" font-size="14" font-weight="600" text-anchor="middle">Workshop</text>
+<text x="300.0" y="144.0" fill="#171717" font-size="14" font-weight="400" text-anchor="middle">Factory console</text>
+<rect x="225" y="192" width="150" height="56" rx="3" fill="#F2F2EF" stroke="#171717" stroke-width="1"/>
+<text x="300.0" y="216.0" fill="#171717" font-size="14" font-weight="600" text-anchor="middle">Telegram</text>
+<text x="300.0" y="234.0" fill="#171717" font-size="14" font-weight="400" text-anchor="middle">Platform bot</text>
+<rect x="425" y="147" width="170" height="56" rx="3" fill="#F2F2EF" stroke="#171717" stroke-width="1"/>
+<text x="510.0" y="171.0" fill="#171717" font-size="14" font-weight="600" text-anchor="middle">Factory</text>
+<text x="510.0" y="189.0" fill="#171717" font-size="14" font-weight="400" text-anchor="middle">Work and decisions</text>
+<rect x="635" y="147" width="175" height="56" rx="3" fill="#F2F2EF" stroke="#171717" stroke-width="1"/>
+<text x="722.5" y="171.0" fill="#171717" font-size="14" font-weight="600" text-anchor="middle">Home Lab platform</text>
+<text x="722.5" y="189.0" fill="#171717" font-size="14" font-weight="400" text-anchor="middle">Run API</text>
+<rect x="850" y="135" width="175" height="80" rx="3" fill="#F2F2EF" stroke="#171717" stroke-width="1"/>
+<text x="937.5" y="171.0" fill="#171717" font-size="14" font-weight="600" text-anchor="middle">Sandbox</text>
+<text x="937.5" y="189.0" fill="#171717" font-size="14" font-weight="400" text-anchor="middle">Codex / Claude Code</text>
+<rect x="1070" y="151" width="100" height="48" rx="3" fill="#F2F2EF" stroke="#171717" stroke-width="1"/>
+<text x="1120.0" y="180.0" fill="#171717" font-size="14" font-weight="400" text-anchor="middle">GitHub</text>
+<path d="M182 175 H204 V130 H223" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#arrow)"/>
+<path d="M204 175 V220 H223" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#arrow)"/>
+<path d="M375 130 H396 V175 H423" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#signal)"/>
+<path d="M375 220 H396 V175" fill="none" stroke="#171717" stroke-width="1"/>
+<path d="M595 175 H633" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#signal)"/>
+<path d="M810 175 H848" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#signal)"/>
+<path d="M1025 175 H1068" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#signal)"/>
+<text x="615" y="125" fill="#656560" font-size="14" font-weight="400" text-anchor="middle">request</text>
+<text x="1048" y="125" fill="#656560" font-size="14" font-weight="400" text-anchor="middle">branch</text>
+<text x="722" y="244" fill="#656560" font-size="14" font-weight="400" text-anchor="middle">Choice, waits, isolation and delivery</text>
+<path d="M510 203 V310 H1120 V201" fill="none" stroke="#171717" stroke-width="1" marker-end="url(#arrow)"/>
+<text x="775" y="301" fill="#656560" font-size="14" font-weight="400" text-anchor="middle">Factory: PR, CI, approval and merge</text>
+<text x="32" y="340" fill="#656560" font-size="14" font-weight="400" text-anchor="start">Workshop and Telegram provide the entry points; the platform provides execution.</text>
+</svg>
