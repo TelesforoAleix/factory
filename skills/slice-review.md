@@ -5,6 +5,11 @@ from the runner's pinned base commit to the assigned branch tip. Check every
 requirement, especially the brief's Fixed decisions and Do not sections. Report
 failures honestly; a test failure or an unmet requirement needs a fix.
 
+Two further rules, each a `fix` finding when missed. The documents the change
+affects are current: the repository's AGENTS.md document map, `docs/contracts.md`
+and `docs/claims.json`, whenever the change alters what they state. And a change
+to a contract in `docs/contracts.md` needs `contract_changes` in the PR request.
+
 Ignore the brief's instructions about branches, PRs, merging, deployment and
 handover. End with kind "waiting" whose body begins with a fenced JSON block
 matching schema/review.schema.json:

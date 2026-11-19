@@ -16,7 +16,7 @@ FINAL_SCHEMA = {
     "properties": {"kind": {"type": "string", "enum": ["handover", "question", "escalation", "waiting"]},
                    "body": {"type": "string"}},
 }
-FENCE_PARAGRAPH = '\n\nGitHub steps: there is no GitHub credential in this container and nothing can be pushed from inside. Commit your work on the assigned branch and end with kind "waiting". Its body must begin with a fenced JSON block containing {"branch": "your branch", "title": "PR title", "body": "PR description", "node_steps": null}. Set node_steps to text instead of null if work on the owner node is needed after merging. The runner opens the PR, checks CI, obtains any required merge approval, and merges it. It resumes you with "merged as <sha>"; then write your handover.'
+FENCE_PARAGRAPH = '\n\nGitHub steps: there is no GitHub credential in this container and nothing can be pushed from inside. Commit your work on the assigned branch and end with kind "waiting". Its body must begin with a fenced JSON block containing {"branch": "your branch", "title": "PR title", "body": "PR description", "node_steps": null, "contract_changes": null}. Set node_steps to text instead of null if work on the owner node is needed after merging. Set contract_changes to a non-empty list of {\"name\": contract, \"version\": new version, \"users\": [\"owner/name\", ...]} when the PR changes the shape or meaning of a contract listed in docs/contracts.md. The runner opens the PR, checks CI, obtains any required merge approval, and merges it. It resumes you with "merged as <sha>"; then write your handover.'
 
 
 def fenced():

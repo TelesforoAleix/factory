@@ -139,7 +139,7 @@ def delivery(tmp_path, monkeypatch):
 
 
 def request(job):
-    return dict(branch=job['branch'], title='Synthetic PR', body='Synthetic change', node_steps=None)
+    return dict(branch=job['branch'], title='Synthetic PR', body='Synthetic change', node_steps=None, contract_changes=None)
 
 
 def test_prepare_initializes_a_new_clean_clone_and_pins_default_base(delivery, monkeypatch):

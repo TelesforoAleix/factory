@@ -127,3 +127,20 @@ The wire contract is maintained in the public platform repository:
 [routes and records](https://github.com/TelesforoAleix/homelab-v2/blob/main/src/homelab/api/runs.py),
 [run storage and cancellation](https://github.com/TelesforoAleix/homelab-v2/blob/main/src/homelab/tasks/runs.py).
 Explicit per-run limits are omitted: the live API rejects a supplied `limits` field.
+
+## PR request and post-merge checks
+
+The executor's PR request is `{branch, title, body, node_steps, contract_changes}`.
+`contract_changes` is required: `null`, or a non-empty list of
+`{"name", "version", "users": ["owner/name", ...]}` with non-empty users. A request
+without it, or with a malformed one, is invalid. A saved job request without the field
+(written earlier) is read as `null`.
+
+After a merge the runner may raise two further attention items, one after another and
+after any `node-step` is answered. Neither blocks the merge or the install.
+- `contract-change`: lists each contract, its new version and its user repositories; each
+  user repository needs an adapting slice in the same Feature.
+- `docs-graph`: when the merged commit has `docs/claims.json`, the runner reads that
+  commit through the GitHub API and runs the `--graph-only` check, logs `docs-graph:
+  pass|fail`, and raises this item with the failing rule lines on exit 1 or 2. Without
+  `docs/claims.json` nothing is logged.

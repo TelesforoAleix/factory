@@ -596,6 +596,21 @@ class Context(Runner):
             return
         super().apply_final(item, job)
 
+    @staticmethod
+    def pr_request(body, branch):
+        # Eval requests may omit contract_changes; it reads as null.
+        parsed = reviewer.parse(body)
+        if isinstance(parsed, dict) and 'contract_changes' not in parsed:
+            parsed['contract_changes'] = None
+            body = '```json\n' + json.dumps(parsed) + '\n```'
+        return Runner.pr_request(body, branch)
+
+    def after_merge(self, item, job):
+        pass  # eval attempts raise no contract-change or docs-graph notices
+
+    def release_pending(self, item, job):
+        pass
+
     def finished(self, item, body):
         self.fail(self.jobs[item['id']], 'Slice ended without a PR request')
 

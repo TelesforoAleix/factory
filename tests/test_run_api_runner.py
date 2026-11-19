@@ -7,6 +7,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from cplane.docs_verify import Snapshot
+
 from cplane import state
 from cplane.cli import main
 from cplane.run_records import run_final
@@ -29,16 +31,21 @@ PLAN = {
 
 
 def block(value, prose=""):
+    # PR requests built by tests elsewhere (tests/test_run_context.py) predate the
+    # required contract_changes field; fill it so they keep exercising their own subject.
+    if isinstance(value, dict) and {"branch", "node_steps"} <= set(value):
+        value = {"contract_changes": None, **value}
     return "```json\n" + json.dumps(value) + "\n```\n" + prose
 
 
-def pr_reply(node_steps=None):
+def pr_reply(node_steps=None, **extra):
     return block(
         {
             "branch": "slice/voice-W1",
             "title": "Deliver slice",
             "body": "Implemented and tested.",
             "node_steps": node_steps,
+            **{"contract_changes": None, **extra},
         }
     )
 
@@ -1223,3 +1230,93 @@ def test_unexpressible_ticket_path_escalates_before_ticket_posts(setup, field):
     assert all(req["role"] != "ticket" for req in api.requests.values())
     assert item(r)["attention"]["kind"] == "escalation"
     assert "*.py" in item(r)["attention"]["body"]
+
+
+CHANGES = [{"name": "state-v1", "version": "2", "users": ["example/a", "example/b"]}]
+SHA = "c" * 40
+
+
+def merged(setup, reply, files=None, answer_steps=False):
+    r, api, gh = setup
+    if files is not None:
+        gh.snapshot.return_value = Snapshot(SHA, files.get)
+    r.run()
+    original = current(r)
+    api.finish(original, "done", "handover", reply)
+    r.run()
+    job = r.jobs["voice/W1"]
+    api.finish(job["requests"][job["pr_review"]]["run_id"],
+               body=block({"verdict": "pass", "title": "T", "body": "B"}))
+    gh.checks.return_value = ("green", "")
+    r.run()
+    return r, api, original
+
+
+@pytest.mark.parametrize("value,valid", [
+    (None, True), (CHANGES, True), ("missing", False), ([], False), ("x", False),
+    ([{"name": "n", "version": "1", "users": []}], False),
+    ([{"name": "n", "version": "1"}], False),
+    ([{"name": "n", "version": 1, "users": ["a/b"]}], False),
+])
+def test_pr_request_contract_changes(value, valid):
+    request = {"branch": "b", "title": "t", "body": "x", "node_steps": None, "contract_changes": value}
+    if value == "missing":
+        del request["contract_changes"]
+    text = "```json\n" + json.dumps(request) + "\n```\n"
+    if valid:
+        assert Runner.pr_request(text, "b") == request
+    else:
+        with pytest.raises(state.StateError, match="invalid PR request"):
+            Runner.pr_request(text, "b")
+
+
+def test_instruction_names_contract_changes(setup):
+    r, api, _ = setup
+    r.run()
+    goal = next(iter(api.requests.values()))["work"]["goal"]
+    assert "contract_changes" in goal and "docs/contracts.md" in goal
+
+
+def test_contract_change_attention_without_node_step(setup):
+    r, api, original = merged(setup, pr_reply(contract_changes=CHANGES))
+    att = item(r)["attention"]
+    assert att["kind"] == "contract-change"
+    assert "state-v1 2" in att["body"] and "example/a, example/b" in att["body"]
+    assert "adapting slice in the same Feature" in att["body"]
+
+
+def test_contract_change_attention_after_node_step_answered(setup):
+    r, api, original = merged(setup, pr_reply("Install it", contract_changes=CHANGES))
+    assert item(r)["attention"]["kind"] == "node-step"
+    edit(r, lambda s: s["attention"].update(answer="Installed"))
+    r.run()
+    assert item(r)["attention"]["kind"] == "contract-change"
+
+
+def test_graph_check_skipped_without_claims(setup):
+    r, api, original = merged(setup, pr_reply(), files={})
+    assert not any(e["event"].startswith("docs-graph") for e in item(r)["log"])
+    assert item(r)["attention"] is None
+
+
+def test_graph_check_passes_and_is_logged(setup):
+    claims = {"version": 1, "repository": "example/repo", "parts": [], "claims": [], "relations": [], "contracts": []}
+    r, api, original = merged(setup, pr_reply(), files={"docs/claims.json": json.dumps(claims)})
+    assert any(e["event"] == f"docs-graph: pass at {SHA}" for e in item(r)["log"])
+    assert item(r)["attention"] is None
+
+
+def test_graph_check_failure_raises_attention(setup):
+    r, api, original = merged(setup, pr_reply(), files={"docs/claims.json": "{"})
+    assert any(e["event"] == f"docs-graph: fail at {SHA}" for e in item(r)["log"])
+    att = item(r)["attention"]
+    assert att["kind"] == "docs-graph" and "not valid JSON" in att["body"]
+
+
+def test_old_job_request_reads_as_null(setup):
+    r, api, original = merged(setup, pr_reply())
+    job = r.jobs["voice/W1"]
+    job["request"].pop("contract_changes")
+    job.pop("pending_attention")
+    r.after_merge(item(r), job)
+    assert job["pending_attention"] == []

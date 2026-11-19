@@ -562,7 +562,7 @@ def test_pipeline_park_blocks_pr_progress_until_return(pg_store, runner_setup, s
     feature = runner_board(pg_store, r, slice_data, [('building', {})])[0]
     r.run()
     request = {'branch': p.started[-1]['branch'], 'title': 'Synthetic PR',
-                   'body': 'Synthetic change', 'node_steps': None}
+                   'body': 'Synthetic change', 'node_steps': None, 'contract_changes': None}
     p.finish(kind='handover', body='```json\n' + json.dumps(request) + '\n```')
     r.run()
     assert pg_store.load()['slices'][0]['pr'] == 12
