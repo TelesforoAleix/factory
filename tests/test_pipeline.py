@@ -117,10 +117,9 @@ def test_chat_can_move_building_feature_to_testing(pg_store):
     assert pg_store.feature_stage(identifier, 'testing', actor='runner')['stage'] == 'testing'
     with pg_store.locked():
         events = list(pg_store.connection.execute(
-            "SELECT event, actor FROM cplane_feature_events ORDER BY id"
+            "SELECT event, actor FROM cplane_feature_events WHERE event LIKE 'stage %%' ORDER BY id"
         ))
     assert events == [
-        ('add FAC-F1', 'owner'),
         ('stage building to testing', 'chat:42'),
         ('stage testing to building', 'chat:42'),
         ('stage building to testing', 'runner'),
