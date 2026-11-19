@@ -1,10 +1,9 @@
 """Postgres feature operations, using the store's locked transaction path."""
 import re
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 from .state import StateError
-from .times import now
+from .times import LOCAL, now
 from .eligibility import eligibility
 
 LIMIT_DESCRIPTIONS = {
@@ -326,7 +325,7 @@ class FeatureStore:
                              f"{counts['accepted']} of {len(group)} slices done" +
                              (' · ' + ', '.join(running) if running else '') if group else None)
                 elif stage == 'done' and since:
-                    finished = since.astimezone(ZoneInfo('Europe/Copenhagen'))
+                    finished = since.astimezone(LOCAL)
                     extra = f'Finished {finished.day} {finished.strftime("%b %Y")}'
                 elif stage == 'parked' and parked:
                     extra = f'From {parked.capitalize()}'

@@ -1,9 +1,13 @@
 """Offset-preserving ISO times and small local calendar expressions."""
+import os
 import re
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-LOCAL = ZoneInfo("Europe/Copenhagen")
+try:
+    LOCAL = ZoneInfo(os.environ.get("FACTORY_TIME_ZONE", "UTC"))
+except (ZoneInfoNotFoundError, ValueError) as exc:
+    raise ValueError(f"Invalid FACTORY_TIME_ZONE: {os.environ.get('FACTORY_TIME_ZONE')!r}; expected an IANA time zone name") from exc
 
 
 def now():

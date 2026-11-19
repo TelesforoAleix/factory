@@ -141,7 +141,9 @@ def test_config_and_missing_state(make_state, monkeypatch, capsys):
     assert len(capsys.readouterr().err.splitlines()) == 1
 
 
-def test_pending_groups_and_order(make_state, slice_data, capsys):
+def test_pending_groups_and_order(make_state, slice_data, capsys, monkeypatch):
+    from datetime import timezone
+    monkeypatch.setattr("cplane.cli.LOCAL", timezone.utc)
     def item(key, **changes):
         return dict(copy.deepcopy(slice_data), id=f"project/{key}", **changes)
     items = [item("late", slot="2026-10-17T01:00:00+02:00"),
@@ -162,7 +164,7 @@ def test_pending_groups_and_order(make_state, slice_data, capsys):
                    "scheduled": ["early", "middle", "late"], "ready": ["answered", "approved"],
                    "running": ["handover", "issued"], "planned": ["planned", "research"]}
     text = render(groups)
-    assert text.index("2026-10-16") < text.index("08:00 +0200") < text.index("08:30 +0200") < text.index("2026-10-17")
+    assert text.index("2026-10-16") < text.index("06:00 +0000") < text.index("06:30 +0000") < text.index("23:00 +0000")
     assert "[paused]" in text
     assert main(["--state", str(path), "pending", "--json"]) == 0
     assert json.loads(capsys.readouterr().out) == groups
