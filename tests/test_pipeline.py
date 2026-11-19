@@ -113,12 +113,17 @@ def test_chat_can_move_building_feature_to_testing(pg_store):
         pg_store.feature_stage(identifier, 'testing', actor='owner')
 
     assert pg_store.feature_stage(identifier, 'testing', actor='chat:42')['stage'] == 'testing'
+    assert pg_store.feature_stage(identifier, 'building', actor='chat:42')['stage'] == 'building'
     assert pg_store.feature_stage(identifier, 'testing', actor='runner')['stage'] == 'testing'
     with pg_store.locked():
         events = list(pg_store.connection.execute(
-            "SELECT actor FROM cplane_feature_events WHERE event = 'stage:testing' ORDER BY id"
+            "SELECT event, actor FROM cplane_feature_events ORDER BY id"
         ))
-    assert events == [('chat:42',), ('runner',)]
+    assert events == [
+        ('stage:testing', 'chat:42'),
+        ('stage:building', 'chat:42'),
+        ('stage:testing', 'runner'),
+    ]
 
 
 @pytest.mark.parametrize('slice_state', ['issued', 'awaiting handover', 'planned', 'accepted'])
