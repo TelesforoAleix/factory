@@ -3,7 +3,8 @@
 An eval compares quality, speed and cost on the same work across configurations.
 Each attempt runs the normal runner pipeline through the platform run API, with
 the named configuration selecting each role's exact executor. Slice cases finish
-with a review and sealed hidden-test check; ticket component cases use their own check.
+with a review, a sealed hidden-test check where configured, and a fixed judge;
+ticket component cases use their own check.
 All commands require Postgres through `CPLANE_DATABASE_URL` or
 `CPLANE_DATABASE_URL_FILE`, and emit JSON. Mutations accept `--actor` (default
 `owner`) to record who created a configuration, set version or run.
@@ -190,7 +191,9 @@ metrics object. An attempt can link to an existing run record and retain an
 `output_ref` for its diff and judge inputs. Verdict judge identity is a string
 including model and version (for example `model@version`). At most one verdict per
 attempt, judge and prompt hash is stored; grades are `mergeable` or `not_mergeable`.
-The Python `verdict_add(store, ...)` API records verdicts for future graders.
+The Python `verdict_add(store, ...)` API records verdicts. The fixed slice judge
+uses identity `claude/opus` and the SHA256 of the full `skills/judge.md` file as
+`prompt_hash`.
 
 Installation: dump the database before installing. The orchestrator imports case
 files and ticket start bundles on the node as described below.
@@ -264,7 +267,7 @@ no executor, branch or predecessor; the review has already finished. Hidden test
 content and the reference diff are never sent to the slice, cutter, ticket or
 reviewer. The platform overlays the paths and runs the
 command without network, committing or pushing nothing. Setup failure fails the
-attempt. A `judge` case skips this run; judge execution remains future work.
+attempt. A `judge` case skips this run.
 
 Ticket component attempts use one marked `ticket` request with the configuration's
 `ticket` entry, on their own attempt branch. The case's `start_commit`,
@@ -288,9 +291,60 @@ restart; failed App reads or branch deletion retry while retaining the reservati
 Cancelling an eval stops active work, retrying running-turn cancellations until
 accepted, then removes its branch. Remaining planned attempts are not started.
 
+For slice cases graded `tests_and_judge` or `judge`, after storing the diff Factory
+submits a separate platform `review` run in read mode. This always uses
+`{"harness":"claude","model":"opus"}` in its eval mark, independently of the
+configuration's reviewer. The goal comes from `skills/judge.md`; the three text
+assets are the original case brief, the attempt diff and the accepted reference
+diff. Each asset includes its SHA256. Whole file entries matching `hidden_paths`
+(including either side of renames and descendants of a hidden directory) are
+removed from both diffs. No check output, overlay or hidden test content is sent.
+The judge uses the assets alone and compares requirements, scope, allowed files
+and quality; equivalent implementations may pass.
+
+The attempt stays running until the judge finishes. A valid fenced JSON verdict
+is saved with `verdict_add`, and `result.judge` becomes `mergeable` or
+`not_mergeable`. A failed run or invalid verdict leaves `result.judge` null with
+`result.judge_error`; the tests grade stands and the attempt is still `done`.
+More than 200,000 UTF-8 bytes across the three assets skips the judge with
+`judge_error: "inputs too large"`. The judge is linked with purpose `judge` and
+role `review`; its tokens, cost and time join the attempt metrics. Saved requests
+keep the prompt and hash they started with across installation or recovery.
+Cases with no grade retain their existing check-only behavior. Ticket components
+and review cases are not judged.
+
+```sh
+cplane eval judge 123
+cplane eval judge-test small
+cplane eval judge-test small:2
+```
+
+`judge` waits for a new judgment of a finished slice attempt using its stored
+`attempt.patch` and the current prompt. It refuses an existing verdict for the
+same attempt, judge and prompt hash. A changed prompt permits a new verdict.
+Requests are saved privately next to the stored diff for submission recovery;
+re-judging does not need the deleted attempt branch. It updates the judge result,
+links the run and recomputes aggregate metrics without changing the attempt state.
+A lost submit response reuses the saved request. A completed failed judge run
+can be retried while no verdict exists for that prompt.
+
+`judge-test` submits and waits for two judgments per slice case with a reference
+diff in the selected set version (latest when omitted). The reference itself
+must be `mergeable`; the reference with its largest non-test file entry removed
+must be `not_mergeable`. Largest means added plus deleted hunk lines, with path
+order breaking ties; binaries and rename-only entries count as zero lines.
+Tests are recognized by test directories (`test`, `tests`, `__tests__`), Python
+`test_` prefixes, `_test` suffixes, `.test.`/`.spec.` names and Swift test suffixes.
+Cases without a visible non-test file are reported as skipped. Hidden file entries
+are removed before making either input. JSON output includes each case's verdicts
+and reasons, skip count, and passed/total/rate for each judgment. Failures and
+oversized inputs count against the rates. Exit status is 0 only if both rates
+are at least 90%; an empty eligible set fails. This command creates no attempt,
+verdict or attempt-run rows.
+
 The retired task endpoint, base64 diff transport, fenced CLI attempt and fence
 eval snapshot path have been removed. Historical stored eval data is unchanged.
 No migration or reimport is required for reading it.
 
-Node step after merge: **Install the merged commit**. The client then runs one
-slice case with one configuration per path to verify the installed pipeline.
+Node step after merge: **Install the merged commit**. The client then runs
+`judge-test` on the eval set, followed by a judged run.

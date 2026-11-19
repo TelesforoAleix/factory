@@ -64,11 +64,13 @@ def metrics(job):
 def _complete(runner, store, job):
     # Cancel resumable predecessors and queued successors before removing their
     # branch. A running turn retains the reservation until cancellation succeeds.
-    runner.abandon(job)
+    for purpose, entry in job['requests'].items():
+        if purpose != 'judge':
+            runner.cancel_entry(job, entry)
     for entry in job['requests'].values():
         if entry.get('run_id'):
             runner.send_request(job, entry)  # Recover links after a rollback.
-    if any(not entry.get('cancelled') for entry in job['requests'].values()):
+    if any(not entry.get('cancelled') for purpose, entry in job['requests'].items() if purpose != 'judge'):
         return
     completion = job['completion']
     if 'output_ref' not in completion:
@@ -87,6 +89,17 @@ def _complete(runner, store, job):
             output_ref = str(target)
         completion.update(output_ref=output_ref, metrics=metrics(job))
         runner.save_job(job)
+    if (completion['status'] == 'done' and job['case']['kind'] == 'slice'
+            and job['case'].get('grade') in ('tests_and_judge', 'judge')):
+        from .eval_judge import advance
+        if not advance(runner, store, job):
+            return
+    if 'judge' in job['requests']:
+        entry = job['requests']['judge']
+        runner.cancel_entry(job, entry)
+        if not entry.get('cancelled'):
+            return
+    completion['metrics'] = metrics(job)
     runner.github.delete_eval_branch(job['repository'], job['branch'])
     job['phase'] = 'eval-ended'
     runner.save_job(job)
@@ -138,8 +151,15 @@ def collect(runner, store):
                 if entry.get('run_id'):
                     runner.send_request(job, entry)
             if job['phase'] == 'eval-ended':
+                if (job.get('judge_outcome') or {}).get('judge') is not None:
+                    from .eval_judge import record_verdict
+                    record_verdict(store, attempt['id'], job['requests']['judge']['prompt_hash'], job['judge_outcome'])
                 _finish(store, attempt['id'], **job['completion'])
                 continue
+            if (attempt['run_state'] == 'cancelled' and job['phase'] == 'eval-finishing'
+                    and 'judge' in job['requests']):
+                job['completion'].update(status='failed', result={'error': 'Eval run cancelled'})
+                runner.save_job(job)
             if attempt['run_state'] == 'cancelled' and job['phase'] != 'eval-finishing':
                 runner.fail(job, 'Eval run cancelled')
             if job['phase'] != 'eval-finishing':
