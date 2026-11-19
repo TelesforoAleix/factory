@@ -133,7 +133,7 @@ def test_slice_pipeline_links_metrics_diff_and_deletion(pg_store, execution, exi
     assert check['work']['overlay'] == dict(commit='c' * 40, paths=['tests/hidden.py'])
     assert check['work']['check_command'] == 'uv run pytest tests/test_small.py'
     assert 'hidden.py' not in json.dumps(list(api.requests.values())[:2])
-    assert check['after'] == [review['request_id']]
+    assert check['after'] == []
     api.finish('check', check=exit_code)
     step(pg_store, runner)
     attempt = saved(pg_store, run)
@@ -157,6 +157,43 @@ def test_slice_pipeline_links_metrics_diff_and_deletion(pg_store, execution, exi
     assert evals.run_show(pg_store, run['id'])['state'] == 'done'
     with pg_store.locked():
         assert pg_store.connection.execute('SELECT count(*) FROM cplane_run_records').fetchone()[0] == 0
+
+
+def test_saved_check_retries_without_predecessor(pg_store, execution):
+    runner, api, _ = execution
+    run = create(pg_store)
+    step(pg_store, runner)
+    finish_slice(pg_store, runner, api)
+    job = next(iter(runner.jobs.values()))
+    entry = job['requests']['check']
+    request_id = entry['request']['request_id']
+    api.requests.pop(request_id)
+    api.records.pop(request_id)
+    entry['run_id'] = None
+    review = next(e for e in job['requests'].values() if e['request']['role'] == 'review')
+    entry['request']['after'] = [review['request']['request_id']]
+    runner.parent.save_job(job)  # Simulate an intent saved by the previous version.
+    runner.parent.jobs = {}
+    step(pg_store, Context(runner.parent))
+    check = api.requests[request_id]
+    assert check['request_id'] == request_id and check['after'] == []
+    assert 'branch' not in check
+    assert check['work']['overlay'] == dict(commit='c' * 40, paths=['tests/hidden.py'])
+    assert saved(pg_store, run)['state'] == 'running'
+
+
+def test_empty_slice_fails_immediately_without_branch_read(pg_store, execution):
+    runner, api, github = execution
+    run = create(pg_store)
+    step(pg_store, runner)
+    identity = api.finish('slice', 'No changes needed')
+    api.records[identity]['commits'] = []
+    step(pg_store, runner)
+    assert saved(pg_store, run)['state'] == 'failed'
+    assert saved(pg_store, run)['result'] == {'error': 'No changes needed'}
+    github.branch_tip.assert_not_called()
+    github.eval_diff.assert_not_called()
+    assert [request['role'] for request in api.requests.values()] == ['slice']
 
 
 def test_tickets_pipeline_uses_ordered_runner_tickets(pg_store, execution):

@@ -508,6 +508,7 @@ class Context(Runner):
             mark = dict(set=f"run{job['eval_run']}", case='case' + hashlib.sha256(job['case']['id'].encode()).hexdigest()[:32])
             if role == 'check':
                 request.pop('branch', None)
+                request['after'] = []
                 request['work']['overlay'] = {
                     'commit': job['case']['merge_commit'], 'paths': job['case']['hidden_paths']}
             else:
@@ -516,6 +517,8 @@ class Context(Runner):
         self.parent.save_job(job)
 
     def send_request(self, job, entry):
+        if entry['run_id'] is None and entry['request']['role'] == 'check':
+            self.save_job(job)  # Restamp saved intents before a retry submits them.
         identity = super().send_request(job, entry)
         # Stable positions follow saved request insertion order. A rollback or
         # lost submit response replays both the request and this link safely.
@@ -570,6 +573,10 @@ class Context(Runner):
         super().apply_record(item, job)
 
     def apply_final(self, item, job):
+        record = job['requests'][job['active']]['record']
+        if job['active'] == 'slice' and record['status'] == 'done' and record.get('commits') == []:
+            self.fail(job, (run_records.run_final(record) or {}).get('body', ''))
+            return
         if job.get('component'):
             record = job['requests'][job['active']]['record']
             if record['status'] not in ('done', 'failed'):
