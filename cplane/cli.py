@@ -405,6 +405,12 @@ def parser():
             sub.add_argument('id', type=int)
         if name == 'mark':
             sub.add_argument('--clear', action='store_true')
+    verify = commands.add_parser("docs-verify", parents=[common], help="check a repository's documentation claims and graph")
+    verify.add_argument("path", help="checked-out repository path")
+    verify.add_argument("--rev", default="HEAD", help="revision to read (default: HEAD)")
+    verify.add_argument("--with", dest="others", action="append", metavar="PATH", help="another checked repository (repeatable)")
+    verify.add_argument("--graph-only", action="store_true", help="check schema, citations and graph without API calls")
+    verify.add_argument("--out", required=True, help="record JSON path")
     commands.add_parser("prime", parents=[common], help="send one minimal request to Claude and Codex to start their usage windows")
     commands.add_parser("install-primer", parents=[common], help="install the launchd job that runs prime at 06:00, 11:00, 16:00 and 21:00")
     commands.add_parser("uninstall-primer", parents=[common], help="remove the primer launchd job")
@@ -539,6 +545,9 @@ def main(argv=None):
     try:
         if args.command == 'eval':
             return eval_command(args)
+        if args.command == 'docs-verify':
+            from .docs_verify import command
+            return command(args)
         if args.command == 'runs':
             if not state.postgres():
                 raise state.StateError('run record commands require Postgres (CPLANE_DATABASE_URL)')

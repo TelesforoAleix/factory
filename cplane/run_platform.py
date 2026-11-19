@@ -134,3 +134,57 @@ class Client(Connection):
 
     def cancel(self, identity):
         return self.request("/v1/runs/" + quote(identity, safe="") + "/cancel", {})
+
+
+class DecisionsError(Unavailable):
+    """A decisions API refusal; keeps only the HTTP status and the error code."""
+
+    def __init__(self, status, code):
+        super().__init__(f"Platform decisions HTTP {status}")
+        self.status = status
+        self.code = code
+
+
+class Decisions(Connection):
+    """Home Lab decisions API on the run platform's URL and bearer key."""
+
+    def decide(self, body):
+        try:
+            request = Request(
+                self.url + "/v1/decisions",
+                data=json.dumps(body).encode(),
+                headers={
+                    "Authorization": "Bearer " + self.key,
+                    "Content-Type": "application/json",
+                },
+            )
+            try:
+                response = build_opener(ProxyHandler({}), NoRedirect).open(
+                    request, timeout=60
+                )
+            except HTTPError as error:
+                with error:
+                    code = None
+                    try:
+                        value = json.loads(error.read(64 * 1024))
+                        # Only a short, plain code; never a diagnostic.
+                        if (isinstance(value, dict) and isinstance(value.get("error"), str)
+                                and len(value["error"]) <= 64 and value["error"].replace("_", "").isalnum()):
+                            code = value["error"]
+                    except (OSError, ValueError, HTTPException):
+                        pass
+                raise DecisionsError(error.code, code) from None
+            with response:
+                if response.status != 200:
+                    raise DecisionsError(response.status, None)
+                raw = response.read(4 * 1024 * 1024 + 1)
+                if len(raw) > 4 * 1024 * 1024:
+                    raise ValueError
+                value = json.loads(raw)
+        except DecisionsError:
+            raise
+        except (OSError, URLError, ValueError, HTTPException):
+            raise Unavailable("Platform decisions response unavailable") from None
+        if not isinstance(value, dict):
+            raise Unavailable("Platform decisions response unavailable")
+        return value
