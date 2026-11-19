@@ -878,7 +878,6 @@ class Runner:
             self.attention(item, "node-step", job["request"]["node_steps"])
             job["phase"] = "node-step"
             self.save_job(job)
-        self.release_pending(item, job)
 
     def tickets_handover(self, item, job):
         final = {"request": job["request"], "review_verdict": job.get("review_verdict"),
@@ -1749,7 +1748,6 @@ class Runner:
             job["phase"] = (
                 "node-step" if job["request"]["node_steps"] is not None else "merged"
             )
-            self.release_pending(item, job)
 
     def finished(self, item, body):
         kept = item["attention"] if (item["attention"] or {}).get("kind") in POST_MERGE else None
@@ -2128,8 +2126,6 @@ class Runner:
                     ):
                         self.restore_merge(item, job)
                     self.collect(item, job)
-                    if job.get("sha"):
-                        self.release_pending(item, job)
                     if item["paused"] or (
                         item["state"] == "ready" and self.restartable(job, item)
                     ):
