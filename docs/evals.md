@@ -254,13 +254,15 @@ section before cutting, so the normal ticket builder can carry its rules. Eval
 requests and their synthetic item live only in the private job ledger. They do not
 create or change a slice, feature, board, attention, phone notice, PR or merge.
 Questions and escalations fail the attempt with their reason. An eval review
-records `pass` or `fix`; it does not launch repairs or approve a merge.
+records `pass` or `fix`; it does not launch repairs or approve a merge. A slice
+run that finishes with an empty commit list fails the attempt with its final body.
 
 At the PR boundary Factory instead submits one sealed `check` run. Its
 `base_commit` is the delivered branch tip, its overlay is the case's `merge_commit`
 and `hidden_paths`, and its command is the case's `check_command`. This mark has
-no executor. Hidden test content and the reference diff are never sent to the
-slice, cutter, ticket or reviewer. The platform overlays the paths and runs the
+no executor, branch or predecessor; the review has already finished. Hidden test
+content and the reference diff are never sent to the slice, cutter, ticket or
+reviewer. The platform overlays the paths and runs the
 command without network, committing or pushing nothing. Setup failure fails the
 attempt. A `judge` case skips this run; judge execution remains future work.
 
