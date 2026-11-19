@@ -115,6 +115,16 @@ not start until resumed. The state command itself starts no executor.
 first, with role, tool, model, effort and start time. Older records may have an
 empty role. The slice detail API and Workshop use the same records.
 
+## Documentation claims
+
+Check a repository's `docs/claims.json` at a revision; see
+[docs-verify](docs-verify.md). It needs no database. Without `--graph-only` it
+calls the decisions API with the platform run key.
+
+```sh
+cplane docs-verify REPO [--rev REV] [--with PATH ...] [--graph-only] --out RECORD.json
+```
+
 ## Earlier README command reference
 
 ```sh

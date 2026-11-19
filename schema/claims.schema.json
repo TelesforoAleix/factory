@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Documentation claims, version 1",
+  "type": "object",
+  "required": ["version", "repository", "parts", "claims", "relations", "contracts"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {"const": 1},
+    "repository": {"$ref": "#/$defs/repository"},
+    "parts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "doc", "doc_lines", "standalone"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"$ref": "#/$defs/name"},
+          "doc": {"$ref": "#/$defs/path"},
+          "doc_lines": {"$ref": "#/$defs/lines"},
+          "standalone": {"type": "boolean"}
+        }
+      }
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "doc", "doc_lines", "text", "sources"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"$ref": "#/$defs/name"},
+          "doc": {"$ref": "#/$defs/path"},
+          "doc_lines": {"$ref": "#/$defs/lines"},
+          "text": {"type": "string", "pattern": "\\S"},
+          "sources": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/source"}}
+        }
+      }
+    },
+    "relations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "from", "to", "how", "contract", "text", "provider_sources", "user_sources"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"$ref": "#/$defs/name"},
+          "from": {"$ref": "#/$defs/name"},
+          "to": {"type": "string", "pattern": "^(?:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+:)?[^\\s:/][^:/]*$"},
+          "how": {"enum": ["call", "contract", "file", "table"]},
+          "contract": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/name"}]},
+          "text": {"type": "string", "pattern": "\\S"},
+          "provider_sources": {"type": "array", "items": {"$ref": "#/$defs/source"}},
+          "user_sources": {"type": "array", "items": {"$ref": "#/$defs/source"}}
+        }
+      }
+    },
+    "contracts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "version", "provider", "users", "doc", "doc_lines"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"$ref": "#/$defs/name"},
+          "version": {"type": "string", "pattern": "\\S"},
+          "provider": {"type": "string"},
+          "users": {"type": "array", "items": {"type": "string"}},
+          "doc": {"const": "docs/contracts.md"},
+          "doc_lines": {"$ref": "#/$defs/lines"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "repository": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"},
+    "name": {"type": "string", "pattern": "^[^\\s:/][^:/]*$", "maxLength": 200},
+    "path": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))[^\\\\]+$"},
+    "lines": {
+      "type": "array",
+      "prefixItems": [{"type": "integer", "minimum": 1}, {"type": "integer", "minimum": 1}],
+      "minItems": 2,
+      "maxItems": 2,
+      "items": false
+    },
+    "source": {
+      "type": "object",
+      "required": ["path", "lines"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {"$ref": "#/$defs/path"},
+        "lines": {"$ref": "#/$defs/lines"}
+      }
+    }
+  }
+}
