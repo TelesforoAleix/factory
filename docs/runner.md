@@ -13,6 +13,9 @@ handover protocol, without local fence, bundle or implementation-push instructio
 Pre-merge PR results use a handover containing the PR JSON so the platform can
 release dependent review work. A legacy waiting result receives an idempotent
 acknowledgment message on the same run asking it to finish done before successors.
+If blocked before committing, the executor commits nothing and explains why in
+the PR body. A done slice with no commits raises that final body as a question
+without reading a branch that the platform did not create.
 
 Ticket flow submits a write-mode `cut` run to commit the failing tests, then one
 write-mode `ticket` request per plan ticket. Each request includes its goal,
