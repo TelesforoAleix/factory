@@ -70,6 +70,19 @@ class Revision:
         return None if text is None else text.splitlines()
 
 
+class Snapshot(Revision):
+    """The same read-only access over a ``fetch(path) -> text | None`` callable, with no checkout."""
+
+    def __init__(self, sha, fetch):
+        self.path, self.sha, self._fetch, self._cache = None, sha, fetch, {}
+
+    def read(self, path):
+        if path not in self._cache:
+            text = self._fetch(path)
+            self._cache[path] = text if isinstance(text, str) else None
+        return self._cache[path]
+
+
 def _where(error):
     return '$' + ''.join(f'[{p}]' if isinstance(p, int) else f'.{p}' for p in error.absolute_path)
 
@@ -267,7 +280,7 @@ def graph(claims, items, others, *, graph_only):
 def verify(path, *, rev='HEAD', others=(), graph_only=False, client=None):
     """Return (record, exit code). Never writes to the checked repository."""
     started = _now()
-    revision = Revision(path, rev)
+    revision = path if isinstance(path, Revision) else Revision(path, rev)
     record = {'version': 1, 'repository': None, 'revision': revision.sha, 'claims_sha256': None,
               'started_at': started, 'ended_at': None, 'graph_only': graph_only, 'model': None,
               'usage': {'input_tokens': 0, 'output_tokens': 0}, 'errors': [], 'stopped': None,
@@ -345,6 +358,12 @@ def verify(path, *, rev='HEAD', others=(), graph_only=False, client=None):
     failing = (any(i['verdict'] != 'pass' for i in record['items'])
                or any(c['passed'] is False for c in record['graph']))
     return finish(1 if failing else 0)
+
+
+def graph_check(revision):
+    """The graph-only check on a Revision or Snapshot: (record, exit code, summary text)."""
+    record, code = verify(revision, graph_only=True)
+    return record, code, summary(record)
 
 
 def summary(record):

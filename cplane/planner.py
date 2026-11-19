@@ -16,7 +16,7 @@ TRANSITIONS = {
 for _source in TRANSITIONS.keys() - {"accepted", "dropped"}:
     TRANSITIONS[_source].add("dropped")
 
-KINDS = ("question", "escalation", "merge", "node-step", "owner-check")
+KINDS = ("question", "escalation", "merge", "node-step", "owner-check", "contract-change", "docs-graph")
 FIELDS = ("flow", "repo", "feature", "feature_id", "no_feature", "title", "brief", "stop_before_merge", "depends_on")
 
 

@@ -77,3 +77,7 @@ Stdout shows the counts per verdict and the ids that did not pass.
 
 Exit 0 when everything passes; 1 when anything is flagged, too large, in error,
 fails a graph rule, or the input is invalid; 2 when the run stopped.
+
+After each merge the runner runs this check in `--graph-only` mode on the merged commit
+(read through the GitHub API, with no checkout) when the commit has `docs/claims.json`;
+a failure raises a `docs-graph` attention item. See docs/runner.md.

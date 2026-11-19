@@ -45,3 +45,5 @@ decisions settle it. Otherwise pass it on with `raise_decision`, supplying its
 never answered by a chat: a guard file, a secret’s value, deleting irreplaceable
 data, a money limit, a new public endpoint or a repository made public. When the
 owner answers in the orchestrator chat, close that decision with `answer_decision`.
+
+When a slice changes a contract listed in `docs/contracts.md`, state `contract_changes` (each contract, its new version and its user repositories) in its brief.

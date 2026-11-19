@@ -15,7 +15,7 @@ from .times import now
 
 ACTIONS = {'start', 'slot', 'pause', 'resume', 'answer', 'approve', 'orchestrator'}
 STATES = set(state.SCHEMA['$defs']['slice']['properties']['state']['enum'])
-KINDS = {'question', 'escalation', 'merge', 'node-step', 'owner-check'}
+KINDS = {'question', 'escalation', 'merge', 'node-step', 'owner-check', 'contract-change', 'docs-graph'}
 
 
 class HTTPClient:

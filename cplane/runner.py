@@ -26,12 +26,15 @@ from .planning import ssh_command
 from .text_bounds import ATTENTION_LIMIT, LOG_LIMIT, cut, cut_line
 from .times import now
 
+POST_MERGE = ("contract-change", "docs-graph")
 BOT_EVENTS = frozenset(
     {
         "question",
         "escalation",
         "merge",
         "owner-check",
+        "contract-change",
+        "docs-graph",
         "stuck",
         "chat-paused",
         "testing-review",
@@ -340,6 +343,32 @@ class GitHub:
         if not isinstance(sha, str) or not re.fullmatch("[0-9a-f]{40}", sha):
             raise GitHubReadError("GitHub branch tip unavailable")
         return sha
+
+    def snapshot(self, repo, sha):
+        """Read files of one commit through the API; the runner keeps no checkout."""
+        import base64
+
+        from .docs_verify import Snapshot
+
+        tree = json.loads(
+            self.call(repo, "api", f"repos/{repo}/git/trees/{sha}?recursive=1")
+        )
+        if tree.get("truncated"):
+            raise GitHubReadError("Merged commit tree listing truncated")
+        blobs = {e["path"]: e["sha"] for e in tree["tree"] if e.get("type") == "blob"}
+
+        def fetch(path):
+            if path not in blobs:
+                return None
+            value = json.loads(
+                self.call(repo, "api", f"repos/{repo}/git/blobs/{blobs[path]}")
+            )
+            try:
+                return base64.b64decode(value["content"]).decode("utf-8")
+            except UnicodeError:
+                return None
+
+        return Snapshot(sha, fetch)
 
     def eval_diff(self, repo, base, tip):
         return self.call(repo, "api", f"repos/{repo}/compare/{base}...{tip}",
@@ -842,12 +871,14 @@ class Runner:
         self.save_job(job)
         self.log(item, f"merged: {sha}", True)
         item["attention"] = None
+        self.after_merge(item, job)
         if item.get("flow", "cli") == "tickets":
             self.tickets_handover(item, job)
         elif job["request"]["node_steps"] is not None:
             self.attention(item, "node-step", job["request"]["node_steps"])
             job["phase"] = "node-step"
             self.save_job(job)
+        self.release_pending(item, job)
 
     def tickets_handover(self, item, job):
         final = {"request": job["request"], "review_verdict": job.get("review_verdict"),
@@ -1298,7 +1329,10 @@ class Runner:
         else:
             goal += (
                 '\nFor this run, end with kind "handover" (superseding any brief final kind). Begin the body with a fenced JSON object '
-                "with branch, title, body (PR description) and node_steps (text or null). "
+                "with branch, title, body (PR description), node_steps (text or null) and contract_changes. "
+                "Set contract_changes to null, or, when the PR changes the shape or meaning of a contract listed in "
+                "docs/contracts.md, to a non-empty list of {\"name\": contract, \"version\": new version, "
+                "\"users\": [\"owner/name\", ...]} with every user repository named. "
                 "Factory opens the PR, checks CI, obtains required approval, and merges it. "
             )
             if not job.get("eval_attempt"):
@@ -1604,20 +1638,79 @@ class Runner:
         request = reviewer.parse(body)
         if (
             not isinstance(request, dict)
-            or set(request) != {"branch", "title", "body", "node_steps"}
+            or set(request) != {"branch", "title", "body", "node_steps", "contract_changes"}
             or any(
                 not isinstance(request[k], str) or not request[k]
                 for k in ("branch", "title", "body")
             )
             or request["node_steps"] is not None
             and not isinstance(request["node_steps"], str)
+            or not Runner.contract_changes_valid(request["contract_changes"])
         ):
             raise state.StateError(
-                "invalid PR request: expected branch, title, body, node_steps"
+                "invalid PR request: expected branch, title, body, node_steps, contract_changes"
             )
         if request["branch"] != branch:
             raise state.StateError("PR branch differs from assigned branch")
         return request
+
+    @staticmethod
+    def contract_changes_valid(value):
+        return value is None or (
+            isinstance(value, list)
+            and bool(value)
+            and all(
+                isinstance(c, dict)
+                and set(c) == {"name", "version", "users"}
+                and all(isinstance(c[k], str) and c[k] for k in ("name", "version"))
+                and isinstance(c["users"], list)
+                and bool(c["users"])
+                and all(isinstance(u, str) and u for u in c["users"])
+                for c in value
+            )
+        )
+
+    def after_merge(self, item, job):
+        """Work out the notices owed after a merge; none of it blocks the merge or install."""
+        if "pending_attention" in job:
+            return
+        pending = []
+        changes = job["request"].get("contract_changes")  # old job files: absent is null
+        if changes:
+            lines = [
+                f"- {c['name']} {c['version']}: used by {', '.join(c['users'])}"
+                for c in changes
+            ]
+            pending.append((
+                "contract-change",
+                "The merge changed shared contracts:\n" + "\n".join(lines)
+                + "\nEach user repository needs an adapting slice in the same Feature.",
+            ))
+        graph = self.graph_check(item, job)
+        if graph:
+            pending.append(("docs-graph", graph))
+        job["pending_attention"] = pending
+        self.save_job(job)
+
+    def graph_check(self, item, job):
+        from . import docs_verify
+
+        try:
+            snapshot = self.github.snapshot(self.github_repo(item), job["sha"])
+            if not isinstance(snapshot.read(docs_verify.CLAIMS_PATH), str):
+                return None
+            record, code, text = docs_verify.graph_check(snapshot)
+        except Exception as error:  # noqa: BLE001
+            self.log(item, f"docs-graph: could not run: {type(error).__name__}")
+            return f"docs graph check could not run at {job['sha']}: {type(error).__name__}"
+        self.log(item, f"docs-graph: {'pass' if code == 0 else 'fail'} at {job['sha']}")
+        return None if code == 0 else text
+
+    def release_pending(self, item, job):
+        if job and job.get("pending_attention") and not item["attention"]:
+            kind, body = job["pending_attention"].pop(0)
+            self.save_job(job)
+            self.attention(item, kind, body)
 
     def complete_entry(self, item, job, entry):
         if entry.get("completion_final"):
@@ -1650,15 +1743,19 @@ class Runner:
         if not any(e["event"] == "merged: " + job["sha"] for e in item["log"]):
             self.log(item, "merged: " + job["sha"], True)
             item["attention"] = None
+            self.after_merge(item, job)
             if job["request"]["node_steps"] is not None:
                 self.attention(item, "node-step", job["request"]["node_steps"])
             job["phase"] = (
                 "node-step" if job["request"]["node_steps"] is not None else "merged"
             )
+            self.release_pending(item, job)
 
     def finished(self, item, body):
-        item["state"], item["attention"] = "in review", None
+        kept = item["attention"] if (item["attention"] or {}).get("kind") in POST_MERGE else None
+        item["state"], item["attention"] = "in review", kept
         self.log(item, "finished", True)
+        self.release_pending(item, self.jobs.get(item["id"]))
 
     def launch_review(self, item, job, *, record_only=False):
         if item["paused"]:
@@ -1818,6 +1915,7 @@ class Runner:
                 "title": answer["title"],
                 "body": answer["body"],
                 "node_steps": None,
+                "contract_changes": (job.get("request") or {}).get("contract_changes"),
             }
             job["phase"] = "pr"
             self.save_job(job)
@@ -1916,6 +2014,7 @@ class Runner:
                     for task in job["task_file"]["tasks"]
                 ),
                 "node_steps": job["task_file"].get("node_steps"),
+                "contract_changes": None,
             }
             job["phase"] = "pr"
             self.save_job(job)
@@ -2029,6 +2128,8 @@ class Runner:
                     ):
                         self.restore_merge(item, job)
                     self.collect(item, job)
+                    if job.get("sha"):
+                        self.release_pending(item, job)
                     if item["paused"] or (
                         item["state"] == "ready" and self.restartable(job, item)
                     ):

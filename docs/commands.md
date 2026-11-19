@@ -213,8 +213,9 @@ started outside the runner; this command starts no process. The tool must be cod
 or claude, and both ID and folder must be nonempty. Folder paths may contain colons.
 State log events include the destination and any forced-reset reason.
 
-Attention kinds are `question`, `escalation`, `merge`, `node-step`, and
-`owner-check`. Setting attention replaces its body and timestamp, clears its
+Attention kinds are `question`, `escalation`, `merge`, `node-step`,
+`owner-check`, `contract-change` and `docs-graph` (the last two are raised by the
+runner after a merge; clear them with `attention --clear`). Setting attention replaces its body and timestamp, clears its
 answer and approval, and leaves the slice's state as recorded. Clearing attention
 adds no notice. All planner writes accept `--actor` (default `owner`) and
 `--commit`, like the owner commands. `show --json` returns one slice object with `runs`, the current attempt’s
