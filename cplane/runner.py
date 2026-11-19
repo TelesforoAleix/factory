@@ -878,6 +878,8 @@ class Runner:
             self.attention(item, "node-step", job["request"]["node_steps"])
             job["phase"] = "node-step"
             self.save_job(job)
+        else:
+            self.release_pending(item, job)
 
     def tickets_handover(self, item, job):
         final = {"request": job["request"], "review_verdict": job.get("review_verdict"),
@@ -899,6 +901,8 @@ class Runner:
         run_records.owner_wait(self, item, job)
         if item["paused"]:
             return
+        if job and job.get("sha") and not item["attention"]:
+            self.release_pending(item, job)
         attention = item["attention"]
         if job and job["phase"] == "review-ready":
             if attention and attention["answer"] is not None:
@@ -925,6 +929,8 @@ class Runner:
                 self.defer(item, "deferred: session unavailable")
             else:
                 self.launch(item, attention["answer"], resume=True)
+                if job and job.get("sha") and not item["attention"]:
+                    self.release_pending(item, job)
             return
         if attention and attention["kind"] == "merge":
             if job and not self.cli_review(item, job):
@@ -1379,7 +1385,9 @@ class Runner:
         entry = job["requests"][target]
         message_id = self.request_id(item, job, purpose)
         if entry.get("last_message_id") == message_id:
-            item["attention"], item["state"] = None, "issued"
+            if (item["attention"] or {}).get("kind") not in POST_MERGE:
+                item["attention"] = None
+            item["state"] = "issued"
             return
         if not (entry.get("record") or {}).get("resumable") and not entry.get(
             "message"
@@ -1416,8 +1424,11 @@ class Runner:
         if (
             entry is job["requests"][job["active"]] or entry is attention_entry
         ) and not entry.get("completion_final"):
-            run_records.owner_wait(self, item, close=True)
-            item["attention"], item["state"] = None, "issued"
+            if (item["attention"] or {}).get("kind") in POST_MERGE:
+                item["state"] = "issued"  # a post-merge notice stays for the planner
+            else:
+                run_records.owner_wait(self, item, close=True)
+                item["attention"], item["state"] = None, "issued"
             job.pop("attention_run", None)
             self.save_job(job)
             self.log(item, "resumed", True)
@@ -1745,6 +1756,8 @@ class Runner:
             self.after_merge(item, job)
             if job["request"]["node_steps"] is not None:
                 self.attention(item, "node-step", job["request"]["node_steps"])
+            else:
+                self.release_pending(item, job)
             job["phase"] = (
                 "node-step" if job["request"]["node_steps"] is not None else "merged"
             )

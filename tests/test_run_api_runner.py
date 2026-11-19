@@ -1279,13 +1279,10 @@ def test_instruction_names_contract_changes(setup):
 
 def test_contract_change_attention_without_node_step(setup):
     r, api, original = merged(setup, pr_reply(contract_changes=CHANGES))
-    api.finish(original, body="Final handover")
-    r.run()
     att = item(r)["attention"]
     assert att["kind"] == "contract-change"
     assert "state-v1 2" in att["body"] and "example/a, example/b" in att["body"]
     assert "adapting slice in the same Feature" in att["body"]
-    assert item(r)["state"] == "in review"
 
 
 def test_contract_change_attention_after_node_step_answered(setup):
@@ -1293,10 +1290,7 @@ def test_contract_change_attention_after_node_step_answered(setup):
     assert item(r)["attention"]["kind"] == "node-step"
     edit(r, lambda s: s["attention"].update(answer="Installed"))
     r.run()
-    api.finish(original, body="Final handover")
-    r.run()
     assert item(r)["attention"]["kind"] == "contract-change"
-    assert item(r)["state"] == "in review"
 
 
 def test_graph_check_skipped_without_claims(setup):
@@ -1314,8 +1308,6 @@ def test_graph_check_passes_and_is_logged(setup):
 
 def test_graph_check_failure_raises_attention(setup):
     r, api, original = merged(setup, pr_reply(), files={"docs/claims.json": "{"})
-    api.finish(original, body="Final handover")
-    r.run()
     assert any(e["event"] == f"docs-graph: fail at {SHA}" for e in item(r)["log"])
     att = item(r)["attention"]
     assert att["kind"] == "docs-graph" and "not valid JSON" in att["body"]
