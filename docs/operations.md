@@ -9,6 +9,28 @@ run API; chat execution and retained Mac tools are separate. The current
 historical paths and deployment notes below. See [commands](commands.md) for
 current feature-association requirements and the moved command reference.
 
+## Feature stage move actors
+
+| Move | Allowed actors |
+| --- | --- |
+| Shortlist → Grilling | owner, chat |
+| Grilling → Ready | chat |
+| Ready → Next | owner, chat |
+| Next → Building | runner |
+| Building → Testing | runner, chat |
+| Building → Acceptance | runner |
+| Acceptance → Done | owner, chat |
+| Acceptance → Building | chat, runner |
+| Testing → Done | owner, chat |
+| Testing → Building | chat, runner |
+| Next → Ready | owner, chat |
+| Ready → Grilling | owner, chat |
+| Grilling → Shortlist | owner, chat |
+| Building → Next or Ready | owner, chat |
+
+For chat moves, the actor is recorded as `chat:<id>`. A chat may move a
+Building feature to Testing when the planner considers its work complete.
+
 ## Earlier setup note
 
 A scheduler's state file and its commands. `cplane` helps an owner schedule slices of
