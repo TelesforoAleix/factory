@@ -241,7 +241,7 @@ def test_home_chat_decisions_follow_read_and_latest_pause():
         return home_data(HomeStore(), dict(features=[], projects=[]), lambda value: value, None)['attention']
 
     assert [card['text'] for card in cards()] == ['Check', 'Paused']
-    # Postgres returns UTC timestamps, while notices use Copenhagen local time.
+    # Postgres returns UTC timestamps, while notices can use a local offset.
     # Lexicographic ordering puts this later read before both notices.
     notices[0]['at'] = '2026-01-01T01:00:00+01:00'
     notices[1]['at'] = '2026-01-01T01:01:00+01:00'

@@ -20,6 +20,7 @@ test('opens a chat, queues a message, and marks it unread', async () => {
   vi.stubGlobal('fetch', fetchMock);
   render(<MemoryRouter initialEntries={['/chats/7']}><App/></MemoryRouter>);
   expect(await screen.findByText('Hello')).toBeTruthy();
+  expect(screen.getByText(new Intl.DateTimeFormat('en-GB', {dateStyle:'medium', timeStyle:'short'}).format(new Date(messages[1].time)))).toBeTruthy();
   expect(screen.getAllByText(/Instructions/)[0].closest('details').open).toBe(false);
   expect(await screen.findByText('Turn usage')).toBeTruthy();
   expect(screen.getByText('Queued')).toBeTruthy();

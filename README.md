@@ -2,6 +2,8 @@
 
 Factory’s core is the `cplane` scheduler and runner.
 
+The first design is available in git history at commit `0ce935a442b1853aad38d75a9a035d89242d0fae`.
+
 A scheduler's state file and its commands. `cplane` helps an owner schedule slices of
 coding work, answer questions, approve merges, and see what is pending. It records
 intent through owner commands. `start` sets a slot to now; `resume` clears a pause
@@ -159,8 +161,10 @@ question or escalation attention. Other owner mutations apply to any existing sl
 including repeated calls. Refusals exit nonzero with one line on stderr and leave
 the state unchanged. A warning accompanies a successful command and exits zero.
 
-Offset-free ISO timestamps and short forms use Europe/Copenhagen, including its
-summer/winter offset. Explicit offsets are preserved. Weekday forms choose the
+Set `FACTORY_TIME_ZONE` to an IANA time zone name for server-side timestamps and
+calendar expressions; it defaults to `UTC`. Invalid names fail at startup. Offset-free
+ISO timestamps and short forms use this zone, including its seasonal offset changes.
+Explicit offsets are preserved. Weekday forms choose the
 next occurrence of that time (later today, or next week if already passed).
 `today HH:MM` is also supported. Ambiguous and nonexistent local times during
 clock changes require an explicit offset. Quote time expressions and answers.

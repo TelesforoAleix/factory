@@ -11,7 +11,7 @@ import {CSS} from '@dnd-kit/utilities';
 
 const stages = ['shortlist','grilling','ready','next','building','acceptance','testing','done','parked'];
 const name = s => s?.[0].toUpperCase() + s?.slice(1);
-const date = value => value && new Intl.DateTimeFormat('en-GB', {timeZone: 'Europe/Copenhagen', dateStyle: 'medium'}).format(new Date(value));
+const date = value => value && new Intl.DateTimeFormat('en-GB', {dateStyle: 'medium'}).format(new Date(value));
 const openAttention = a => a && (a.kind === 'owner-check' || a.kind === 'merge' && !a.approved || ['question','escalation','node-step'].includes(a.kind) && a.answer == null);
 const attention = f => f.slices.filter(s => s.state !== 'accepted' && openAttention(s.attention));
 function Markdown({text}) { return <div className="markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown></div>; }

@@ -162,3 +162,13 @@ test.each([[null, false], ['functional', true], ['experience', true]])('feature 
   expect(text.includes('Functional') || text.includes('Experience')).toBe(visible);
   if (kind) expect(text).toContain(kind === 'functional' ? 'Functional' : 'Experience');
 });
+
+
+test('formats the stage date in the browser time zone', async () => {
+  const stage_since = '2026-01-01T01:00:00Z';
+  vi.stubGlobal('fetch', vi.fn(async url => ({ok:true, json:async () => url === '/api/chats' ? [] : url === '/api/pipeline' ? {projects:[], features:[feature]} : {...feature, stage_since}})));
+  render(<MemoryRouter initialEntries={['/pipeline']}><App/></MemoryRouter>);
+  fireEvent.click(await screen.findByRole('button', {name:/Synthetic feature/}));
+  const expected = new Intl.DateTimeFormat('en-GB', {dateStyle:'medium'}).format(new Date(stage_since));
+  expect((await screen.findAllByText(expected)).length).toBeGreaterThan(0);
+});

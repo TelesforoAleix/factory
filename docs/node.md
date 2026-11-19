@@ -154,6 +154,10 @@ the launcher's fence limits remain separate.
 
 All four services join only the external Docker network `homelab_default`.
 Their database URL files must name the platform database at host `postgres`.
+Set `FACTORY_TIME_ZONE` to an IANA time zone name in `ui.env`, `sessions.env`
+and `runner.env` to configure server-side timestamps and calendar expressions.
+It defaults to `UTC`; an invalid name fails at startup. The UI displays dates in
+the browser’s time zone.
 Only UI publishes a port, `127.0.0.1:8300:8300`, preserving Tailscale's host
 loopback endpoint. No service receives Docker access, host networking, devices or
 additional capabilities.

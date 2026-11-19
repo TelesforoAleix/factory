@@ -13,7 +13,7 @@ async function request(url, method, body) {
   return data;
 }
 const labels = {orchestrator:'Orchestrator', project:'Project', feature:'Feature', legacy:'Legacy'};
-const date = value => value ? new Intl.DateTimeFormat('en-GB', {timeZone:'Europe/Copenhagen', dateStyle:'medium', timeStyle:'short'}).format(new Date(value)) : '';
+const date = value => value ? new Intl.DateTimeFormat('en-GB', {dateStyle:'medium', timeStyle:'short'}).format(new Date(value)) : '';
 export function FeatureChatLink({feature}) {
   const [chat, setChat] = useState(null);
   useEffect(() => {let live = true; setChat(null); request('/api/chats').then(rows => {if (live) setChat(rows.find(c => c.feature === feature));}).catch(() => {}); return () => {live = false;};}, [feature]);
