@@ -333,6 +333,10 @@ def parser():
     starts = eval_commands.add_parser('starts', parents=[common])
     starts.add_argument('bundle')
     starts.add_argument('--pr', required=True)
+    judge = eval_commands.add_parser('judge', parents=[common])
+    judge.add_argument('attempt', type=int)
+    judge_test = eval_commands.add_parser('judge-test', parents=[common])
+    judge_test.add_argument('set_version', metavar='SET[:VERSION]')
     for group, actions in (('case', ('list', 'from-slice')), ('config', ('add', 'list', 'show')),
                            ('set', ('create', 'add', 'list', 'show')),
                            ('run', ('create', 'list', 'show', 'cancel'))):
@@ -470,7 +474,18 @@ def eval_command(args):
         raise state.StateError('eval commands require Postgres (CPLANE_DATABASE_URL or CPLANE_DATABASE_URL_FILE)')
     backend = state.store(None)
     actor = getattr(args, 'actor', 'owner')
-    if args.eval_group == 'import':
+    if args.eval_group in ('judge', 'judge-test'):
+        from . import eval_judge, run_platform
+        try:
+            if args.eval_group == 'judge':
+                result = eval_judge.judge_attempt(backend, args.attempt)
+            else:
+                result = eval_judge.judge_test(backend, args.set_version)
+        except run_platform.Unavailable as error:
+            raise state.StateError(str(error)) from None
+        print(json.dumps(result, indent=2, ensure_ascii=False, allow_nan=False))
+        return (0 if result['passed'] else 1) if args.eval_group == 'judge-test' else 0
+    elif args.eval_group == 'import':
         result = evals.import_folder(backend, args.folder)
     elif args.eval_group == 'starts':
         result = evals.import_starts(backend, args.bundle, args.pr)

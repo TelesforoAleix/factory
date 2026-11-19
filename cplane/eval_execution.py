@@ -502,7 +502,7 @@ class Context(Runner):
         # Stamp before *every* persisted intent, including new_request's first
         # save. Recovery can therefore never submit an unmarked eval request.
         role_names = {'slice': 'executor', 'cut': 'cutter', 'ticket': 'ticket', 'review': 'reviewer'}
-        for entry in job['requests'].values():
+        for purpose, entry in job['requests'].items():
             request = entry['request']
             role = request['role']
             mark = dict(set=f"run{job['eval_run']}", case='case' + hashlib.sha256(job['case']['id'].encode()).hexdigest()[:32])
@@ -511,6 +511,9 @@ class Context(Runner):
                 request['after'] = []
                 request['work']['overlay'] = {
                     'commit': job['case']['merge_commit'], 'paths': job['case']['hidden_paths']}
+            elif purpose == 'judge':
+                from .eval_judge import EXECUTOR
+                mark['executor'] = dict(EXECUTOR)
             else:
                 mark['executor'] = job['configuration']['roles'][role_names[role]]
             request['eval'] = mark

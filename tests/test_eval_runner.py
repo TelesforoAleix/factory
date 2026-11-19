@@ -9,7 +9,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from cplane import eval_runner, evals, run_platform, state
+from cplane import eval_judge, eval_runner, evals, run_platform, state
 from cplane.eval_execution import Context
 from cplane.runner import GitHub, GitHubReadError, Runner
 from test_evals import cases, named  # noqa: F401
@@ -75,7 +75,7 @@ def execution(pg_store, cases, tmp_path):
     evals.import_folder(pg_store, cases[0])
     with pg_store.mutation():
         pg_store.connection.execute("UPDATE cplane_eval_cases SET kind='slice', level='strong', "
-                                    "grade='tests_and_judge', merge_commit=%s, hidden_paths=ARRAY['tests/hidden.py']",
+                                    "grade=NULL, merge_commit=%s, hidden_paths=ARRAY['tests/hidden.py']",
                                     ('c' * 40,))
     evals.set_create(pg_store, 's', title='Synthetic set', filters={'size': 'S'})
     api, github = Runs(), Mock(spec=GitHub)
@@ -113,6 +113,8 @@ def finish_slice(store, runner, api):
 @pytest.mark.parametrize('exit_code', [0, 1])
 def test_slice_pipeline_links_metrics_diff_and_deletion(pg_store, execution, exit_code):
     runner, api, github = execution
+    with pg_store.mutation():
+        pg_store.connection.execute("UPDATE cplane_eval_cases SET grade='tests_and_judge'")
     run = create(pg_store)
     before = pg_store.snapshot()
     step(pg_store, runner)
@@ -136,16 +138,32 @@ def test_slice_pipeline_links_metrics_diff_and_deletion(pg_store, execution, exi
     assert check['after'] == []
     api.finish('check', check=exit_code)
     step(pg_store, runner)
+    assert saved(pg_store, run)['state'] == 'running'
+    judge = list(api.requests.values())[-1]
+    assert judge['role'] == 'review' and judge['mode'] == 'read'
+    assert judge['eval']['executor'] == {'harness': 'claude', 'model': 'opus'}
+    assert 'branch' not in judge and judge['after'] == []
+    assert [a['name'] for a in judge['assets']] == ['task.md', 'attempt.patch', 'reference.patch']
+    assert judge['assets'][1]['text'] == github.eval_diff.return_value
+    assert all(a['sha256'] == hashlib.sha256(a['text'].encode()).hexdigest() for a in judge['assets'])
+    assert Path(next(iter(runner.jobs.values()))['completion']['output_ref']).exists()
+    github.delete_eval_branch.assert_not_called()
+    api.finish('review', 'Assessment\n' + block(dict(verdict='mergeable', reason='Meets the brief')))
+    step(pg_store, runner)
     attempt = saved(pg_store, run)
     assert attempt['state'] == 'done'
-    assert attempt['result'] == dict(tests='pass' if exit_code == 0 else 'fail', exit_code=exit_code, review='pass')
-    assert attempt['metrics'] == dict(input_tokens=24, output_tokens=6, wall_seconds=90, cost_usd=0.02)
+    assert attempt['result'] == dict(tests='pass' if exit_code == 0 else 'fail', exit_code=exit_code, review='pass', judge='mergeable')
+    assert attempt['metrics'] == dict(input_tokens=36, output_tokens=9, wall_seconds=120, cost_usd=0.03)
+    verdict, = attempt['verdicts']
+    assert (verdict['judge'], verdict['prompt_hash'], verdict['verdict'], verdict['reason']) == (
+        'claude/opus', eval_judge.prompt()[1], 'mergeable', 'Meets the brief')
     output = Path(attempt['output_ref'])
     assert output.read_text() == github.eval_diff.return_value
     assert output.stat().st_mode & 0o777 == 0o600
     links = attempt['runs']
-    assert [r['position'] for r in links] == [1, 2, 3]
-    assert [r['role'] for r in links] == ['slice', 'review', 'check']
+    assert [r['position'] for r in links] == [1, 2, 3, 4]
+    assert [r['role'] for r in links] == ['slice', 'review', 'check', 'review']
+    assert links[-1]['purpose'] == 'judge'
     assert [r['run_id'] for r in links] == list(api.requests)
     github.eval_diff.assert_called_once_with('example/public', 'a' * 40, 'b' * 40)
     github.delete_eval_branch.assert_called_once_with('example/public', request['branch'])
@@ -238,8 +256,10 @@ def test_judge_grade_skips_check(pg_store, execution):
     run = create(pg_store)
     step(pg_store, runner)
     finish_slice(pg_store, runner, api)
-    assert [r['role'] for r in api.requests.values()] == ['slice', 'review']
-    assert saved(pg_store, run)['result'] == dict(tests=None, exit_code=None, review='pass')
+    assert [r['role'] for r in api.requests.values()] == ['slice', 'review', 'review']
+    api.finish('review', block(dict(verdict='not_mergeable', reason='Missing work')))
+    step(pg_store, runner)
+    assert saved(pg_store, run)['result'] == dict(tests=None, exit_code=None, review='pass', judge='not_mergeable')
     github.delete_eval_branch.assert_called_once()
 
 
