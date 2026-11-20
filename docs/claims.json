@@ -1816,7 +1816,43 @@
         32,
         33
       ],
-      "text": "`docs-verify` posts `text`, question `support` and `repeats` set to 3 to `/v1/decisions`.",
+      "text": "The docs-verify request includes a `text` field.",
+      "sources": [
+        {
+          "path": "cplane/docs_verify.py",
+          "lines": [
+            165,
+            168
+          ]
+        }
+      ]
+    },
+    {
+      "id": "decisions-support",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        32,
+        33
+      ],
+      "text": "The docs-verify request has one `support` question.",
+      "sources": [
+        {
+          "path": "cplane/docs_verify.py",
+          "lines": [
+            166,
+            168
+          ]
+        }
+      ]
+    },
+    {
+      "id": "decisions-repeats",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        32,
+        33
+      ],
+      "text": "The docs-verify request sets `repeats` to 3.",
       "sources": [
         {
           "path": "cplane/docs_verify.py",
@@ -2453,20 +2489,13 @@
         154,
         154
       ],
-      "text": "Feature export clones the SSH remote in `CPLANE_PLANNING_REMOTE` and pushes `HEAD` to `main`.",
+      "text": "Feature export reads `CPLANE_PLANNING_REMOTE` as its remote.",
       "sources": [
         {
           "path": "cplane/feature_export.py",
           "lines": [
             92,
             98
-          ]
-        },
-        {
-          "path": "cplane/feature_export.py",
-          "lines": [
-            119,
-            123
           ]
         }
       ]
@@ -3192,20 +3221,56 @@
         55,
         56
       ],
-      "text": "The runner starts a detached `cplane.deployer` child and records its result in the run folder `installs/` directory.",
+      "text": "The runner starts `cplane.deployer` as a detached child.",
       "sources": [
         {
           "path": "cplane/installation.py",
           "lines": [
-            165,
+            176,
             190
           ]
-        },
+        }
+      ]
+    },
+    {
+      "id": "ops-install-send",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        55,
+        56
+      ],
+      "text": "The detached child sends the merged commit to the platform deployer on `CPLANE_DEPLOYER_SOCKET`.",
+      "sources": [
         {
           "path": "cplane/installation.py",
           "lines": [
-            293,
-            297
+            176,
+            184
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-install-result",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        56,
+        57
+      ],
+      "text": "The deployer child writes its result in the run folder `installs/` directory.",
+      "sources": [
+        {
+          "path": "cplane/installation.py",
+          "lines": [
+            212,
+            215
+          ]
+        },
+        {
+          "path": "cplane/deployer.py",
+          "lines": [
+            63,
+            67
           ]
         }
       ]
@@ -3436,17 +3501,10 @@
       "doc": "docs/operations.md",
       "doc_lines": [
         80,
-        80
+        81
       ],
-      "text": "Compose sets `CPLANE_REVISION` from `HOMELAB_DEPLOY_TAG` for the runner service.",
+      "text": "Compose sets the runner service `CPLANE_REVISION` from `HOMELAB_DEPLOY_TAG`.",
       "sources": [
-        {
-          "path": "compose.yaml",
-          "lines": [
-            22,
-            22
-          ]
-        },
         {
           "path": "compose.yaml",
           "lines": [
@@ -3499,16 +3557,70 @@
       "id": "ops-orders-receipt",
       "doc": "docs/operations.md",
       "doc_lines": [
-        94,
-        95
+        95,
+        96
       ],
-      "text": "Order dispatch writes a receipt before dispatch, and a later pass with an existing receipt reuses its result.",
+      "text": "Order dispatch writes a receipt before dispatch.",
+      "sources": [
+        {
+          "path": "cplane/orders.py",
+          "lines": [
+            206,
+            212
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-orders-replay",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        97,
+        98
+      ],
+      "text": "A later order pass reuses the result in an existing receipt.",
       "sources": [
         {
           "path": "cplane/orders.py",
           "lines": [
             204,
-            224
+            206
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-orders-interrupted",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        95,
+        97
+      ],
+      "text": "An interrupted dispatch is recorded as failed.",
+      "sources": [
+        {
+          "path": "cplane/orders.py",
+          "lines": [
+            207,
+            210
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-orders-no-repeat",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        95,
+        97
+      ],
+      "text": "An interrupted dispatch is never repeated.",
+      "sources": [
+        {
+          "path": "cplane/orders.py",
+          "lines": [
+            204,
+            212
           ]
         }
       ]
@@ -3688,23 +3800,41 @@
       "id": "ops-hourly-export",
       "doc": "docs/operations.md",
       "doc_lines": [
-        115,
-        116
+        117,
+        118
       ],
-      "text": "The runner checks whether a feature export is due on each pass.",
+      "text": "The runner checks whether an export is due when the local hour changes.",
       "sources": [
         {
           "path": "cplane/runner.py",
           "lines": [
-            244,
+            235,
             247
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-hourly-publish",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        117,
+        118
+      ],
+      "text": "The hourly export publishes features and briefs to the planning repository.",
+      "sources": [
+        {
+          "path": "cplane/feature_export.py",
+          "lines": [
+            35,
+            66
           ]
         },
         {
-          "path": "cplane/runner.py",
+          "path": "cplane/feature_export.py",
           "lines": [
-            193,
-            194
+            92,
+            109
           ]
         }
       ]
@@ -4024,7 +4154,7 @@
         25,
         25
       ],
-      "text": "`docs/claims.json` follows `schema/claims.schema.json`.",
+      "text": "The claims schema requires `version`, `repository`, `parts`, `claims`, `relations` and `contracts`.",
       "sources": [
         {
           "path": "schema/claims.schema.json",
