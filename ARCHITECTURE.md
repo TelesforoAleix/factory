@@ -40,8 +40,9 @@ current design only; [DECISIONS.md](DECISIONS.md) records why it is so.
 
 `factory_ui/` sets `DIST` to `ui/dist`.
 The `frontend` route serves files from `ui/dist` and falls back to `index.html`.
-The Flask app registers routes under `/api/`. `intake` accepts one JSON arrival per connection on a Unix socket
-and opens no network port. No client currently connects to it; the phone bot user is granted group access. `sessions` runs chat turns through the platform
+The Flask app registers routes under `/api/`.
+`intake` accepts one JSON arrival per connection on a Unix socket and opens no network port.
+No client currently connects to it; the phone bot user is granted group access. `sessions` runs chat turns through the platform
 launcher. `runner` runs `cplane --actor runner run --every 60`: one locked pass,
 then a wait, repeated. `store` keeps every slice document in Postgres and checks
 each write against `schema/slices.schema.json`.
@@ -55,11 +56,12 @@ each write against `schema/slices.schema.json`.
    slices, and finally writes the phone bot export.
 3. The runner submits slice, cut, ticket and review work to the platform run API
    by role and level. The platform chooses the executor and delivers the branch.
-4. The runner opens the PR. The runner reads CI checks.
-5. The runner requires merge approval when class 4 paths are present.
-6. The runner merges with `--squash`.
-7. The runner raises node-step attention when `node_steps` is present.
-8. After a merge the runner raises `contract-change` and `docs-graph` attention
+4. The runner opens the PR.
+5. The runner reads CI checks.
+6. The runner requires merge approval when class 4 paths are present.
+7. The runner merges with `--squash`.
+8. The runner raises node-step attention when `node_steps` is present.
+9. After a merge the runner raises `contract-change` and `docs-graph` attention
    items when they apply.
 
 ## Where each part runs
