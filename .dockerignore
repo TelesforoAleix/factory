@@ -10,6 +10,8 @@
 !cplane/migrations/*.sql
 !factory_ui/
 !factory_ui/*.py
+!contracts/
+!contracts/*.py
 !schema/
 !schema/*.py
 !schema/*.json

@@ -117,3 +117,29 @@ claim. A link test in `uv run pytest` keeps the map, links and citations valid.
 Operator text that described past installations (the file store, the launchd
 runner, the container cutover and the run API switch) was removed from the
 reference documents; git history keeps it.
+
+## 2026-11-20 — Contracts between repositories are machine-checked by one tool
+
+Each contract is a schema generated from code in the repository that provides it
+and committed there; each user keeps a pinned copy. Both sides run one tool in CI,
+`factory-contracts` from the new `contracts` package, so the rules cannot drift
+between repositories.
+
+1. Full compatibility: a change must work with the previous version in both
+   directions. `compat` runs `oasdiff breaking` (pinned v1.37.0) from base to
+   revision and from revision to base, and fails when either reports a breaking
+   change, naming the direction and each rule id.
+2. One canonical JSON form for every file the tool writes or compares:
+   `json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n"`.
+3. A pin is a folder with the provider's canonical `schema.json` and `pin.json`
+   holding exactly `contract`, `provider`, `commit` and `sha256`; there are no
+   version numbers.
+4. Tolerant readers, strict senders: the sender check refuses any request field the
+   pinned schema does not define for the operation, following `$ref`, and validates
+   the known fields' types with `jsonschema`.
+5. Each check names its practice skill in `skills/`; a test fails when a check has
+   no skill file or names one that does not exist.
+6. The `contracts` package ships in the existing distribution as the
+   `factory-contracts` script, imports only the standard library and `jsonschema`,
+   never `cplane` or `factory_ui`, and finds `oasdiff` from `--oasdiff`, `OASDIFF`,
+   then `PATH`.
