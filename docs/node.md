@@ -48,6 +48,10 @@ The platform's `homelab-dump` dumps every database daily, including `factory`.
 `/srv/homelab/homelab-v2-data/originals/postgres`, owned by root with mode 0640; it
 refuses with a clear message if none exists and never creates a dump.
 
+When `node/bin/` changes, from the reviewed merged tree,
+install `node/bin/factory-cplane` as `/usr/local/bin/factory-cplane`, root:root, mode 0755.
+Install `node/bin/factory-restore-check` as `/usr/local/bin/factory-restore-check` the same way.
+
 `factory-cli` stays: `cplane/fence.py` still uses it as the default fence command,
 and its login and isolated CLI tooling remain useful. The deployed services use
 the platform launcher socket.

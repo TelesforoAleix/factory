@@ -1295,8 +1295,8 @@
         {
           "path": "docs/node.md",
           "lines": [
-            60,
-            61
+            64,
+            65
           ]
         },
         {
@@ -2780,8 +2780,8 @@
         {
           "path": "docs/node.md",
           "lines": [
-            316,
-            327
+            320,
+            331
           ]
         }
       ]
@@ -2879,7 +2879,7 @@
         80,
         80
       ],
-      "text": "Each service receives the deployed commit as `CPLANE_REVISION`.",
+      "text": "Services receive the deployed commit, `HOMELAB_DEPLOY_TAG`, as `CPLANE_REVISION`.",
       "sources": [
         {
           "path": "compose.yaml",
@@ -3406,8 +3406,8 @@
         {
           "path": "docs/node.md",
           "lines": [
-            323,
-            327
+            327,
+            331
           ]
         }
       ]
