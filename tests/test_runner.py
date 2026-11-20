@@ -483,3 +483,68 @@ def item(runner):
 def assert_prompt(job, text):
     goal = job.get('prompt') or job['requests'][job['active']]['request']['work']['goal']
     assert goal.startswith(text)
+
+
+# --- review kept when a repair changes only tests ---
+
+OLD, NEW = 'a' * 40, 'b' * 40
+
+
+def review_fixture(files):
+    runner = Runner.__new__(Runner)
+    runner.github = Mock()
+    if isinstance(files, Exception):
+        runner.github.compare_files.side_effect = files
+    else:
+        runner.github.compare_files.return_value = files
+    runner.log = lambda item, event, *a, **k: item['log'].append({'event': event})
+    runner.cancel_entry = Mock()
+    runner.clear_review_attention = Mock()
+    item = {'repo': 'example/repo', 'log': []}
+    entry = {'request': {'base_commit': OLD}}
+    job = {'tip': OLD, 'review_tip': OLD, 'pr_review': 'review-1', 'requests': {'review-1': entry},
+           'review_verdict': 'fix', 'review_findings': ['x'], 'review_requested_at': 1}
+    return runner, item, job, entry
+
+
+def f(name, **extra):
+    return {'filename': name, 'status': 'modified', **extra}
+
+
+@pytest.mark.parametrize('names', [
+    ['tests/test_a.py', 'tests/data/x.json'], ['pkg/test_a.py'], ['pkg/a_test.py'],
+    ['web/a.test.js'], ['web/a.test.jsx'], ['web/a.test.ts'], ['web/a.test.tsx'],
+])
+def test_tests_only_repair_keeps_review(names):
+    runner, item, job, entry = review_fixture([f(n) for n in names] + [{'filename': 'tests/gone.py', 'status': 'removed'}])
+    runner.review_head(item, job, NEW)
+    runner.github.compare_files.assert_called_once_with('example/repo', OLD, NEW)
+    assert job['tip'] == job['review_tip'] == NEW
+    assert job['pr_review'] == 'review-1'
+    assert job['review_verdict'] == 'fix' and job['review_findings'] == ['x']
+    runner.cancel_entry.assert_not_called()
+    assert [log['event'] for log in item['log']] == [f'review: kept review-1 on {NEW} (tests only)']
+    runner.review_head(item, job, NEW)
+    assert len(item['log']) == 1
+
+
+@pytest.mark.parametrize('result', [
+    [f('tests/test_a.py'), f('cplane/runner.py')],
+    [f('src/testing.py')],
+    [f('contest/a.py')],
+    [f('tests/test_a.py', status='renamed', previous_filename='tests/test_b.py')],
+    [f('tests/test_a.py', status='renamed', previous_filename='cplane/x.py')],
+    [{'filename': 'cplane/x.py', 'status': 'removed'}],
+    [f('tests/test_a.py')] * 300,
+    [],
+    RuntimeError('compare failed'),
+])
+def test_other_moves_and_failed_compare_retire_review(result):
+    runner, item, job, entry = review_fixture(result)
+    runner.review_head(item, job, NEW)
+    assert job['tip'] == NEW and job['review_tip'] == OLD
+    for key in ('pr_review', 'review_verdict', 'review_findings', 'review_requested_at'):
+        assert key not in job
+    assert entry['cancel_pending'] is True
+    runner.cancel_entry.assert_called_once_with(job, entry)
+    assert item['log'] == [{'event': f'review: superseded review-1 on {OLD} by {NEW}'}]

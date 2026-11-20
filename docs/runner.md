@@ -45,6 +45,12 @@ The review's `review_tip` and request base record the commit reviewed. New slice
 commits supersede the prior review and start a new review on the new tip, with a
 new deadline. Supersession is recorded in the slice log with the old purpose and
 tips; its original request remains in the ledger. It is never recorded as missing.
+When the new tip differs from the reviewed tip only in test files (a path under a
+top-level `tests/`, or a file named `test_*.py`, `*_test.py`, `*.test.js`, `*.test.jsx`,
+`*.test.ts` or `*.test.tsx`), per the GitHub compare call, the review is kept: a running
+review is not cancelled, a recorded verdict and findings stay, `review_tip` moves to the
+new tip, and the log says `review: kept <purpose> on <tip> (tests only)`. A failed
+compare, the 300-file limit, a rename, or any non-test change retires the review as above.
 A BEHIND update from the default branch keeps the existing review and its reviewed
 tip. Factory retains PR creation, red/pending/green CI handling, branch updates, guard-path
 classification, owner GitHub approval, merge, notices and node steps. Policy comes
