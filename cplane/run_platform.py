@@ -32,14 +32,16 @@ class Connection:
         if not self.key or "\n" in self.key or "\r" in self.key:
             raise Unavailable("Platform run key file unavailable or invalid")
 
-    def request(self, path, body=None, *, accepted=None):
+    def request(self, path, body=None, *, accepted=None, method=None):
+        method = method or ("POST" if body is not None else "GET")
         try:
             request = Request(
                 self.url + path,
                 data=json.dumps(body).encode() if body is not None else None,
+                method=method,
                 headers={
                     "Authorization": "Bearer " + self.key,
-                    "Content-Type": "application/json",
+                    **({"Content-Type": "application/json"} if body is not None else {}),
                 },
             )
             try:
@@ -47,12 +49,12 @@ class Connection:
                     request, timeout=10
                 )
             except HTTPError as error:
-                if body is None or error.code != 409:
+                if method != "POST" or error.code != 409:
                     error.close()
                     raise Unavailable(f"Platform run HTTP {error.code}") from None
                 response = error
             with response:
-                if response.status not in (accepted or ((201, 409) if body is not None else (200,))):
+                if response.status not in (accepted or ((201, 409) if method == "POST" else (200,))):
                     raise Unavailable(f"Platform run HTTP {response.status}")
                 # Bound run records and never retain credential-bearing diagnostics.
                 raw = response.read(4 * 1024 * 1024 + 1)
@@ -80,8 +82,10 @@ class NotResumable(Unavailable):
 
 
 class Client(Connection):
-    def request(self, path, body=None):
-        value = super().request(path, body, accepted=(200, 201, 409))
+    def request(self, path, body=None, *, method=None):
+        value = super().request(
+            path, body, accepted=(200, 201, 409), method=method
+        )
         if not isinstance(value, dict):
             raise Unavailable("Platform run response unavailable")
         if value.get("error") == "not_resumable":
@@ -133,7 +137,11 @@ class Client(Connection):
         return self.request("/v1/runs/" + quote(identity, safe="") + "/messages", body)
 
     def cancel(self, identity):
-        return self.request("/v1/runs/" + quote(identity, safe="") + "/cancel", {})
+        return self.request(
+            "/v1/runs/" + quote(identity, safe="") + "/cancel",
+            None,
+            method="POST",
+        )
 
 
 class DecisionsError(Unavailable):

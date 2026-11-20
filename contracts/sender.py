@@ -150,6 +150,8 @@ def check_document(document, method, path, body):
     request = resolver.resolve(operation.get('requestBody') or {})
     media = (request.get('content') or {}).get('application/json') if isinstance(request, dict) else None
     if not isinstance(media, dict) or 'schema' not in media:
+        if body is None:
+            return []
         return [f'{name}: the pinned schema defines no JSON request body']
     pointer = _pointer(['paths', template, method.lower(), 'requestBody', 'content', 'application/json', 'schema'])
     if '$ref' in (operation.get('requestBody') or {}):

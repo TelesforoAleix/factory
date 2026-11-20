@@ -35,11 +35,8 @@ def server(monkeypatch, tmp_path):
 
         def respond(self):
             assert self.headers["Authorization"] == "Bearer " + key
-            body = (
-                json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-                if self.command == "POST"
-                else None
-            )
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length)) if length else None
             calls.append((self.command, self.path, body))
             status, response = replies.pop(0)
             if status == "lost":
@@ -86,7 +83,7 @@ def test_poll_message_cancel(server):
     assert client.cancel("synthetic-run")["status"] == "cancelled"
     assert calls[1:] == [
         ("POST", "/v1/runs/synthetic-run/messages", message),
-        ("POST", "/v1/runs/synthetic-run/cancel", {}),
+        ("POST", "/v1/runs/synthetic-run/cancel", None),
     ]
 
 
