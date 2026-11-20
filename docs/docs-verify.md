@@ -42,7 +42,7 @@ lines, each prefixed `path:line: `:
 
 | Verdict | When |
 | --- | --- |
-| `pass` | all three answers are `supported` and the confidence is at least 0.9 |
+| `pass` | exactly three answers are present and every answer is `supported` |
 | `flagged` | anything else; every answer is kept |
 | `too_large` | the text is over 80,000 characters (no call), or the API returned 413; narrow the citations |
 | `error` | a 502 twice (one retry), a 422, another HTTP failure, or an invalid response |
@@ -71,8 +71,9 @@ Code only, no API:
 
 The record holds the repository, revision, the claims file's SHA-256, start and
 end times, the model reported (a list if several), summed usage, input `errors`,
-the stop reason, per item its id, kind, verdict, choice, confidence and the three
-raw answers, the graph checks, and a summary of counts. It holds no source text.
+the stop reason, per item its id, kind, verdict, choice, confidence, agreement,
+and the three raw answers, the graph checks, and a summary of counts. Confidence
+and agreement are recorded but do not decide the verdict. It holds no source text.
 Stdout shows the counts per verdict and the ids that did not pass.
 
 Exit 0 when everything passes; 1 when anything is flagged, too large, in error,
