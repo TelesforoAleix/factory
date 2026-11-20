@@ -1,8 +1,12 @@
 # Inbox intake and ideas
 
-Migration 019 adds a singleton Secretary, immutable arrival provenance, attachments,
-ideas, feature links, actor history and durable exploration/promotion requests. It
-preserves version 1 slice documents. Entries have no delete operation. Attachments
+This document covers inbox arrivals, the Secretary chat that routes them, ideas,
+the intake socket protocol and the owner's inbox and idea commands and API. Read it
+before you change intake, the Secretary, ideas or their pages.
+
+The inbox has a singleton Secretary, immutable arrival provenance, attachments,
+ideas, feature links, actor history and durable exploration/promotion requests,
+all beside the version 1 slice documents. Entries have no delete operation. Attachments
 are Postgres `bytea` records under the same transaction as the entry and its wake;
 no sender-controlled filesystem paths are used. Include them in database backups.
 
@@ -30,43 +34,16 @@ exact delivered chat message become existing `owner-check` notices, which the
 runner already exports to the phone. Self-answered update requests retain a link
 to an assistant message in the Secretary chat. Answers to Secretary questions return in durable automatic turns; unusually large
 answers are bounded for the return prompt, with the full reply retained in the
-orchestrator transcript. Phone delivery remains the bot's
-responsibility; this slice does not change or connect the bot.
+orchestrator transcript. Phone delivery is the bot's responsibility.
 
 ## Local socket protocol
 
-`factory-intake.service` runs as the dedicated `factory-intake` system user and
-binds only `/run/factory-intake/intake.sock`. Systemd creates the runtime directory
-as factory-intake:factory-intake, mode 0750; the service owns its socket with group
-factory-intake and mode 0660. The installer creates the system group and a system
-user with no login or home directory, and adds `homelab-bot` to the group. It
-refuses an existing account with conflicting ownership, home or login settings.
-Existing bot processes need restarting by their operator to acquire supplementary
-membership.
-The intake listener uses `AF_UNIX` only and opens no network port; the service
-may still connect to Postgres using the existing configured database URL.
-
-The service reuses `/etc/factory/ui.env`, the existing **database-only** settings
-file. It remains root:root 0600: systemd reads it before dropping privileges and
-passes `CPLANE_DATABASE_URL` in the process environment. The service does not read
-`runner.env`, the GitHub token, or other runner settings. No credential file is
-made group-readable and no database secret is copied into the checkout or unit.
-This uses the same credential-loading arrangement as the existing unprivileged
-UI service. Before installation, confirm `ui.env` still contains only that
-assignment. If this node instead uses a password/service file inaccessible to the
-new account or hidden by the sandbox, **stop and escalate**; do not broaden its
-permissions. Options for owner review are a dedicated intake database login in a
-root-only environment file, or a service-private systemd credential provisioned
-with `LoadCredential`. This slice does not provision either automatically.
-
-The unit keeps `NoNewPrivileges`, clears capabilities, and enables
-`ProtectSystem=strict`, `ProtectHome=true`, `PrivateTmp=true`, private devices and
-SUID/personality restrictions. Its only explicit `ReadWritePaths` grant is
-`/run/factory-intake`; attachments remain in Postgres and need no filesystem write
-grant. Runner secrets, runner storage and Docker sockets are also inaccessible.
-Database sockets under the host's `/tmp` and credentials under home directories
-are intentionally unavailable, as for the existing UI sandbox. Private temporary
-storage is ephemeral. The runtime directory disappears when the service stops.
+The `intake` service binds only `/run/factory-intake/intake.sock`, sets the socket's
+group to `CPLANE_INTAKE_GID` (977 in `compose.yaml`) and its mode to 0660. The host
+prepares `/run/factory-intake` ([node](node.md)); the phone bot connects as a member
+of that group. The listener uses `AF_UNIX` only and opens no network port; the
+service connects to Postgres with its own database URL secret and reads no runner
+settings. Attachments stay in Postgres and need no filesystem write.
 
 Send one UTF-8 JSON object followed by a newline per connection:
 
@@ -154,28 +131,7 @@ The Ideas page at `/ideas` provides Inbox and Ideas tabs, owner routing, idea ac
 API responses retain owner content; the page renders it as text, never HTML. Reads do not execute models. Explore/promote enqueue chat work and return
 its message ID; the detail/history endpoints expose subsequent completion.
 
-## Validation and UI follow-up
+## Pages
 
-IB1 local validation used Python 3.13.18 and a disposable Postgres 17.6 database
-with synthetic schemas only:
-
-```sh
-CPLANE_TEST_DATABASE_URL='<disposable-Postgres-17-url>' uv run pytest -q --basetemp='<scratch-directory>'
-cd ui
-node /usr/local/lib/node_modules/npm/bin/npm-cli.js ci
-node /usr/local/lib/node_modules/npm/bin/npm-cli.js test
-node /usr/local/lib/node_modules/npm/bin/npm-cli.js run build
-```
-
-Python: 1,387 passed, including 331 Postgres tests; one Docker test skipped. UI: 56 tests in
-13 files passed; production build passed with its existing bundle-size advisory.
-The unprivileged-service update includes account creation/idempotence, refusal of
-conflicting identities or a privileged group, socket ownership, database-only
-settings and unit hardening checks. `git diff --check` passed. Remote `test` and
-`ui` checks remain the runner's
-responsibility before the owner merges.
-
-The Chats page includes the Secretary group. No Telegram bot integration is included.
-
-On installer rollback, intake is stopped before code is restored. Additive
-migrations and the service account/group membership remain, as do all durable records.
+The Chats page includes the Secretary group. Rollback leaves the additive inbox
+migrations, the intake group and all durable records in place.

@@ -1,9 +1,16 @@
 # Runner operation
 
+This document covers the runner's protocol with the platform run API: requests,
+reviews, messages, recovery, the PR request and the checks after a merge. Read it
+before you change how slices are submitted, collected, reviewed or merged. The
+API's version and change rules are in [contracts.md](contracts.md#run-api).
+
 Factory schedules and coordinates slices. The platform run service executes them.
-The runner uses the existing `CPLANE_EVAL_TASK_URL` connection and the bearer key
-file named by `CPLANE_EVAL_TASK_KEY_FILE`. Eval attempts use the same run API;
-see [evals](evals.md) for marked execution and sealed grading.
+The runner uses the `CPLANE_EVAL_TASK_URL` connection and the bearer key
+file named by `CPLANE_EVAL_TASK_KEY_FILE`. The key must permit runs read and write
+and name the target repositories; no credential is included in a request body or
+log. Eval attempts use the same run API; see [evals](evals.md) for marked execution
+and sealed grading.
 
 A whole-slice request uses `role: slice`, `mode: write`, and the slice's level.
 Factory reads the repository's default branch tip with its own App at the start,
@@ -36,7 +43,7 @@ Both flows receive the same PR review beside CI, in a separate read run with ful
 history. Review goals request a handover carrying verdict JSON; the parser also
 accepts a waiting final and prose after its leading JSON block. The review records
 pass, fix or missing; its verdict never gates a merge. Factory waits for its end
-or time limit (default 20 minutes); failures and timeouts record missing and let
+or time limit (`CPLANE_REVIEW_TIMEOUT_SECONDS`, default 1200); failures and timeouts record missing and let
 CI and approval decide the merge. Questions create attention and answers route to
 the review run; an unanswered question also expires at the deadline. A waiting
 review can be cancelled after its verdict is recorded.
@@ -115,24 +122,25 @@ does not migrate them, and finished slices are left unchanged by runner passes.
 Synthetic file-store planner tests retain level selection in mutation log entries
 because that document contract has no level field. There is no model fallback in Factory.
 
-## Switch and rollback
-
-**Install at the switch only**, through the deployer. The PR is a guard-path change:
-it waits for the owner's GitHub review and remains open until rehearsal starts.
-Enable the platform roles and its write-cut fix before installation. Switch at a
-quiescent slice boundary: existing local-fence jobs have no automatic conversion. Rehearse one
-whole-slice slice and one ticket slice through delivery, review, CI and merge.
-
-Rollback reinstalls the previous Factory image. There is no dual execution path or
-database migration. Coordinate running platform work before rollback and keep its
-private ledger to prevent duplicate work. The switch rehearsal is an owner-node
-step, not a local test or an action performed by this PR.
+## Wire contract
 
 The wire contract is maintained in the public platform repository:
 [request models](https://github.com/TelesforoAleix/homelab-v2/blob/main/src/homelab/api/run_contract.py),
 [routes and records](https://github.com/TelesforoAleix/homelab-v2/blob/main/src/homelab/api/runs.py),
 [run storage and cancellation](https://github.com/TelesforoAleix/homelab-v2/blob/main/src/homelab/tasks/runs.py).
 Explicit per-run limits are omitted: the live API rejects a supplied `limits` field.
+
+## Review records
+
+`cplane show <id>` prints `review_verdict` and a short `review_findings` summary;
+`cplane show <id> --json` includes full findings. These are separate from the
+planner's accepted/corrected verdict: `cplane_slice_outcomes.review_verdict` holds
+`pass`, `fix` or `missing`, and `review_findings` holds the pass title/body or fix
+tickets. A started review also has its own run record and skill context. Review
+job files have `record_only: true`; the executor job keeps the review
+request/end times (`review_requested_at`/`review_ended_at`), verdict and findings,
+and links its review through `pr_review`. A timeout is recorded as `missing`,
+never as a passing review.
 
 ## PR request and post-merge checks
 

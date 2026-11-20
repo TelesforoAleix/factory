@@ -1,0 +1,4258 @@
+{
+  "version": 1,
+  "repository": "TelesforoAleix/factory",
+  "parts": [
+    {
+      "name": "ui",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        30,
+        30
+      ],
+      "standalone": false
+    },
+    {
+      "name": "intake",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        31,
+        31
+      ],
+      "standalone": false
+    },
+    {
+      "name": "sessions",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        32,
+        32
+      ],
+      "standalone": false
+    },
+    {
+      "name": "runner",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        33,
+        33
+      ],
+      "standalone": false
+    },
+    {
+      "name": "cli",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        34,
+        34
+      ],
+      "standalone": false
+    },
+    {
+      "name": "store",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        35,
+        35
+      ],
+      "standalone": false
+    },
+    {
+      "name": "schemas",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        36,
+        36
+      ],
+      "standalone": false
+    },
+    {
+      "name": "skills",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        37,
+        37
+      ],
+      "standalone": false
+    },
+    {
+      "name": "docs-verify",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        38,
+        38
+      ],
+      "standalone": false
+    },
+    {
+      "name": "node-tools",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        39,
+        39
+      ],
+      "standalone": false
+    }
+  ],
+  "claims": [
+    {
+      "id": "agents-core",
+      "doc": "AGENTS.md",
+      "doc_lines": [
+        3,
+        4
+      ],
+      "text": "Factory's core is the `cplane` package, the scheduler and runner, with its command-line entry point.",
+      "sources": [
+        {
+          "path": "pyproject.toml",
+          "lines": [
+            4,
+            4
+          ]
+        },
+        {
+          "path": "pyproject.toml",
+          "lines": [
+            9,
+            10
+          ]
+        }
+      ]
+    },
+    {
+      "id": "agents-workshop",
+      "doc": "AGENTS.md",
+      "doc_lines": [
+        4,
+        5
+      ],
+      "text": "Workshop, the owner's web console, is served by `factory_ui/` with the client built from `ui/`.",
+      "sources": [
+        {
+          "path": "factory_ui/__init__.py",
+          "lines": [
+            1,
+            1
+          ]
+        },
+        {
+          "path": "factory_ui/__init__.py",
+          "lines": [
+            18,
+            18
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ci-test-job",
+      "doc": "AGENTS.md",
+      "doc_lines": [
+        9,
+        13
+      ],
+      "text": "CI's `test` job runs `uv sync --locked` and `uv run pytest` on Python 3.13 with a PostgreSQL 17 service.",
+      "sources": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "lines": [
+            10,
+            14
+          ]
+        },
+        {
+          "path": ".github/workflows/ci.yml",
+          "lines": [
+            31,
+            34
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ci-ui-job",
+      "doc": "AGENTS.md",
+      "doc_lines": [
+        16,
+        16
+      ],
+      "text": "Changes under `ui/` run `npm ci`, `npm test` and `npm run build` in `ui/`.",
+      "sources": [
+        {
+          "path": ".github/workflows/ui.yml",
+          "lines": [
+            3,
+            6
+          ]
+        },
+        {
+          "path": ".github/workflows/ui.yml",
+          "lines": [
+            17,
+            17
+          ]
+        },
+        {
+          "path": ".github/workflows/ui.yml",
+          "lines": [
+            25,
+            27
+          ]
+        }
+      ]
+    },
+    {
+      "id": "runtime-deps",
+      "doc": "AGENTS.md",
+      "doc_lines": [
+        21,
+        22
+      ],
+      "text": "The runtime dependencies in `pyproject.toml` are jsonschema, psycopg 3, Flask and waitress, and `pyproject.toml` and `uv.lock` are change class 2.",
+      "sources": [
+        {
+          "path": "pyproject.toml",
+          "lines": [
+            7,
+            7
+          ]
+        },
+        {
+          "path": ".github/change-classes",
+          "lines": [
+            12,
+            13
+          ]
+        }
+      ]
+    },
+    {
+      "id": "agents-roles",
+      "doc": "AGENTS.md",
+      "doc_lines": [
+        27,
+        28
+      ],
+      "text": "The runner submits work to the platform run API with a role (slice, cut, ticket or review), a mode and the slice's level.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1195,
+            1197
+          ]
+        }
+      ]
+    },
+    {
+      "id": "agents-messages",
+      "doc": "AGENTS.md",
+      "doc_lines": [
+        31,
+        31
+      ],
+      "text": "Answers and merge notices are sent as messages to the existing run rather than as new requests.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1246,
+            1262
+          ]
+        }
+      ]
+    },
+    {
+      "id": "agents-paused",
+      "doc": "AGENTS.md",
+      "doc_lines": [
+        31,
+        32
+      ],
+      "text": "A paused slice's runs are still collected each pass, but no further request or message is sent for it.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            2170,
+            2175
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1246,
+            1248
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1385,
+            1387
+          ]
+        }
+      ]
+    },
+    {
+      "id": "agents-abandon",
+      "doc": "AGENTS.md",
+      "doc_lines": [
+        32,
+        33
+      ],
+      "text": "Accepted and dropped slices have their runs cancelled; a running turn that cannot be cancelled yet is marked to retry on a later pass.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            2149,
+            2151
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            2089,
+            2090
+          ]
+        }
+      ]
+    },
+    {
+      "id": "agents-evals",
+      "doc": "AGENTS.md",
+      "doc_lines": [
+        33,
+        34
+      ],
+      "text": "Eval attempts stop at the PR boundary and never write slice records or send notices.",
+      "sources": [
+        {
+          "path": "cplane/eval_execution.py",
+          "lines": [
+            478,
+            482
+          ]
+        }
+      ]
+    },
+    {
+      "id": "agents-actor",
+      "doc": "AGENTS.md",
+      "doc_lines": [
+        37,
+        37
+      ],
+      "text": "`--actor` (default `owner`) names the actor recorded in each mutation's log entry.",
+      "sources": [
+        {
+          "path": "cplane/cli.py",
+          "lines": [
+            118,
+            118
+          ]
+        },
+        {
+          "path": "cplane/state.py",
+          "lines": [
+            74,
+            74
+          ]
+        }
+      ]
+    },
+    {
+      "id": "agents-no-executor",
+      "doc": "AGENTS.md",
+      "doc_lines": [
+        39,
+        39
+      ],
+      "text": "Planner mutations persist only through the state update path, which launches no executor.",
+      "sources": [
+        {
+          "path": "cplane/planner.py",
+          "lines": [
+            1,
+            1
+          ]
+        },
+        {
+          "path": "cplane/state.py",
+          "lines": [
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "agents-ready-brief",
+      "doc": "AGENTS.md",
+      "doc_lines": [
+        40,
+        40
+      ],
+      "text": "Moving a slice to ready requires a brief.",
+      "sources": [
+        {
+          "path": "cplane/planner.py",
+          "lines": [
+            85,
+            86
+          ]
+        }
+      ]
+    },
+    {
+      "id": "agents-session",
+      "doc": "AGENTS.md",
+      "doc_lines": [
+        40,
+        41
+      ],
+      "text": "Moving a slice from ready to issued requires `--session`, and `--session` is allowed only for that move.",
+      "sources": [
+        {
+          "path": "cplane/planner.py",
+          "lines": [
+            87,
+            95
+          ]
+        }
+      ]
+    },
+    {
+      "id": "agents-force",
+      "doc": "AGENTS.md",
+      "doc_lines": [
+        41,
+        41
+      ],
+      "text": "`--force` requires the target planned and a nonempty `--reason`.",
+      "sources": [
+        {
+          "path": "cplane/planner.py",
+          "lines": [
+            76,
+            77
+          ]
+        }
+      ]
+    },
+    {
+      "id": "agents-issued-edit",
+      "doc": "AGENTS.md",
+      "doc_lines": [
+        42,
+        42
+      ],
+      "text": "Issued and awaiting-handover slices may only have their title and dependencies edited.",
+      "sources": [
+        {
+          "path": "cplane/planner.py",
+          "lines": [
+            37,
+            39
+          ]
+        }
+      ]
+    },
+    {
+      "id": "agents-guard",
+      "doc": "AGENTS.md",
+      "doc_lines": [
+        43,
+        43
+      ],
+      "text": "A PR touching a class 4 guard path raises merge attention and merges only after the owner's GitHub approval on the current tip.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            851,
+            861
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            950,
+            954
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-part-ui",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        30,
+        30
+      ],
+      "text": "`factory_ui/` is the owner web view: a Flask app with `/api/` routes that also serves the client built from `ui/`.",
+      "sources": [
+        {
+          "path": "factory_ui/__init__.py",
+          "lines": [
+            1,
+            1
+          ]
+        },
+        {
+          "path": "factory_ui/__init__.py",
+          "lines": [
+            61,
+            61
+          ]
+        },
+        {
+          "path": "factory_ui/__init__.py",
+          "lines": [
+            116,
+            116
+          ]
+        },
+        {
+          "path": "factory_ui/__init__.py",
+          "lines": [
+            567,
+            569
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-part-intake",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        31,
+        31
+      ],
+      "text": "`cplane/intake.py` is the local socket protocol for phone arrivals.",
+      "sources": [
+        {
+          "path": "cplane/intake.py",
+          "lines": [
+            1,
+            1
+          ]
+        },
+        {
+          "path": "cplane/intake.py",
+          "lines": [
+            58,
+            58
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-part-sessions",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        32,
+        32
+      ],
+      "text": "`cplane/sessions.py` runs chat turns and `cplane/workshop.py` is the per-turn Workshop tool boundary.",
+      "sources": [
+        {
+          "path": "cplane/sessions.py",
+          "lines": [
+            1,
+            1
+          ]
+        },
+        {
+          "path": "cplane/workshop.py",
+          "lines": [
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-part-runner",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        33,
+        33
+      ],
+      "text": "`cplane/runner.py` makes one locked scheduling pass.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-part-cli",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        34,
+        34
+      ],
+      "text": "`cplane/cli.py` holds the owner and planner commands, installed as the `cplane` command.",
+      "sources": [
+        {
+          "path": "cplane/cli.py",
+          "lines": [
+            1,
+            1
+          ]
+        },
+        {
+          "path": "pyproject.toml",
+          "lines": [
+            10,
+            10
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-part-store",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        35,
+        35
+      ],
+      "text": "`cplane/state.py` validates writes and `cplane/stores.py` implements Postgres storage, with SQL migrations in `cplane/migrations/`.",
+      "sources": [
+        {
+          "path": "cplane/state.py",
+          "lines": [
+            1,
+            1
+          ]
+        },
+        {
+          "path": "cplane/stores.py",
+          "lines": [
+            1,
+            1
+          ]
+        },
+        {
+          "path": "cplane/stores.py",
+          "lines": [
+            163,
+            163
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-part-schemas",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        36,
+        36
+      ],
+      "text": "`schema/` holds the JSON Schemas for slices, plans, reviews and claims, loaded by the validators.",
+      "sources": [
+        {
+          "path": "cplane/state.py",
+          "lines": [
+            29,
+            29
+          ]
+        },
+        {
+          "path": "cplane/review.py",
+          "lines": [
+            13,
+            13
+          ]
+        },
+        {
+          "path": "cplane/docs_verify.py",
+          "lines": [
+            20,
+            20
+          ]
+        },
+        {
+          "path": "cplane/cut.py",
+          "lines": [
+            15,
+            15
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-part-skills",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        37,
+        37
+      ],
+      "text": "Skills in `skills/` are installed into chat workspaces and sent with cut and review runs and the eval judge, and `cplane/prompts/` holds the turn instructions.",
+      "sources": [
+        {
+          "path": "cplane/skills.py",
+          "lines": [
+            1,
+            1
+          ]
+        },
+        {
+          "path": "cplane/skills.py",
+          "lines": [
+            12,
+            12
+          ]
+        },
+        {
+          "path": "cplane/sessions.py",
+          "lines": [
+            209,
+            209
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1212,
+            1212
+          ]
+        },
+        {
+          "path": "cplane/eval_judge.py",
+          "lines": [
+            21,
+            21
+          ]
+        },
+        {
+          "path": "cplane/prompts.py",
+          "lines": [
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-part-docs-verify",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        38,
+        38
+      ],
+      "text": "`cplane/docs_verify.py` checks a repository's documentation claims, relations and part graph.",
+      "sources": [
+        {
+          "path": "cplane/docs_verify.py",
+          "lines": [
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-part-node-tools",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        39,
+        39
+      ],
+      "text": "`node/` holds the `factory-cplane` and `factory-restore-check` host wrappers and the fenced CLI image.",
+      "sources": [
+        {
+          "path": "node/bin/factory-cplane",
+          "lines": [
+            5,
+            5
+          ]
+        },
+        {
+          "path": "node/bin/factory-restore-check",
+          "lines": [
+            11,
+            11
+          ]
+        },
+        {
+          "path": ".github/workflows/cli-image.yml",
+          "lines": [
+            24,
+            24
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-intake-socket",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        42,
+        43
+      ],
+      "text": "`intake` reads one JSON arrival line per connection on a Unix socket server and has no network listener.",
+      "sources": [
+        {
+          "path": "cplane/intake.py",
+          "lines": [
+            1,
+            1
+          ]
+        },
+        {
+          "path": "cplane/intake.py",
+          "lines": [
+            62,
+            71
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-sessions-launcher",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        43,
+        44
+      ],
+      "text": "The `sessions` service runs with `CPLANE_FENCE_COMMAND=socket`, which makes its fence calls go through the launcher client.",
+      "sources": [
+        {
+          "path": "compose.yaml",
+          "lines": [
+            133,
+            133
+          ]
+        },
+        {
+          "path": "cplane/fence.py",
+          "lines": [
+            29,
+            30
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-runner-loop",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        44,
+        45
+      ],
+      "text": "The runner service runs `cplane --actor runner run --every 60`, which repeats a pass and then waits.",
+      "sources": [
+        {
+          "path": "compose.yaml",
+          "lines": [
+            246,
+            251
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            230,
+            232
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            250,
+            250
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-store-validate",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        45,
+        46
+      ],
+      "text": "State writes are validated against `schema/slices.schema.json` and stored in Postgres.",
+      "sources": [
+        {
+          "path": "cplane/state.py",
+          "lines": [
+            29,
+            31
+          ]
+        },
+        {
+          "path": "cplane/state.py",
+          "lines": [
+            106,
+            111
+          ]
+        },
+        {
+          "path": "cplane/stores.py",
+          "lines": [
+            101,
+            102
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-flow-inbox",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        50,
+        50
+      ],
+      "text": "Inbox arrivals enter the store through `intake` and through Workshop's inbox API.",
+      "sources": [
+        {
+          "path": "cplane/intake.py",
+          "lines": [
+            72,
+            72
+          ]
+        },
+        {
+          "path": "factory_ui/inbox.py",
+          "lines": [
+            32,
+            32
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-flow-chat",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        50,
+        51
+      ],
+      "text": "Chats add features and slices through their Workshop tools.",
+      "sources": [
+        {
+          "path": "cplane/workshop.py",
+          "lines": [
+            264,
+            268
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-flow-pass",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        52,
+        54
+      ],
+      "text": "A runner pass holds the state lock while it collects orders, steps the pipeline and routes chat events, then collects each slice's job, and after the pass writes the bot export.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            2100,
+            2118
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            2170,
+            2170
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-flow-pr",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        57,
+        57
+      ],
+      "text": "The runner opens the PR from the executor's PR request and reads the PR's CI checks.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1092,
+            1095
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            998,
+            1000
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-flow-roles",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        55,
+        56
+      ],
+      "text": "Run requests carry the role, mode and level, with no executor named.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1195,
+            1197
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-flow-merge",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        57,
+        58
+      ],
+      "text": "The runner classifies the PR's changes, requires approval for guard paths, merges, and raises node-step attention when the PR request has node steps.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            844,
+            861
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            881,
+            882
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-flow-install",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        58,
+        58
+      ],
+      "text": "An owner install request starts a detached deployer client that sends the install to the deployer socket.",
+      "sources": [
+        {
+          "path": "cplane/installation.py",
+          "lines": [
+            58,
+            59
+          ]
+        },
+        {
+          "path": "cplane/deployer.py",
+          "lines": [
+            21,
+            27
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-flow-after-merge",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        59,
+        60
+      ],
+      "text": "After a merge the runner queues `contract-change` attention for declared contract changes and `docs-graph` attention for a failing graph check.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1687,
+            1705
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-one-image",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        64,
+        65
+      ],
+      "text": "All four services in `compose.yaml` use the same deployer-built image tagged by the deploy commit.",
+      "sources": [
+        {
+          "path": "compose.yaml",
+          "lines": [
+            4,
+            5
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            59,
+            60
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            104,
+            105
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            233,
+            234
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-network",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        65,
+        66
+      ],
+      "text": "The services join only the external network `homelab_default`, and only `ui` publishes a port, `127.0.0.1:8300:8300`.",
+      "sources": [
+        {
+          "path": "compose.yaml",
+          "lines": [
+            34,
+            35
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            392,
+            395
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-cli-wrapper",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        66,
+        67
+      ],
+      "text": "`node/bin/factory-cplane` runs `cplane` inside the runner container, or the sessions container when the runner is not running.",
+      "sources": [
+        {
+          "path": "node/bin/factory-cplane",
+          "lines": [
+            5,
+            8
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-repo-run-api",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        75,
+        75
+      ],
+      "text": "The runner submits and polls runs on the platform's `/v1/runs`.",
+      "sources": [
+        {
+          "path": "cplane/run_platform.py",
+          "lines": [
+            94,
+            95
+          ]
+        },
+        {
+          "path": "cplane/run_platform.py",
+          "lines": [
+            101,
+            102
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1231,
+            1231
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-repo-decisions",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        76,
+        76
+      ],
+      "text": "`docs-verify` asks the platform's decisions API for claim verdicts.",
+      "sources": [
+        {
+          "path": "cplane/docs_verify.py",
+          "lines": [
+            321,
+            321
+          ]
+        },
+        {
+          "path": "cplane/run_platform.py",
+          "lines": [
+            149,
+            149
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-repo-deployer",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        77,
+        77
+      ],
+      "text": "The runner requests installs from the deployer through `cplane.deployer`.",
+      "sources": [
+        {
+          "path": "cplane/installation.py",
+          "lines": [
+            180,
+            180
+          ]
+        },
+        {
+          "path": "cplane/deployer.py",
+          "lines": [
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-repo-launcher",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        78,
+        78
+      ],
+      "text": "Factory calls the node's privileged launcher through a one-request Unix socket client.",
+      "sources": [
+        {
+          "path": "cplane/launcher.py",
+          "lines": [
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-repo-manage",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        79,
+        79
+      ],
+      "text": "Workshop reads the platform's `/v1/manage/routes` and `/v1/manage/providers`.",
+      "sources": [
+        {
+          "path": "factory_ui/__init__.py",
+          "lines": [
+            349,
+            358
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-repo-compose",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        80,
+        80
+      ],
+      "text": "The deployer installs Factory from the root `compose.yaml`, passing the commit as `HOMELAB_DEPLOY_TAG`.",
+      "sources": [
+        {
+          "path": "docs/node.md",
+          "lines": [
+            60,
+            61
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            5,
+            5
+          ]
+        }
+      ]
+    },
+    {
+      "id": "contracts-after-merge",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        13,
+        14
+      ],
+      "text": "After a merge with declared contract changes, the runner raises `contract-change` attention saying each user repository needs an adapting slice in the same feature.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1692,
+            1701
+          ]
+        }
+      ]
+    },
+    {
+      "id": "run-api-body",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        21,
+        21
+      ],
+      "text": "Every run request body Factory builds carries `\"contract\": 1`.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1189,
+            1189
+          ]
+        }
+      ]
+    },
+    {
+      "id": "run-api-calls",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        21,
+        22
+      ],
+      "text": "The run API client calls `POST /v1/runs`, `GET /v1/runs/<id>`, `GET /v1/runs?request_id=`, `POST /v1/runs/<id>/messages` and `POST /v1/runs/<id>/cancel`.",
+      "sources": [
+        {
+          "path": "cplane/run_platform.py",
+          "lines": [
+            95,
+            95
+          ]
+        },
+        {
+          "path": "cplane/run_platform.py",
+          "lines": [
+            102,
+            102
+          ]
+        },
+        {
+          "path": "cplane/run_platform.py",
+          "lines": [
+            117,
+            117
+          ]
+        },
+        {
+          "path": "cplane/run_platform.py",
+          "lines": [
+            133,
+            133
+          ]
+        },
+        {
+          "path": "cplane/run_platform.py",
+          "lines": [
+            136,
+            136
+          ]
+        }
+      ]
+    },
+    {
+      "id": "run-api-settings",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        24,
+        24
+      ],
+      "text": "The run API client reads its URL from `CPLANE_EVAL_TASK_URL` and its bearer key from the file named by `CPLANE_EVAL_TASK_KEY_FILE`.",
+      "sources": [
+        {
+          "path": "cplane/run_platform.py",
+          "lines": [
+            24,
+            29
+          ]
+        }
+      ]
+    },
+    {
+      "id": "run-api-ledger",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        26,
+        26
+      ],
+      "text": "A saved request body is submitted unchanged when its run id is still unknown.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1228,
+            1232
+          ]
+        }
+      ]
+    },
+    {
+      "id": "decisions-body",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        32,
+        33
+      ],
+      "text": "`docs-verify` posts `text`, one question `support` and `repeats` (3) to `/v1/decisions` using the run API's URL and key.",
+      "sources": [
+        {
+          "path": "cplane/docs_verify.py",
+          "lines": [
+            165,
+            168
+          ]
+        },
+        {
+          "path": "cplane/docs_verify.py",
+          "lines": [
+            22,
+            22
+          ]
+        },
+        {
+          "path": "cplane/run_platform.py",
+          "lines": [
+            148,
+            154
+          ]
+        }
+      ]
+    },
+    {
+      "id": "deployer-protocol",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        41,
+        43
+      ],
+      "text": "The deployer client sends one JSON line with `op`, `application` and a 40-hex `sha`, and reads one JSON line with `ok`, `result`, and on success `application` and `commit`.",
+      "sources": [
+        {
+          "path": "cplane/deployer.py",
+          "lines": [
+            14,
+            15
+          ]
+        },
+        {
+          "path": "cplane/deployer.py",
+          "lines": [
+            24,
+            42
+          ]
+        }
+      ]
+    },
+    {
+      "id": "deployer-setting",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        41,
+        42
+      ],
+      "text": "The runner's deployer socket path comes from `CPLANE_DEPLOYER_SOCKET`, set to `/run/homelab-deployer.sock` in `compose.yaml`.",
+      "sources": [
+        {
+          "path": "compose.yaml",
+          "lines": [
+            268,
+            268
+          ]
+        },
+        {
+          "path": "cplane/installation.py",
+          "lines": [
+            256,
+            256
+          ]
+        }
+      ]
+    },
+    {
+      "id": "launcher-protocol",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        49,
+        50
+      ],
+      "text": "The launcher client sends one JSON line per connection to `/run/homelab-launcher.sock`, or the path in `CPLANE_LAUNCHER_SOCKET`, and reads one JSON line back.",
+      "sources": [
+        {
+          "path": "cplane/launcher.py",
+          "lines": [
+            40,
+            41
+          ]
+        },
+        {
+          "path": "cplane/launcher.py",
+          "lines": [
+            45,
+            48
+          ]
+        },
+        {
+          "path": "cplane/launcher.py",
+          "lines": [
+            64,
+            68
+          ]
+        }
+      ]
+    },
+    {
+      "id": "manage-calls",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        57,
+        58
+      ],
+      "text": "Workshop's Home Lab settings endpoint reads `/v1/manage/routes` or `/v1/manage/providers` from `HOMELAB_API_URL` and passes the JSON through.",
+      "sources": [
+        {
+          "path": "factory_ui/__init__.py",
+          "lines": [
+            349,
+            361
+          ]
+        }
+      ]
+    },
+    {
+      "id": "github-version",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        63,
+        63
+      ],
+      "text": "GitHub requests send `X-GitHub-Api-Version: 2022-11-28`.",
+      "sources": [
+        {
+          "path": "cplane/github_app.py",
+          "lines": [
+            63,
+            63
+          ]
+        }
+      ]
+    },
+    {
+      "id": "github-scoped",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        64,
+        64
+      ],
+      "text": "GitHub App installation tokens are requested for the named repositories only.",
+      "sources": [
+        {
+          "path": "cplane/github_app.py",
+          "lines": [
+            50,
+            53
+          ]
+        }
+      ]
+    },
+    {
+      "id": "github-settings",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        65,
+        66
+      ],
+      "text": "The App id, installation id and key path come from `CPLANE_GITHUB_APP_ID`, `CPLANE_GITHUB_INSTALLATION_ID` and `CPLANE_GITHUB_APP_KEY`.",
+      "sources": [
+        {
+          "path": "cplane/github_app.py",
+          "lines": [
+            103,
+            107
+          ]
+        }
+      ]
+    },
+    {
+      "id": "orders-calls",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        72,
+        73
+      ],
+      "text": "The orders collector reads `<base>/orders` for an `orders` list and posts each result to `<base>/orders/<id>/ack`.",
+      "sources": [
+        {
+          "path": "cplane/orders.py",
+          "lines": [
+            186,
+            188
+          ]
+        },
+        {
+          "path": "cplane/orders.py",
+          "lines": [
+            228,
+            228
+          ]
+        }
+      ]
+    },
+    {
+      "id": "orders-shape",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        73,
+        75
+      ],
+      "text": "An order has exactly `id`, `created`, `action`, `slice`, `argument` and `expect`, and its action is one of `start`, `slot`, `pause`, `resume`, `answer`, `approve` and `orchestrator`.",
+      "sources": [
+        {
+          "path": "cplane/orders.py",
+          "lines": [
+            16,
+            16
+          ]
+        },
+        {
+          "path": "cplane/orders.py",
+          "lines": [
+            65,
+            66
+          ]
+        }
+      ]
+    },
+    {
+      "id": "orders-setting",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        76,
+        76
+      ],
+      "text": "The orders base URL comes from `CPLANE_ORDERS_URL`.",
+      "sources": [
+        {
+          "path": "cplane/orders.py",
+          "lines": [
+            171,
+            171
+          ]
+        }
+      ]
+    },
+    {
+      "id": "orders-unknown",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        77,
+        77
+      ],
+      "text": "The orders collector refuses an order whose fields are not exactly the expected set.",
+      "sources": [
+        {
+          "path": "cplane/orders.py",
+          "lines": [
+            65,
+            66
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pr-request-fields",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        85,
+        87
+      ],
+      "text": "A PR request must have exactly `branch`, `title`, `body`, `node_steps` and `contract_changes`; `node_steps` is text or null and `contract_changes` is null or a non-empty list of `{name, version, users}` with non-empty users.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1651,
+            1668
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1672,
+            1685
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pr-request-old-jobs",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        90,
+        90
+      ],
+      "text": "A saved job request without `contract_changes` is read as null.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1692,
+            1692
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pr-request-goal",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        89,
+        89
+      ],
+      "text": "`Runner.launch_work` puts the PR request format, including `contract_changes`, in the slice goal.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1341,
+            1344
+          ]
+        }
+      ]
+    },
+    {
+      "id": "brief-sections",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        95,
+        96
+      ],
+      "text": "The brief skill asks for Facts, Fixed decisions, Steps, Allowed changes, Do not, Validation, Git, Escalation and Handover sections.",
+      "sources": [
+        {
+          "path": "skills/brief.md",
+          "lines": [
+            19,
+            29
+          ]
+        }
+      ]
+    },
+    {
+      "id": "brief-ticket-copy",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        97,
+        98
+      ],
+      "text": "The ticket builder reads a brief's `## Fixed decisions` and `## Do not` sections and refuses a brief with neither.",
+      "sources": [
+        {
+          "path": "cplane/cut.py",
+          "lines": [
+            25,
+            25
+          ]
+        },
+        {
+          "path": "cplane/cut.py",
+          "lines": [
+            40,
+            40
+          ]
+        }
+      ]
+    },
+    {
+      "id": "slice-state-schema",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        105,
+        106
+      ],
+      "text": "`cplane/state.py` validates the state against `schema/slices.schema.json` and also requires unique slice ids.",
+      "sources": [
+        {
+          "path": "cplane/state.py",
+          "lines": [
+            34,
+            44
+          ]
+        }
+      ]
+    },
+    {
+      "id": "slice-state-version",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        102,
+        104
+      ],
+      "text": "The slice state schema fixes `version` to 1.",
+      "sources": [
+        {
+          "path": "schema/slices.schema.json",
+          "lines": [
+            9,
+            9
+          ]
+        }
+      ]
+    },
+    {
+      "id": "schema-class-2",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        108,
+        109
+      ],
+      "text": "Paths under `schema/` are change class 2.",
+      "sources": [
+        {
+          "path": ".github/change-classes",
+          "lines": [
+            11,
+            11
+          ]
+        }
+      ]
+    },
+    {
+      "id": "plan-schema",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        114,
+        114
+      ],
+      "text": "`cplane/cut.py` validates plans against `schema/plan.schema.json`.",
+      "sources": [
+        {
+          "path": "cplane/cut.py",
+          "lines": [
+            15,
+            15
+          ]
+        }
+      ]
+    },
+    {
+      "id": "review-schema",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        120,
+        121
+      ],
+      "text": "`cplane/review.py` parses the leading fenced JSON of a review and validates it against `schema/review.schema.json`.",
+      "sources": [
+        {
+          "path": "cplane/review.py",
+          "lines": [
+            12,
+            13
+          ]
+        },
+        {
+          "path": "cplane/review.py",
+          "lines": [
+            71,
+            80
+          ]
+        }
+      ]
+    },
+    {
+      "id": "claims-schema",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        127,
+        128
+      ],
+      "text": "`cplane docs-verify` reads `docs/claims.json` and validates it against `schema/claims.schema.json`.",
+      "sources": [
+        {
+          "path": "cplane/docs_verify.py",
+          "lines": [
+            19,
+            19
+          ]
+        },
+        {
+          "path": "cplane/docs_verify.py",
+          "lines": [
+            20,
+            20
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cli-parser",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        135,
+        137
+      ],
+      "text": "`cplane/cli.py` defines the `add`, `edit`, `state`, `attention`, `review`, `show`, `pending`, `install` and `docs-verify` commands.",
+      "sources": [
+        {
+          "path": "cplane/cli.py",
+          "lines": [
+            265,
+            269
+          ]
+        },
+        {
+          "path": "cplane/cli.py",
+          "lines": [
+            281,
+            282
+          ]
+        },
+        {
+          "path": "cplane/cli.py",
+          "lines": [
+            298,
+            310
+          ]
+        },
+        {
+          "path": "cplane/cli.py",
+          "lines": [
+            313,
+            313
+          ]
+        },
+        {
+          "path": "cplane/cli.py",
+          "lines": [
+            408,
+            408
+          ]
+        }
+      ]
+    },
+    {
+      "id": "change-classes-format",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        144,
+        145
+      ],
+      "text": "`.github/change-classes` lines are `<class> <pattern>`, gitignore-style from the root; the highest matching class wins and no match is class 1.",
+      "sources": [
+        {
+          "path": ".github/change-classes",
+          "lines": [
+            2,
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "id": "change-classes-readers",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        145,
+        146
+      ],
+      "text": "`.github/change-classes` is read by the runner before a merge and by the deployer before an install.",
+      "sources": [
+        {
+          "path": ".github/change-classes",
+          "lines": [
+            1,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "change-classes-base",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        147,
+        147
+      ],
+      "text": "The runner reads `.github/change-classes` from the PR's pinned base commit.",
+      "sources": [
+        {
+          "path": "cplane/classes.py",
+          "lines": [
+            1,
+            1
+          ]
+        },
+        {
+          "path": "cplane/classes.py",
+          "lines": [
+            125,
+            125
+          ]
+        }
+      ]
+    },
+    {
+      "id": "planning-export-paths",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        153,
+        154
+      ],
+      "text": "The feature export writes only `features/<ID>.md`, `features/<ID>/<ID>-S<n>.md` and, when generated, `backlog.md`; generation is on when `CPLANE_BACKLOG_GENERATED=1`.",
+      "sources": [
+        {
+          "path": "cplane/feature_export.py",
+          "lines": [
+            19,
+            22
+          ]
+        },
+        {
+          "path": "cplane/feature_export.py",
+          "lines": [
+            121,
+            121
+          ]
+        }
+      ]
+    },
+    {
+      "id": "planning-export-remote",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        154,
+        154
+      ],
+      "text": "The feature export pushes to the GitHub SSH remote named by `CPLANE_PLANNING_REMOTE`.",
+      "sources": [
+        {
+          "path": "cplane/feature_export.py",
+          "lines": [
+            93,
+            95
+          ]
+        },
+        {
+          "path": "cplane/feature_export.py",
+          "lines": [
+            108,
+            108
+          ]
+        }
+      ]
+    },
+    {
+      "id": "planning-export-hourly",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        153,
+        153
+      ],
+      "text": "The runner loop runs the feature export at most once per local hour.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            244,
+            247
+          ]
+        }
+      ]
+    },
+    {
+      "id": "planning-export-refuse",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        156,
+        156
+      ],
+      "text": "The feature export refuses a change to any path its `allowed` method rejects.",
+      "sources": [
+        {
+          "path": "cplane/feature_export.py",
+          "lines": [
+            27,
+            28
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bot-export-files",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        161,
+        163
+      ],
+      "text": "After each pass the bot export writes `slices.json` and `slices.json.outbox.jsonl` to `CPLANE_BOT_EXPORT`, mode 0640 with the folder's group, keeping only `BOT_ACCEPTED_FIELDS` for accepted and dropped slices and only `BOT_EVENTS` notices.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            88,
+            88
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            103,
+            105
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            114,
+            114
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            116,
+            116
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            124,
+            124
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            136,
+            137
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            2100,
+            2102
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bot-export-append",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        164,
+        164
+      ],
+      "text": "The bot export fails when the new outbox does not start with the outbox already written.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            117,
+            120
+          ]
+        }
+      ]
+    },
+    {
+      "id": "intake-protocol",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        169,
+        170
+      ],
+      "text": "The intake socket at `/run/factory-intake/intake.sock` reads one JSON line with `text` and optional `fields` and `files`, and replies with `{\"id\": N}` or an `error` object.",
+      "sources": [
+        {
+          "path": "cplane/intake.py",
+          "lines": [
+            15,
+            15
+          ]
+        },
+        {
+          "path": "cplane/intake.py",
+          "lines": [
+            25,
+            31
+          ]
+        },
+        {
+          "path": "cplane/intake.py",
+          "lines": [
+            72,
+            76
+          ]
+        }
+      ]
+    },
+    {
+      "id": "intake-unknown",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        172,
+        172
+      ],
+      "text": "The intake server refuses an arrival with any key other than `text`, `fields` and `files`.",
+      "sources": [
+        {
+          "path": "cplane/intake.py",
+          "lines": [
+            25,
+            31
+          ]
+        }
+      ]
+    },
+    {
+      "id": "service-env-files",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        177,
+        178
+      ],
+      "text": "`compose.yaml` requires the env files `ui.env`, `sessions.env` and `runner.env` for the `ui`, `sessions` and `runner` services.",
+      "sources": [
+        {
+          "path": "compose.yaml",
+          "lines": [
+            32,
+            33
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            137,
+            138
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            277,
+            278
+          ]
+        }
+      ]
+    },
+    {
+      "id": "service-env-guard",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        180,
+        180
+      ],
+      "text": "`compose.yaml` is a change class 4 guard path.",
+      "sources": [
+        {
+          "path": ".github/change-classes",
+          "lines": [
+            7,
+            7
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-libpq",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        18,
+        18
+      ],
+      "text": "The Postgres store needs psycopg 3 and the system libpq library.",
+      "sources": [
+        {
+          "path": "cplane/stores.py",
+          "lines": [
+            46,
+            46
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-test-db",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        18,
+        21
+      ],
+      "text": "Postgres tests use `CPLANE_TEST_DATABASE_URL`, skip without it locally, fail without it under CI, and each test creates its own schema.",
+      "sources": [
+        {
+          "path": "tests/test_stores.py",
+          "lines": [
+            35,
+            44
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-ci-trigger",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        23,
+        23
+      ],
+      "text": "The CI, UI and CLI image workflows trigger only on pull requests.",
+      "sources": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "lines": [
+            2,
+            3
+          ]
+        },
+        {
+          "path": ".github/workflows/ui.yml",
+          "lines": [
+            2,
+            3
+          ]
+        },
+        {
+          "path": ".github/workflows/cli-image.yml",
+          "lines": [
+            2,
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-ci-test",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        23,
+        24
+      ],
+      "text": "The `test` job runs `uv sync --locked` and `uv run pytest` with a PostgreSQL 17 service.",
+      "sources": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "lines": [
+            10,
+            14
+          ]
+        },
+        {
+          "path": ".github/workflows/ci.yml",
+          "lines": [
+            33,
+            34
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-ci-gitleaks",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        25,
+        26
+      ],
+      "text": "The `image-gitleaks` job checks out full history, runs gitleaks over it, builds the image and smoke-tests it with a read-only filesystem.",
+      "sources": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "lines": [
+            35,
+            46
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-ci-paths",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        26,
+        27
+      ],
+      "text": "The UI workflow runs on changes under `ui/`, and the CLI image workflow on changes under `node/cli/`, `node/proxy/`, `node/compose.yaml` or `node/check-fence.py`.",
+      "sources": [
+        {
+          "path": ".github/workflows/ui.yml",
+          "lines": [
+            4,
+            6
+          ]
+        },
+        {
+          "path": ".github/workflows/cli-image.yml",
+          "lines": [
+            4,
+            9
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-ci-cancel",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        27,
+        28
+      ],
+      "text": "Each workflow's concurrency group is per PR and cancels runs in progress.",
+      "sources": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "lines": [
+            6,
+            8
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-db-url",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        32,
+        34
+      ],
+      "text": "The database URL comes from the file named by `CPLANE_DATABASE_URL_FILE`, or else from `CPLANE_DATABASE_URL`, and setting both is an error.",
+      "sources": [
+        {
+          "path": "cplane/state.py",
+          "lines": [
+            87,
+            92
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-postgres-only",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        32,
+        32
+      ],
+      "text": "The store facade always returns a Postgres store outside an active transaction.",
+      "sources": [
+        {
+          "path": "cplane/state.py",
+          "lines": [
+            106,
+            112
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-url-errors",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        34,
+        34
+      ],
+      "text": "Postgres connection and operation errors are reported with fixed messages.",
+      "sources": [
+        {
+          "path": "cplane/stores.py",
+          "lines": [
+            40,
+            40
+          ]
+        },
+        {
+          "path": "cplane/stores.py",
+          "lines": [
+            56,
+            56
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-validate",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        35,
+        35
+      ],
+      "text": "Every Postgres save validates the whole state document first.",
+      "sources": [
+        {
+          "path": "cplane/stores.py",
+          "lines": [
+            101,
+            102
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-advisory",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        36,
+        36
+      ],
+      "text": "The store lock is a transaction-scoped Postgres advisory lock.",
+      "sources": [
+        {
+          "path": "cplane/stores.py",
+          "lines": [
+            67,
+            67
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-migrate",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        38,
+        39
+      ],
+      "text": "`migrate` applies `cplane/migrations/*.sql` in name order and records each applied name in `cplane_migrations`, skipping those already recorded.",
+      "sources": [
+        {
+          "path": "cplane/stores.py",
+          "lines": [
+            160,
+            170
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-import",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        41,
+        42
+      ],
+      "text": "`import` reads the state file and its outbox and refuses a database that is not empty.",
+      "sources": [
+        {
+          "path": "cplane/stores.py",
+          "lines": [
+            172,
+            175
+          ]
+        },
+        {
+          "path": "cplane/stores.py",
+          "lines": [
+            179,
+            179
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-export",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        42,
+        42
+      ],
+      "text": "`export` writes state and notices in the file format to a path, which is required when there are notices; otherwise it can write to stdout.",
+      "sources": [
+        {
+          "path": "cplane/cli.py",
+          "lines": [
+            326,
+            327
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-anchor",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        45,
+        47
+      ],
+      "text": "The run folder is named by a hash of the state path under `CPLANE_RUNS`, and relative briefs resolve against the state path's folder.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1078,
+            1078
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1035,
+            1035
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-install-node-step",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        51,
+        51
+      ],
+      "text": "After a merge, a PR request with node steps raises `node-step` attention.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            881,
+            882
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-install-request",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        52,
+        54
+      ],
+      "text": "An install request needs an open node-step attention; the owner's request is recorded as `install requested`, a chat's only as `install proposed`.",
+      "sources": [
+        {
+          "path": "cplane/installation.py",
+          "lines": [
+            128,
+            135
+          ]
+        },
+        {
+          "path": "cplane/installation.py",
+          "lines": [
+            143,
+            143
+          ]
+        },
+        {
+          "path": "cplane/installation.py",
+          "lines": [
+            16,
+            16
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-home-install",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        53,
+        53
+      ],
+      "text": "Workshop's install action records an install request with actor `owner`.",
+      "sources": [
+        {
+          "path": "factory_ui/__init__.py",
+          "lines": [
+            235,
+            243
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-install-allowlist",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        52,
+        52
+      ],
+      "text": "A repository is installable when it is listed in the comma-separated `CPLANE_INSTALL_REPOS`.",
+      "sources": [
+        {
+          "path": "cplane/installation.py",
+          "lines": [
+            65,
+            66
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-install-child",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        55,
+        57
+      ],
+      "text": "The runner starts a detached `cplane.deployer` child that sends the install to the deployer socket and writes its result into the run folder's `installs/` directory.",
+      "sources": [
+        {
+          "path": "cplane/installation.py",
+          "lines": [
+            212,
+            214
+          ]
+        },
+        {
+          "path": "cplane/installation.py",
+          "lines": [
+            176,
+            180
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-install-started",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        57,
+        58
+      ],
+      "text": "A held `.started` lock tracks the child, and a child that ends without a result raises an escalation instead of a new install.",
+      "sources": [
+        {
+          "path": "cplane/deployer.py",
+          "lines": [
+            64,
+            65
+          ]
+        },
+        {
+          "path": "cplane/installation.py",
+          "lines": [
+            265,
+            272
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-deployer-steps",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        59,
+        60
+      ],
+      "text": "After its database dump the deployer runs `cplane migrate` in a new `ui` container, and its health command is the `ui` health command.",
+      "sources": [
+        {
+          "path": "docs/node.md",
+          "lines": [
+            316,
+            327
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-waits-owner",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        61,
+        62
+      ],
+      "text": "When the deployer replies `waits for the owner`, the result names `sudo homelab-deployer install factory <sha>`.",
+      "sources": [
+        {
+          "path": "cplane/deployer.py",
+          "lines": [
+            46,
+            47
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-install-answer",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        63,
+        63
+      ],
+      "text": "A successful install answers the node-step attention with `Installed <sha>. Node steps are done. End with kind handover.`",
+      "sources": [
+        {
+          "path": "cplane/installation.py",
+          "lines": [
+            231,
+            235
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-installed",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        65,
+        66
+      ],
+      "text": "`installed` refuses installable repositories and records a hand install of a merged full SHA.",
+      "sources": [
+        {
+          "path": "cplane/cli.py",
+          "lines": [
+            911,
+            917
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-health",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        70,
+        71
+      ],
+      "text": "`ui`'s healthcheck fetches its root page, `intake`'s connects to its socket, and `sessions` and `runner` check PID 1 and run `SELECT 1`.",
+      "sources": [
+        {
+          "path": "compose.yaml",
+          "lines": [
+            54,
+            54
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            98,
+            98
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            226,
+            228
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-revision",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        80,
+        80
+      ],
+      "text": "Each service receives the deployed commit as `CPLANE_REVISION`.",
+      "sources": [
+        {
+          "path": "compose.yaml",
+          "lines": [
+            22,
+            22
+          ]
+        },
+        {
+          "path": "compose.yaml",
+          "lines": [
+            253,
+            253
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-ledger",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        91,
+        93
+      ],
+      "text": "Each request is saved in the job file before it is posted, a lost response is recovered by looking up its request id, and a confirmed run is polled.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1228,
+            1232
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            2068,
+            2068
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-orders-receipt",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        94,
+        95
+      ],
+      "text": "An order's receipt is written as failed before dispatch, so an interrupted dispatch is never executed twice.",
+      "sources": [
+        {
+          "path": "cplane/orders.py",
+          "lines": [
+            204,
+            210
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-dump",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        98,
+        99
+      ],
+      "text": "The platform's `homelab-dump` dumps every database daily, including `factory`.",
+      "sources": [
+        {
+          "path": "docs/node.md",
+          "lines": [
+            46,
+            46
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-restore-check",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        99,
+        101
+      ],
+      "text": "`factory-restore-check` restores a dump into a container with no network, compares table row counts with the live database, and by default picks the newest `factory-YYYY-MM-DD.dump`.",
+      "sources": [
+        {
+          "path": "node/bin/factory-restore-check",
+          "lines": [
+            58,
+            58
+          ]
+        },
+        {
+          "path": "node/bin/factory-restore-check",
+          "lines": [
+            65,
+            65
+          ]
+        },
+        {
+          "path": "node/bin/factory-restore-check",
+          "lines": [
+            79,
+            83
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-loop",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        105,
+        107
+      ],
+      "text": "The loop runs a pass, prints `cplane: run failed` on a failure, waits `--every` seconds, and stops on SIGTERM or SIGINT.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            228,
+            234
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            250,
+            250
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-run-once",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        107,
+        108
+      ],
+      "text": "Without `--every`, `run` makes one runner pass.",
+      "sources": [
+        {
+          "path": "cplane/cli.py",
+          "lines": [
+            765,
+            768
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-bot-export",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        110,
+        111
+      ],
+      "text": "After every pass the runner writes the bot export to `CPLANE_BOT_EXPORT`.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            2100,
+            2102
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            88,
+            88
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-daily-export",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        112,
+        114
+      ],
+      "text": "The first loop pass after 03:45 local time each day exports `factory-YYYY-MM-DD.json` and its outbox to `CPLANE_EXPORT_DIR` with mode 0600, keeping the seven newest.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            238,
+            241
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            149,
+            149
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            171,
+            171
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            173,
+            175
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            185,
+            187
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-hourly-export",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        115,
+        116
+      ],
+      "text": "The first loop pass in each local hour runs the feature export.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            244,
+            247
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            193,
+            194
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            198,
+            198
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-export-process",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        118,
+        119
+      ],
+      "text": "The last daily and hourly export times are local variables of the loop, not stored.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            220,
+            220
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-orders-first",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        123,
+        125
+      ],
+      "text": "Each pass collects orders right after pulling state, and an empty `CPLANE_ORDERS_URL` skips collection.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            2106,
+            2107
+          ]
+        },
+        {
+          "path": "cplane/orders.py",
+          "lines": [
+            180,
+            181
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-orders-match",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        125,
+        126
+      ],
+      "text": "An order is dropped with a notice unless the slice exists with the expected state, pause flag and attention kind and time.",
+      "sources": [
+        {
+          "path": "cplane/orders.py",
+          "lines": [
+            104,
+            115
+          ]
+        },
+        {
+          "path": "cplane/orders.py",
+          "lines": [
+            154,
+            159
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-orders-actor",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        126,
+        127
+      ],
+      "text": "Orders are applied through `state.update_locked` with actor `frontline`.",
+      "sources": [
+        {
+          "path": "cplane/orders.py",
+          "lines": [
+            166,
+            166
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-orders-tmux",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        128,
+        129
+      ],
+      "text": "An `orchestrator` order opens a tmux window, and is refused when `CPLANE_FENCE=1`.",
+      "sources": [
+        {
+          "path": "cplane/orders.py",
+          "lines": [
+            136,
+            138
+          ]
+        },
+        {
+          "path": "cplane/executors.py",
+          "lines": [
+            22,
+            23
+          ]
+        },
+        {
+          "path": "cplane/orders.py",
+          "lines": [
+            151,
+            151
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-orders-timeout",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        129,
+        129
+      ],
+      "text": "Order requests use a ten-second timeout.",
+      "sources": [
+        {
+          "path": "cplane/orders.py",
+          "lines": [
+            25,
+            25
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-prime",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        133,
+        134
+      ],
+      "text": "`prime` sends one minimal `Reply with: ok` request to Claude and then to Codex.",
+      "sources": [
+        {
+          "path": "cplane/primer.py",
+          "lines": [
+            32,
+            34
+          ]
+        },
+        {
+          "path": "cplane/primer.py",
+          "lines": [
+            148,
+            149
+          ]
+        },
+        {
+          "path": "cplane/cli.py",
+          "lines": [
+            414,
+            414
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-primer-times",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        134,
+        136
+      ],
+      "text": "`install-primer` installs a launchd job for 06:00, 11:00, 16:00 and 21:00, and `uninstall-primer` removes it.",
+      "sources": [
+        {
+          "path": "cplane/cli.py",
+          "lines": [
+            415,
+            416
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ops-wake-times",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        136,
+        137
+      ],
+      "text": "The wake daemon schedules wakes at 05:59, 10:59, 15:59 and 20:59.",
+      "sources": [
+        {
+          "path": "cplane/primer.py",
+          "lines": [
+            21,
+            21
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mig-order",
+      "doc": "docs/migrations.md",
+      "doc_lines": [
+        6,
+        7
+      ],
+      "text": "Migrations run in file-name order and each applied name is recorded once in `cplane_migrations`.",
+      "sources": [
+        {
+          "path": "cplane/stores.py",
+          "lines": [
+            160,
+            170
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mig-class",
+      "doc": "docs/migrations.md",
+      "doc_lines": [
+        12,
+        12
+      ],
+      "text": "Paths under `cplane/migrations/` are change class 2.",
+      "sources": [
+        {
+          "path": ".github/change-classes",
+          "lines": [
+            10,
+            10
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mig-test",
+      "doc": "docs/migrations.md",
+      "doc_lines": [
+        14,
+        15
+      ],
+      "text": "CI's `test` job sets `CPLANE_TEST_DATABASE_URL` to its PostgreSQL 17 service.",
+      "sources": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "lines": [
+            25,
+            25
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mig-install",
+      "doc": "docs/migrations.md",
+      "doc_lines": [
+        16,
+        17
+      ],
+      "text": "After its dump the deployer runs `cplane migrate` in a new `ui` container.",
+      "sources": [
+        {
+          "path": "docs/node.md",
+          "lines": [
+            323,
+            327
+          ]
+        }
+      ]
+    },
+    {
+      "id": "doc-schema",
+      "doc": "docs/documentation.md",
+      "doc_lines": [
+        25,
+        25
+      ],
+      "text": "`docs/claims.json` follows `schema/claims.schema.json`.",
+      "sources": [
+        {
+          "path": "cplane/docs_verify.py",
+          "lines": [
+            19,
+            19
+          ]
+        },
+        {
+          "path": "cplane/docs_verify.py",
+          "lines": [
+            20,
+            20
+          ]
+        }
+      ]
+    },
+    {
+      "id": "doc-link-test",
+      "doc": "docs/documentation.md",
+      "doc_lines": [
+        46,
+        48
+      ],
+      "text": "The link test checks the document map's files, relative links and anchors, and the paths cited in `docs/claims.json`.",
+      "sources": [
+        {
+          "path": "tests/test_docs_links.py",
+          "lines": [
+            49,
+            55
+          ]
+        },
+        {
+          "path": "tests/test_docs_links.py",
+          "lines": [
+            64,
+            71
+          ]
+        },
+        {
+          "path": "tests/test_docs_links.py",
+          "lines": [
+            91,
+            93
+          ]
+        }
+      ]
+    },
+    {
+      "id": "doc-graph-only",
+      "doc": "docs/documentation.md",
+      "doc_lines": [
+        48,
+        49
+      ],
+      "text": "`--graph-only` checks the schema, citations and graph without calling the decisions API.",
+      "sources": [
+        {
+          "path": "cplane/cli.py",
+          "lines": [
+            412,
+            412
+          ]
+        }
+      ]
+    },
+    {
+      "id": "doc-after-merge",
+      "doc": "docs/documentation.md",
+      "doc_lines": [
+        49,
+        50
+      ],
+      "text": "After a merge the runner runs the graph check on the merged commit when it has `docs/claims.json`, and queues `docs-graph` attention when it fails.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1713,
+            1716
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1721,
+            1721
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1703,
+            1705
+          ]
+        }
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "id": "runner-store",
+      "from": "runner",
+      "to": "store",
+      "how": "table",
+      "contract": null,
+      "text": "The runner holds the store's lock for a whole pass and reads and writes slice state through it.",
+      "provider_sources": [
+        {
+          "path": "cplane/state.py",
+          "lines": [
+            115,
+            125
+          ]
+        }
+      ],
+      "user_sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            2105,
+            2105
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ui-store",
+      "from": "ui",
+      "to": "store",
+      "how": "table",
+      "contract": null,
+      "text": "Workshop's API reads and writes Postgres through a `PostgresStore`.",
+      "provider_sources": [
+        {
+          "path": "cplane/stores.py",
+          "lines": [
+            37,
+            38
+          ]
+        }
+      ],
+      "user_sources": [
+        {
+          "path": "factory_ui/__init__.py",
+          "lines": [
+            70,
+            71
+          ]
+        }
+      ]
+    },
+    {
+      "id": "intake-store",
+      "from": "intake",
+      "to": "store",
+      "how": "table",
+      "contract": null,
+      "text": "Intake stores each arrival with the store's `inbox_add`.",
+      "provider_sources": [
+        {
+          "path": "cplane/inbox.py",
+          "lines": [
+            36,
+            36
+          ]
+        }
+      ],
+      "user_sources": [
+        {
+          "path": "cplane/intake.py",
+          "lines": [
+            93,
+            93
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sessions-store",
+      "from": "sessions",
+      "to": "store",
+      "how": "table",
+      "contract": null,
+      "text": "The sessions service opens a `PostgresStore` for chat turns and their Workshop tools.",
+      "provider_sources": [
+        {
+          "path": "cplane/stores.py",
+          "lines": [
+            37,
+            38
+          ]
+        }
+      ],
+      "user_sources": [
+        {
+          "path": "cplane/sessions.py",
+          "lines": [
+            410,
+            410
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cli-store",
+      "from": "cli",
+      "to": "store",
+      "how": "call",
+      "contract": null,
+      "text": "Commands write slices through `state.update`, the locked and validated update path.",
+      "provider_sources": [
+        {
+          "path": "cplane/state.py",
+          "lines": [
+            54,
+            57
+          ]
+        }
+      ],
+      "user_sources": [
+        {
+          "path": "cplane/cli.py",
+          "lines": [
+            920,
+            920
+          ]
+        }
+      ]
+    },
+    {
+      "id": "store-schemas",
+      "from": "store",
+      "to": "schemas",
+      "how": "file",
+      "contract": "slice-state",
+      "text": "The store validates state with `schema/slices.schema.json`.",
+      "provider_sources": [
+        {
+          "path": "schema/slices.schema.json",
+          "lines": [
+            1,
+            5
+          ]
+        }
+      ],
+      "user_sources": [
+        {
+          "path": "cplane/state.py",
+          "lines": [
+            29,
+            31
+          ]
+        }
+      ]
+    },
+    {
+      "id": "runner-skills",
+      "from": "runner",
+      "to": "skills",
+      "how": "file",
+      "contract": null,
+      "text": "Cut and review requests carry the `cut` or `slice-review` skill from `skills/`.",
+      "provider_sources": [
+        {
+          "path": "cplane/skills.py",
+          "lines": [
+            12,
+            12
+          ]
+        }
+      ],
+      "user_sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1209,
+            1215
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sessions-skills",
+      "from": "sessions",
+      "to": "skills",
+      "how": "file",
+      "contract": null,
+      "text": "Sessions install the enabled skills into each new chat workspace.",
+      "provider_sources": [
+        {
+          "path": "cplane/skills.py",
+          "lines": [
+            47,
+            50
+          ]
+        }
+      ],
+      "user_sources": [
+        {
+          "path": "cplane/sessions.py",
+          "lines": [
+            209,
+            209
+          ]
+        }
+      ]
+    },
+    {
+      "id": "runner-docs-verify",
+      "from": "runner",
+      "to": "docs-verify",
+      "how": "call",
+      "contract": "claims",
+      "text": "After a merge the runner calls the graph-only claims check on the merged commit.",
+      "provider_sources": [
+        {
+          "path": "cplane/docs_verify.py",
+          "lines": [
+            360,
+            360
+          ]
+        }
+      ],
+      "user_sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1716,
+            1716
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cli-docs-verify",
+      "from": "cli",
+      "to": "docs-verify",
+      "how": "call",
+      "contract": "claims",
+      "text": "`cplane docs-verify` runs the claims check.",
+      "provider_sources": [
+        {
+          "path": "cplane/docs_verify.py",
+          "lines": [
+            383,
+            384
+          ]
+        }
+      ],
+      "user_sources": [
+        {
+          "path": "cplane/cli.py",
+          "lines": [
+            548,
+            549
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node-tools-cli",
+      "from": "node-tools",
+      "to": "cli",
+      "how": "call",
+      "contract": "cplane-cli",
+      "text": "`factory-cplane` runs `cplane` in a running Factory container.",
+      "provider_sources": [
+        {
+          "path": "pyproject.toml",
+          "lines": [
+            10,
+            10
+          ]
+        }
+      ],
+      "user_sources": [
+        {
+          "path": "node/bin/factory-cplane",
+          "lines": [
+            5,
+            5
+          ]
+        }
+      ]
+    },
+    {
+      "id": "runner-run-api",
+      "from": "runner",
+      "to": "TelesforoAleix/homelab-v2:api",
+      "how": "call",
+      "contract": "run-api",
+      "text": "The runner submits, polls, messages and cancels runs on the platform run API.",
+      "provider_sources": [],
+      "user_sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1231,
+            1231
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1448,
+            1448
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1421,
+            1421
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            2083,
+            2083
+          ]
+        }
+      ]
+    },
+    {
+      "id": "docs-verify-decisions",
+      "from": "docs-verify",
+      "to": "TelesforoAleix/homelab-v2:api",
+      "how": "call",
+      "contract": "decisions-api",
+      "text": "`docs-verify` posts each claim and relation to the platform decisions API.",
+      "provider_sources": [],
+      "user_sources": [
+        {
+          "path": "cplane/run_platform.py",
+          "lines": [
+            148,
+            154
+          ]
+        },
+        {
+          "path": "cplane/docs_verify.py",
+          "lines": [
+            321,
+            321
+          ]
+        }
+      ]
+    },
+    {
+      "id": "runner-deployer",
+      "from": "runner",
+      "to": "TelesforoAleix/homelab-v2:deployer",
+      "how": "call",
+      "contract": "deployer-socket",
+      "text": "The runner's install child sends install requests to the platform deployer socket.",
+      "provider_sources": [],
+      "user_sources": [
+        {
+          "path": "cplane/deployer.py",
+          "lines": [
+            21,
+            27
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sessions-launcher",
+      "from": "sessions",
+      "to": "TelesforoAleix/homelab-v2:launcher",
+      "how": "call",
+      "contract": "launcher-socket",
+      "text": "Sessions run chat turns through the platform launcher socket.",
+      "provider_sources": [],
+      "user_sources": [
+        {
+          "path": "cplane/launcher.py",
+          "lines": [
+            45,
+            47
+          ]
+        },
+        {
+          "path": "cplane/fence.py",
+          "lines": [
+            29,
+            30
+          ]
+        },
+        {
+          "path": "cplane/sessions.py",
+          "lines": [
+            237,
+            237
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ui-manage",
+      "from": "ui",
+      "to": "TelesforoAleix/homelab-v2:api",
+      "how": "call",
+      "contract": "manage-api",
+      "text": "Workshop reads routes and providers from the platform manage API.",
+      "provider_sources": [],
+      "user_sources": [
+        {
+          "path": "factory_ui/__init__.py",
+          "lines": [
+            354,
+            358
+          ]
+        }
+      ]
+    },
+    {
+      "id": "runner-bot-export",
+      "from": "runner",
+      "to": "TelesforoAleix/homelab-v2:bot",
+      "how": "file",
+      "contract": "bot-export",
+      "text": "The runner writes the phone bot's state and notice export after each pass.",
+      "provider_sources": [],
+      "user_sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            87,
+            90
+          ]
+        }
+      ]
+    },
+    {
+      "id": "intake-bot",
+      "from": "intake",
+      "to": "TelesforoAleix/homelab-v2:bot",
+      "how": "contract",
+      "contract": "intake-socket",
+      "text": "Intake serves the socket on which the phone bot submits arrivals.",
+      "provider_sources": [
+        {
+          "path": "cplane/intake.py",
+          "lines": [
+            15,
+            15
+          ]
+        }
+      ],
+      "user_sources": []
+    },
+    {
+      "id": "store-postgres",
+      "from": "store",
+      "to": "TelesforoAleix/homelab-v2:postgres",
+      "how": "call",
+      "contract": "service-environment",
+      "text": "The store connects to the platform Postgres with the URL from the service's database URL secret.",
+      "provider_sources": [],
+      "user_sources": [
+        {
+          "path": "compose.yaml",
+          "lines": [
+            23,
+            23
+          ]
+        },
+        {
+          "path": "cplane/state.py",
+          "lines": [
+            87,
+            90
+          ]
+        }
+      ]
+    }
+  ],
+  "contracts": [
+    {
+      "name": "run-api",
+      "version": "1",
+      "provider": "TelesforoAleix/homelab-v2",
+      "users": [
+        "TelesforoAleix/factory"
+      ],
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        18,
+        27
+      ]
+    },
+    {
+      "name": "decisions-api",
+      "version": "1",
+      "provider": "TelesforoAleix/homelab-v2",
+      "users": [
+        "TelesforoAleix/factory"
+      ],
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        29,
+        36
+      ]
+    },
+    {
+      "name": "deployer-socket",
+      "version": "1",
+      "provider": "TelesforoAleix/homelab-v2",
+      "users": [
+        "TelesforoAleix/factory"
+      ],
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        38,
+        44
+      ]
+    },
+    {
+      "name": "launcher-socket",
+      "version": "1",
+      "provider": "TelesforoAleix/homelab-v2",
+      "users": [
+        "TelesforoAleix/factory"
+      ],
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        46,
+        52
+      ]
+    },
+    {
+      "name": "manage-api",
+      "version": "1",
+      "provider": "TelesforoAleix/homelab-v2",
+      "users": [
+        "TelesforoAleix/factory"
+      ],
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        54,
+        59
+      ]
+    },
+    {
+      "name": "github",
+      "version": "2022-11-28",
+      "provider": "GitHub",
+      "users": [
+        "TelesforoAleix/factory"
+      ],
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        61,
+        67
+      ]
+    },
+    {
+      "name": "orders-endpoint",
+      "version": "1",
+      "provider": "owner node orders endpoint",
+      "users": [
+        "TelesforoAleix/factory"
+      ],
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        69,
+        78
+      ]
+    },
+    {
+      "name": "pr-request",
+      "version": "1",
+      "provider": "TelesforoAleix/factory",
+      "users": [
+        "TelesforoAleix/factory",
+        "TelesforoAleix/homelab-v2"
+      ],
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        82,
+        90
+      ]
+    },
+    {
+      "name": "brief",
+      "version": "1",
+      "provider": "TelesforoAleix/factory",
+      "users": [
+        "TelesforoAleix/factory",
+        "TelesforoAleix/homelab-v2"
+      ],
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        92,
+        100
+      ]
+    },
+    {
+      "name": "slice-state",
+      "version": "1",
+      "provider": "TelesforoAleix/factory",
+      "users": [
+        "TelesforoAleix/factory"
+      ],
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        102,
+        109
+      ]
+    },
+    {
+      "name": "plan",
+      "version": "1",
+      "provider": "TelesforoAleix/factory",
+      "users": [
+        "TelesforoAleix/factory"
+      ],
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        111,
+        115
+      ]
+    },
+    {
+      "name": "review-verdict",
+      "version": "1",
+      "provider": "TelesforoAleix/factory",
+      "users": [
+        "TelesforoAleix/factory"
+      ],
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        117,
+        122
+      ]
+    },
+    {
+      "name": "claims",
+      "version": "1",
+      "provider": "TelesforoAleix/factory",
+      "users": [
+        "TelesforoAleix/factory",
+        "TelesforoAleix/homelab-v2"
+      ],
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        124,
+        130
+      ]
+    },
+    {
+      "name": "cplane-cli",
+      "version": "1",
+      "provider": "TelesforoAleix/factory",
+      "users": [
+        "TelesforoAleix/factory",
+        "TelesforoAleix/homelab-v2"
+      ],
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        132,
+        139
+      ]
+    },
+    {
+      "name": "change-classes",
+      "version": "1",
+      "provider": "TelesforoAleix/factory",
+      "users": [
+        "TelesforoAleix/factory",
+        "TelesforoAleix/homelab-v2"
+      ],
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        141,
+        148
+      ]
+    },
+    {
+      "name": "planning-export",
+      "version": "1",
+      "provider": "TelesforoAleix/factory",
+      "users": [
+        "private planning repository"
+      ],
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        150,
+        156
+      ]
+    },
+    {
+      "name": "bot-export",
+      "version": "1",
+      "provider": "TelesforoAleix/factory",
+      "users": [
+        "TelesforoAleix/homelab-v2"
+      ],
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        158,
+        164
+      ]
+    },
+    {
+      "name": "intake-socket",
+      "version": "1",
+      "provider": "TelesforoAleix/factory",
+      "users": [
+        "TelesforoAleix/homelab-v2"
+      ],
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        166,
+        172
+      ]
+    },
+    {
+      "name": "service-environment",
+      "version": "1",
+      "provider": "TelesforoAleix/factory",
+      "users": [
+        "TelesforoAleix/homelab-v2"
+      ],
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        174,
+        181
+      ]
+    }
+  ]
+}

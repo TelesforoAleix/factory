@@ -2,8 +2,9 @@
 
 `cplane docs-verify` checks `docs/claims.json`: the machine-readable list of every
 claim a repository's core documents make, with the lines that prove each one. It
-reads the repository with git at one revision and never writes to it. Nothing
-runs it automatically yet.
+reads the repository with git at one revision and never writes to it. Read this
+document before you change the check, the claims format or the decisions request.
+How to keep a repository's claims current is in [documentation](documentation.md).
 
 ```sh
 cplane docs-verify REPO [--rev REV] [--with PATH ...] [--graph-only] --out RECORD.json
@@ -81,4 +82,4 @@ fails a graph rule, or the input is invalid; 2 when the run stopped.
 
 After each merge the runner runs this check in `--graph-only` mode on the merged commit
 (read through the GitHub API, with no checkout) when the commit has `docs/claims.json`;
-a failure raises a `docs-graph` attention item. See docs/runner.md.
+a failure raises a `docs-graph` attention item. See [runner](runner.md#pr-request-and-post-merge-checks).

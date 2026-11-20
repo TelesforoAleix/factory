@@ -159,7 +159,7 @@ work. Use `run` for a runner pass in a configured service environment.
 
 - [Command reference](docs/commands.md): planner and operator commands.
 - [Runner protocol](docs/runner.md): requests, reviews, messages and recovery.
-- [Operations](docs/operations.md): moved storage, runner and Mac tool reference.
+- [Operations](docs/operations.md): storage, installs, rollback, recovery and Mac tools.
 - [Node deployment](docs/node.md): services, installs and backups.
 - [Documentation claims](docs/docs-verify.md): `cplane docs-verify` checks a
   repository's claims, relations and part graph.

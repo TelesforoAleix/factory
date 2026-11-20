@@ -1,0 +1,119 @@
+# Decisions
+
+This log records Factory's design decisions: what was decided, when and why. Read
+it before you reverse or work around a decision. It is append-only: add a new dated
+entry at the end, and never edit an old one; a later entry may supersede an earlier
+one. Each date is the day the change merged, from git history. The current design
+is in [ARCHITECTURE.md](ARCHITECTURE.md).
+
+## 2026-10-15 — A slice is a bounded contract, and its questions stay on it
+
+Each slice has one branch, one PR, one done-criterion and a validated state.
+Questions and escalations are attention on the slice that raised them, so a missing
+answer holds that slice only and other eligible work continues.
+
+## 2026-11-06 — Postgres stores work state and notices together
+
+Slice documents and their notices commit or roll back in one transaction, under one
+lock per runner pass. On 2026-11-11 the file store was removed as a production
+backend; file state remains only as a test double and an import/export format.
+
+## 2026-11-07 — A feature needs an agreed design before work
+
+Features move through fixed stages, with the actor allowed for each move. A
+feature reaches Ready only after the orchestrator records the agreed design and
+writes the slice briefs.
+
+## 2026-11-08 — Merged results are records; defects become correction slices
+
+A merged branch is never edited to repair a defect. A correction is a new slice
+linked to the one it corrects, so every merged result stays a true record.
+
+## 2026-11-09 — An idea is not a commitment
+
+Inbox arrivals and ideas are kept apart from features. An idea can be classified,
+explored, promoted or rejected; only promotion creates or links a feature.
+
+## 2026-11-11 — GitHub access uses an App, scoped per repository
+
+The runner and sessions use GitHub App installation tokens, each scoped to the
+repository of its call, instead of a personal token. From 2026-11-13, sessions
+receive read-only tokens.
+
+## 2026-11-12 — Change classes come from the pinned base
+
+Each repository's `.github/change-classes` assigns classes 1, 2 and 4 to paths,
+read from the PR's pinned base so a PR cannot lower its own class. Class 4 guard
+paths need the owner's GitHub approval. Class 3, proceed and notify, is a
+decision rule, not a path class.
+
+## 2026-11-12 — Public PR metadata passes a private-content deny-list
+
+Factory scans the branch name, PR title and PR body for public repositories before
+writing them, and refuses a write that matches. The platform separately scans outgoing commits.
+
+## 2026-11-15 — Factory runs as four containers installed by the platform deployer
+
+`ui`, `intake`, `sessions` and `runner` run from one image under the root
+`compose.yaml`, installed by the deployer from a merged commit. The host checkout,
+systemd units and host installer were removed on 2026-11-16.
+
+## 2026-11-16 — CI runs on pull requests only
+
+The runner merges only with green checks on an up-to-date PR head, so CI on pushes
+to `main` would repeat work. Path filters and one combined image job reduce
+billed Actions minutes.
+
+## 2026-11-16 — Review findings are evidence, not the merge gate
+
+A separate read-only review run checks each PR beside CI. Its verdict is
+recorded and advisory; green CI on the current head and any required approval
+control the merge. A failed or late review records `missing`.
+
+## 2026-11-17 — Factory asks for work by role and level; the platform executes it
+
+Slice, cut, ticket and review work goes to the platform run API with a role and a
+level. The platform chooses the executor, handles usage waits and concurrency,
+isolates the repository and delivers the branch, so sandbox rules and usage waits
+live in one place. Factory keeps PRs, CI, approval, attention and node steps.
+The switch was installed at a quiet slice boundary; rollback reinstalls the
+previous image, with no dual execution path.
+
+## 2026-11-18 — Evals reuse the runner pipeline against accepted work
+
+Eval attempts run the same job code as slices, marked as evals, on their own
+branches, and never open PRs or change slices. Cases come from accepted slices,
+with hidden tests and the reference diff kept from the executor.
+
+## 2026-11-19 — Slice eval attempts are graded by a fixed judge
+
+A fixed judge, with a hashed prompt from `skills/judge.md`, compares the brief, the
+attempt diff and the reference diff with hidden tests removed, rather than trusting
+the executor's own account of success.
+
+## 2026-11-19 — Contracts are declared in the PR request and checked after merge
+
+The executor's PR request carries `contract_changes`. After a merge the runner raises
+`contract-change` attention for each declared change and runs the documentation
+graph check on the merged commit, raising `docs-graph` attention when it fails.
+Neither blocks the merge or the install.
+
+## 2026-11-20 — A claim passes only when all three answers say supported
+
+`cplane docs-verify` records the classifier's confidence and agreement but decides
+each verdict from the three answers alone.
+
+## 2026-11-20 — A tests-only change keeps the PR review
+
+When a new PR tip differs from the reviewed tip only in test files, the recorded
+review stays, so a repair to tests does not start a new review.
+
+## 2026-11-20 — Factory documents itself with one core set
+
+Every repository keeps the same core documents: AGENTS.md as the router with a
+document map, ARCHITECTURE.md, docs/contracts.md, docs/operations.md, this log and
+one document per recurring procedure, with `docs/claims.json` proving each factual
+claim. A link test in `uv run pytest` keeps the map, links and citations valid.
+Operator text that described past installations (the file store, the launchd
+runner, the container cutover and the run API switch) was removed from the
+reference documents; git history keeps it.

@@ -1,7 +1,13 @@
 # Factory on the node
 
-Since 2026-11-15, Factory's `ui`, `intake`, `sessions` and `runner` services run
-in containers installed by the platform deployer. The host checkout is obsolete.
+This document covers the node's Factory services: the operator wrapper, the four
+containers, their accounts, mounts, secrets and environment, and the launcher
+socket. Read it before you change `compose.yaml`, the Dockerfile, `node/`, a mount,
+a secret or an environment variable. Install, rollback and backup steps are in
+[operations.md](operations.md).
+
+Factory's `ui`, `intake`, `sessions` and `runner` services run in containers
+installed by the platform deployer.
 Operator commands use a running Factory container's code, environment and state.
 
 ```sh
@@ -21,116 +27,41 @@ to stderr and exits 1. Docker access remains a host administrator capability.
 
 ## Automatic installs
 
-Once `factory` is on the platform deployer's automatic list, the runner's
-post-merge install request installs the merged Factory commit automatically.
-Changes touching a deployer guard path still require the owner's GitHub review;
-the deployer checks that review before installing. To roll back, ask the deployer
-to reinstall the previous known-good commit. Record that commit before an
-installation so it is available if rollback is needed.
+The install procedure is in [operations.md](operations.md#install-after-a-merge).
+Whether the deployer installs at once or replies `waits for the owner` is its own
+decision; it checks the owner's GitHub review before installing a commit whose
+guard files differ from the installed commit.
 
-## Remove the old host installation after merging K8f
-
-The orchestrator performs these steps after the deployer installs the merged commit.
-Rollback first: the deployer reinstalls the previous commit; the unit files and
-`/opt/factory` are restorable from the previous commit's tree. Save the previous
-commit before installation. Do not delete service data or secrets.
-
-1. Run `sudo systemctl disable --now factory-dump.timer`.
-2. Remove the old unit files listed below from `/etc/systemd/system/`, then run
-   `sudo systemctl daemon-reload`. The other old services and timers are already
-   disabled and stopped.
-3. From the reviewed merged tree, install `node/bin/factory-cplane` as
-   `/usr/local/bin/factory-cplane`, root:root, mode 0755. Remove
-   `/usr/local/bin/factory-{dump,export,feature-export,install}`. Also install the
-   updated `node/bin/factory-restore-check` as `/usr/local/bin/factory-restore-check`,
-   root:root, mode 0755, so its default reads the platform backups.
-4. Check that `sudo factory-cplane pending` answers from the container. Check
-   `sudo docker exec deployer-factory-runner-1 printenv CPLANE_REVISION` matches
-   the merged commit. Also check `sudo factory-cplane show <a-slice>` over SSH.
-5. Remove `/opt/factory` after those checks pass.
-
-The old unit files are exactly:
-
-```text
-factory-dump.service
-factory-dump.timer
-factory-export.service
-factory-export.timer
-factory-feature-export.service
-factory-feature-export.timer
-factory-intake.service
-factory-runner.service
-factory-runner.timer
-factory-sessions.service
-factory-ui.service
-```
-
-`node/install`, `cplane.install_host`, the transient systemd installer, and these
-unit files are removed. Installs use only the deployer. Guard changes under
-`node/**` require the owner's GitHub approval before the runner merges the PR.
+Before merging a Factory PR, the runner compares `CPLANE_REVISION`
+with the tree produced by merging the PR into freshly fetched `origin/main`.
+A guard merely absent on a stale branch does not count; a guard changed on main but not installed still does. If main
+cannot be fetched, the runner compares with the PR tip instead. Merge conflicts
+fail the check closed. The runner accepts the owner's GitHub approval on the
+delivered tip. The owner cannot approve a PR they authored, so guard changes come through
+PRs opened by the runner's GitHub App. Guard changes under `node/**` require the
+owner's GitHub approval before the runner merges the PR.
 
 ## Backups and retained tools
 
-The platform's `homelab-dump` dumps every database daily, including `factory`;
-`factory-2026-11-15.dump` and `factory-2026-11-16.dump` already exist. No separate
-Factory dump service is needed. State/outbox and feature exports are scheduled
-by the contained runner loop described below.
+The platform's `homelab-dump` dumps every database daily, including `factory`.
+`factory-restore-check` reads those dumps from
+`/srv/homelab/homelab-v2-data/originals/postgres`, owned by root with mode 0640; it
+refuses with a clear message if none exists and never creates a dump.
 
 `factory-cli` stays: `cplane/fence.py` still uses it as the default fence command,
 and its login and isolated CLI tooling remain useful. The deployed services use
-the platform launcher socket. The host script does not load code from
-`/opt/factory`; keep the installed script and platform-managed fence assets.
-
-`factory-restore-check` stays for operator backup verification in a disposable,
-network-isolated PostgreSQL container. With no argument, it selects the newest
-file by date in its name matching `factory-YYYY-MM-DD.dump` under
-`/srv/homelab/homelab-v2-data/originals/postgres`. These are the platform
-`homelab-dump` backups, owned by root with mode 0640. It refuses with a clear
-message if none exists and never creates a dump. An explicit dump path remains
-supported:
-
-```sh
-sudo factory-restore-check
-sudo factory-restore-check /path/to/factory-YYYY-MM-DD.dump
-```
-
-Row counts are compared with the live database, so a daily backup may differ after
-subsequent writes.
-
-## Runner loop and exports
-
-`cplane --actor runner run --every 60` keeps one process alive, running sequential
-passes with a 60-second wait after each pass and its jobs. SIGTERM and SIGINT
-stop the loop, unwinding any active pass and releasing its transaction and locks.
-A pass failure emits a safe message and the loop continues. Without `--every`,
-`run` still performs one pass and does not run the two scheduled export jobs.
-
-In loop mode, the first pass finishing after 03:45 local time each day exports
-into the existing `CPLANE_EXPORT_DIR` (which must already exist), using
-`factory-YYYY-MM-DD.json` and `.json.outbox.jsonl`, mode 0600, and retaining the
-seven newest dated pairs. The first completed pass in each local clock hour
-also runs `feature export` without output. Each job is attempted once per due
-period; failures emit a content-free line and retry at the next daily/hourly
-due time. Scheduling is process-local, so restarting the loop can repeat an
-export in the same period.
-
-When `CPLANE_TASK_SUBMIT` is unset, tickets slices are not started or resumed,
-and eligibility reports `tickets flow off`. Setting the existing JSON argument
-list preserves the host submission flow. The owner has disabled that flow from
-the container cutover until a later run interface accepts submissions.
+the platform launcher socket.
 
 ## Four contained Factory services
 
-Since the 2026-11-15 cutover, the four services run healthy using the root
-`compose.yaml`, installed by the platform deployer. The owner reviews and copies
+The four services run under the root `compose.yaml`. The owner reviews and copies
 the compose file and Dockerfile to `/opt/homelab-deployer/factory/`, beside the
 installed application manifest and the three env files. The deployer uses its
 installed Dockerfile and compose file, builds from the selected commit, and passes
 only `HOMELAB_DEPLOY_TAG`. Every service uses
 `homelab-deployer-factory:${HOMELAB_DEPLOY_TAG:?commit required}`.
 Each service receives that commit as `CPLANE_REVISION` for installations without a `REVISION` file.
-The fence uses the separate `node/compose.yaml`. The four host service units
-were stopped at cutover.
+The fence uses the separate `node/compose.yaml`.
 
 Services appear in this order so the deployer's health and migration commands run
 in `ui`:
@@ -142,8 +73,9 @@ in `ui`:
 | `sessions` | 21011:21011 | `python -m cplane.sessions` | homelab-launch (976), factory-cli (21000) |
 | `runner` | 21010:21010 | `cplane --actor runner run --every 60` | homelab-launch (976), homelab-deploy (975), factory-cli (21000) |
 
-At cutover, create the two new service accounts `factory-sessions` 21011:21011
-and `factory-runner` 21010:21010. The image includes both accounts with home
+
+The service accounts are `factory-sessions` 21011:21011 and `factory-runner`
+21010:21010. The image includes both accounts with home
 `/tmp` and no login shell, so SSH and Python can resolve these UIDs. These are
 distinct from fence agent UID/GID 21000:21000 and proxy UID 21001. Every service
 has a read-only root, tmpfs `/tmp`,
@@ -163,7 +95,7 @@ loopback endpoint. No service receives Docker access, host networking, devices o
 additional capabilities.
 
 Each host bind uses the identical container path and refuses to create a missing
-host path. Prepare paths and socket permissions before cutover:
+host path. Prepare paths and socket permissions on a new node:
 
 | Service | Read-only binds | Read-write binds |
 | --- | --- | --- |
@@ -172,8 +104,9 @@ host path. Prepare paths and socket permissions before cutover:
 | `sessions` | `/srv/factory/briefs`, `/srv/factory/runs` | `/srv/factory/work`, `/srv/factory/clean-sessions`, `/srv/factory/runs/sessions`, `/var/lib/factory/sessions`, `/var/lib/factory/workshop`, `/run/homelab-launcher.sock` |
 | `runner` | none | `/srv/factory/briefs`, `/srv/factory/runs`, `/srv/factory/work`, `/srv/factory/clean`, `/srv/factory/exports`, `/srv/factory/bot-export`, `/srv/homelab/factory-state`, `/run/homelab-launcher.sock`, `/run/homelab-deployer.sock` |
 
-At cutover, prepare `/var/lib/factory/workshop` owned by sessions, move the
-existing documents into `/var/lib/factory/workshop/ui-docs`, and ensure UI can
+
+Prepare `/var/lib/factory/workshop` owned by sessions, with the
+documents in `/var/lib/factory/workshop/ui-docs`, and ensure UI can
 read the parent, documents and sibling `.ui-docs.lock`. Sessions stages and
 exchanges the documents under that parent. Prepare `/var/lib/factory/sessions`
 and `/srv/factory/runs/sessions` owned by sessions (21011:21011), and prepare
@@ -181,12 +114,11 @@ and `/srv/factory/runs/sessions` owned by sessions (21011:21011), and prepare
 both `/srv/factory/work` and `/srv/factory/runs` to root:root, mode 1733
 (sticky, writable and traversable by both services). Existing entries remain
 protected by the sticky bit and workspace ownership checks.
-Stopping `factory-intake.service` removes its systemd `RuntimeDirectory`. Add
-`d /run/factory-intake 0750 991 977 -` to a `tmpfiles.d` file, then run
-`systemd-tmpfiles --create` after stopping the host unit to recreate the bind.
+Create the intake socket folder with
+`d /run/factory-intake 0750 991 977 -` in a `tmpfiles.d` file, then run
+`systemd-tmpfiles --create`.
 
-Planning clones are freshly prepared in `clean-sessions/planning-sessions/`;
-existing planning clones under the runner's clean root are not moved.
+Planning clones are prepared in `clean-sessions/planning-sessions/`.
 
 Sessions reads the runner-owned briefs clone with `CPLANE_BRIEFS_OWNER_UID=21010`.
 Only document export accepts that additional owner and marks that exact clone as
@@ -199,8 +131,8 @@ the clone's host SSH command.
 
 The runner anchors metadata at `/srv/factory/briefs/slices.json`, uses
 `/srv/factory/runs`, sends the daily export to `/srv/homelab/factory-state`, and
-sets `CPLANE_BOT_EXPORT=/srv/factory/bot-export`. The additional exports mount is
-reserved by the cutover contract. Set `/srv/factory/bot-export` to mode 2750
+sets `CPLANE_BOT_EXPORT=/srv/factory/bot-export`. The additional `/srv/factory/exports` mount is
+reserved. Set `/srv/factory/bot-export` to mode 2750
 (setgid), group `homelab-bot`. The runner is not in that group; setgid gives new
 files the folder's group so the export can `fchown` them to that group. No private
 state or export data belongs in Git.
@@ -212,54 +144,38 @@ traverse them. Never mount an entire secret folder or share one service's source
 file with another service. Even copies of the database URL and planning write key
 have separate service-owned source paths.
 
-| Services | File name | Environment path setting |
-| --- | --- | --- |
-| all four | `database-url` | `CPLANE_DATABASE_URL_FILE` |
-| runner, sessions | `github-app.pem` | `CPLANE_GITHUB_APP_KEY` |
-| runner, sessions | `briefs-key` | `CPLANE_BRIEFS_KEY` |
-| runner, sessions | `briefs-known-hosts` | `CPLANE_BRIEFS_KNOWN_HOSTS` |
-| runner, sessions | `planning-write-key` | `CPLANE_PLANNING_WRITE_KEY` |
-| runner | `deny-list` | `CPLANE_DENY_LIST` |
-| runner | `eval-task-key` | `CPLANE_EVAL_TASK_KEY_FILE` |
-
-At cutover, create sessions' own `/etc/factory/secrets/sessions/briefs-key`
+Sessions has its own `/etc/factory/secrets/sessions/briefs-key`
 and `/etc/factory/secrets/sessions/briefs-known-hosts`, owned by 21011:21011,
 mode 0400. These individual read-only binds provide planning fetch credentials
 and SSH host verification independently of the runner's files.
 
 The compose environment contains secret **paths** and non-secret settings.
-At cutover, the owner places required `./ui.env`, `./sessions.env` and
+The owner places required `./ui.env`, `./sessions.env` and
 `./runner.env` beside the **installed** compose file. Intake needs no env file.
 Each service reads only its own file. Use Compose 2.24 or later for the explicit
-`env_file.required` entries. These files contain non-secret settings only; do not copy the old host env files wholesale. Database URLs, keys, passwords
+`env_file.required` entries. These files contain non-secret settings only. Database URLs, keys, passwords
 and tokens remain in the individual secret binds above. In particular, an orders
 endpoint or planning remote must not embed credentials, and task argument lists
 must not contain credentials. These files are consumed by Compose, not mounted
 inside containers. No private env file is checked into this repository.
 
 Compose's explicit `environment` overrides its service's env file. The owner
-must populate the service files from the existing non-secret configuration:
+populates the service files with these non-secret settings:
 
-| File | Settings to carry forward |
+| File | Settings |
 | --- | --- |
-| `ui.env` | `CPLANE_INSTALL_REPOS`, `CPLANE_TASK_SUBMIT` |
+| `ui.env` | `CPLANE_INSTALL_REPOS` |
 | `sessions.env` | `CPLANE_INSTALL_REPOS`, `CPLANE_PLANNING_REMOTE`, `CPLANE_GITHUB_APP_ID`, `CPLANE_GITHUB_INSTALLATION_ID` |
-| `runner.env` | `CPLANE_GITHUB_APP_ID`, `CPLANE_GITHUB_INSTALLATION_ID`, `CPLANE_PLANNING_REMOTE`, `CPLANE_ORDERS_URL`, `CPLANE_INSTALL_REPOS`, `CPLANE_TASK_STATUS`, `CPLANE_TASK_SUBMIT`, `CPLANE_BACKLOG_GENERATED` |
+| `runner.env` | `CPLANE_GITHUB_APP_ID`, `CPLANE_GITHUB_INSTALLATION_ID`, `CPLANE_PLANNING_REMOTE`, `CPLANE_ORDERS_URL`, `CPLANE_INSTALL_REPOS`, `CPLANE_BACKLOG_GENERATED`, and optionally `CPLANE_TASK_SUBMIT` and `CPLANE_TASK_STATUS` |
 
 Both App IDs are required positive integers for runner and sessions App
 mode; there are no defaults. Keep the install allowlist identical in all three
 files so Home, session tools and the runner agree. Sessions needs its own file
 because its planning preparation and Workshop install tools read those settings.
 
-Set `CPLANE_TASK_SUBMIT` to the same existing JSON argument list in **both**
-`ui.env` and `runner.env`. If tickets are disabled at cutover as currently planned,
-omit the assignment from **both** files; the files themselves remain required.
-An empty assignment still enables the eligibility flag and is invalid for actual
-submission. The runner's `CPLANE_TASK_STATUS` is the corresponding JSON argument
-list for polling. The existing host commands still need a supported container
-submission interface before tickets can run. Never enable this flag in just one
-of UI and runner. Sessions does not execute the runner's pipeline scheduler or
-compute the UI's eligibility snapshot, so it does not consume this flag.
+`CPLANE_TASK_SUBMIT` and `CPLANE_TASK_STATUS` are JSON argument lists read only by
+the manual `cplane cut-submit` queue command; the platform ticket flow does not use
+them. Leave them unset unless that manual queue is in use.
 
 ### Environment read audit
 
@@ -287,12 +203,11 @@ Python temp files default to `/tmp`; no extra tmpfs or host mount is needed.
 
 **UI** (`factory_ui.serve`, request handlers and `eligibility.observed`):
 
-| Setting read | Source at cutover | Reader / purpose |
+| Setting read | Source | Reader / purpose |
 | --- | --- | --- |
 | `CPLANE_DATABASE_URL_FILE`, `CPLANE_DATABASE_URL` | compose / unset fallback, as above | `state.database_url` |
 | `FACTORY_UI_HOST`, `HOMELAB_API_URL`, `CPLANE_UI_DOCS` | compose: `0.0.0.0`, `http://api:8000`, `/var/lib/factory/workshop/ui-docs` | UI bind, platform API and document reader |
 | `CPLANE_INSTALL_REPOS` | `ui.env`; code default empty allowlist | `home.home_data`, installation checks and store chat-event capture |
-| `CPLANE_TASK_SUBMIT` | `ui.env`, matching runner; omit in both to disable | `eligibility.eligibility` tests presence |
 | `CPLANE_STATE` | compose: `/srv/factory/briefs/slices.json` | `eligibility.observed` anchors the same run hash as runner |
 | `CPLANE_RUNS` | compose: `/srv/factory/runs` | `installation.runs_path`, `Runner.__init__`, usage-report lookup |
 | `CPLANE_REPOS` | compose: `/srv/factory/work` | `Runner.__init__` during eligibility observation; avoids default `~/Code` |
@@ -303,7 +218,7 @@ cannot see those host job/usage files.
 
 **Intake** (`cplane.intake` and its inbox insertion path):
 
-| Setting read | Source at cutover | Reader / purpose |
+| Setting read | Source | Reader / purpose |
 | --- | --- | --- |
 | `CPLANE_DATABASE_URL_FILE`, `CPLANE_DATABASE_URL` | compose / unset fallback, as above | `state.database_url` |
 
@@ -314,12 +229,11 @@ The sessions App key is its own copy at
 `/etc/factory/secrets/sessions/github-app.pem`, owned by UID 21011, mode 0400,
 mounted read-only at `/run/secrets/github-app.pem`, the same in-container path
 used by the runner's separate copy. Prepare `/srv/factory/clean-sessions` owned
-by 21011:21011, mode 0700, and bind it writable only in sessions. These sessions
-binds and App settings are included in the compose contract for cutover.
+by 21011:21011, mode 0700, and bind it writable only in sessions. 
 
 **Sessions** (`cplane.sessions`, model probes and Workshop tools):
 
-| Setting read | Source at cutover | Reader / purpose |
+| Setting read | Source | Reader / purpose |
 | --- | --- | --- |
 | `CPLANE_DATABASE_URL_FILE`, `CPLANE_DATABASE_URL` | compose / unset fallback, as above | `state.database_url` |
 | `CPLANE_INSTALL_REPOS` | `sessions.env`; code default empty allowlist | Workshop install eligibility and store chat-event handling |
@@ -345,7 +259,7 @@ names the shared runs root for trust checks (default `/srv/factory/runs`).
 
 **Runner** (`cplane --actor runner run --every 60`, delivery and scheduled jobs):
 
-| Setting read | Source at cutover | Reader / purpose |
+| Setting read | Source | Reader / purpose |
 | --- | --- | --- |
 | `CPLANE_DATABASE_URL_FILE`, `CPLANE_DATABASE_URL` | compose / unset fallback, as above | `state.database_url` |
 | `CPLANE_STATE` | compose: `/srv/factory/briefs/slices.json` | CLI metadata anchor and runner |
@@ -367,15 +281,15 @@ names the shared runs root for trust checks (default `/srv/factory/runs`).
 | `CPLANE_PLANNING_REMOTE` | `runner.env`; code default empty and refuses export | hourly `feature_export`, SSH remote without credentials |
 | `CPLANE_ORDERS_URL` | `runner.env`; if absent, code falls back to `/srv/factory/orders-url`, which is unmounted | orders collector; empty string explicitly disables collection |
 | `CPLANE_INSTALL_REPOS` | `runner.env`; code default empty allowlist | install eligibility and store chat-event handling |
-| `CPLANE_TASK_SUBMIT` | `runner.env`, matching UI; omit in both to disable | legacy manual `cut.submit`; slice runner uses the run API |
-| `CPLANE_TASK_STATUS` | `runner.env`; code default empty, which refuses polling | legacy manual `cut.status`; unused by the slice runner |
+| `CPLANE_TASK_SUBMIT` | `runner.env`, optional | manual `cut-submit` only; slice runner uses the run API |
+| `CPLANE_TASK_STATUS` | `runner.env`, optional | manual queue status helper; unused by the slice runner |
 | `CPLANE_BACKLOG_GENERATED` | `runner.env`; code default false, enabled only by `1` | hourly feature export's generated backlog table |
 | `CPLANE_EXPORT_DIR` | compose: `/srv/homelab/factory-state` | daily state/outbox export; code default absent disables the job |
 | `CPLANE_BOT_EXPORT` | compose: `/srv/factory/bot-export` | bot export; code default absent disables the job |
 | `PATH`, `LANG`, `PYTHONPATH` | image/default inherited `PATH` and `LANG` if present; `PYTHONPATH` unset | `fence.host_environment` and detached executor environment |
 | `GH_TOKEN` | generated from the App for the authenticated Git/gh child; no deployed value | Git credential helper's conditional environment read |
 
-The launchd installation subcommands are separate Mac entry points. Factory's
+The launchd primer subcommands are separate Mac entry points. Factory's
 runner installs only through the deployer socket; other CLI subcommands do not
 run merely because UI imports `cplane.cli`.
 
@@ -413,88 +327,7 @@ After taking its database dump, the deployer runs this migration command in a
 cplane migrate
 ```
 
-### Application prerequisites before cutover
-
-The application and platform prerequisites for the 2026-11-15 cutover were
-met; none remain open. Static compose tests validate the reviewed boundary but
-do not prove runtime readiness.
-
-### Install after merge
-
-The orchestrator installs the merged revision through the platform deployer.
-Factory is not on its automatic application list, so run the deployer's
-command-line install from a terminal:
-
-```sh
-sudo homelab-deployer install factory <sha>
-```
-
-The deployer's compose file, Dockerfile and `ui.env`, `sessions.env` and
-`runner.env` live in `/opt/homelab-deployer/factory/`. An install of a commit
-whose guard files differ from the installed commit requires the owner's
-approving review on that commit's PR. The runner compares `CPLANE_REVISION`
-with the tree produced by merging the PR into freshly fetched `origin/main`.
-A guard merely absent on a stale branch does not count; a guard changed on main but not installed still does. If main
-cannot be fetched, the runner compares with the PR tip instead. Merge conflicts
-fail the check closed. The runner accepts the owner's GitHub approval on the
-delivered tip. The owner cannot approve a PR they authored, so guard changes come through
-PRs opened by the runner's GitHub App.
-
-### Slice reviews
-
-When a CLI-flow slice opens its PR, Factory submits a `review`/`read` run on its
-branch tip with the slice's level and full history. The platform chooses the
-reviewer. CI runs alongside it. The goal embeds `slice-review` and the review schema;
-the verdict parser accepts leading JSON followed by prose.
-
-CLI reviews record findings: pass and fix both allow merging under the existing CI
-and owner approval rules. Invalid or expired reviews record missing. Questions,
-escalations, failures and cancellations produce attention; answers to resumable
-reviews go to that review's run. Set `CPLANE_REVIEW_TIMEOUT_SECONDS` to change the
-1200-second default. Expired runs are cancelled through the API, retrying a running
-turn after it ends. Factory has no review container to stop or local capacity to
-reserve. Ticket slices keep their review and one repair round.
-
-`cplane show <id>` prints `review_verdict` and a short `review_findings` summary;
-`cplane show <id> --json` includes full findings. These are separate from the
-planner's accepted/corrected verdict: `cplane_slice_outcomes.review_verdict` holds
-`pass`, `fix` or `missing`, and `review_findings` holds the pass title/body or fix
-tickets. A started review also has its own run record and skill context. CLI
-review job files have `record_only: true`; the executor job retains the review
-request/end times (`review_requested_at`/`review_ended_at`), verdict and findings,
-and links its review through `pr_review`.
-The executor's original session resumes for the post-merge handover.
-
-Before installing this revision, dump the database before the install; the
-migration adds two roles and two columns. Migration 030 expands the role CHECK
-list and adds nullable outcome columns, preserving previous-image writers. After
-installing, the orchestrator checks the next three runner slices with `cplane
-show <id>`: each must carry a review verdict, and the recorded request/end times
-must show that no review gate exceeded the configured limit (plus runner polling
-interval). A timeout is recorded as `missing`, never as a passing review.
-
-### Launcher telemetry and installs
-
-The retained usage helpers in `cplane.eval_execution` support launcher telemetry.
-Neither slice nor eval scheduling calls their probes or gates work on local
-Codex/Claude readings. The platform owns usage waits for both through `/v1/runs`.
-
-The runner has `CPLANE_DEPLOYER_SOCKET=/run/homelab-deployer.sock` set in Compose.
-Without a deployer socket, a new install request refuses with a clear escalation;
-no host unit is started. Existing deployer children and recorded results can
-still be collected.
-The deployer installs the Factory containers.
-`process` persists install intent and starts a detached Python child, then
-returns without waiting. The child requests installation of the repository name
-`factory` at the recorded merge SHA, waits without a socket timeout, and writes
-the existing private install result file. A held `.started` file lock tracks the
-child across runner restarts. A child that ends without a result escalates and
-is never replayed. Failures include the deployer's reason and any guard paths;
-`waits for the owner` reports the exact manual `sudo homelab-deployer install
-factory <sha>` command. The platform owns rollback after install failures.
-Factory is not on its automatic application list.
-
-### Factory launcher socket switch
+## Factory launcher socket
 
 Set `CPLANE_FENCE_COMMAND=socket` for Factory to invoke
 `python -m cplane.launcher` through its current Python interpreter. The client
@@ -517,10 +350,9 @@ Work paths must be beneath `/srv/factory/work` with one or two components; run
 paths must be beneath `/srv/factory/runs` with one to three components. The client
 refuses outside paths before connecting. The launcher validates existing folders
 and rejects links. Read-only exports remain names under the work folder's
-`repos/` directory. The platform launcher must support two-component work paths
-and three-component run paths before enabling this switch.
+`repos/` directory.
 
-With the switch enabled, whole-tree ownership transfers and removal of
+With the socket, whole-tree ownership transfers and removal of
 agent-owned temporary folders go through launcher `own` and `remove`, to
 UID/GID 21000. Before transfer, Factory sets `io` folders whose outputs it reads
 to mode 0750. Work/review copies, planning trees, and probe/warm-up work folders
@@ -540,32 +372,3 @@ earlier tool context was reset. The next turn starts a fresh CLI session.
 
 The contained services use `CPLANE_FENCE_COMMAND=socket` and group 21000 for
 agent output access. No root fallback is available.
-
-Eval attempts use the runner's platform job pipeline with named configurations.
-They share repository reservations with slices, run one at a time, and retain
-their delivered diff privately before deleting `eval/<run>/<attempt>`. Slice cases
-run the configured slice or tickets path, review, then a sealed hidden-test check;
-ticket component cases use their own run check. See [evals](evals.md) for setup,
-configuration selection, grading, cancellation and historical data compatibility.
-
-### Slice run API switch (FAC-F27a)
-
-The current slice runner is described in [runner operation](runner.md). Its
-execution replaces the historical local slice and usage-probe paths above.
-`CPLANE_EVAL_TASK_URL` and the file named by `CPLANE_EVAL_TASK_KEY_FILE` now also
-connect the slice runner to `/v1/runs`. The key must permit runs read/write and
-name the target repositories. No credential is included in a request body or log.
-The platform must enable slice/cut/review roles and accept write-mode cuts before
-rehearsal. Explicit per-run limits are omitted because the live v1 API rejects them.
-
-Slice and eval execution use the platform; retained launcher and clean/work
-settings still support other local helpers, including sessions and ticket-start imports. The deny-list secret remains necessary for Factory's public PR
-metadata scan; the platform separately scans outgoing commits. The runs mount
-retains Factory's private request ledger. Sessions mounts and settings are unchanged.
-
-Node step: **install at the switch only**, through the deployer. Leave the PR open
-for the owner's GitHub review until rehearsal starts. At the switch, deliver one
-whole-slice slice and one ticket-flow slice through the platform. Roll back by
-reinstalling the previous Factory image. There is no execution-path switch setting
-and no database migration. Coordinate rollback with open platform runs to avoid
-starting work twice; retain private ledgers and state.
