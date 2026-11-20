@@ -1,5 +1,9 @@
 # Eval store
 
+This document covers eval cases, sets, named configurations, eval runs, attempt
+execution and grading. Read it before you change the eval catalogue, the eval
+commands, the judge or how attempts run.
+
 An eval compares quality, speed and cost on the same work across configurations.
 Each attempt runs the normal runner pipeline through the platform run API, with
 the named configuration selecting each role's exact executor. Slice cases finish
@@ -195,8 +199,8 @@ The Python `verdict_add(store, ...)` API records verdicts. The fixed slice judge
 uses identity `claude/opus` and the SHA256 of the full `skills/judge.md` file as
 `prompt_hash`.
 
-Installation: dump the database before installing. The orchestrator imports case
-files and ticket start bundles on the node as described below.
+The orchestrator imports case files and ticket start bundles on the node as
+described below.
 
 ## Ticket start states
 
@@ -342,9 +346,5 @@ oversized inputs count against the rates. Exit status is 0 only if both rates
 are at least 90%; an empty eligible set fails. This command creates no attempt,
 verdict or attempt-run rows.
 
-The retired task endpoint, base64 diff transport, fenced CLI attempt and fence
-eval snapshot path have been removed. Historical stored eval data is unchanged.
-No migration or reimport is required for reading it.
-
-Node step after merge: **Install the merged commit**. The client then runs
-`judge-test` on the eval set, followed by a judged run.
+Historical stored eval data stays readable without a migration or reimport.
+`cplane eval run cancel ID` cancels a run as described above.
