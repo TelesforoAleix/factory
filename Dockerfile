@@ -64,6 +64,7 @@ COPY cplane/ cplane/
 COPY schema/ schema/
 COPY skills/ skills/
 COPY factory_ui/ factory_ui/
+COPY contracts/ contracts/
 RUN uv sync --frozen --no-dev --no-cache \
     && chmod -R a+rX /opt/factory
 COPY --from=ui /build/ui/dist/ ui/dist/

@@ -182,7 +182,7 @@ repository needs an adapting slice in the same feature.
 
 ### `contract-tool`
 
-- Version 1 · provider `TelesforoAleix/factory` · users `TelesforoAleix/factory`.
+- Version 1 · provider `TelesforoAleix/factory` · users `TelesforoAleix/factory`, `TelesforoAleix/homelab-v2`.
 - The `factory-contracts` command, its exit codes (0 pass, 1 check failed, 2 usage
   or input error) and the pin folder format, described in
   [the contract tool](#the-contract-tool). Source: `contracts/cli.py`, `contracts/pins.py`.

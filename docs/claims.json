@@ -5611,7 +5611,8 @@
       "version": "1",
       "provider": "TelesforoAleix/factory",
       "users": [
-        "TelesforoAleix/factory"
+        "TelesforoAleix/factory",
+        "TelesforoAleix/homelab-v2"
       ],
       "doc": "docs/contracts.md",
       "doc_lines": [
