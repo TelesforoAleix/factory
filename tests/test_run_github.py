@@ -72,3 +72,10 @@ def test_installed_guard_drift_and_truncated_compare(monkeypatch):
     )
     with pytest.raises(GitHubReadError, match="exceeds"):
         gh.changes(job, 12)
+
+
+def test_compare_files_reads_compare_endpoint():
+    gh = GitHub()
+    gh.call = Mock(return_value=json.dumps({"files": [{"filename": "a"}]}))
+    assert gh.compare_files("example/repo", "a" * 40, "b" * 40) == [{"filename": "a"}]
+    assert gh.call.call_args.args[-1] == f"repos/example/repo/compare/{'a' * 40}...{'b' * 40}"

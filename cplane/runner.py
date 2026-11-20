@@ -370,6 +370,10 @@ class GitHub:
 
         return Snapshot(sha, fetch)
 
+    def compare_files(self, repo, base, tip):
+        compared = json.loads(self.call(repo, "api", f"repos/{repo}/compare/{base}...{tip}"))
+        return compared.get("files", [])
+
     def eval_diff(self, repo, base, tip):
         return self.call(repo, "api", f"repos/{repo}/compare/{base}...{tip}",
                          "-H", "Accept: application/vnd.github.diff", raw=True)
@@ -1803,6 +1807,24 @@ class Runner:
         self.save_job(job)
         self.send_request(job, entry)
 
+    TEST_FILE = re.compile(r"(test_.*\.py|.*_test\.py|.*\.test\.(js|jsx|ts|tsx))")
+
+    def tests_only_move(self, item, reviewed, tip):
+        """True only when every file changed between the two tips is a test file."""
+        try:
+            files = self.github.compare_files(item["repo"], reviewed, tip)
+            if not isinstance(files, list) or not files or len(files) >= 300:
+                return False
+            for entry in files:
+                name = entry["filename"]
+                if entry.get("status") == "renamed" or entry.get("previous_filename"):
+                    return False
+                if not (name.startswith("tests/") or self.TEST_FILE.fullmatch(name.rsplit("/", 1)[-1])):
+                    return False
+            return True
+        except Exception:
+            return False
+
     def review_head(self, item, job, tip):
         """Retire a PR review when slice work moves, retaining its original run."""
         purpose = job.get("pr_review")
@@ -1811,6 +1833,13 @@ class Runner:
             # Use the existing log and request ledger for supersession history;
             # the review's request base remains the commit it actually reviewed.
             reviewed = job.get("review_tip", entry["request"]["base_commit"])
+            if self.tests_only_move(item, reviewed, tip):
+                event = f"review: kept {purpose} on {tip} (tests only)"
+                if not any(log["event"] == event for log in item["log"]):
+                    self.log(item, event)
+                job["review_tip"] = tip
+                job["tip"] = tip
+                return
             event = f"review: superseded {purpose} on {reviewed} by {tip}"
             if not any(log["event"] == event for log in item["log"]):
                 self.log(item, event)
