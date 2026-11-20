@@ -25,6 +25,9 @@ repository needs an adapting slice in the same feature.
 - Change safely: the platform adds the new version first; Factory switches its body
   in one PR; saved job bodies in the private ledger are retried unchanged, so keep
   the old version accepted until no saved job uses it.
+- Pin and sender check: `pins/run-api/` holds the provider's OpenAPI document at a
+  named commit; `tests/test_run_api_contract.py` verifies it and checks the bodies Factory
+  builds against it. Known gap: cancel sends `{}` but the pinned operation defines no body (expected failure until Factory sends none).
 
 ### `decisions-api`
 

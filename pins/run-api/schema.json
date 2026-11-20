@@ -1,0 +1,1326 @@
+{
+  "components": {
+    "schemas": {
+      "Attempt": {
+        "properties": {
+          "check_exit_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Check Exit Code"
+          },
+          "configuration_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Configuration Hash"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/AttemptMetrics"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "number",
+          "status",
+          "outcome",
+          "started_at",
+          "ended_at",
+          "configuration_hash",
+          "check_exit_code",
+          "metrics"
+        ],
+        "title": "Attempt",
+        "type": "object"
+      },
+      "AttemptMetrics": {
+        "properties": {
+          "minutes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minutes"
+          },
+          "requests": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requests"
+          },
+          "tokens": {
+            "$ref": "#/components/schemas/Tokens"
+          },
+          "usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usd"
+          }
+        },
+        "required": [
+          "requests",
+          "tokens",
+          "usd",
+          "minutes"
+        ],
+        "title": "AttemptMetrics",
+        "type": "object"
+      },
+      "CheckResult": {
+        "properties": {
+          "exit_code": {
+            "title": "Exit Code",
+            "type": "integer"
+          },
+          "tail": {
+            "title": "Tail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "exit_code",
+          "tail"
+        ],
+        "title": "CheckResult",
+        "type": "object"
+      },
+      "ErrorBody": {
+        "properties": {
+          "error": {
+            "title": "Error",
+            "type": "string"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "status_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Reason"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "ErrorBody",
+        "type": "object"
+      },
+      "ExecutorSelection": {
+        "properties": {
+          "configuration": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Configuration"
+          },
+          "effort": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effort"
+          },
+          "harness": {
+            "anyOf": [
+              {
+                "enum": [
+                  "codex",
+                  "claude"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Harness"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          }
+        },
+        "title": "ExecutorSelection",
+        "type": "object"
+      },
+      "RunCreated": {
+        "properties": {
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id"
+        ],
+        "title": "RunCreated",
+        "type": "object"
+      },
+      "RunMetrics": {
+        "properties": {
+          "minutes": {
+            "title": "Minutes",
+            "type": "number"
+          },
+          "requests": {
+            "title": "Requests",
+            "type": "integer"
+          },
+          "tokens": {
+            "$ref": "#/components/schemas/Tokens"
+          },
+          "usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usd"
+          }
+        },
+        "required": [
+          "requests",
+          "tokens",
+          "usd",
+          "minutes"
+        ],
+        "title": "RunMetrics",
+        "type": "object"
+      },
+      "RunPage": {
+        "properties": {
+          "cursor": {
+            "title": "Cursor",
+            "type": "string"
+          },
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/RunRecord"
+            },
+            "title": "Runs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "runs",
+          "cursor"
+        ],
+        "title": "RunPage",
+        "type": "object"
+      },
+      "RunRecord": {
+        "description": "What every run route returns for one run. Goals and assets are never included.",
+        "properties": {
+          "application": {
+            "title": "Application",
+            "type": "string"
+          },
+          "attempts": {
+            "items": {
+              "$ref": "#/components/schemas/Attempt"
+            },
+            "title": "Attempts",
+            "type": "array"
+          },
+          "attribution": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Attribution",
+            "type": "object"
+          },
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch"
+          },
+          "check": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CheckResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "commits": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Commits",
+            "type": "array"
+          },
+          "configuration_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Configuration Hash"
+          },
+          "contract": {
+            "const": 1,
+            "title": "Contract",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "executor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutorSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "final_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Message"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "level": {
+            "enum": [
+              "light",
+              "standard",
+              "strong"
+            ],
+            "title": "Level",
+            "type": "string"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/RunMetrics"
+          },
+          "mode": {
+            "enum": [
+              "write",
+              "read"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "repository": {
+            "title": "Repository",
+            "type": "string"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          },
+          "resumable": {
+            "title": "Resumable",
+            "type": "boolean"
+          },
+          "resume_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume At"
+          },
+          "role": {
+            "enum": [
+              "slice",
+              "ticket",
+              "cut",
+              "review",
+              "check"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "question",
+              "waiting",
+              "escalated",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "status_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Reason"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract",
+          "run_id",
+          "request_id",
+          "application",
+          "attribution",
+          "repository",
+          "branch",
+          "mode",
+          "role",
+          "level",
+          "status",
+          "status_reason",
+          "executor",
+          "configuration_hash",
+          "attempts",
+          "commits",
+          "metrics",
+          "resumable",
+          "final_message",
+          "resume_at",
+          "created_at",
+          "updated_at",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "RunRecord",
+        "type": "object"
+      },
+      "Tokens": {
+        "properties": {
+          "cached": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cached"
+          },
+          "fresh": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fresh"
+          },
+          "output": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output"
+          }
+        },
+        "required": [
+          "fresh",
+          "cached",
+          "output"
+        ],
+        "title": "Tokens",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Home Lab run-api",
+    "version": "1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/v1/runs": {
+      "get": {
+        "operationId": "get_runs_v1_runs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "changed_after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Bad Request"
+          }
+        },
+        "summary": "Get Runs"
+      },
+      "post": {
+        "operationId": "post_run_v1_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "after": {
+                    "default": [],
+                    "items": {
+                      "pattern": "^[A-Za-z0-9._:-]{1,64}$",
+                      "type": "string"
+                    },
+                    "title": "After",
+                    "type": "array"
+                  },
+                  "assets": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "name": {
+                          "minLength": 1,
+                          "pattern": "^[^\\x00]*$",
+                          "title": "Name",
+                          "type": "string"
+                        },
+                        "sha256": {
+                          "pattern": "^[0-9a-f]{64}$",
+                          "title": "Sha256",
+                          "type": "string"
+                        },
+                        "text": {
+                          "pattern": "^[^\\x00]*$",
+                          "title": "Text",
+                          "type": "string"
+                        },
+                        "type": {
+                          "minLength": 1,
+                          "pattern": "^[^\\x00]*$",
+                          "title": "Type",
+                          "type": "string"
+                        },
+                        "version": {
+                          "minLength": 1,
+                          "pattern": "^[^\\x00]*$",
+                          "title": "Version",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "type",
+                        "version",
+                        "sha256",
+                        "text"
+                      ],
+                      "title": "Asset",
+                      "type": "object"
+                    },
+                    "maxItems": 32,
+                    "title": "Assets",
+                    "type": "array"
+                  },
+                  "attribution": {
+                    "maxProperties": 8,
+                    "patternProperties": {
+                      "^[^\\x00]*$": {
+                        "maxLength": 120,
+                        "pattern": "^[^\\x00]*$",
+                        "type": "string"
+                      }
+                    },
+                    "title": "Attribution",
+                    "type": "object"
+                  },
+                  "base_commit": {
+                    "pattern": "^[0-9a-f]{40,64}$",
+                    "title": "Base Commit",
+                    "type": "string"
+                  },
+                  "branch": {
+                    "anyOf": [
+                      {
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]*$",
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "title": "Branch"
+                  },
+                  "contract": {
+                    "const": 1,
+                    "title": "Contract",
+                    "type": "integer"
+                  },
+                  "eval": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "case": {
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
+                            "title": "Case",
+                            "type": "string"
+                          },
+                          "executor": {
+                            "anyOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "configuration": {
+                                    "anyOf": [
+                                      {
+                                        "pattern": "^pi/[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "title": "Configuration"
+                                  },
+                                  "effort": {
+                                    "anyOf": [
+                                      {
+                                        "enum": [
+                                          "low",
+                                          "medium",
+                                          "high"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "title": "Effort"
+                                  },
+                                  "harness": {
+                                    "anyOf": [
+                                      {
+                                        "enum": [
+                                          "codex",
+                                          "claude"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "title": "Harness"
+                                  },
+                                  "model": {
+                                    "anyOf": [
+                                      {
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "title": "Model"
+                                  }
+                                },
+                                "title": "Executor",
+                                "type": "object"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "set": {
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
+                            "title": "Set",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "set",
+                          "case"
+                        ],
+                        "title": "RunEval",
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "level": {
+                    "enum": [
+                      "light",
+                      "standard",
+                      "strong"
+                    ],
+                    "title": "Level",
+                    "type": "string"
+                  },
+                  "limits": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "minutes": {
+                        "anyOf": [
+                          {
+                            "minimum": 0,
+                            "type": "number"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Minutes"
+                      },
+                      "requests": {
+                        "anyOf": [
+                          {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Requests"
+                      },
+                      "usd": {
+                        "anyOf": [
+                          {
+                            "minimum": 0,
+                            "type": "number"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Usd"
+                      }
+                    },
+                    "title": "Limits",
+                    "type": "object"
+                  },
+                  "mode": {
+                    "enum": [
+                      "write",
+                      "read"
+                    ],
+                    "title": "Mode",
+                    "type": "string"
+                  },
+                  "priority": {
+                    "default": 0,
+                    "maximum": 2147483647,
+                    "minimum": -2147483647,
+                    "title": "Priority",
+                    "type": "integer"
+                  },
+                  "repository": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*/[A-Za-z0-9][A-Za-z0-9._-]*$",
+                    "title": "Repository",
+                    "type": "string"
+                  },
+                  "request_id": {
+                    "pattern": "^[A-Za-z0-9._:-]{1,64}$",
+                    "title": "Request Id",
+                    "type": "string"
+                  },
+                  "role": {
+                    "enum": [
+                      "slice",
+                      "ticket",
+                      "cut",
+                      "review",
+                      "check"
+                    ],
+                    "title": "Role",
+                    "type": "string"
+                  },
+                  "work": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "allowed_files": {
+                        "anyOf": [
+                          {
+                            "items": {
+                              "minLength": 1,
+                              "pattern": "^[^\\x00]+$",
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Allowed Files"
+                      },
+                      "check_command": {
+                        "anyOf": [
+                          {
+                            "pattern": "^[^\\x00]*$",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Check Command"
+                      },
+                      "goal": {
+                        "maxLength": 200000,
+                        "minLength": 1,
+                        "pattern": "^[^\\x00]*$",
+                        "title": "Goal",
+                        "type": "string"
+                      },
+                      "history": {
+                        "default": "shallow",
+                        "enum": [
+                          "shallow",
+                          "full"
+                        ],
+                        "title": "History",
+                        "type": "string"
+                      },
+                      "overlay": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "commit": {
+                                "pattern": "^[0-9a-f]{40,64}$",
+                                "title": "Commit",
+                                "type": "string"
+                              },
+                              "paths": {
+                                "items": {
+                                  "minLength": 1,
+                                  "pattern": "^[^\\x00]+$",
+                                  "type": "string"
+                                },
+                                "minItems": 1,
+                                "title": "Paths",
+                                "type": "array"
+                              }
+                            },
+                            "required": [
+                              "commit",
+                              "paths"
+                            ],
+                            "title": "Overlay",
+                            "type": "object"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "pinned_paths": {
+                        "default": [],
+                        "items": {
+                          "minLength": 1,
+                          "pattern": "^[^\\x00]+$",
+                          "type": "string"
+                        },
+                        "title": "Pinned Paths",
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "goal"
+                    ],
+                    "title": "Work",
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "contract",
+                  "request_id",
+                  "repository",
+                  "base_commit",
+                  "mode",
+                  "role",
+                  "level",
+                  "work"
+                ],
+                "title": "RunRequest",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunCreated"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Post Run"
+      }
+    },
+    "/v1/runs/{run_id}": {
+      "get": {
+        "operationId": "get_run_v1_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not Found"
+          }
+        },
+        "summary": "Get Run"
+      }
+    },
+    "/v1/runs/{run_id}/cancel": {
+      "post": {
+        "operationId": "post_cancel_v1_runs__run_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Conflict"
+          }
+        },
+        "summary": "Post Cancel"
+      }
+    },
+    "/v1/runs/{run_id}/messages": {
+      "post": {
+        "operationId": "post_message_v1_runs__run_id__messages_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "contract": {
+                    "const": 1,
+                    "title": "Contract",
+                    "type": "integer"
+                  },
+                  "message_id": {
+                    "pattern": "^[A-Za-z0-9._:-]{1,64}$",
+                    "title": "Message Id",
+                    "type": "string"
+                  },
+                  "text": {
+                    "maxLength": 200000,
+                    "minLength": 1,
+                    "pattern": "^[^\\x00]*$",
+                    "title": "Text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "contract",
+                  "message_id",
+                  "text"
+                ],
+                "title": "Message",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Post Message"
+      }
+    }
+  }
+}
