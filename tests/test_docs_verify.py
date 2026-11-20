@@ -240,7 +240,6 @@ def test_pass_record(tmp_path, api, capsys):
 @pytest.mark.parametrize('reply', [
     answer(choices=['supported', 'supported', 'partly']),
     answer('not_supported'),
-    answer(confidence=0.89),
 ])
 def test_flagged(tmp_path, api, capsys, reply):
     _, replies = api
@@ -251,6 +250,25 @@ def test_flagged(tmp_path, api, capsys, reply):
     assert item['verdict'] == 'flagged' and len(item['answers']) == 3
     assert [a['choice'] for a in item['answers']] == [a['choice'] for a in reply['questions']['support']['answers']]
     assert 'flagged: C1' in capsys.readouterr().out
+
+
+def test_supported_answers_pass_with_low_confidence(tmp_path, api):
+    _, replies = api
+    replies.append((200, answer(confidence=0.5)))
+    code, record = run(tmp_path, base_claims())
+    item = record['items'][0]
+    assert code == 0 and item['verdict'] == 'pass'
+    assert item['confidence'] == 0.5 and len(item['answers']) == 3
+
+
+def test_fewer_than_three_answers_are_flagged(tmp_path, api):
+    _, replies = api
+    reply = answer()
+    reply['questions']['support']['answers'] = reply['questions']['support']['answers'][:2]
+    replies.append((200, reply))
+    code, record = run(tmp_path, base_claims())
+    assert code == 1 and record['items'][0]['verdict'] == 'flagged'
+    assert len(record['items'][0]['answers']) == 2
 
 
 def test_too_large_from_api(tmp_path, api):

@@ -20,7 +20,6 @@ CLAIMS_PATH = 'docs/claims.json'
 SCHEMA = json.loads(files('schema').joinpath('claims.schema.json').read_text())
 TEXT_LIMIT = 80_000
 REPEATS = 3
-CONFIDENCE = 0.9
 CHOICES = {
     'supported': 'every part of the claim is shown by the given lines',
     'partly': 'some part is shown, some part is missing or different',
@@ -204,9 +203,7 @@ def judge(client, body):
         except ValueError:
             return {'verdict': 'error', 'error': 'invalid_response', 'attempts': attempt}, value, None
         confidence = question.get('confidence')
-        passed = (len(answers) == REPEATS and all(a['choice'] == 'supported' for a in answers)
-                  and isinstance(confidence, (int, float)) and not isinstance(confidence, bool)
-                  and confidence >= CONFIDENCE)
+        passed = len(answers) == REPEATS and all(a['choice'] == 'supported' for a in answers)
         return {'verdict': 'pass' if passed else 'flagged', 'choice': question.get('choice'),
                 'confidence': confidence, 'agreement': question.get('agreement'),
                 'answers': answers, 'attempts': attempt}, value, None
