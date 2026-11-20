@@ -66,20 +66,16 @@ def test_cut_and_ticket_bodies(setup):  # noqa: F811
     assert run_checks(api) == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Factory sends {} to a cancel operation that defines no body; a follow-up sends no body",
-)
 def test_cancel_body(monkeypatch):
     sent = []
 
-    def record(self, path, body=None, *, accepted=None):
-        sent.append((path, body))
+    def record(self, path, body=None, *, accepted=None, method=None):
+        sent.append((path, body, method))
         return {"status": "cancelled"}
 
     monkeypatch.setattr(run_platform.Connection, "request", record)
     run_platform.Client.__new__(run_platform.Client).cancel("run-1")
-    assert [path for path, _ in sent] == ["/v1/runs/run-1/cancel"]
+    assert sent == [("/v1/runs/run-1/cancel", None, "POST")]
     assert problems("POST", sent[0][0], sent[0][1]) == []
 
 

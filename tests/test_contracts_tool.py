@@ -33,6 +33,9 @@ def document(item_properties, item_required=('name',)):
                     'type': 'object', 'properties': {'text': {'type': 'string'}},
                     'required': ['text']}}}},
                 'responses': {'200': {'description': 'ok'}}}},
+            '/v1/items/{item_id}/cancel': {'post': {
+                'operationId': 'cancel_item',
+                'responses': {'200': {'description': 'ok'}}}},
         },
         'components': {'schemas': {
             'Item': {'type': 'object', 'title': 'Item', 'required': list(item_required),
@@ -145,6 +148,14 @@ def test_sender_wrong_type(pin):
     assert any(e.startswith('POST /v1/items: $.owner: ') for e in errors)
     assert sender.check(pin, 'POST', '/v1/items', {'size': 2}) == [
         "POST /v1/items: $: 'name' is a required property"]
+
+
+def test_sender_no_body_operations(pin):
+    assert sender.check(pin, 'POST', '/v1/items/42/cancel', None) == []
+    assert sender.check(pin, 'POST', '/v1/items/42/cancel', {}) == [
+        'POST /v1/items/42/cancel: the pinned schema defines no JSON request body']
+    assert sender.check(pin, 'POST', '/v1/items', None) == [
+        "POST /v1/items: $: None is not of type 'object'"]
 
 
 def test_sender_valid_body_and_operations(pin, tmp_path, capsys):

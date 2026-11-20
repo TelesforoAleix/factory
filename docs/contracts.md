@@ -18,7 +18,7 @@ repository needs an adapting slice in the same feature.
 ### `run-api`
 
 - Version 1 · provider `TelesforoAleix/homelab-v2` · users `TelesforoAleix/factory`.
-- Run and message bodies carry `"contract": 1`; cancel sends `{}`. Calls: `POST /v1/runs`, `GET /v1/runs/<id>`,
+- Run and message bodies carry `"contract": 1`; cancel sends a POST with no body or JSON content type. Calls: `POST /v1/runs`, `GET /v1/runs/<id>`,
   `GET /v1/runs?request_id=<id>`, `POST /v1/runs/<id>/messages`, `POST /v1/runs/<id>/cancel`.
 - Source: `cplane/run_platform.py` (client) and `Runner.new_request` in `cplane/runner.py`
   (body); protocol in [runner.md](runner.md). Settings: `CPLANE_EVAL_TASK_URL`, `CPLANE_EVAL_TASK_KEY_FILE`.
@@ -27,7 +27,7 @@ repository needs an adapting slice in the same feature.
   the old version accepted until no saved job uses it.
 - Pin and sender check: `pins/run-api/` holds the provider's OpenAPI document at a
   named commit; `tests/test_run_api_contract.py` verifies it and checks the bodies Factory
-  builds against it. Known gap: cancel sends `{}` but the pinned operation defines no body (expected failure until Factory sends none).
+  builds against it. The sender accepts a missing body when the pinned operation defines none.
 
 ### `decisions-api`
 

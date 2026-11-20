@@ -158,3 +158,8 @@ operation defines no request body, and Home Lab's cancel never reads one. The tr
 contract is that cancel takes no body. The runner fix (send a POST with no JSON body)
 is a follow-up slice, outside this slice's allowed files. Until then the cancel test is
 `xfail(strict=True)`, so it fails the day the gap closes and must then be unmarked.
+## 2026-11-20 — Run API cancel sends no request body
+
+Factory sends the run API cancel operation as POST with no body or JSON content
+type, matching the pinned schema and Home Lab handler. The sender accepts a missing
+body only for operations whose pinned schema defines no JSON request body.

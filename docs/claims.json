@@ -1662,7 +1662,7 @@
         21,
         21
       ],
-      "text": "Run request bodies and message bodies Factory builds carry `\"contract\": 1`; the cancel call sends an empty object.",
+      "text": "Run request bodies and message bodies Factory builds carry `\"contract\": 1`; the cancel call sends no request body.",
       "sources": [
         {
           "path": "cplane/runner.py",
@@ -1682,7 +1682,7 @@
           "path": "cplane/run_platform.py",
           "lines": [
             134,
-            136
+            141
           ]
         }
       ]
@@ -1694,7 +1694,7 @@
         28,
         30
       ],
-      "text": "The run-api pin is `pins/run-api/`, checked by `tests/test_run_api_contract.py`; cancel's body is a known gap marked as an expected failure.",
+      "text": "The run-api pin is `pins/run-api/`, checked by `tests/test_run_api_contract.py`; the contract test checks that cancel sends no body.",
       "sources": [
         {
           "path": "tests/test_run_api_contract.py",
@@ -1706,8 +1706,8 @@
         {
           "path": "tests/test_run_api_contract.py",
           "lines": [
-            69,
-            73
+            68,
+            85
           ]
         },
         {
