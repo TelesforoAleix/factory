@@ -27,23 +27,22 @@ current design only; [DECISIONS.md](DECISIONS.md) records why it is so.
 
 | Part | Code | Owns |
 | --- | --- | --- |
-| `ui` | `factory_ui/`, `ui/` | `factory_ui/__init__.py` imports Flask |
-| `intake` | `cplane/intake.py` | `SOCKET` path |
+| `ui` | `factory_ui/`, `ui/` | Workshop: the owner web console and its HTTP API |
+| `intake` | `cplane/intake.py` | the inbox socket protocol for arrivals |
 | `sessions` | `cplane/sessions.py`, `cplane/workshop.py` | chat turns and their scoped Workshop tools |
 | `runner` | `cplane/runner.py` and the modules it calls | scheduling passes, run requests, PRs, CI, merges, installs, exports |
 | `cli` | `cplane/cli.py` | the `cplane` command for owners, planners and operators |
 | `store` | `cplane/state.py`, `cplane/stores.py`, `cplane/migrations/` | Postgres storage and the version 1 slice validator |
 | `schemas` | `schema/` | the JSON formats Factory validates |
-| `skills` | `skills/`, `cplane/prompts/` | the `instructions` function |
+| `skills` | `skills/`, `cplane/prompts/` | instructions given to chats, cutters, reviewers and the judge |
 | `docs-verify` | `cplane/docs_verify.py` | the documentation claims check |
 | `node-tools` | `node/` | host wrappers and the retained fenced CLI image |
 
 `cplane/prompts.py` sets `ROOT` to its `prompts` directory.
 
-`factory_ui/` sets `DIST` to `ui/dist`.
-The `frontend` route serves files from `ui/dist` and falls back to `index.html`.
-The Flask app registers routes under `/api/`.
-`intake` accepts one JSON arrival per connection on a Unix socket and opens no network port.
+`ui` serves the React client built into `ui/dist` and the Flask API from
+`factory_ui/`. `intake` accepts one JSON arrival per connection on a Unix socket
+and opens no network port.
 No client currently connects to it; the phone bot user is granted group access. `sessions` runs chat turns through the platform
 launcher. `runner` runs `cplane --actor runner run --every 60`: one locked pass,
 then a wait, repeated. `store` keeps every slice document in Postgres and checks
@@ -58,12 +57,9 @@ each write against `schema/slices.schema.json`.
    slices, and finally writes the phone bot export.
 3. The runner submits slice, cut, ticket and review work to the platform run API
    by role and level. The platform chooses the executor and delivers the branch.
-4. The runner opens the PR.
-5. The runner reads CI checks.
-6. The runner requires merge approval when class 4 paths are present.
-7. The runner merges with `--squash`.
-8. The runner raises node-step attention when `node_steps` is present.
-9. After a merge the runner raises `contract-change` and `docs-graph` attention
+4. The runner opens the PR, reads CI, applies change classes and approval, merges,
+   and raises node steps. An owner install request goes to the platform deployer.
+5. After a merge the runner raises `contract-change` and `docs-graph` attention
    items when they apply.
 
 ## Where each part runs
