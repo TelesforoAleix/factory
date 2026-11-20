@@ -28,8 +28,9 @@ Run `uv run pytest` before submitting. Work through a PR with a green `test` che
   role and level. The platform owns executor choice, usage waits, harness
   concurrency, repository isolation and branch delivery. Factory owns PRs, CI,
   merge approval, attention and node steps. Never add a local slice execution path.
-- Answers and merge notices are messages to the existing run. Paused slices only
-  poll and keep results; abandoned slices cancel their runs, retrying running turns
+- Answers are messages to the existing run.
+- Merge notices are messages to the existing run.
+- Paused slices only poll and keep results; abandoned slices cancel their runs, retrying running turns
   until the cancellation is accepted. Eval attempts never open PRs or change slices;
   chats run through the `sessions` service.
 - Planning agents use `add`, `edit`, `state`, `attention`, `review` and `show`, never
