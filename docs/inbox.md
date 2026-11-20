@@ -40,8 +40,8 @@ orchestrator transcript. Phone delivery is the bot's responsibility.
 
 The `intake` service binds only `/run/factory-intake/intake.sock`, sets the socket's
 group to `CPLANE_INTAKE_GID` (977 in `compose.yaml`) and its mode to 0660. The host
-prepares `/run/factory-intake` ([node](node.md)); the phone bot connects as a member
-of that group. The listener uses `AF_UNIX` only and opens no network port; the
+prepares `/run/factory-intake` ([node](node.md)); the phone bot user is granted
+membership in that group, but no client currently connects to the socket. The listener uses `AF_UNIX` only and opens no network port; the
 service connects to Postgres with its own database URL secret and reads no runner
 settings. Attachments stay in Postgres and need no filesystem write.
 
