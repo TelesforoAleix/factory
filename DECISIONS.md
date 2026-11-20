@@ -143,3 +143,18 @@ between repositories.
    `factory-contracts` script, imports only the standard library and `jsonschema`,
    never `cplane` or `factory_ui`, and finds `oasdiff` from `--oasdiff`, `OASDIFF`,
    then `PATH`.
+
+## 2026-11-20 — The run-api pin and the sender check
+
+Factory pins the provider's run-api OpenAPI document in `pins/run-api/`
+(`TelesforoAleix/homelab-v2` at `e675179213ccc9cd81f44d69035aa995e6d034f7`). The sender
+check is a test, `tests/test_run_api_contract.py`, in the existing `uv run pytest` step:
+it verifies the pin and checks bodies built by the runner's own code (slice, cut,
+ticket and review requests, an answer, the completion message) with
+`contracts.sender.check`, plus one misspelt-key negative case.
+
+The check found a gap. Factory's cancel call sends `{}`, but the pinned cancel
+operation defines no request body, and Home Lab's cancel never reads one. The true
+contract is that cancel takes no body. The runner fix (send a POST with no JSON body)
+is a follow-up slice, outside this slice's allowed files. Until then the cancel test is
+`xfail(strict=True)`, so it fails the day the gap closes and must then be unmarked.

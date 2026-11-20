@@ -1688,6 +1688,38 @@
       ]
     },
     {
+      "id": "run-api-pin",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        28,
+        30
+      ],
+      "text": "The run-api pin is `pins/run-api/`, checked by `tests/test_run_api_contract.py`; cancel's body is a known gap marked as an expected failure.",
+      "sources": [
+        {
+          "path": "tests/test_run_api_contract.py",
+          "lines": [
+            12,
+            12
+          ]
+        },
+        {
+          "path": "tests/test_run_api_contract.py",
+          "lines": [
+            69,
+            73
+          ]
+        },
+        {
+          "path": "pins/run-api/pin.json",
+          "lines": [
+            1,
+            6
+          ]
+        }
+      ]
+    },
+    {
       "id": "run-api-calls",
       "doc": "docs/contracts.md",
       "doc_lines": [
@@ -1773,8 +1805,8 @@
       "id": "decisions-body",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        32,
-        33
+        35,
+        36
       ],
       "text": "The docs-verify request includes a `text` field.",
       "sources": [
@@ -1791,8 +1823,8 @@
       "id": "decisions-support",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        32,
-        33
+        35,
+        36
       ],
       "text": "The docs-verify request has one `support` question.",
       "sources": [
@@ -1809,8 +1841,8 @@
       "id": "decisions-repeats",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        32,
-        33
+        35,
+        36
       ],
       "text": "The docs-verify request sets `repeats` to 3.",
       "sources": [
@@ -1834,8 +1866,8 @@
       "id": "deployer-protocol",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        41,
-        43
+        44,
+        46
       ],
       "text": "The deployer client sends one JSON line with `op`, `application` and a 40-hex `sha`, and reads one JSON line with `ok`, `result`, and on success `application` and `commit`.",
       "sources": [
@@ -1859,8 +1891,8 @@
       "id": "deployer-setting",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        41,
-        42
+        44,
+        45
       ],
       "text": "The runner's deployer socket path comes from `CPLANE_DEPLOYER_SOCKET`, set to `/run/homelab-deployer.sock` in `compose.yaml`.",
       "sources": [
@@ -1884,8 +1916,8 @@
       "id": "launcher-protocol",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        49,
-        50
+        52,
+        53
       ],
       "text": "The launcher client sends one JSON line per connection to `/run/homelab-launcher.sock`, or the path in `CPLANE_LAUNCHER_SOCKET`, and reads one JSON line back.",
       "sources": [
@@ -1916,8 +1948,8 @@
       "id": "manage-calls",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        57,
-        58
+        60,
+        61
       ],
       "text": "Workshop's Home Lab settings endpoint reads `/v1/manage/routes` or `/v1/manage/providers` from `HOMELAB_API_URL` and passes the JSON through.",
       "sources": [
@@ -1934,8 +1966,8 @@
       "id": "github-version",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        63,
-        63
+        66,
+        66
       ],
       "text": "GitHub requests send `X-GitHub-Api-Version: 2022-11-28`.",
       "sources": [
@@ -1952,8 +1984,8 @@
       "id": "github-scoped",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        64,
-        64
+        67,
+        67
       ],
       "text": "GitHub App installation tokens are requested for the named repositories only.",
       "sources": [
@@ -1970,8 +2002,8 @@
       "id": "github-settings",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        65,
-        66
+        68,
+        69
       ],
       "text": "The App id and installation id are read from `CPLANE_GITHUB_APP_ID` and `CPLANE_GITHUB_INSTALLATION_ID`, and the key path from `CPLANE_GITHUB_APP_KEY` (default `/etc/factory/github-app.pem`).",
       "sources": [
@@ -1995,8 +2027,8 @@
       "id": "orders-calls",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        72,
-        73
+        75,
+        76
       ],
       "text": "The orders collector reads `<base>/orders` for an `orders` list and posts each result to `<base>/orders/<id>/ack`.",
       "sources": [
@@ -2020,8 +2052,8 @@
       "id": "orders-shape",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        73,
-        75
+        76,
+        78
       ],
       "text": "An order has exactly `id`, `created`, `action`, `slice`, `argument` and `expect`, and its action is one of `start`, `slot`, `pause`, `resume`, `answer`, `approve` and `orchestrator`.",
       "sources": [
@@ -2045,8 +2077,8 @@
       "id": "orders-setting",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        76,
-        76
+        79,
+        79
       ],
       "text": "The orders base URL comes from `CPLANE_ORDERS_URL`.",
       "sources": [
@@ -2063,8 +2095,8 @@
       "id": "orders-unknown",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        77,
-        77
+        80,
+        80
       ],
       "text": "The orders collector refuses an order whose fields are not exactly the expected set.",
       "sources": [
@@ -2081,8 +2113,8 @@
       "id": "pr-request-fields",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        85,
-        87
+        88,
+        90
       ],
       "text": "A PR request must have exactly `branch`, `title`, `body`, `node_steps` and `contract_changes`; `node_steps` is text or null and `contract_changes` is null or a non-empty list of `{name, version, users}` with non-empty users.",
       "sources": [
@@ -2106,8 +2138,8 @@
       "id": "pr-request-old-jobs",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        90,
-        90
+        93,
+        93
       ],
       "text": "A saved job request without `contract_changes` is read as null.",
       "sources": [
@@ -2124,8 +2156,8 @@
       "id": "pr-request-goal",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        89,
-        89
+        92,
+        92
       ],
       "text": "`Runner.launch_work` appends the PR request format, including `contract_changes`, to the goal of a slice run.",
       "sources": [
@@ -2149,8 +2181,8 @@
       "id": "brief-sections",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        95,
-        96
+        98,
+        99
       ],
       "text": "The brief skill asks for Facts, Fixed decisions, Steps, Allowed changes, Do not, Validation, Git, Escalation and Handover sections.",
       "sources": [
@@ -2167,8 +2199,8 @@
       "id": "brief-ticket-copy",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        97,
-        98
+        100,
+        101
       ],
       "text": "The ticket builder reads a brief's `## Fixed decisions` and `## Do not` sections and refuses a brief with neither.",
       "sources": [
@@ -2192,8 +2224,8 @@
       "id": "slice-state-schema",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        105,
-        106
+        108,
+        109
       ],
       "text": "`cplane/state.py` validates the state against `schema/slices.schema.json` and also requires unique slice ids.",
       "sources": [
@@ -2210,8 +2242,8 @@
       "id": "slice-state-version",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        102,
-        104
+        105,
+        107
       ],
       "text": "The slice state schema fixes `version` to 1.",
       "sources": [
@@ -2228,8 +2260,8 @@
       "id": "schema-class-2",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        108,
-        109
+        111,
+        112
       ],
       "text": "Paths under `schema/` are change class 2.",
       "sources": [
@@ -2246,8 +2278,8 @@
       "id": "plan-schema",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        114,
-        114
+        117,
+        117
       ],
       "text": "`cplane/cut.py` loads `schema/plan.schema.json` and validates the cutter's ticket plan against it.",
       "sources": [
@@ -2278,8 +2310,8 @@
       "id": "review-schema",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        120,
-        121
+        123,
+        124
       ],
       "text": "`cplane/review.py` parses the leading fenced JSON of a review and validates it against `schema/review.schema.json`, and `skills/slice-review.md` requests that format.",
       "sources": [
@@ -2310,8 +2342,8 @@
       "id": "claims-schema",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        127,
-        128
+        130,
+        131
       ],
       "text": "`cplane docs-verify` reads `docs/claims.json`.",
       "sources": [
@@ -2328,8 +2360,8 @@
       "id": "cli-parser",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        135,
-        137
+        138,
+        140
       ],
       "text": "The parser defines `add`, `edit`, `state`, `attention`, `review`, `show`, `pending`, `install` and `docs-verify` commands.",
       "sources": [
@@ -2360,8 +2392,8 @@
       "id": "change-classes-format",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        144,
-        145
+        147,
+        148
       ],
       "text": "`.github/change-classes` lines are `<class> <pattern>`, gitignore-style from the root; the highest matching class wins and no match is class 1.",
       "sources": [
@@ -2378,8 +2410,8 @@
       "id": "change-classes-readers",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        145,
-        146
+        148,
+        149
       ],
       "text": "`.github/change-classes` is read by the runner before a merge and by the deployer before an install.",
       "sources": [
@@ -2396,8 +2428,8 @@
       "id": "change-classes-base",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        147,
-        147
+        150,
+        150
       ],
       "text": "The runner reads `.github/change-classes` from the PR's pinned base commit.",
       "sources": [
@@ -2421,8 +2453,8 @@
       "id": "planning-export-paths",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        153,
-        154
+        156,
+        157
       ],
       "text": "The feature export writes only `features/<ID>.md`, `features/<ID>/<ID>-S<n>.md` and, when generated, `backlog.md`; generation is on when `CPLANE_BACKLOG_GENERATED=1`.",
       "sources": [
@@ -2446,8 +2478,8 @@
       "id": "planning-export-remote",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        154,
-        154
+        157,
+        157
       ],
       "text": "Feature export reads `CPLANE_PLANNING_REMOTE` as its remote.",
       "sources": [
@@ -2464,8 +2496,8 @@
       "id": "planning-export-hourly",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        153,
-        153
+        156,
+        156
       ],
       "text": "The runner loop runs the feature export at most once per local hour.",
       "sources": [
@@ -2510,8 +2542,8 @@
       "id": "planning-export-refuse",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        156,
-        156
+        159,
+        159
       ],
       "text": "The feature export refuses a change to any path its `allowed` method rejects.",
       "sources": [
@@ -2528,8 +2560,8 @@
       "id": "bot-export-files",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        161,
-        163
+        164,
+        166
       ],
       "text": "After each pass the bot export writes `slices.json` and `slices.json.outbox.jsonl` to `CPLANE_BOT_EXPORT`, mode 0640 with the folder's group, keeping only `BOT_ACCEPTED_FIELDS` for accepted and dropped slices and only `BOT_EVENTS` notices.",
       "sources": [
@@ -2588,8 +2620,8 @@
       "id": "bot-export-append",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        164,
-        164
+        167,
+        167
       ],
       "text": "The bot export fails when the new outbox does not start with the outbox already written.",
       "sources": [
@@ -2606,8 +2638,8 @@
       "id": "intake-protocol",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        169,
-        170
+        172,
+        173
       ],
       "text": "The intake socket at `/run/factory-intake/intake.sock` reads one JSON arrival with `text` and optional `fields` and `files` per connection, and replies with `{\"id\": N}` or an `error` object.",
       "sources": [
@@ -2638,8 +2670,8 @@
       "id": "intake-unknown",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        172,
-        172
+        175,
+        175
       ],
       "text": "The intake server refuses an arrival with any key other than `text`, `fields` and `files`.",
       "sources": [
@@ -2656,8 +2688,8 @@
       "id": "service-env-files",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        177,
-        178
+        180,
+        181
       ],
       "text": "In `compose.yaml` the `ui`, `sessions` and `runner` services each require an env file named after them (`ui.env`, `sessions.env`, `runner.env`).",
       "sources": [
@@ -2709,8 +2741,8 @@
       "id": "service-env-guard",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        180,
-        180
+        183,
+        183
       ],
       "text": "`compose.yaml` is a change class 4 guard path.",
       "sources": [
@@ -4408,8 +4440,8 @@
       "id": "contract-tool-exit",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        186,
-        187
+        189,
+        190
       ],
       "text": "`factory-contracts` exits 1 when a check fails and 2 on a usage or input error.",
       "sources": [
@@ -4433,8 +4465,8 @@
       "id": "contract-tool-practices",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        200,
-        201
+        203,
+        204
       ],
       "text": "Every check command is registered with the `expand-contract` skill, a test requires each named skill file to exist, and `practices` prints the registry.",
       "sources": [
@@ -4465,8 +4497,8 @@
       "id": "contract-tool-canonical",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        203,
-        205
+        206,
+        208
       ],
       "text": "The tool writes and compares JSON as `json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False)` plus a newline.",
       "sources": [
@@ -4483,8 +4515,8 @@
       "id": "contract-tool-generated",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        206,
-        207
+        209,
+        210
       ],
       "text": "`generated` runs the generator command and prints a unified diff and exits 1 when the committed file differs from its canonical output.",
       "sources": [
@@ -4501,8 +4533,8 @@
       "id": "contract-tool-compat",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        208,
-        210
+        211,
+        213
       ],
       "text": "`compat` runs `oasdiff breaking --fail-on ERR` from base to revision and from revision to base, fails when either fails, and reports each direction with each rule id.",
       "sources": [
@@ -4526,8 +4558,8 @@
       "id": "contract-tool-git-base",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        210,
-        211
+        213,
+        214
       ],
       "text": "A `git:REF:PATH` base is read with `git show`.",
       "sources": [
@@ -4544,8 +4576,8 @@
       "id": "contract-tool-oasdiff",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        211,
-        214
+        214,
+        217
       ],
       "text": "The tool finds `oasdiff` from `--oasdiff`, `OASDIFF`, then `PATH`, names v1.37.0 when it is missing, and runs it with `--allow-external-refs=false` in a temporary folder without `OASDIFF_CONFIG`.",
       "sources": [
@@ -4583,8 +4615,8 @@
       "id": "contract-tool-pin",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        215,
-        218
+        218,
+        221
       ],
       "text": "A pin folder holds canonical `schema.json` and `pin.json` with exactly `contract`, `provider`, `commit` and `sha256`; verify fails on a wrong key, form or hash.",
       "sources": [
@@ -4608,8 +4640,8 @@
       "id": "contract-tool-sender",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        219,
-        223
+        222,
+        226
       ],
       "text": "The sender check reports fields the JSON request schema does not define, following local `$ref`s and composition, and validates types with `jsonschema`; `contracts.sender.check` returns the errors.",
       "sources": [
@@ -5364,7 +5396,7 @@
       "doc": "docs/contracts.md",
       "doc_lines": [
         18,
-        27
+        30
       ]
     },
     {
@@ -5376,8 +5408,8 @@
       ],
       "doc": "docs/contracts.md",
       "doc_lines": [
-        29,
-        36
+        32,
+        39
       ]
     },
     {
@@ -5389,8 +5421,8 @@
       ],
       "doc": "docs/contracts.md",
       "doc_lines": [
-        38,
-        44
+        41,
+        47
       ]
     },
     {
@@ -5402,8 +5434,8 @@
       ],
       "doc": "docs/contracts.md",
       "doc_lines": [
-        46,
-        52
+        49,
+        55
       ]
     },
     {
@@ -5415,8 +5447,8 @@
       ],
       "doc": "docs/contracts.md",
       "doc_lines": [
-        54,
-        59
+        57,
+        62
       ]
     },
     {
@@ -5428,8 +5460,8 @@
       ],
       "doc": "docs/contracts.md",
       "doc_lines": [
-        61,
-        67
+        64,
+        70
       ]
     },
     {
@@ -5441,8 +5473,8 @@
       ],
       "doc": "docs/contracts.md",
       "doc_lines": [
-        69,
-        78
+        72,
+        81
       ]
     },
     {
@@ -5455,8 +5487,8 @@
       ],
       "doc": "docs/contracts.md",
       "doc_lines": [
-        82,
-        90
+        85,
+        93
       ]
     },
     {
@@ -5469,8 +5501,8 @@
       ],
       "doc": "docs/contracts.md",
       "doc_lines": [
-        92,
-        100
+        95,
+        103
       ]
     },
     {
@@ -5482,8 +5514,8 @@
       ],
       "doc": "docs/contracts.md",
       "doc_lines": [
-        102,
-        109
+        105,
+        112
       ]
     },
     {
@@ -5495,8 +5527,8 @@
       ],
       "doc": "docs/contracts.md",
       "doc_lines": [
-        111,
-        115
+        114,
+        118
       ]
     },
     {
@@ -5508,8 +5540,8 @@
       ],
       "doc": "docs/contracts.md",
       "doc_lines": [
-        117,
-        122
+        120,
+        125
       ]
     },
     {
@@ -5522,8 +5554,8 @@
       ],
       "doc": "docs/contracts.md",
       "doc_lines": [
-        124,
-        130
+        127,
+        133
       ]
     },
     {
@@ -5536,8 +5568,8 @@
       ],
       "doc": "docs/contracts.md",
       "doc_lines": [
-        132,
-        139
+        135,
+        142
       ]
     },
     {
@@ -5550,8 +5582,8 @@
       ],
       "doc": "docs/contracts.md",
       "doc_lines": [
-        141,
-        148
+        144,
+        151
       ]
     },
     {
@@ -5563,8 +5595,8 @@
       ],
       "doc": "docs/contracts.md",
       "doc_lines": [
-        150,
-        156
+        153,
+        159
       ]
     },
     {
@@ -5576,8 +5608,8 @@
       ],
       "doc": "docs/contracts.md",
       "doc_lines": [
-        158,
-        164
+        161,
+        167
       ]
     },
     {
@@ -5589,8 +5621,8 @@
       ],
       "doc": "docs/contracts.md",
       "doc_lines": [
-        166,
-        172
+        169,
+        175
       ]
     },
     {
@@ -5602,8 +5634,8 @@
       ],
       "doc": "docs/contracts.md",
       "doc_lines": [
-        174,
-        181
+        177,
+        184
       ]
     },
     {
@@ -5616,8 +5648,8 @@
       ],
       "doc": "docs/contracts.md",
       "doc_lines": [
-        183,
-        190
+        186,
+        193
       ]
     }
   ]
