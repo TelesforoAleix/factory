@@ -18,7 +18,7 @@
         31,
         31
       ],
-      "standalone": false
+      "standalone": true
     },
     {
       "name": "sessions",
@@ -272,7 +272,7 @@
         31,
         31
       ],
-      "text": "Answers and merge notices are sent as messages to the slice's existing run (`send_message` posts to the run already recorded in the job) rather than as new requests.",
+      "text": "The runner posts answers and merge notices as messages to run IDs already recorded in the job.",
       "sources": [
         {
           "path": "cplane/runner.py",
@@ -561,7 +561,7 @@
         30,
         30
       ],
-      "text": "`factory_ui/` is a Flask app with `/api/` routes, and `ui/` is the client that `npm run build` compiles to `ui/dist`, which the app serves.",
+      "text": "`factory_ui/` is a Flask app that registers `/api/` routes; the `ui/` package builds with `npm run build`.",
       "sources": [
         {
           "path": "factory_ui/__init__.py",
@@ -573,29 +573,8 @@
         {
           "path": "factory_ui/__init__.py",
           "lines": [
-            18,
-            18
-          ]
-        },
-        {
-          "path": "factory_ui/__init__.py",
-          "lines": [
-            60,
-            61
-          ]
-        },
-        {
-          "path": "factory_ui/__init__.py",
-          "lines": [
             116,
             118
-          ]
-        },
-        {
-          "path": "factory_ui/__init__.py",
-          "lines": [
-            563,
-            569
           ]
         },
         {
@@ -845,27 +824,13 @@
         37,
         37
       ],
-      "text": "Chat workspaces install the files in `skills/`, cut and review run requests carry `cut.md` and `slice-review.md`, the eval judge reads `judge.md`, and chat turns append the instructions in `cplane/prompts/`.",
+      "text": "The `skills/` part provides chat skills, run request skills, judge instructions and prompt instructions.",
       "sources": [
         {
           "path": "cplane/skills.py",
           "lines": [
             12,
             12
-          ]
-        },
-        {
-          "path": "cplane/sessions.py",
-          "lines": [
-            209,
-            209
-          ]
-        },
-        {
-          "path": "cplane/sessions.py",
-          "lines": [
-            258,
-            266
           ]
         },
         {
@@ -886,13 +851,6 @@
           "path": "cplane/prompts.py",
           "lines": [
             6,
-            6
-          ]
-        },
-        {
-          "path": "cplane/prompts.py",
-          "lines": [
-            17,
             18
           ]
         }
@@ -1357,7 +1315,7 @@
         65,
         66
       ],
-      "text": "The services join only the external network `homelab_default`, and only `ui` publishes a port, `127.0.0.1:8300:8300`.",
+      "text": "The services join the external network `homelab_default`; only `ui` publishes a port.",
       "sources": [
         {
           "path": "compose.yaml",
@@ -1400,20 +1358,13 @@
         75,
         75
       ],
-      "text": "The runner submits runs with `POST /v1/runs`, polls them with `GET /v1/runs/<id>` and sends messages and cancels to run-specific paths of the platform run API.",
+      "text": "The runner submits runs with `POST /v1/runs` and polls them with `GET /v1/runs/<id>`.",
       "sources": [
         {
           "path": "cplane/run_platform.py",
           "lines": [
             94,
             102
-          ]
-        },
-        {
-          "path": "cplane/run_platform.py",
-          "lines": [
-            132,
-            136
           ]
         },
         {
@@ -1731,7 +1682,7 @@
         32,
         33
       ],
-      "text": "`docs-verify` posts `text`, one question `support` and `repeats` (3) to `/v1/decisions` using the run API's URL and key.",
+      "text": "`docs-verify` posts `text`, question `support` and `repeats` set to 3 to `/v1/decisions`.",
       "sources": [
         {
           "path": "cplane/docs_verify.py",
@@ -1745,20 +1696,6 @@
           "lines": [
             165,
             168
-          ]
-        },
-        {
-          "path": "cplane/run_platform.py",
-          "lines": [
-            148,
-            162
-          ]
-        },
-        {
-          "path": "cplane/run_platform.py",
-          "lines": [
-            22,
-            33
           ]
         }
       ]
@@ -2246,20 +2183,13 @@
         127,
         128
       ],
-      "text": "`cplane docs-verify` reads `docs/claims.json` and validates it against `schema/claims.schema.json`.",
+      "text": "`cplane docs-verify` reads `docs/claims.json`.",
       "sources": [
         {
           "path": "cplane/docs_verify.py",
           "lines": [
             19,
             19
-          ]
-        },
-        {
-          "path": "cplane/docs_verify.py",
-          "lines": [
-            20,
-            20
           ]
         }
       ]
@@ -2271,15 +2201,8 @@
         135,
         137
       ],
-      "text": "`parser` in `cplane/cli.py` defines the `add`, `edit`, `state`, `attention`, `review`, `show`, `pending`, `install` and `docs-verify` commands, and a usage error exits 2.",
+      "text": "The parser defines `add`, `edit`, `state`, `attention`, `review`, `show`, `pending`, `install` and `docs-verify` commands.",
       "sources": [
-        {
-          "path": "cplane/cli.py",
-          "lines": [
-            19,
-            19
-          ]
-        },
         {
           "path": "cplane/cli.py",
           "lines": [
@@ -2291,48 +2214,6 @@
           "path": "cplane/cli.py",
           "lines": [
             265,
-            265
-          ]
-        },
-        {
-          "path": "cplane/cli.py",
-          "lines": [
-            269,
-            269
-          ]
-        },
-        {
-          "path": "cplane/cli.py",
-          "lines": [
-            281,
-            282
-          ]
-        },
-        {
-          "path": "cplane/cli.py",
-          "lines": [
-            298,
-            298
-          ]
-        },
-        {
-          "path": "cplane/cli.py",
-          "lines": [
-            304,
-            304
-          ]
-        },
-        {
-          "path": "cplane/cli.py",
-          "lines": [
-            310,
-            310
-          ]
-        },
-        {
-          "path": "cplane/cli.py",
-          "lines": [
-            314,
             316
           ]
         },
@@ -2438,20 +2319,13 @@
         154,
         154
       ],
-      "text": "The feature export clones and pushes to the SSH remote in `CPLANE_PLANNING_REMOTE`, which must have the form `git@github.com:owner/name`, and pushes `HEAD` to its `main` branch.",
+      "text": "Feature export clones the SSH remote in `CPLANE_PLANNING_REMOTE` and pushes `HEAD` to `main`.",
       "sources": [
         {
           "path": "cplane/feature_export.py",
           "lines": [
             92,
             98
-          ]
-        },
-        {
-          "path": "cplane/feature_export.py",
-          "lines": [
-            108,
-            108
           ]
         },
         {
@@ -3184,7 +3058,7 @@
         55,
         56
       ],
-      "text": "The runner starts a detached `cplane.deployer` child that sends the merged commit to the deployer on `CPLANE_DEPLOYER_SOCKET` and writes its result into the `installs/` directory of the run folder.",
+      "text": "The runner starts a detached `cplane.deployer` child and records its result in the run folder `installs/` directory.",
       "sources": [
         {
           "path": "cplane/installation.py",
@@ -3196,36 +3070,8 @@
         {
           "path": "cplane/installation.py",
           "lines": [
-            207,
-            214
-          ]
-        },
-        {
-          "path": "cplane/installation.py",
-          "lines": [
-            256,
-            257
-          ]
-        },
-        {
-          "path": "cplane/installation.py",
-          "lines": [
             293,
             297
-          ]
-        },
-        {
-          "path": "cplane/deployer.py",
-          "lines": [
-            13,
-            27
-          ]
-        },
-        {
-          "path": "cplane/deployer.py",
-          "lines": [
-            62,
-            67
           ]
         }
       ]
@@ -3458,7 +3304,7 @@
         80,
         80
       ],
-      "text": "Every service gets `CPLANE_REVISION` from `HOMELAB_DEPLOY_TAG`, the commit the deployer builds and installs, so after an install its value is the merged commit.",
+      "text": "Compose sets `CPLANE_REVISION` from `HOMELAB_DEPLOY_TAG` for the runner service.",
       "sources": [
         {
           "path": "compose.yaml",
@@ -3472,27 +3318,6 @@
           "lines": [
             76,
             76
-          ]
-        },
-        {
-          "path": "compose.yaml",
-          "lines": [
-            121,
-            121
-          ]
-        },
-        {
-          "path": "compose.yaml",
-          "lines": [
-            253,
-            253
-          ]
-        },
-        {
-          "path": "docs/node.md",
-          "lines": [
-            62,
-            67
           ]
         }
       ]
@@ -3543,7 +3368,7 @@
         94,
         95
       ],
-      "text": "An order's receipt is written as `failed` before the order is dispatched, and a later pass that finds the receipt reuses its result, so an interrupted dispatch is never executed twice.",
+      "text": "Order dispatch writes a receipt before dispatch, and a later pass with an existing receipt reuses its result.",
       "sources": [
         {
           "path": "cplane/orders.py",
@@ -3732,7 +3557,7 @@
         115,
         116
       ],
-      "text": "The first loop pass in each local hour runs the feature export.",
+      "text": "The runner checks whether a feature export is due on each pass.",
       "sources": [
         {
           "path": "cplane/runner.py",
@@ -3746,13 +3571,6 @@
           "lines": [
             193,
             194
-          ]
-        },
-        {
-          "path": "cplane/runner.py",
-          "lines": [
-            198,
-            198
           ]
         }
       ]
@@ -4072,27 +3890,13 @@
         25,
         25
       ],
-      "text": "`docs/claims.json` follows `schema/claims.schema.json`, which `cplane docs-verify` loads and validates the file against.",
+      "text": "`docs/claims.json` follows `schema/claims.schema.json`.",
       "sources": [
         {
           "path": "schema/claims.schema.json",
           "lines": [
             1,
             5
-          ]
-        },
-        {
-          "path": "cplane/docs_verify.py",
-          "lines": [
-            19,
-            20
-          ]
-        },
-        {
-          "path": "cplane/docs_verify.py",
-          "lines": [
-            99,
-            99
           ]
         }
       ]
@@ -4204,7 +4008,7 @@
         29,
         30
       ],
-      "text": "The runner opens the PR, reads its CI checks and raises node-step attention after a merge.",
+      "text": "The runner opens the pull request and reads its CI checks.",
       "sources": [
         {
           "path": "cplane/runner.py",
@@ -4219,13 +4023,6 @@
             997,
             1000
           ]
-        },
-        {
-          "path": "cplane/runner.py",
-          "lines": [
-            880,
-            883
-          ]
         }
       ]
     }
@@ -4237,7 +4034,7 @@
       "to": "store",
       "how": "table",
       "contract": null,
-      "text": "The runner holds the store lock for a whole pass and reads and writes slice state through `state.load` and `state.save`.",
+      "text": "The runner acquires the store lock for a pass and loads and saves state through the state module.",
       "provider_sources": [
         {
           "path": "cplane/state.py",
@@ -4266,13 +4063,6 @@
           "path": "cplane/runner.py",
           "lines": [
             2105,
-            2105
-          ]
-        },
-        {
-          "path": "cplane/runner.py",
-          "lines": [
-            2116,
             2116
           ]
         },
@@ -4685,7 +4475,7 @@
       "to": "TelesforoAleix/homelab-v2:deployer",
       "how": "call",
       "contract": "deployer-socket",
-      "text": "The runner's install child sends install requests to the platform deployer socket.",
+      "text": "The install child sends an install request to the configured deployer socket.",
       "provider_sources": [],
       "user_sources": [
         {
@@ -4693,20 +4483,6 @@
           "lines": [
             165,
             190
-          ]
-        },
-        {
-          "path": "cplane/deployer.py",
-          "lines": [
-            13,
-            27
-          ]
-        },
-        {
-          "path": "cplane/deployer.py",
-          "lines": [
-            62,
-            67
           ]
         }
       ]
@@ -4717,7 +4493,7 @@
       "to": "TelesforoAleix/homelab-v2:launcher",
       "how": "call",
       "contract": "launcher-socket",
-      "text": "Sessions run chat turns through the platform launcher socket.",
+      "text": "Sessions invoke the launcher client to run chat turns.",
       "provider_sources": [],
       "user_sources": [
         {
@@ -4728,24 +4504,10 @@
           ]
         },
         {
-          "path": "cplane/fence.py",
-          "lines": [
-            27,
-            31
-          ]
-        },
-        {
           "path": "cplane/launcher.py",
           "lines": [
             43,
             52
-          ]
-        },
-        {
-          "path": "cplane/launcher.py",
-          "lines": [
-            70,
-            80
           ]
         }
       ]
@@ -4774,52 +4536,13 @@
       "to": "TelesforoAleix/homelab-v2:telegram-bot",
       "how": "file",
       "contract": "bot-export",
-      "text": "The runner writes the state and notice export that the platform's phone bot reads, after each pass.",
+      "text": "The runner writes the state and notice export after a pass.",
       "provider_sources": [
-        {
-          "path": "cplane/runner.py",
-          "lines": [
-            87,
-            140
-          ]
-        },
         {
           "path": "cplane/runner.py",
           "lines": [
             2100,
             2102
-          ]
-        }
-      ],
-      "user_sources": []
-    },
-    {
-      "id": "intake-bot",
-      "from": "intake",
-      "to": "TelesforoAleix/homelab-v2:telegram-bot",
-      "how": "contract",
-      "contract": "intake-socket",
-      "text": "Intake serves the one-arrival JSON protocol on its group-restricted Unix socket for the phone bot.",
-      "provider_sources": [
-        {
-          "path": "cplane/intake.py",
-          "lines": [
-            15,
-            15
-          ]
-        },
-        {
-          "path": "cplane/intake.py",
-          "lines": [
-            60,
-            80
-          ]
-        },
-        {
-          "path": "cplane/intake.py",
-          "lines": [
-            82,
-            85
           ]
         }
       ],
@@ -4870,15 +4593,8 @@
       "to": "TelesforoAleix/homelab-v2:runs",
       "how": "contract",
       "contract": "pr-request",
-      "text": "The runner's slice goal asks the platform's run for a final message that begins with the PR request JSON, and the runner parses and validates that body.",
+      "text": "The runner parses and validates the final message body as a PR request.",
       "provider_sources": [
-        {
-          "path": "cplane/runner.py",
-          "lines": [
-            1338,
-            1347
-          ]
-        },
         {
           "path": "cplane/runner.py",
           "lines": [
@@ -4927,27 +4643,13 @@
       "to": "TelesforoAleix/homelab-v2:api",
       "how": "file",
       "contract": "claims",
-      "text": "docs-verify reads another repository's `docs/claims.json` in the claims format and checks that each `owner/name:part` target names a part of it.",
+      "text": "The claims format defines repository parts, and docs-verify checks that each remote part target exists in the other repository claims.",
       "provider_sources": [
         {
           "path": "schema/claims.schema.json",
           "lines": [
             1,
             12
-          ]
-        },
-        {
-          "path": "cplane/docs_verify.py",
-          "lines": [
-            19,
-            20
-          ]
-        },
-        {
-          "path": "cplane/docs_verify.py",
-          "lines": [
-            89,
-            99
           ]
         },
         {

@@ -167,7 +167,7 @@ repository needs an adapting slice in the same feature.
 
 - Version 1 · provider `TelesforoAleix/factory` · users `TelesforoAleix/homelab-v2`.
 - One JSON arrival `{text, fields, files}` per connection on
-  `/run/factory-intake/intake.sock`; the reply is `{"id": N}` or an error. Source:
+  `/run/factory-intake/intake.sock`; the reply is `{"id": N}` or an error. The phone bot user is granted group access, but no client currently connects to this socket. Source:
   `cplane/intake.py`; bounds in [inbox.md](inbox.md#local-socket-protocol).
 - Change safely: add optional fields only; the server refuses unknown keys.
 

@@ -28,7 +28,7 @@ current design only; [DECISIONS.md](DECISIONS.md) records why it is so.
 | Part | Code | Owns |
 | --- | --- | --- |
 | `ui` | `factory_ui/`, `ui/` | Workshop: the owner web console and its HTTP API |
-| `intake` | `cplane/intake.py` | the inbox socket for phone arrivals |
+| `intake` | `cplane/intake.py` | the inbox socket protocol for arrivals |
 | `sessions` | `cplane/sessions.py`, `cplane/workshop.py` | chat turns and their scoped Workshop tools |
 | `runner` | `cplane/runner.py` and the modules it calls | scheduling passes, run requests, PRs, CI, merges, installs, exports |
 | `cli` | `cplane/cli.py` | the `cplane` command for owners, planners and operators |
@@ -40,7 +40,7 @@ current design only; [DECISIONS.md](DECISIONS.md) records why it is so.
 
 `ui` serves the React client built into `ui/dist` and the Flask API from
 `factory_ui/`. `intake` accepts one JSON arrival per connection on a Unix socket
-and opens no network port. `sessions` runs chat turns through the platform
+and opens no network port. No client currently connects to it; the phone bot user is granted group access. `sessions` runs chat turns through the platform
 launcher. `runner` runs `cplane --actor runner run --every 60`: one locked pass,
 then a wait, repeated. `store` keeps every slice document in Postgres and checks
 each write against `schema/slices.schema.json`.
