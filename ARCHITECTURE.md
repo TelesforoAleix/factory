@@ -38,7 +38,7 @@ current design only; [DECISIONS.md](DECISIONS.md) records why it is so.
 | `docs-verify` | `cplane/docs_verify.py` | the documentation claims check |
 | `node-tools` | `node/` | host wrappers and the retained fenced CLI image |
 
-`ui` serves the built React client from `ui/` and the Flask API from
+`ui` serves the React client built into `ui/dist` and the Flask API from
 `factory_ui/`. `intake` accepts one JSON arrival per connection on a Unix socket
 and opens no network port. `sessions` runs chat turns through the platform
 launcher. `runner` runs `cplane --actor runner run --every 60`: one locked pass,
@@ -50,7 +50,7 @@ each write against `schema/slices.schema.json`.
 1. Work enters as inbox arrivals (`intake`, `ui`) or chat decisions (`sessions`),
    and becomes features and slices in `store`.
 2. Each runner pass, under one database lock, collects owner orders, steps the
-   feature pipeline, routes chat events, then collects, delivers and schedules
+   feature pipeline, routes chat events, then collects and delivers
    slices, and finally writes the phone bot export.
 3. The runner submits slice, cut, ticket and review work to the platform run API
    by role and level. The platform chooses the executor and delivers the branch.
