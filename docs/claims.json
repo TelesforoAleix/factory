@@ -636,15 +636,8 @@
         44,
         44
       ],
-      "text": "The `frontend` route serves files from `ui/dist`.",
+      "text": "`DIST` is `ui/dist`.",
       "sources": [
-        {
-          "path": "factory_ui/__init__.py",
-          "lines": [
-            18,
-            18
-          ]
-        },
         {
           "path": "factory_ui/__init__.py",
           "lines": [
@@ -982,20 +975,13 @@
         47,
         48
       ],
-      "text": "The `sessions` service runs with `CPLANE_FENCE_COMMAND=socket`, which makes its fence calls go through the launcher client.",
+      "text": "The `sessions` service sets `CPLANE_FENCE_COMMAND` to `socket`.",
       "sources": [
         {
           "path": "compose.yaml",
           "lines": [
             133,
             133
-          ]
-        },
-        {
-          "path": "cplane/fence.py",
-          "lines": [
-            29,
-            30
           ]
         }
       ]
@@ -1250,13 +1236,13 @@
         59,
         60
       ],
-      "text": "Run requests carry the role, mode and level, with no executor named.",
+      "text": "Run requests carry `mode`.",
       "sources": [
         {
           "path": "cplane/runner.py",
           "lines": [
             1195,
-            1197
+            1195
           ]
         }
       ]
@@ -1403,20 +1389,13 @@
         72,
         73
       ],
-      "text": "The services join the external network `homelab_default`; only `ui` publishes a port.",
+      "text": "The `ui` service joins the `homelab_default` network.",
       "sources": [
         {
           "path": "compose.yaml",
           "lines": [
-            34,
-            35
-          ]
-        },
-        {
-          "path": "compose.yaml",
-          "lines": [
-            392,
-            395
+            14,
+            14
           ]
         }
       ]
@@ -1446,34 +1425,13 @@
         82,
         82
       ],
-      "text": "The runner submits runs with `POST /v1/runs`.",
+      "text": "The run client submits a run with `/v1/runs`.",
       "sources": [
         {
           "path": "cplane/run_platform.py",
           "lines": [
-            35,
-            44
-          ]
-        },
-        {
-          "path": "cplane/run_platform.py",
-          "lines": [
-            83,
-            84
-          ]
-        },
-        {
-          "path": "cplane/run_platform.py",
-          "lines": [
-            88,
-            92
-          ]
-        },
-        {
-          "path": "cplane/runner.py",
-          "lines": [
-            1229,
-            1234
+            94,
+            96
           ]
         }
       ]
@@ -1524,20 +1482,13 @@
         83,
         83
       ],
-      "text": "`docs-verify` asks the platform's decisions API for claim verdicts.",
+      "text": "`docs-verify` asks for decisions.",
       "sources": [
         {
           "path": "cplane/docs_verify.py",
           "lines": [
             321,
-            321
-          ]
-        },
-        {
-          "path": "cplane/run_platform.py",
-          "lines": [
-            149,
-            149
+            324
           ]
         }
       ]
@@ -1581,34 +1532,13 @@
         85,
         85
       ],
-      "text": "`sessions` launches chat turns through `cplane.launcher`, a one-request Unix socket client for the node's privileged launcher.",
+      "text": "`cplane.launcher` is a one-request UNIX socket client.",
       "sources": [
         {
           "path": "cplane/launcher.py",
           "lines": [
             1,
             1
-          ]
-        },
-        {
-          "path": "cplane/launcher.py",
-          "lines": [
-            43,
-            52
-          ]
-        },
-        {
-          "path": "cplane/fence.py",
-          "lines": [
-            27,
-            31
-          ]
-        },
-        {
-          "path": "cplane/sessions.py",
-          "lines": [
-            237,
-            237
           ]
         }
       ]
