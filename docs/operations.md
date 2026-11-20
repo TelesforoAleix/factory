@@ -53,8 +53,8 @@ the same across restarts.
    `sudo factory-cplane --actor owner install SLICE` (or uses Home's Install). A
    chat may only propose an install.
 3. The runner starts a detached child that sends the merged commit to the platform
-   deployer on `CPLANE_DEPLOYER_SOCKET`, and records the result in the run folder's
-   `installs/` directory. A held `.started` lock tracks the child across runner
+   deployer on `CPLANE_DEPLOYER_SOCKET`. The child records the result in the run
+   folder's `installs/` directory. A held `.started` lock tracks the child across runner
    restarts; a child that ends without a result escalates and is never replayed.
 4. The deployer dumps the database, runs `cplane migrate` in a new `ui` container,
    replaces the services and runs the `ui` health command. When the commit changes a
@@ -77,7 +77,8 @@ sudo factory-cplane pending
 sudo docker exec deployer-factory-runner-1 printenv CPLANE_REVISION
 ```
 
-`CPLANE_REVISION` must equal the merged commit.
+Compose sets the runner's `CPLANE_REVISION` from `HOMELAB_DEPLOY_TAG`; it must equal
+the merged commit.
 
 ## Rollback
 
@@ -92,8 +93,9 @@ platform runs are not started twice.
   `CPLANE_RUNS` before each POST. A lost response retries the same id and body; a
   confirmed request is only polled. Never delete the ledger during active work.
 - **Owner orders.** A receipt is written before an order takes effect. An
-  interrupted dispatch is recorded as failed and never repeated; check the slice
-  before sending a replacement order.
+  interrupted dispatch is recorded as failed and never repeated. A later pass
+  reuses the result in an existing receipt; check the slice before sending a
+  replacement order.
 - **Installs.** See step 3 above; inspect the run folder's `installs/` before asking again.
 - **Backups.** The platform's `homelab-dump` dumps every database, including
   `factory`, daily. `sudo factory-restore-check [DUMP]` restores a dump into a
