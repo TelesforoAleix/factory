@@ -316,6 +316,13 @@
         {
           "path": "cplane/runner.py",
           "lines": [
+            1249,
+            1250
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
             1250,
             1261
           ]
@@ -593,7 +600,7 @@
         30,
         30
       ],
-      "text": "`factory_ui/__init__.py` imports `Flask`.",
+      "text": "Workshop is the owner web console and its HTTP API.",
       "sources": [
         {
           "path": "factory_ui/__init__.py",
@@ -629,7 +636,7 @@
         44,
         44
       ],
-      "text": "The `frontend` route serves files from `ui/dist` and falls back to `index.html`.",
+      "text": "The `frontend` route serves files from `ui/dist`.",
       "sources": [
         {
           "path": "factory_ui/__init__.py",
@@ -642,7 +649,7 @@
           "path": "factory_ui/__init__.py",
           "lines": [
             562,
-            569
+            565
           ]
         }
       ]
@@ -651,11 +658,25 @@
       "id": "arch-ui-api-route",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        46,
-        46
+        43,
+        45
       ],
       "text": "The Flask app registers routes under `/api/`.",
       "sources": [
+        {
+          "path": "factory_ui/__init__.py",
+          "lines": [
+            12,
+            12
+          ]
+        },
+        {
+          "path": "factory_ui/__init__.py",
+          "lines": [
+            60,
+            61
+          ]
+        },
         {
           "path": "factory_ui/__init__.py",
           "lines": [
@@ -672,7 +693,7 @@
         31,
         31
       ],
-      "text": "`cplane/intake.py` defines `SOCKET` as `/run/factory-intake/intake.sock`.",
+      "text": "The inbox socket protocol handles arrivals.",
       "sources": [
         {
           "path": "cplane/intake.py",
@@ -850,7 +871,7 @@
         37,
         37
       ],
-      "text": "`cplane/skills.py` defines `instructions(name)`.",
+      "text": "Skills are instructions given to chats, cutters, reviewers and the judge.",
       "sources": [
         {
           "path": "cplane/skills.py",
@@ -933,8 +954,8 @@
       "id": "arch-intake-socket",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        46,
-        47
+        44,
+        45
       ],
       "text": "`intake` reads one JSON arrival line per connection on a Unix socket server and has no network listener.",
       "sources": [
@@ -1136,8 +1157,8 @@
       "id": "arch-flow-pr",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        62,
-        62
+        60,
+        60
       ],
       "text": "The runner opens the PR with `self.github.open`.",
       "sources": [
@@ -1154,8 +1175,8 @@
       "id": "arch-flow-ci",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        63,
-        63
+        60,
+        60
       ],
       "text": "The runner reads checks with `self.github.checks`.",
       "sources": [
@@ -1172,8 +1193,8 @@
       "id": "arch-flow-approval",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        64,
-        64
+        60,
+        60
       ],
       "text": "The runner raises merge attention when `guards` are present.",
       "sources": [
@@ -1190,8 +1211,8 @@
       "id": "arch-flow-squash",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        65,
-        65
+        60,
+        60
       ],
       "text": "The runner merges pull requests with `--squash`.",
       "sources": [
@@ -1208,8 +1229,8 @@
       "id": "arch-flow-node-step",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        66,
-        66
+        61,
+        61
       ],
       "text": "The runner raises `node-step` attention when `node_steps` is not `None`.",
       "sources": [
@@ -1244,8 +1265,8 @@
       "id": "arch-flow-merge",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        64,
-        65
+        60,
+        61
       ],
       "text": "The runner classifies the PR's changes, requires approval for guard paths, merges, and raises node-step attention when the PR request has node steps.",
       "sources": [
@@ -1269,8 +1290,8 @@
       "id": "arch-flow-install",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        65,
-        65
+        61,
+        61
       ],
       "text": "An owner install request in a slice's log makes the runner start a detached `cplane.deployer` client, which sends an `install` operation to the deployer socket.",
       "sources": [
@@ -1430,15 +1451,29 @@
         {
           "path": "cplane/run_platform.py",
           "lines": [
-            94,
-            99
+            35,
+            44
+          ]
+        },
+        {
+          "path": "cplane/run_platform.py",
+          "lines": [
+            83,
+            84
+          ]
+        },
+        {
+          "path": "cplane/run_platform.py",
+          "lines": [
+            88,
+            92
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1446,
-            1449
+            1229,
+            1234
           ]
         }
       ]
@@ -1452,6 +1487,20 @@
       ],
       "text": "The runner polls runs with `GET /v1/runs/<id>`.",
       "sources": [
+        {
+          "path": "cplane/run_platform.py",
+          "lines": [
+            35,
+            44
+          ]
+        },
+        {
+          "path": "cplane/run_platform.py",
+          "lines": [
+            83,
+            84
+          ]
+        },
         {
           "path": "cplane/run_platform.py",
           "lines": [
@@ -4107,6 +4156,60 @@
           "lines": [
             997,
             1000
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-ui-flask-import",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        41,
+        41
+      ],
+      "text": "`factory_ui/__init__.py` imports `Flask`.",
+      "sources": [
+        {
+          "path": "factory_ui/__init__.py",
+          "lines": [
+            12,
+            12
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-skills-instructions",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        37,
+        37
+      ],
+      "text": "`cplane/skills.py` defines `instructions(name)`.",
+      "sources": [
+        {
+          "path": "cplane/skills.py",
+          "lines": [
+            43,
+            44
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-ui-index-fallback",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        44,
+        45
+      ],
+      "text": "The `frontend` route falls back to `index.html`.",
+      "sources": [
+        {
+          "path": "factory_ui/__init__.py",
+          "lines": [
+            562,
+            569
           ]
         }
       ]
