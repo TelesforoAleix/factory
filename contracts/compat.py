@@ -10,6 +10,14 @@ from .canonical import ContractError, dumps, load, parse
 
 OASDIFF_VERSION = '1.37.0'
 LEVELS = {3: 'error', 2: 'warning', 1: 'info'}
+# Level 3 findings that `compare` accepts, by direction (first, second), with the reader
+# rule that makes each one safe. The same ids in the other direction stay breaking.
+TOLERATED = {
+    # A new operation: a user treats a 404 from a new endpoint as "not available yet".
+    ('revision', 'base'): {'api-path-removed-without-deprecation', 'api-removed-without-deprecation'},
+    # A new response enum value: a reader maps an unknown value to its fallback.
+    ('base', 'revision'): {'response-property-enum-value-added'},
+}
 
 
 def find_oasdiff(explicit=None):
@@ -59,7 +67,7 @@ def _breaking(oasdiff, first, second, folder):
             or failed and not any(isinstance(c, dict) and c.get('level') == 3 for c in changes)):
         raise ContractError(f'oasdiff failed (exit {result.returncode}): '
                             f'{(result.stderr or result.stdout).strip()[:2000]}')
-    return failed, changes
+    return changes
 
 
 def compare(base, revision, oasdiff):
@@ -71,13 +79,16 @@ def compare(base, revision, oasdiff):
             files[name] = Path(folder) / f'{name}.json'
             files[name].write_text(dumps(value), encoding='utf-8')
         for first, second in (('base', 'revision'), ('revision', 'base')):
-            failed, changes = _breaking(oasdiff, files[first], files[second], folder)
+            changes = _breaking(oasdiff, files[first], files[second], folder)
             direction = f'{first} -> {second}'
             counted = [c for c in changes if isinstance(c, dict)]
+            allowed = TOLERATED[(first, second)]
+            tolerated = [c.get('level') == 3 and c.get('id') in allowed for c in counted]
+            failed = any(c.get('level') == 3 and not ok for c, ok in zip(counted, tolerated))
             passed = passed and not failed
             lines.append(f'{direction}: {"breaking" if failed else "compatible"}')
-            for change in counted:
-                level = LEVELS.get(change.get('level'), str(change.get('level')))
+            for change, ok in zip(counted, tolerated):
+                level = 'tolerated' if ok else LEVELS.get(change.get('level'), str(change.get('level')))
                 where = ' '.join(str(change.get(k)) for k in ('operation', 'path') if change.get(k))
                 lines.append(f'  {level} [{change.get("id")}] {where}: {change.get("text", "")}'.rstrip())
     return passed, lines

@@ -194,6 +194,10 @@ if direction in os.environ.get('FAKE_OASDIFF_FAIL', '').split(','):
     print(json.dumps([{{'id': direction + '-rule', 'level': 3, 'operation': 'POST', 'path': '/v1/items',
                        'text': 'synthetic break'}}]))
     sys.exit(1)
+findings = json.loads(os.environ.get('FAKE_OASDIFF_JSON', '{{}}')).get(direction)
+if findings is not None:
+    print(json.dumps(findings))
+    sys.exit(1 if any(f.get('level') == 3 for f in findings) else 0)
 print('[]')
 '''
 
@@ -227,6 +231,51 @@ def test_compat_runs_both_directions(tmp_path, fake_oasdiff, monkeypatch, capsys
             assert f'{name}: breaking' in out and f'[{direction}-rule]' in out
         else:
             assert f'{name}: compatible' in out and f'[{direction}-rule]' not in out
+
+
+def finding(rule, level=3):
+    return {'id': rule, 'level': level, 'operation': 'GET', 'path': '/v1/x', 'text': 'synthetic'}
+
+
+NEW_PATH, NEW_METHOD = 'api-path-removed-without-deprecation', 'api-removed-without-deprecation'
+NEW_ENUM = 'response-property-enum-value-added'
+
+
+def run_compat(tmp_path, script, monkeypatch, findings):
+    monkeypatch.setenv('FAKE_OASDIFF_JSON', json.dumps(findings))
+    base = write(tmp_path / 'old.json', document(ITEM))
+    revision = write(tmp_path / 'new.json', document(ITEM))
+    return cli.main(['compat', '--base', str(base), '--revision', str(revision), '--oasdiff', str(script)])
+
+
+@pytest.mark.parametrize('direction,rule', [('backward', NEW_PATH), ('backward', NEW_METHOD), ('forward', NEW_ENUM)])
+def test_compat_tolerates_additions_in_their_direction(tmp_path, fake_oasdiff, monkeypatch, capsys, direction, rule):
+    assert run_compat(tmp_path, fake_oasdiff[0], monkeypatch, {direction: [finding(rule)]}) == 0
+    out = capsys.readouterr().out
+    assert f'  tolerated [{rule}] GET /v1/x: synthetic' in out
+    assert 'breaking' not in out and 'error [' not in out
+
+
+@pytest.mark.parametrize('direction,rule', [('forward', NEW_PATH), ('forward', NEW_METHOD), ('backward', NEW_ENUM)])
+def test_compat_rejects_tolerated_ids_in_the_other_direction(tmp_path, fake_oasdiff, monkeypatch, capsys, direction, rule):
+    assert run_compat(tmp_path, fake_oasdiff[0], monkeypatch, {direction: [finding(rule)]}) == 1
+    out = capsys.readouterr().out
+    assert 'breaking' in out and f'error [{rule}]' in out and 'tolerated' not in out
+
+
+def test_compat_tolerated_with_another_error_fails(tmp_path, fake_oasdiff, monkeypatch, capsys):
+    findings = {'backward': [finding(NEW_PATH), finding('response-property-removed')]}
+    assert run_compat(tmp_path, fake_oasdiff[0], monkeypatch, findings) == 1
+    out = capsys.readouterr().out
+    assert 'revision -> base: breaking' in out and 'tolerated [' in out and 'error [response-property-removed]' in out
+
+
+def test_compat_exit_one_with_only_tolerated_findings_passes(tmp_path, fake_oasdiff, monkeypatch, capsys):
+    findings = {'forward': [finding(NEW_ENUM), finding(NEW_ENUM), finding('x-info', 1)],
+                'backward': [finding(NEW_PATH), finding(NEW_METHOD)]}
+    assert run_compat(tmp_path, fake_oasdiff[0], monkeypatch, findings) == 0
+    out = capsys.readouterr().out
+    assert 'base -> revision: compatible' in out and 'revision -> base: compatible' in out
 
 
 def test_compat_reads_git_base_and_finds_oasdiff(tmp_path, fake_oasdiff, monkeypatch, capsys):
