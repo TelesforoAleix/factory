@@ -3559,8 +3559,8 @@
       "id": "ops-dump",
       "doc": "docs/operations.md",
       "doc_lines": [
-        98,
-        99
+        100,
+        101
       ],
       "text": "The platform's `homelab-dump` dumps every database daily, including `factory`.",
       "sources": [
@@ -3652,8 +3652,8 @@
       "id": "ops-bot-export",
       "doc": "docs/operations.md",
       "doc_lines": [
-        110,
-        111
+        112,
+        113
       ],
       "text": "After every pass the runner writes `slices.json` and `slices.json.outbox.jsonl` of the bot export to the directory in `CPLANE_BOT_EXPORT`.",
       "sources": [
@@ -3684,8 +3684,8 @@
       "id": "ops-daily-export",
       "doc": "docs/operations.md",
       "doc_lines": [
-        112,
-        114
+        114,
+        116
       ],
       "text": "The first loop pass after 03:45 local time each day exports `factory-YYYY-MM-DD.json` and its outbox to `CPLANE_EXPORT_DIR` with mode 0600, keeping the seven newest.",
       "sources": [
@@ -3773,8 +3773,8 @@
       "id": "ops-export-process",
       "doc": "docs/operations.md",
       "doc_lines": [
-        118,
-        119
+        120,
+        121
       ],
       "text": "The loop keeps `last_day` and `last_hour` only in local variables that start as `None`, so a restart exports again in the same day or hour.",
       "sources": [
@@ -3798,8 +3798,8 @@
       "id": "ops-orders-first",
       "doc": "docs/operations.md",
       "doc_lines": [
-        123,
-        125
+        125,
+        127
       ],
       "text": "Each pass collects orders right after pulling state, and an empty `CPLANE_ORDERS_URL` skips collection.",
       "sources": [
@@ -3898,8 +3898,8 @@
       "id": "ops-orders-timeout",
       "doc": "docs/operations.md",
       "doc_lines": [
-        129,
-        129
+        131,
+        131
       ],
       "text": "Order requests use a ten-second timeout.",
       "sources": [
@@ -3966,8 +3966,8 @@
       "id": "ops-wake-times",
       "doc": "docs/operations.md",
       "doc_lines": [
-        136,
-        137
+        138,
+        139
       ],
       "text": "The wake daemon schedules wakes at 05:59, 10:59, 15:59 and 20:59.",
       "sources": [
