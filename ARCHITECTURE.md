@@ -38,6 +38,8 @@ current design only; [DECISIONS.md](DECISIONS.md) records why it is so.
 | `docs-verify` | `cplane/docs_verify.py` | the documentation claims check |
 | `node-tools` | `node/` | host wrappers and the retained fenced CLI image |
 
+`cplane/prompts.py` sets `ROOT` to its `prompts` directory.
+
 `factory_ui/` sets `DIST` to `ui/dist`.
 The `frontend` route serves files from `ui/dist` and falls back to `index.html`.
 The Flask app registers routes under `/api/`.
