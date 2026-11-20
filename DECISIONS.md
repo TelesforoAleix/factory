@@ -163,3 +163,16 @@ is a follow-up slice, outside this slice's allowed files. Until then the cancel 
 Factory sends the run API cancel operation as POST with no body or JSON content
 type, matching the pinned schema and Home Lab handler. The sender accepts a missing
 body only for operations whose pinned schema defines no JSON request body.
+
+## 2026-11-20 — The compatibility check accepts a new operation and a new response enum value
+
+`factory-contracts compat` no longer fails on two additions that readers tolerate: a
+new operation (a user treats a 404 from a new endpoint as "not available yet") and a new
+response enum value (a reader maps an unknown value to its fallback). oasdiff reports
+them as level 3 findings, so `compare` accepts exactly `api-path-removed-without-deprecation`
+and `api-removed-without-deprecation` in the direction revision against base, and
+`response-property-enum-value-added` in the direction base against revision. The same
+ids in the other direction stay breaking. A direction passes when it has no other
+level 3 finding; oasdiff's exit code 1 alone no longer decides. Accepted findings are
+listed as `tolerated`. There is no option to widen the set: a new id needs a reviewed
+code change.

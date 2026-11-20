@@ -210,7 +210,12 @@ runner. Each check names its practice skill, `skills/expand-contract.md`;
   fails with a short diff when the committed file is not its canonical output.
 - `compat` requires full compatibility: it runs `oasdiff breaking --fail-on ERR`
   from base to revision and from revision to base, and fails when either reports a
-  breaking change, naming the direction and each rule id. The base may be
+  level 3 finding outside a fixed set, naming the direction and each rule id. The set
+  is a new operation (`api-path-removed-without-deprecation` and
+  `api-removed-without-deprecation`, revision against base only) and a new response
+  enum value (`response-property-enum-value-added`, base against revision only);
+  they are reported as `tolerated`. The set has no option; widening it is a code
+  change. The base may be
   `git:REF:PATH`, read with `git show`. It needs `oasdiff` v1.37.0, found from
   `--oasdiff`, then `OASDIFF`, then `PATH`; it passes `--allow-external-refs=false`
   and runs in a temporary folder without `OASDIFF_CONFIG`, so neither remote

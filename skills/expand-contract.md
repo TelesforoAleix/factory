@@ -14,10 +14,17 @@ with old readers, and old senders with new readers. Within one change:
 - Never rename a field or change its type in one step; use the three steps below.
 - Give every enum an unknown fallback in readers, so a new value does not fail them.
 
+Two additions are compatible because readers tolerate them:
+
+- A new operation. A user treats a 404 from a new endpoint as "not available yet".
+- A new enum value in a response. A reader maps an unknown value to its fallback.
+
+`compat` accepts only these two additions and reports them as `tolerated`.
+
 `factory-contracts compat --base git:origin/main:<schema> --revision <schema>`
 runs `oasdiff breaking` both ways (base against revision, revision against base)
-and fails when either direction reports a breaking change, naming the direction
-and each rule id. Fix the change; do not ignore the rule.
+and fails when either direction reports a breaking change other than those two
+additions, naming the direction and each rule id. Fix the change; do not ignore the rule.
 
 ## Larger changes: expand, migrate, contract
 
