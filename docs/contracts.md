@@ -18,7 +18,7 @@ repository needs an adapting slice in the same feature.
 ### `run-api`
 
 - Version 1 · provider `TelesforoAleix/homelab-v2` · users `TelesforoAleix/factory`.
-- Every request body carries `"contract": 1`. Calls: `POST /v1/runs`, `GET /v1/runs/<id>`,
+- Run and message bodies carry `"contract": 1`; cancel sends `{}`. Calls: `POST /v1/runs`, `GET /v1/runs/<id>`,
   `GET /v1/runs?request_id=<id>`, `POST /v1/runs/<id>/messages`, `POST /v1/runs/<id>/cancel`.
 - Source: `cplane/run_platform.py` (client) and `Runner.new_request` in `cplane/runner.py`
   (body); protocol in [runner.md](runner.md). Settings: `CPLANE_EVAL_TASK_URL`, `CPLANE_EVAL_TASK_KEY_FILE`.
