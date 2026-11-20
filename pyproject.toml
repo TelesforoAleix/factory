@@ -8,6 +8,7 @@ dependencies = ["jsonschema>=4.23,<5", "psycopg>=3,<4", "Flask>=3.1,<4", "waitre
 
 [project.scripts]
 cplane = "cplane.cli:main"
+factory-contracts = "contracts.cli:main"
 
 [dependency-groups]
 dev = [
@@ -20,7 +21,7 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["cplane", "schema", "skills", "factory_ui"]
+packages = ["cplane", "schema", "skills", "factory_ui", "contracts"]
 
 [tool.setuptools.package-data]
 schema = ["*.json"]

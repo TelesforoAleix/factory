@@ -25,7 +25,7 @@ def extra_skill(tmp_path, monkeypatch):
 
 
 def test_catalog_and_workspace_only_enabled(extra_skill, tmp_path):
-    assert {s['name'] for s in skills.catalog()} == {*skills.DEFAULTS, 'judge', 'extra'}
+    assert {s['name'] for s in skills.catalog()} == {*skills.DEFAULTS, 'judge', 'expand-contract', 'extra'}
     folder = tmp_path / 'workspace'
     folder.mkdir()
     skills.install(folder, ['grilling', 'extra'])

@@ -37,6 +37,7 @@ current design only; [DECISIONS.md](DECISIONS.md) records why it is so.
 | `skills` | `skills/`, `cplane/prompts/` | instructions given to chats, cutters, reviewers and the judge |
 | `docs-verify` | `cplane/docs_verify.py` | the documentation claims check |
 | `node-tools` | `node/` | host wrappers and the retained fenced CLI image |
+| `contracts` | `contracts/` | the `factory-contracts` contract tool: canonical schemas, pins, compatibility and sender checks |
 
 `cplane/prompts.py` sets `ROOT` to its `prompts` directory.
 
@@ -47,6 +48,7 @@ No client currently connects to it; the phone bot user is granted group access. 
 launcher. `runner` runs `cplane --actor runner run --every 60`: one locked pass,
 then a wait, repeated. `store` keeps every slice document in Postgres and checks
 each write against `schema/slices.schema.json`.
+`contracts` imports only the standard library and `jsonschema`, so other repositories' CI can install and run it.
 
 ## Flow
 

@@ -91,6 +91,15 @@
         39
       ],
       "standalone": false
+    },
+    {
+      "name": "contracts",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        40,
+        40
+      ],
+      "standalone": true
     }
   ],
   "claims": [
@@ -615,8 +624,8 @@
       "id": "arch-ui-serves",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        43,
-        43
+        44,
+        44
       ],
       "text": "`factory_ui/__init__.py` sets `DIST` to `ui/dist`.",
       "sources": [
@@ -633,8 +642,8 @@
       "id": "arch-ui-frontend",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        43,
-        44
+        44,
+        45
       ],
       "text": "The `ui` service serves the React client from `DIST`, which is `ui/dist`.",
       "sources": [
@@ -658,7 +667,7 @@
       "id": "arch-ui-api-route",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        43,
+        44,
         45
       ],
       "text": "The Flask app registers routes under `/api/`.",
@@ -886,8 +895,8 @@
       "id": "arch-prompts-root",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        41,
-        41
+        42,
+        42
       ],
       "text": "`cplane/prompts.py` sets `ROOT` to the `cplane/prompts/` directory.",
       "sources": [
@@ -954,8 +963,8 @@
       "id": "arch-intake-socket",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        44,
-        45
+        45,
+        46
       ],
       "text": "`intake` reads one JSON arrival line per connection on a Unix socket server and has no network listener.",
       "sources": [
@@ -979,8 +988,8 @@
       "id": "arch-sessions-launcher",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        46,
-        47
+        47,
+        48
       ],
       "text": "The `sessions` service sets `CPLANE_FENCE_COMMAND` to `socket`.",
       "sources": [
@@ -1068,8 +1077,8 @@
       "id": "arch-flow-inbox",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        54,
-        54
+        55,
+        56
       ],
       "text": "Inbox arrivals enter the store through the `intake` socket handler and Workshop's `POST /api/inbox`, which both call `inbox_add`.",
       "sources": [
@@ -1093,8 +1102,8 @@
       "id": "arch-flow-chat",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        54,
-        55
+        55,
+        56
       ],
       "text": "Chats add features and slices through their Workshop tools: `add_feature` calls `feature_add` and `add_slice` calls `feature_add_slice` on the store.",
       "sources": [
@@ -1111,8 +1120,8 @@
       "id": "arch-flow-pass",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        56,
-        58
+        57,
+        59
       ],
       "text": "A runner pass holds the database lock while it collects owner orders, steps the pipeline, routes chat events, collects and delivers each slice, and `run` then writes the bot export.",
       "sources": [
@@ -1157,8 +1166,8 @@
       "id": "arch-flow-pr",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        60,
-        60
+        62,
+        62
       ],
       "text": "The runner opens the PR with `self.github.open`.",
       "sources": [
@@ -1175,8 +1184,8 @@
       "id": "arch-flow-ci",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        60,
-        60
+        62,
+        62
       ],
       "text": "The runner reads checks with `self.github.checks`.",
       "sources": [
@@ -1193,8 +1202,8 @@
       "id": "arch-flow-approval",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        60,
-        60
+        62,
+        62
       ],
       "text": "The runner raises merge attention when `guards` are present.",
       "sources": [
@@ -1211,8 +1220,8 @@
       "id": "arch-flow-squash",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        60,
-        60
+        62,
+        62
       ],
       "text": "The runner merges pull requests with `--squash`.",
       "sources": [
@@ -1229,8 +1238,8 @@
       "id": "arch-flow-node-step",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        61,
-        61
+        63,
+        63
       ],
       "text": "The runner raises `node-step` attention when `node_steps` is not `None`.",
       "sources": [
@@ -1247,8 +1256,8 @@
       "id": "arch-flow-roles",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        58,
-        59
+        60,
+        61
       ],
       "text": "The runner submits run requests with `mode` `read` for the review role and `write` for the others.",
       "sources": [
@@ -1265,8 +1274,8 @@
       "id": "arch-flow-merge",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        60,
-        61
+        62,
+        63
       ],
       "text": "The runner classifies the PR's changes, requires approval for guard paths, merges, and raises node-step attention when the PR request has node steps.",
       "sources": [
@@ -1290,8 +1299,8 @@
       "id": "arch-flow-install",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        61,
-        61
+        63,
+        63
       ],
       "text": "An owner install request in a slice's log makes the runner start a detached `cplane.deployer` client, which sends an `install` operation to the deployer socket.",
       "sources": [
@@ -1343,8 +1352,8 @@
       "id": "arch-flow-after-merge",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        66,
-        67
+        64,
+        65
       ],
       "text": "After a merge the runner queues `contract-change` attention for declared contract changes and `docs-graph` attention for a failing graph check.",
       "sources": [
@@ -1361,8 +1370,8 @@
       "id": "arch-one-image",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        71,
-        72
+        69,
+        70
       ],
       "text": "All four services in `compose.yaml` use the same deployer-built image tagged by the deploy commit.",
       "sources": [
@@ -1400,8 +1409,8 @@
       "id": "arch-network",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        68,
-        69
+        70,
+        71
       ],
       "text": "The `ui` service joins the `homelab_default` network.",
       "sources": [
@@ -1425,8 +1434,8 @@
       "id": "arch-cli-wrapper",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        73,
-        74
+        71,
+        72
       ],
       "text": "`node/bin/factory-cplane` runs `cplane` inside the runner container, or the sessions container when the runner is not running.",
       "sources": [
@@ -1443,8 +1452,8 @@
       "id": "arch-repo-run-api",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        82,
-        82
+        80,
+        80
       ],
       "text": "The run client submits a run with `/v1/runs`.",
       "sources": [
@@ -1461,8 +1470,8 @@
       "id": "arch-repo-run-poll",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        82,
-        82
+        80,
+        80
       ],
       "text": "The runner polls runs with `GET /v1/runs/<id>`.",
       "sources": [
@@ -1500,8 +1509,8 @@
       "id": "arch-repo-decisions",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        79,
-        79
+        81,
+        81
       ],
       "text": "`docs-verify` asks the platform decisions API for claim verdicts.",
       "sources": [
@@ -1518,8 +1527,8 @@
       "id": "arch-repo-deployer",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        84,
-        84
+        82,
+        82
       ],
       "text": "The runner requests installs from the platform deployer by starting `cplane.deployer`, which sends an `install` operation over the deployer socket.",
       "sources": [
@@ -1550,8 +1559,8 @@
       "id": "arch-repo-launcher",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        85,
-        85
+        83,
+        83
       ],
       "text": "`cplane.launcher` is a one-request UNIX socket client.",
       "sources": [
@@ -1568,8 +1577,8 @@
       "id": "arch-repo-manage",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        86,
-        86
+        84,
+        84
       ],
       "text": "Workshop reads the platform's `/v1/manage/routes` and `/v1/manage/providers`.",
       "sources": [
@@ -1586,8 +1595,8 @@
       "id": "arch-repo-compose",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        87,
-        87
+        85,
+        85
       ],
       "text": "Every service of the root `compose.yaml` uses the image `homelab-deployer-factory:${HOMELAB_DEPLOY_TAG}`, and the deployer passes only `HOMELAB_DEPLOY_TAG`.",
       "sources": [
@@ -4295,8 +4304,8 @@
       "id": "arch-ui-flask-import",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        41,
-        41
+        44,
+        45
       ],
       "text": "`factory_ui/__init__.py` imports `Flask`.",
       "sources": [
@@ -4341,6 +4350,288 @@
           "lines": [
             562,
             569
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-part-contracts",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        40,
+        40
+      ],
+      "text": "The `contracts` package is installed as the `factory-contracts` command, with canonical, generated, compat, pin and sender commands.",
+      "sources": [
+        {
+          "path": "pyproject.toml",
+          "lines": [
+            11,
+            11
+          ]
+        },
+        {
+          "path": "pyproject.toml",
+          "lines": [
+            24,
+            24
+          ]
+        },
+        {
+          "path": "contracts/cli.py",
+          "lines": [
+            25,
+            55
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-contracts-imports",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        51,
+        51
+      ],
+      "text": "A test requires every module of `contracts/` to import only the standard library and `jsonschema`, and runs the command with `cplane`, `factory_ui`, Flask, psycopg and waitress unavailable.",
+      "sources": [
+        {
+          "path": "tests/test_contracts_tool.py",
+          "lines": [
+            277,
+            289
+          ]
+        }
+      ]
+    },
+    {
+      "id": "contract-tool-exit",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        186,
+        187
+      ],
+      "text": "`factory-contracts` exits 1 when a check fails and 2 on a usage or input error.",
+      "sources": [
+        {
+          "path": "contracts/cli.py",
+          "lines": [
+            135,
+            141
+          ]
+        },
+        {
+          "path": "contracts/cli.py",
+          "lines": [
+            87,
+            87
+          ]
+        }
+      ]
+    },
+    {
+      "id": "contract-tool-practices",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        200,
+        201
+      ],
+      "text": "Every check command is registered with the `expand-contract` skill, a test requires each named skill file to exist, and `practices` prints the registry.",
+      "sources": [
+        {
+          "path": "contracts/practices.py",
+          "lines": [
+            3,
+            9
+          ]
+        },
+        {
+          "path": "tests/test_contracts_tool.py",
+          "lines": [
+            262,
+            269
+          ]
+        },
+        {
+          "path": "contracts/cli.py",
+          "lines": [
+            124,
+            128
+          ]
+        }
+      ]
+    },
+    {
+      "id": "contract-tool-canonical",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        203,
+        205
+      ],
+      "text": "The tool writes and compares JSON as `json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False)` plus a newline.",
+      "sources": [
+        {
+          "path": "contracts/canonical.py",
+          "lines": [
+            10,
+            11
+          ]
+        }
+      ]
+    },
+    {
+      "id": "contract-tool-generated",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        206,
+        207
+      ],
+      "text": "`generated` runs the generator command and prints a unified diff and exits 1 when the committed file differs from its canonical output.",
+      "sources": [
+        {
+          "path": "contracts/cli.py",
+          "lines": [
+            70,
+            87
+          ]
+        }
+      ]
+    },
+    {
+      "id": "contract-tool-compat",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        208,
+        210
+      ],
+      "text": "`compat` runs `oasdiff breaking --fail-on ERR` from base to revision and from revision to base, fails when either fails, and reports each direction with each rule id.",
+      "sources": [
+        {
+          "path": "contracts/compat.py",
+          "lines": [
+            43,
+            44
+          ]
+        },
+        {
+          "path": "contracts/compat.py",
+          "lines": [
+            65,
+            83
+          ]
+        }
+      ]
+    },
+    {
+      "id": "contract-tool-git-base",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        210,
+        211
+      ],
+      "text": "A `git:REF:PATH` base is read with `git show`.",
+      "sources": [
+        {
+          "path": "contracts/compat.py",
+          "lines": [
+            25,
+            39
+          ]
+        }
+      ]
+    },
+    {
+      "id": "contract-tool-oasdiff",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        211,
+        214
+      ],
+      "text": "The tool finds `oasdiff` from `--oasdiff`, `OASDIFF`, then `PATH`, names v1.37.0 when it is missing, and runs it with `--allow-external-refs=false` in a temporary folder without `OASDIFF_CONFIG`.",
+      "sources": [
+        {
+          "path": "contracts/compat.py",
+          "lines": [
+            11,
+            11
+          ]
+        },
+        {
+          "path": "contracts/compat.py",
+          "lines": [
+            15,
+            22
+          ]
+        },
+        {
+          "path": "contracts/compat.py",
+          "lines": [
+            43,
+            48
+          ]
+        },
+        {
+          "path": "contracts/compat.py",
+          "lines": [
+            67,
+            67
+          ]
+        }
+      ]
+    },
+    {
+      "id": "contract-tool-pin",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        215,
+        218
+      ],
+      "text": "A pin folder holds canonical `schema.json` and `pin.json` with exactly `contract`, `provider`, `commit` and `sha256`; verify fails on a wrong key, form or hash.",
+      "sources": [
+        {
+          "path": "contracts/pins.py",
+          "lines": [
+            8,
+            39
+          ]
+        },
+        {
+          "path": "contracts/pins.py",
+          "lines": [
+            42,
+            64
+          ]
+        }
+      ]
+    },
+    {
+      "id": "contract-tool-sender",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        219,
+        223
+      ],
+      "text": "The sender check reports fields the JSON request schema does not define, following local `$ref`s and composition, and validates types with `jsonschema`; `contracts.sender.check` returns the errors.",
+      "sources": [
+        {
+          "path": "contracts/sender.py",
+          "lines": [
+            37,
+            55
+          ]
+        },
+        {
+          "path": "contracts/sender.py",
+          "lines": [
+            85,
+            93
+          ]
+        },
+        {
+          "path": "contracts/sender.py",
+          "lines": [
+            143,
+            168
           ]
         }
       ]
@@ -5313,6 +5604,19 @@
       "doc_lines": [
         174,
         181
+      ]
+    },
+    {
+      "name": "contract-tool",
+      "version": "1",
+      "provider": "TelesforoAleix/factory",
+      "users": [
+        "TelesforoAleix/factory"
+      ],
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        183,
+        190
       ]
     }
   ]

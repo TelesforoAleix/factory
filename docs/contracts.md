@@ -179,3 +179,46 @@ repository needs an adapting slice in the same feature.
   Source: `compose.yaml`; each variable's reader in [node.md](node.md#environment-read-audit).
 - Change safely: `compose.yaml` is a class 4 guard path; the owner copies it to the
   deployer before the install that needs it.
+
+### `contract-tool`
+
+- Version 1 · provider `TelesforoAleix/factory` · users `TelesforoAleix/factory`.
+- The `factory-contracts` command, its exit codes (0 pass, 1 check failed, 2 usage
+  or input error) and the pin folder format, described in
+  [the contract tool](#the-contract-tool). Source: `contracts/cli.py`, `contracts/pins.py`.
+- Change safely: add options and commands; keep existing ones and the pin keys
+  while any repository's CI installs a Factory commit that uses them.
+
+## The contract tool
+
+`factory-contracts` (package `contracts/`, shipped in the Factory distribution)
+checks machine-readable contracts between repositories. The provider generates
+each contract's schema from its code and commits it; each user keeps a pinned
+copy. Both run the tool in CI, installed from a pinned Factory commit, for example
+`uv tool install git+https://github.com/TelesforoAleix/factory@<sha>`. It imports
+only the standard library and `jsonschema`, so it needs no Postgres, Flask or
+runner. Each check names its practice skill, `skills/expand-contract.md`;
+`factory-contracts practices` lists them.
+
+- Every file it writes or compares is in one canonical JSON form:
+  `json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n"`
+  (`factory-contracts canonical`).
+- `generated` runs the provider's generator command, which prints the schema, and
+  fails with a short diff when the committed file is not its canonical output.
+- `compat` requires full compatibility: it runs `oasdiff breaking --fail-on ERR`
+  from base to revision and from revision to base, and fails when either reports a
+  breaking change, naming the direction and each rule id. The base may be
+  `git:REF:PATH`, read with `git show`. It needs `oasdiff` v1.37.0, found from
+  `--oasdiff`, then `OASDIFF`, then `PATH`; it passes `--allow-external-refs=false`
+  and runs in a temporary folder without `OASDIFF_CONFIG`, so neither remote
+  references nor an `.oasdiff` configuration take part.
+- A pin is a folder holding `schema.json` (the provider's file, canonical) and
+  `pin.json` with exactly `contract`, `provider` (owner/name), `commit` (40 hex)
+  and `sha256` (of `schema.json`'s bytes). There are no version numbers.
+  `pin write` creates it; `pin verify` fails when a key, the form or the hash is wrong.
+- `sender` checks a request body against a pinned OpenAPI document: any field the
+  operation's JSON request schema does not define, followed through local `$ref`s,
+  `allOf`, `anyOf` and `oneOf`, is refused, and the known fields' types are
+  validated with `jsonschema`. Tests call `contracts.sender.check(pin_dir, method,
+  path, body)`, which returns the errors, each naming the operation and JSON path.
+  Readers stay tolerant: they accept and record unknown fields.

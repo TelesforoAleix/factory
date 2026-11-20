@@ -165,6 +165,8 @@ work. Use `run` for a runner pass in a configured service environment.
   repository's claims, relations and part graph.
 - [Inbox and ideas](docs/inbox.md), [project pages](docs/project-pages.md) and
   [evals](docs/evals.md): their contracts and operating details.
+- [The contract tool](docs/contracts.md#the-contract-tool): `factory-contracts`
+  checks schemas, pins and compatibility between repositories in CI.
 
 The core lives in [cplane/](cplane/). [factory_ui/](factory_ui/) serves the API and
 [ui/](ui/) contains the web client. [skills/](skills/) holds the chat, brief,
