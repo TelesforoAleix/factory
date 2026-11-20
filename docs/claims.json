@@ -4272,7 +4272,7 @@
         29,
         30
       ],
-      "text": "The runner opens the pull request and reads its CI checks.",
+      "text": "Factory owns pull requests.",
       "sources": [
         {
           "path": "cplane/runner.py",
@@ -4280,7 +4280,18 @@
             1092,
             1095
           ]
-        },
+        }
+      ]
+    },
+    {
+      "id": "agents-runner-ci-checks",
+      "doc": "AGENTS.md",
+      "doc_lines": [
+        29,
+        30
+      ],
+      "text": "Factory owns CI.",
+      "sources": [
         {
           "path": "cplane/runner.py",
           "lines": [
@@ -4352,27 +4363,13 @@
       "to": "store",
       "how": "table",
       "contract": null,
-      "text": "The runner acquires the store lock for a pass and loads and saves state through the state module.",
+      "text": "The runner loads cplane_slices through state.load.",
       "provider_sources": [
-        {
-          "path": "cplane/state.py",
-          "lines": [
-            115,
-            133
-          ]
-        },
         {
           "path": "cplane/stores.py",
           "lines": [
             84,
             89
-          ]
-        },
-        {
-          "path": "cplane/stores.py",
-          "lines": [
-            101,
-            103
           ]
         }
       ],
@@ -4385,10 +4382,43 @@
           ]
         },
         {
+          "path": "cplane/state.py",
+          "lines": [
+            115,
+            129
+          ]
+        }
+      ]
+    },
+    {
+      "id": "runner-store-save",
+      "from": "runner",
+      "to": "store",
+      "how": "table",
+      "contract": null,
+      "text": "The runner writes to cplane_slices through the store's save method.",
+      "provider_sources": [
+        {
+          "path": "cplane/stores.py",
+          "lines": [
+            101,
+            106
+          ]
+        }
+      ],
+      "user_sources": [
+        {
           "path": "cplane/runner.py",
           "lines": [
-            2382,
+            2377,
             2382
+          ]
+        },
+        {
+          "path": "cplane/stores.py",
+          "lines": [
+            101,
+            106
           ]
         }
       ]
@@ -4793,14 +4823,29 @@
       "to": "TelesforoAleix/homelab-v2:deployer",
       "how": "call",
       "contract": "deployer-socket",
-      "text": "The install child sends an install request to the configured deployer socket.",
-      "provider_sources": [],
+      "text": "The installer connects to CPLANE_DEPLOYER_SOCKET to send one JSON line with op set to install.",
+      "provider_sources": [
+        {
+          "path": "docs/contracts.md",
+          "lines": [
+            41,
+            43
+          ]
+        }
+      ],
       "user_sources": [
         {
           "path": "cplane/installation.py",
           "lines": [
-            165,
-            190
+            176,
+            185
+          ]
+        },
+        {
+          "path": "cplane/deployer.py",
+          "lines": [
+            19,
+            27
           ]
         }
       ]
@@ -4811,14 +4856,29 @@
       "to": "TelesforoAleix/homelab-v2:launcher",
       "how": "call",
       "contract": "launcher-socket",
-      "text": "Sessions invoke the launcher client to run chat turns.",
-      "provider_sources": [],
+      "text": "The sessions service runs cplane.launcher through its socket fence; cplane.launcher connects to /run/homelab-launcher.sock unless CPLANE_LAUNCHER_SOCKET overrides it.",
+      "provider_sources": [
+        {
+          "path": "docs/contracts.md",
+          "lines": [
+            49,
+            51
+          ]
+        }
+      ],
       "user_sources": [
         {
-          "path": "cplane/sessions.py",
+          "path": "compose.yaml",
           "lines": [
-            237,
-            237
+            133,
+            133
+          ]
+        },
+        {
+          "path": "cplane/fence.py",
+          "lines": [
+            28,
+            31
           ]
         },
         {
@@ -4836,13 +4896,21 @@
       "to": "TelesforoAleix/homelab-v2:api",
       "how": "call",
       "contract": "manage-api",
-      "text": "Workshop reads routes and providers from the platform manage API.",
-      "provider_sources": [],
+      "text": "Workshop requests /v1/manage/routes or /v1/manage/providers on HOMELAB_API_URL.",
+      "provider_sources": [
+        {
+          "path": "docs/contracts.md",
+          "lines": [
+            57,
+            58
+          ]
+        }
+      ],
       "user_sources": [
         {
           "path": "factory_ui/__init__.py",
           "lines": [
-            347,
+            349,
             360
           ]
         }
@@ -4854,17 +4922,32 @@
       "to": "TelesforoAleix/homelab-v2:telegram-bot",
       "how": "file",
       "contract": "bot-export",
-      "text": "The runner writes the state and notice export after a pass.",
+      "text": "The runner writes slices.json under CPLANE_BOT_EXPORT after each pass.",
       "provider_sources": [
         {
           "path": "cplane/runner.py",
           "lines": [
-            2100,
-            2102
+            87,
+            97
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            121,
+            125
           ]
         }
       ],
-      "user_sources": []
+      "user_sources": [
+        {
+          "path": "docs/contracts.md",
+          "lines": [
+            160,
+            163
+          ]
+        }
+      ]
     },
     {
       "id": "store-postgres",
@@ -4959,33 +5042,34 @@
       "id": "docs-verify-claims",
       "from": "docs-verify",
       "to": "TelesforoAleix/homelab-v2:api",
-      "how": "file",
-      "contract": "claims",
-      "text": "The claims format defines repository parts, and docs-verify checks that each remote part target exists in the other repository claims.",
+      "how": "call",
+      "contract": "decisions-api",
+      "text": "docs-verify submits each decision request to /v1/decisions.",
       "provider_sources": [
         {
-          "path": "schema/claims.schema.json",
+          "path": "docs/contracts.md",
           "lines": [
-            1,
-            12
-          ]
-        },
-        {
-          "path": "cplane/docs_verify.py",
-          "lines": [
-            256,
-            274
-          ]
-        },
-        {
-          "path": "cplane/docs_verify.py",
-          "lines": [
-            300,
-            311
+            31,
+            34
           ]
         }
       ],
-      "user_sources": []
+      "user_sources": [
+        {
+          "path": "cplane/docs_verify.py",
+          "lines": [
+            184,
+            189
+          ]
+        },
+        {
+          "path": "cplane/run_platform.py",
+          "lines": [
+            148,
+            159
+          ]
+        }
+      ]
     }
   ],
   "contracts": [
