@@ -633,16 +633,23 @@
       "id": "arch-ui-frontend",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        44,
+        43,
         44
       ],
-      "text": "`DIST` is `ui/dist`.",
+      "text": "The `ui` service serves the React client from `DIST`, which is `ui/dist`.",
       "sources": [
         {
           "path": "factory_ui/__init__.py",
           "lines": [
+            18,
+            18
+          ]
+        },
+        {
+          "path": "factory_ui/__init__.py",
+          "lines": [
             562,
-            565
+            568
           ]
         }
       ]
@@ -972,11 +979,18 @@
       "id": "arch-sessions-launcher",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        47,
-        48
+        46,
+        47
       ],
       "text": "The `sessions` service sets `CPLANE_FENCE_COMMAND` to `socket`.",
       "sources": [
+        {
+          "path": "compose.yaml",
+          "lines": [
+            104,
+            104
+          ]
+        },
         {
           "path": "compose.yaml",
           "lines": [
@@ -1233,16 +1247,16 @@
       "id": "arch-flow-roles",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        59,
-        60
+        58,
+        59
       ],
-      "text": "Run requests carry `mode`.",
+      "text": "The runner submits run requests with `mode` `read` for the review role and `write` for the others.",
       "sources": [
         {
           "path": "cplane/runner.py",
           "lines": [
-            1195,
-            1195
+            1185,
+            1200
           ]
         }
       ]
@@ -1386,11 +1400,18 @@
       "id": "arch-network",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        72,
-        73
+        68,
+        69
       ],
       "text": "The `ui` service joins the `homelab_default` network.",
       "sources": [
+        {
+          "path": "compose.yaml",
+          "lines": [
+            4,
+            4
+          ]
+        },
         {
           "path": "compose.yaml",
           "lines": [
@@ -1479,16 +1500,16 @@
       "id": "arch-repo-decisions",
       "doc": "ARCHITECTURE.md",
       "doc_lines": [
-        83,
-        83
+        79,
+        79
       ],
-      "text": "`docs-verify` asks for decisions.",
+      "text": "`docs-verify` asks the platform decisions API for claim verdicts.",
       "sources": [
         {
           "path": "cplane/docs_verify.py",
           "lines": [
-            321,
-            324
+            315,
+            330
           ]
         }
       ]
@@ -3488,14 +3509,14 @@
       "doc": "docs/operations.md",
       "doc_lines": [
         95,
-        96
+        97
       ],
-      "text": "Order dispatch writes a receipt before dispatch.",
+      "text": "For an order without a receipt, the runner first records the result failed (\"dispatch interrupted\") and only then dispatches the order.",
       "sources": [
         {
           "path": "cplane/orders.py",
           "lines": [
-            206,
+            203,
             212
           ]
         }
@@ -3745,26 +3766,65 @@
       ]
     },
     {
+      "id": "ops-hourly-trigger",
+      "doc": "docs/operations.md",
+      "doc_lines": [
+        117,
+        117
+      ],
+      "text": "When the local hour changes, the loop calls hourly(path), which is hourly_export.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            213,
+            213
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            236,
+            237
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            244,
+            247
+          ]
+        }
+      ]
+    },
+    {
       "id": "ops-hourly-publish",
       "doc": "docs/operations.md",
       "doc_lines": [
         117,
         118
       ],
-      "text": "The hourly export publishes features and briefs to the planning repository.",
+      "text": "The feature export renders features and their briefs and pushes the commit to the remote in CPLANE_PLANNING_REMOTE.",
       "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            193,
+            198
+          ]
+        },
         {
           "path": "cplane/feature_export.py",
           "lines": [
-            35,
-            66
+            118,
+            121
           ]
         },
         {
           "path": "cplane/feature_export.py",
           "lines": [
             92,
-            109
+            108
           ]
         }
       ]
