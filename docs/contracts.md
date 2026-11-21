@@ -341,7 +341,7 @@ number from 1, default 7). Planners set it with `cplane add` or `cplane edit
 It fails closed: an unconfigured platform, an unreachable endpoint, a non-200
 answer (404 means the provider does not serve it yet), an unreadable answer, or
 an unreadable catalog or one without the contract does not pass. The runner reads
-the endpoint at most once per pass, and only when a contract step reaches the
+the endpoint at most once per pass (Workshop and `cplane why`: once per snapshot), and only when a contract step reaches the
 check. `cplane contracts drain <slice id>` prints `passed`, `expand_merged_at`,
 `shape_last_seen` (the last day with a count, or null), `open_work` (ids) and
 `reason`; reasons are Factory's own words and never carry a Home Lab value.

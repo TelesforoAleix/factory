@@ -271,3 +271,14 @@ def test_runner_reads_usage_once_and_findings_survive_update_failure(world, endp
     runner.path = world[0] / 'slices.json'
     runner.run()
     assert calls == ['findings', 'export']
+
+
+def test_observed_snapshot_reads_usage_once(world, endpoint, slice_data):
+    from cplane.eligibility import observed
+    path, expand, step = world
+    other = dict(step, id='factory/contract-2')
+    endpoint.error = 'Platform run HTTP 503'
+    snapshot = observed(dict(version=1, slices=[expand, step, other]), path / 'slices.json')
+    for item in (step, other):
+        assert eligibility(item, snapshot)['detail'] == 'usage endpoint answered HTTP 503'
+    assert endpoint.calls == 1

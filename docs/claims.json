@@ -5576,7 +5576,7 @@
         343,
         345
       ],
-      "text": "The runner reads the usage endpoint at most once per pass, only when a contract step reaches the check.",
+      "text": "The runner reads the usage endpoint at most once per pass, and an observed snapshot at most once, only when a contract step reaches the check.",
       "sources": [
         {
           "path": "cplane/contract_drain.py",
@@ -5604,6 +5604,13 @@
           "lines": [
             137,
             139
+          ]
+        },
+        {
+          "path": "cplane/eligibility.py",
+          "lines": [
+            161,
+            161
           ]
         }
       ]

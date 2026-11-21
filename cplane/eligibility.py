@@ -158,4 +158,4 @@ def observed(data, path=None, *, limits=None):
                 jobs[job['id']] = job
         except (OSError, ValueError, KeyError, TypeError):
             continue
-    return {**data, '_eligibility': {'jobs': jobs, 'state_path': path}}
+    return {**data, '_eligibility': {'jobs': jobs, 'state_path': path, 'usage_cache': {}}}
