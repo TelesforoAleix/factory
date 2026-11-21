@@ -4695,14 +4695,14 @@
           "path": "cplane/contract_updates.py",
           "lines": [
             191,
-            259
+            257
           ]
         },
         {
           "path": "cplane/contract_updates.py",
           "lines": [
-            261,
-            289
+            259,
+            287
           ]
         },
         {
@@ -4733,8 +4733,8 @@
         {
           "path": "cplane/contract_updates.py",
           "lines": [
-            334,
-            337
+            332,
+            335
           ]
         }
       ]
@@ -4851,8 +4851,8 @@
         {
           "path": "cplane/contract_updates.py",
           "lines": [
-            338,
-            345
+            336,
+            343
           ]
         }
       ]
@@ -4883,8 +4883,8 @@
         {
           "path": "cplane/contract_updates.py",
           "lines": [
-            338,
-            340
+            336,
+            338
           ]
         }
       ]
@@ -4908,8 +4908,8 @@
         {
           "path": "cplane/contract_updates.py",
           "lines": [
-            334,
-            337
+            332,
+            335
           ]
         }
       ]
@@ -4933,8 +4933,8 @@
         {
           "path": "cplane/contract_updates.py",
           "lines": [
-            294,
-            316
+            292,
+            314
           ]
         }
       ]
@@ -4951,8 +4951,8 @@
         {
           "path": "cplane/contract_updates.py",
           "lines": [
-            317,
-            352
+            315,
+            350
           ]
         },
         {
@@ -4983,8 +4983,8 @@
         {
           "path": "cplane/contract_updates.py",
           "lines": [
-            331,
-            348
+            329,
+            346
           ]
         }
       ]
@@ -5033,15 +5033,15 @@
         {
           "path": "cplane/contract_updates.py",
           "lines": [
-            261,
-            283
+            259,
+            281
           ]
         },
         {
           "path": "cplane/contract_updates.py",
           "lines": [
-            338,
-            345
+            336,
+            343
           ]
         }
       ]
@@ -5065,8 +5065,8 @@
         {
           "path": "cplane/contract_updates.py",
           "lines": [
-            282,
-            284
+            280,
+            282
           ]
         }
       ]
@@ -5083,8 +5083,8 @@
         {
           "path": "cplane/contract_updates.py",
           "lines": [
-            265,
-            273
+            263,
+            271
           ]
         }
       ]
@@ -5101,8 +5101,8 @@
         {
           "path": "cplane/contract_updates.py",
           "lines": [
-            282,
-            289
+            280,
+            287
           ]
         },
         {
@@ -5128,13 +5128,20 @@
         299,
         302
       ],
-      "text": "Green CI merges without a review only after validating the contract branch, Factory App author, exact two changed paths and live branch head, and rechecking the evidence after CI; the merge matches the expected head.",
+      "text": "Green CI merges without a review only after validating the contract branch, Factory App bot login as author, exact two changed paths and live branch head, and rechecking the evidence after CI; the merge matches the expected head.",
       "sources": [
         {
           "path": "cplane/contract_updates.py",
           "lines": [
             196,
-            254
+            252
+          ]
+        },
+        {
+          "path": "cplane/github_app.py",
+          "lines": [
+            155,
+            187
           ]
         }
       ]
@@ -5159,21 +5166,21 @@
           "path": "cplane/contract_updates.py",
           "lines": [
             203,
-            222
+            220
           ]
         },
         {
           "path": "cplane/contract_updates.py",
           "lines": [
-            224,
-            259
+            222,
+            257
           ]
         },
         {
           "path": "cplane/contract_updates.py",
           "lines": [
-            311,
-            316
+            309,
+            314
           ]
         }
       ]
@@ -5204,8 +5211,8 @@
         {
           "path": "cplane/contract_updates.py",
           "lines": [
-            255,
-            258
+            253,
+            256
           ]
         },
         {
@@ -5236,8 +5243,8 @@
         {
           "path": "cplane/contract_updates.py",
           "lines": [
-            255,
-            258
+            253,
+            256
           ]
         },
         {
@@ -5293,15 +5300,15 @@
         {
           "path": "cplane/contract_updates.py",
           "lines": [
-            292,
-            301
+            290,
+            299
           ]
         },
         {
           "path": "cplane/contract_updates.py",
           "lines": [
-            355,
-            363
+            353,
+            361
           ]
         }
       ]

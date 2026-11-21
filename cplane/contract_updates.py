@@ -10,7 +10,7 @@ from urllib.parse import quote
 
 from contracts import canonical, pins
 
-from . import planner, state, times
+from . import github_app, planner, state, times
 from .executors import atomic_json
 from .text_bounds import ATTENTION_LIMIT, cut
 
@@ -203,11 +203,9 @@ class Job:
         if (pr['state'] != 'open' or pr['head']['repo']['full_name'] != repo
                 or pr['base']['repo']['full_name'] != repo):
             raise state.StateError('Contract PR repository or state differs')
-        issue = self.api.read(repo, f'issues/{number}')
-        app = issue.get('performed_via_github_app') or {}
-        if (str(app.get('id')) != os.environ.get('CPLANE_GITHUB_APP_ID')
-                or not app.get('slug') or pr['user'].get('type') != 'Bot'
-                or pr['user'].get('login') != app['slug'] + '[bot]'):
+        slug = github_app.app_slug()
+        if (pr['user'].get('type') != 'Bot'
+                or pr['user'].get('login') != slug + '[bot]'):
             raise state.StateError('Contract PR author is not Factory App')
         files = self.api.pages(repo, f'pulls/{number}/files?per_page=100')
         if (len(files) != 2 or {f['filename'] for f in files} != set(pin_paths(contract))

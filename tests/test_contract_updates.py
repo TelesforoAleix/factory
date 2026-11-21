@@ -45,7 +45,6 @@ class FakeGitHub:
         self.writes, self.opens, self.merges, self.checked, self.compares = [], [], [], [], []
         self.status = 'pending'
         self.changed = []
-        self.app = dict(id=123, slug='factory')
         self.extra_files = []
         self.public = False
         self.next_sha = 1
@@ -70,6 +69,7 @@ class FakeGitHub:
         number = 1
         self.prs[repo, number] = dict(
             number=number, state='open', user=dict(type='Bot', login='factory[bot]'),
+            performed_via_github_app=None,
             base=dict(repo=dict(full_name=repo)),
             head=dict(ref=request['branch'], sha=self.refs[repo, request['branch']],
                       repo=dict(full_name=repo)))
@@ -129,8 +129,6 @@ class FakeGitHub:
             return json.dumps([dict(ref='refs/heads/' + branch, object=dict(sha=sha))] if sha else [])
         if resource.startswith('git/commits/'):
             return json.dumps(dict(tree=dict(sha='base-tree')))
-        if resource.startswith('issues/'):
-            return json.dumps(dict(performed_via_github_app=self.app))
         if resource.startswith('pulls?'):
             prs = [pr for (pr_repo, _), pr in self.prs.items() if pr_repo == repo and pr['state'] == 'open']
             return json.dumps([prs])
@@ -151,6 +149,7 @@ def context(make_state, monkeypatch):
     runner.jobs = {}
     monkeypatch.setattr(updates, 'projects', lambda path: {USER: 'FAC', PROVIDER: 'LAB'})
     monkeypatch.setattr(updates.times, 'LOCAL', UTC)
+    monkeypatch.setattr(updates.github_app, 'app_slug', lambda: 'factory')
     monkeypatch.setenv('CPLANE_GITHUB_APP_ID', '123')
     monkeypatch.setenv('CPLANE_GITHUB_INSTALLATION_ID', '456')
     return runner, github
@@ -308,15 +307,15 @@ def test_pending_waits_and_checks_again_without_daily_scan(context):
     assert not state.load(runner.path)['slices']
 
 
-@pytest.mark.parametrize('violation', ['author', 'app', 'files', 'rename', 'head', 'fork', 'branch', 'pin'])
+@pytest.mark.parametrize('violation', ['author', 'user', 'files', 'rename', 'head', 'fork', 'branch', 'pin'])
 def test_guard_failure_never_merges_or_rewrites_and_raises_attention(context, violation):
     runner, github = context
     pr = open_update(context)
     head = github.refs[USER, BRANCH]
     if violation == 'author':
         pr['user']['login'] = 'other[bot]'
-    elif violation == 'app':
-        github.app['id'] = 999
+    elif violation == 'user':
+        pr['user']['type'] = 'User'
     elif violation == 'files':
         github.extra_files = [dict(filename='other.txt', status='modified')]
     elif violation == 'rename':
@@ -522,18 +521,14 @@ def test_orphan_branch_without_pin_is_replaced_from_default(context):
 
 
 def test_transient_guard_read_failure_waits_without_false_planner_attention(context, monkeypatch):
-    from cplane.runner import GitHubReadError
     runner, github = context
     open_update(context)
-    original = github.call
-    def unavailable(repo, *args):
-        if any('/issues/' in arg for arg in args):
-            raise GitHubReadError('unavailable')
-        return original(repo, *args)
-    monkeypatch.setattr(github, 'call', unavailable)
+    monkeypatch.setattr(updates.github_app, 'app_slug', Mock(
+        side_effect=updates.github_app.GitHubAppTransientError('unavailable')))
     with pytest.raises(state.StateError, match='checks unavailable'):
         updates.run(runner)
     assert not state.load(runner.path)['slices']
+    assert not state.store(runner.path).notices()
     assert not github.merges
 
 

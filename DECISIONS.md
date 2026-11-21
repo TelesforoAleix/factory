@@ -197,3 +197,12 @@ and after recorded provider-schema merges, with dates and observed merges saved
 across restarts. A scan before the daily boundary does not consume that day's
 scheduled scan. Errors never fail the runner pass. The existing claims-based
 contract-change notice stays until other contracts move to pins.
+
+## 2026-11-21 — Identify update PR authors by the App bot login
+
+The update PR guard checks for a Bot whose login is the authenticated Factory
+App's slug followed by `[bot]`. GitHub's issue attribution can be null for an
+App-created PR, so it is not evidence for this guard. The runner reads the App
+slug with an App JWT, verifies the returned App id, and caches the slug per
+process. A failed slug read is transient and does not create planner attention.
+The other update PR checks remain unchanged.

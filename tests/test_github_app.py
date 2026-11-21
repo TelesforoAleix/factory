@@ -397,3 +397,47 @@ def test_case_reader_token_is_read_only_and_repo_scoped(key, monkeypatch):
     assert app.installation_token(['example/one'], read_only=True, pull_requests=True) == 'synthetic-token'
     assert json.loads(opener.open.call_args.args[0].data) == {
         'repositories': ['one'], 'permissions': {'contents': 'read', 'pull_requests': 'read'}}
+
+
+def test_app_slug_uses_jwt_and_caches_per_process(key, monkeypatch):
+    monkeypatch.setattr(app, '_SLUGS', {})
+    opener = Mock()
+    opener.open.return_value = io.BytesIO(b'{"id": 123, "slug": "factory-runner"}')
+    build = Mock(return_value=opener)
+    monkeypatch.setattr(app.urllib.request, 'build_opener', build)
+    assert app.app_slug() == app.app_slug() == 'factory-runner'
+    request = opener.open.call_args.args[0]
+    assert request.full_url == 'https://api.github.com/app' and request.get_method() == 'GET'
+    payload = request.get_header('Authorization').removeprefix('Bearer ').split('.')[1]
+    assert json.loads(unbase(payload))['iss'] == '123'
+    assert opener.open.call_args.kwargs == {'timeout': 30}
+    proxy, redirect = build.call_args.args
+    assert isinstance(proxy, app.urllib.request.ProxyHandler) and proxy.proxies == {}
+    assert isinstance(redirect, app.NoRedirect)
+    opener.open.assert_called_once()
+    monkeypatch.setattr(app.os, 'getpid', lambda: -1)
+    opener.open.return_value = io.BytesIO(b'{"id": 123, "slug": "factory-runner"}')
+    assert app.app_slug() == 'factory-runner'
+    assert opener.open.call_count == 2
+
+
+@pytest.mark.parametrize('body', [b'{}', b'{"id": 999, "slug": "factory"}',
+                                  b'{"id": 123, "slug": ""}', b'invalid'])
+def test_app_slug_invalid_response_is_transient_and_retried(key, monkeypatch, body):
+    monkeypatch.setattr(app, '_SLUGS', {})
+    opener = Mock()
+    opener.open.side_effect = [io.BytesIO(body), io.BytesIO(b'{"id": 123, "slug": "factory"}')]
+    monkeypatch.setattr(app.urllib.request, 'build_opener', Mock(return_value=opener))
+    with pytest.raises(app.GitHubAppTransientError):
+        app.app_slug()
+    assert app.app_slug() == 'factory'
+    assert opener.open.call_count == 2
+
+
+def test_app_slug_transport_failure_is_transient(key, monkeypatch):
+    monkeypatch.setattr(app, '_SLUGS', {})
+    opener = Mock()
+    opener.open.side_effect = OSError('secret')
+    monkeypatch.setattr(app.urllib.request, 'build_opener', Mock(return_value=opener))
+    with pytest.raises(app.GitHubAppTransientError, match='slug read failed'):
+        app.app_slug()
