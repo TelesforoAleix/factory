@@ -151,11 +151,75 @@
         "title": "CheckResult",
         "type": "object"
       },
+      "ContractUsage": {
+        "description": "Accepted request shapes and unknown field paths; never a field value.",
+        "properties": {
+          "contract": {
+            "const": "run-api",
+            "title": "Contract",
+            "type": "string"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "string"
+          },
+          "shapes": {
+            "items": {
+              "$ref": "#/components/schemas/ShapeCount"
+            },
+            "title": "Shapes",
+            "type": "array"
+          },
+          "since": {
+            "format": "date",
+            "title": "Since",
+            "type": "string"
+          },
+          "unknown_fields": {
+            "items": {
+              "$ref": "#/components/schemas/UnknownField"
+            },
+            "title": "Unknown Fields",
+            "type": "array"
+          }
+        },
+        "required": [
+          "contract",
+          "schema",
+          "since",
+          "shapes",
+          "unknown_fields"
+        ],
+        "title": "ContractUsage",
+        "type": "object"
+      },
       "ErrorBody": {
         "properties": {
+          "contract": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contract"
+          },
           "error": {
             "title": "Error",
             "type": "string"
+          },
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field"
           },
           "message": {
             "anyOf": [
@@ -167,6 +231,17 @@
               }
             ],
             "title": "Message"
+          },
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema"
           },
           "status_reason": {
             "anyOf": [
@@ -549,6 +624,40 @@
         "title": "RunRecord",
         "type": "object"
       },
+      "ShapeCount": {
+        "properties": {
+          "application": {
+            "title": "Application",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "day": {
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "operation": {
+            "title": "Operation",
+            "type": "string"
+          },
+          "shape": {
+            "title": "Shape",
+            "type": "string"
+          }
+        },
+        "required": [
+          "application",
+          "operation",
+          "shape",
+          "day",
+          "count"
+        ],
+        "title": "ShapeCount",
+        "type": "object"
+      },
       "Tokens": {
         "properties": {
           "cached": {
@@ -592,6 +701,46 @@
         ],
         "title": "Tokens",
         "type": "object"
+      },
+      "UnknownField": {
+        "properties": {
+          "application": {
+            "title": "Application",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "first_seen": {
+            "format": "date-time",
+            "title": "First Seen",
+            "type": "string"
+          },
+          "last_seen": {
+            "format": "date-time",
+            "title": "Last Seen",
+            "type": "string"
+          },
+          "operation": {
+            "title": "Operation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "application",
+          "operation",
+          "field",
+          "first_seen",
+          "last_seen",
+          "count"
+        ],
+        "title": "UnknownField",
+        "type": "object"
       }
     }
   },
@@ -601,6 +750,24 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/v1/contracts/usage": {
+      "get": {
+        "operationId": "get_contract_usage_v1_contracts_usage_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractUsage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Contract Usage"
+      }
+    },
     "/v1/runs": {
       "get": {
         "operationId": "get_runs_v1_runs_get",
@@ -758,6 +925,7 @@
                             "anyOf": [
                               {
                                 "additionalProperties": false,
+                                "description": "A request's executor entry; the catalogue loader keeps the strict `Executor`.",
                                 "properties": {
                                   "configuration": {
                                     "anyOf": [
