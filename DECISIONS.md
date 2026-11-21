@@ -176,3 +176,24 @@ ids in the other direction stay breaking. A direction passes when it has no othe
 level 3 finding; oasdiff's exit code 1 alone no longer decides. Accepted findings are
 listed as `tolerated`. There is no option to widen the set: a new id needs a reviewed
 code change.
+
+## 2026-11-21 — Pins discover the catalog and drive contract updates
+
+The runner discovers contract users from active projects' default-branch pins,
+then reads and hashes each provider's committed canonical schema. There is no
+separate catalog registry. `cplane contracts catalog` reads this live catalog;
+the job saves it beside the state anchor.
+
+Each outdated user gets a two-file pin commit and one `contracts/<contract>` PR,
+written through the Git Data API without a checkout. Equal hashes and branches
+already carrying the provider pin need no write. Factory retains the public PR
+deny check. Green CI merges as class 1 without review only after the App author,
+branch, exact pin paths and head are checked; invalid PRs raise planner attention.
+Red CI creates a planned adaptation slice with no brief and one planner attention
+per PR head, through the store's locked mutation path.
+
+Open update PRs are checked each pass. Full scans run daily after 03:45 local time
+and after recorded provider-schema merges, with dates and observed merges saved
+across restarts. A scan before the daily boundary does not consume that day's
+scheduled scan. Errors never fail the runner pass. The existing claims-based
+contract-change notice stays until other contracts move to pins.

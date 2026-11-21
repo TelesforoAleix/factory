@@ -368,7 +368,9 @@ class GitHub:
             except UnicodeError:
                 return None
 
-        return Snapshot(sha, fetch)
+        snapshot = Snapshot(sha, fetch)
+        snapshot.paths = tuple(blobs)
+        return snapshot
 
     def compare_files(self, repo, base, tip):
         compared = json.loads(self.call(repo, "api", f"repos/{repo}/compare/{base}...{tip}"))
@@ -483,6 +485,7 @@ class GitHub:
         )
         read = args[:2] in (("pr", "view"), ("pr", "list")) or (
             args[:1] == ("api",) and not update
+            and not any(option in args for option in ("--method", "-X", "--input", "-f", "-F"))
         )
         attempts = 3 if read else 1
         for attempt in range(attempts):
@@ -1688,6 +1691,7 @@ class Runner:
         """Work out the notices owed after a merge; none of it blocks the merge or install."""
         if "pending_attention" in job:
             return
+        job["contract_scan_pending"] = True
         pending = []
         changes = job["request"].get("contract_changes")  # old job files: absent is null
         if changes:
@@ -2099,6 +2103,12 @@ class Runner:
 
     def run(self):
         self._run_pass()
+        from . import contract_updates
+
+        try:
+            contract_updates.run(self)
+        except Exception as error:  # noqa: BLE001
+            print(f"cplane: contract updates failed: {type(error).__name__}", file=sys.stderr)
         export_bot(self.path)
 
     def _run_pass(self):

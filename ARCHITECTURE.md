@@ -30,7 +30,7 @@ current design only; [DECISIONS.md](DECISIONS.md) records why it is so.
 | `ui` | `factory_ui/`, `ui/` | Workshop: the owner web console and its HTTP API |
 | `intake` | `cplane/intake.py` | the inbox socket protocol for arrivals |
 | `sessions` | `cplane/sessions.py`, `cplane/workshop.py` | chat turns and their scoped Workshop tools |
-| `runner` | `cplane/runner.py` and the modules it calls | scheduling passes, run requests, PRs, CI, merges, installs, exports |
+| `runner` | `cplane/runner.py`, `cplane/contract_updates.py` and the modules they call | scheduling passes, run requests, PRs, CI, merges, installs, exports, pin updates |
 | `cli` | `cplane/cli.py` | the `cplane` command for owners, planners and operators |
 | `store` | `cplane/state.py`, `cplane/stores.py`, `cplane/migrations/` | Postgres storage and the version 1 slice validator |
 | `schemas` | `schema/` | the JSON formats Factory validates |
