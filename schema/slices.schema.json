@@ -36,6 +36,11 @@
         "stop_before_merge": {"type": "boolean"},
         "depends_on": {"type": "array", "items": {"$ref": "#/$defs/id"}, "uniqueItems": true},
         "allowed_files": {"type": ["array", "null"], "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "contract_step": {
+          "type": "object", "additionalProperties": false, "required": ["contract", "shape", "expand"],
+          "properties": {"contract": {"type": "string", "minLength": 1}, "shape": {"type": "string", "minLength": 1},
+            "expand": {"type": "string", "minLength": 1}, "quiet_days": {"type": "integer", "minimum": 1}}
+        },
         "slot": {"anyOf": [{"$ref": "#/$defs/timestamp"}, {"type": "null"}]},
         "paused": {"type": "boolean"},
         "session": {

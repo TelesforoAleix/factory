@@ -134,6 +134,11 @@ def eligibility(item, data):
                        if dep not in by_id or not satisfied(by_id[dep])]
             if blocked:
                 return {'status': 'blocked', 'ids': blocked}
+            if item.get('contract_step'):
+                from .contract_drain import drain
+                check = drain(item, data)
+                if not check['passed']:
+                    return {'status': 'blocked', 'reason': 'drain', 'detail': check['reason']}
     conflicting = [s['id'] for s in data['slices'] if s['id'] != item['id']
                    and s['state'] in ('issued', 'awaiting handover', 'escalated')
                    and not merged_since_start(s) and overlaps(item, s)]
@@ -153,4 +158,4 @@ def observed(data, path=None, *, limits=None):
                 jobs[job['id']] = job
         except (OSError, ValueError, KeyError, TypeError):
             continue
-    return {**data, '_eligibility': {'jobs': jobs}}
+    return {**data, '_eligibility': {'jobs': jobs, 'state_path': path}}

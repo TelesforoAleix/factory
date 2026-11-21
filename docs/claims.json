@@ -268,8 +268,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1198,
-            1200
+            1200,
+            1202
           ]
         }
       ]
@@ -286,29 +286,29 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1249,
-            1265
+            1251,
+            1267
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1388,
-            1395
+            1390,
+            1397
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1408,
-            1414
+            1410,
+            1416
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1421,
-            1428
+            1423,
+            1430
           ]
         }
       ]
@@ -325,29 +325,29 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1252,
-            1253
+            1254,
+            1255
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1253,
-            1264
+            1255,
+            1266
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1388,
-            1408
+            1390,
+            1410
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1421,
-            1426
+            1423,
+            1428
           ]
         }
       ]
@@ -364,22 +364,22 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            2180,
-            2185
+            2186,
+            2191
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1249,
-            1251
+            1251,
+            1253
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1388,
-            1390
+            1390,
+            1392
           ]
         }
       ]
@@ -396,15 +396,15 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            2066,
-            2102
+            2068,
+            2104
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            2159,
-            2167
+            2165,
+            2173
           ]
         }
       ]
@@ -439,15 +439,15 @@
         {
           "path": "cplane/cli.py",
           "lines": [
-            118,
-            118
+            126,
+            126
           ]
         },
         {
           "path": "cplane/cli.py",
           "lines": [
-            707,
-            709
+            732,
+            734
           ]
         },
         {
@@ -1142,22 +1142,22 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            2104,
-            2128
+            2106,
+            2134
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            2176,
-            2181
+            2182,
+            2187
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            2216,
-            2229
+            2222,
+            2235
           ]
         }
       ]
@@ -1264,8 +1264,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1188,
-            1203
+            1190,
+            1205
           ]
         }
       ]
@@ -1360,8 +1360,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1690,
-            1709
+            1692,
+            1711
           ]
         }
       ]
@@ -1499,8 +1499,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1449,
-            1452
+            1451,
+            1454
           ]
         }
       ]
@@ -1649,8 +1649,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1696,
-            1705
+            1698,
+            1707
           ]
         }
       ]
@@ -1667,15 +1667,15 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1190,
-            1193
+            1192,
+            1195
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1408,
-            1408
+            1410,
+            1410
           ]
         },
         {
@@ -1726,7 +1726,7 @@
         21,
         22
       ],
-      "text": "The run API client calls `POST /v1/runs`, `GET /v1/runs/<id>`, `GET /v1/runs?request_id=`, `POST /v1/runs/<id>/messages` and `POST /v1/runs/<id>/cancel`.",
+      "text": "The run API client calls `POST /v1/runs`, `GET /v1/runs/<id>`, `GET /v1/runs?request_id=`, `POST /v1/runs/<id>/messages`, `POST /v1/runs/<id>/cancel` and `GET /v1/contracts/usage`.",
       "sources": [
         {
           "path": "cplane/run_platform.py",
@@ -1762,6 +1762,20 @@
             136,
             136
           ]
+        },
+        {
+          "path": "cplane/contract_drain.py",
+          "lines": [
+            22,
+            22
+          ]
+        },
+        {
+          "path": "cplane/contract_drain.py",
+          "lines": [
+            60,
+            60
+          ]
         }
       ]
     },
@@ -1795,8 +1809,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1231,
-            1235
+            1233,
+            1237
           ]
         }
       ]
@@ -2121,15 +2135,15 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1654,
-            1671
+            1656,
+            1673
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1675,
-            1688
+            1677,
+            1690
           ]
         }
       ]
@@ -2146,8 +2160,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1696,
-            1696
+            1698,
+            1698
           ]
         }
       ]
@@ -2164,15 +2178,15 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1328,
-            1334
+            1330,
+            1336
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1341,
-            1350
+            1343,
+            1352
           ]
         }
       ]
@@ -2375,15 +2389,15 @@
         {
           "path": "cplane/cli.py",
           "lines": [
-            268,
-            319
+            279,
+            332
           ]
         },
         {
           "path": "cplane/cli.py",
           "lines": [
-            411,
-            411
+            424,
+            424
           ]
         }
       ]
@@ -2610,8 +2624,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            2104,
-            2112
+            2106,
+            2117
           ]
         }
       ]
@@ -3089,8 +3103,8 @@
         {
           "path": "cplane/cli.py",
           "lines": [
-            329,
-            330
+            342,
+            343
           ]
         }
       ]
@@ -3404,8 +3418,8 @@
         {
           "path": "cplane/cli.py",
           "lines": [
-            921,
-            927
+            946,
+            952
           ]
         }
       ]
@@ -3525,22 +3539,22 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1221,
-            1236
+            1223,
+            1238
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1445,
-            1451
+            1447,
+            1453
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1408,
-            1419
+            1410,
+            1421
           ]
         }
       ]
@@ -3704,8 +3718,8 @@
         {
           "path": "cplane/cli.py",
           "lines": [
-            775,
-            778
+            800,
+            803
           ]
         }
       ]
@@ -3736,8 +3750,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            2104,
-            2112
+            2106,
+            2117
           ]
         }
       ]
@@ -3907,8 +3921,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            2116,
-            2117
+            2121,
+            2122
           ]
         },
         {
@@ -4039,8 +4053,8 @@
         {
           "path": "cplane/cli.py",
           "lines": [
-            417,
-            417
+            430,
+            430
           ]
         }
       ]
@@ -4057,8 +4071,8 @@
         {
           "path": "cplane/cli.py",
           "lines": [
-            418,
-            419
+            431,
+            432
           ]
         }
       ]
@@ -4240,8 +4254,8 @@
         {
           "path": "cplane/cli.py",
           "lines": [
-            415,
-            415
+            428,
+            428
           ]
         }
       ]
@@ -4258,22 +4272,22 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1717,
-            1720
+            1719,
+            1722
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1725,
-            1725
+            1727,
+            1727
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1707,
-            1709
+            1709,
+            1711
           ]
         }
       ]
@@ -4290,8 +4304,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1191,
-            1210
+            1193,
+            1212
           ]
         }
       ]
@@ -4708,8 +4722,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            2104,
-            2112
+            2106,
+            2117
           ]
         }
       ]
@@ -4726,8 +4740,8 @@
         {
           "path": "cplane/cli.py",
           "lines": [
-            549,
-            555
+            574,
+            580
           ]
         },
         {
@@ -4901,8 +4915,8 @@
         {
           "path": "cplane/cli.py",
           "lines": [
-            549,
-            555
+            574,
+            580
           ]
         },
         {
@@ -4926,8 +4940,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            2104,
-            2112
+            2106,
+            2117
           ]
         },
         {
@@ -4958,8 +4972,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1690,
-            1694
+            1692,
+            1696
           ]
         },
         {
@@ -5001,8 +5015,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            2104,
-            2112
+            2106,
+            2117
           ]
         }
       ]
@@ -5275,8 +5289,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1690,
-            1711
+            1692,
+            1713
           ]
         }
       ]
@@ -5312,6 +5326,351 @@
           ]
         }
       ]
+    },
+    {
+      "id": "arch-part-contract-drain",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        33,
+        33
+      ],
+      "text": "`cplane/contract_drain.py` owns the contract step drain check and unknown-field findings; eligibility and `Runner.run` call it.",
+      "sources": [
+        {
+          "path": "cplane/contract_drain.py",
+          "lines": [
+            127,
+            195
+          ]
+        },
+        {
+          "path": "cplane/eligibility.py",
+          "lines": [
+            137,
+            141
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            2114,
+            2116
+          ]
+        }
+      ]
+    },
+    {
+      "id": "drain-step-field",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        318,
+        324
+      ],
+      "text": "A contract step slice carries an optional `contract_step` object with contract, shape, expand and quiet_days (whole number from 1, default 7), set by `cplane add` or `cplane edit --contract-step`; the schema refuses other keys.",
+      "sources": [
+        {
+          "path": "schema/slices.schema.json",
+          "lines": [
+            39,
+            43
+          ]
+        },
+        {
+          "path": "cplane/planner.py",
+          "lines": [
+            20,
+            20
+          ]
+        },
+        {
+          "path": "cplane/cli.py",
+          "lines": [
+            115,
+            120
+          ]
+        },
+        {
+          "path": "cplane/cli.py",
+          "lines": [
+            312,
+            313
+          ]
+        },
+        {
+          "path": "cplane/contract_drain.py",
+          "lines": [
+            25,
+            25
+          ]
+        },
+        {
+          "path": "cplane/contract_drain.py",
+          "lines": [
+            33,
+            49
+          ]
+        }
+      ]
+    },
+    {
+      "id": "drain-eligibility",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        326,
+        327
+      ],
+      "text": "Eligibility blocks a slice with `contract_step` with reason `drain` and a detail until the drain check passes.",
+      "sources": [
+        {
+          "path": "cplane/eligibility.py",
+          "lines": [
+            137,
+            141
+          ]
+        }
+      ]
+    },
+    {
+      "id": "drain-expand-time",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        329,
+        329
+      ],
+      "text": "The expand time is the latest `merged:` log event of the expand slice; without one the check fails.",
+      "sources": [
+        {
+          "path": "cplane/contract_drain.py",
+          "lines": [
+            87,
+            91
+          ]
+        },
+        {
+          "path": "cplane/contract_drain.py",
+          "lines": [
+            133,
+            139
+          ]
+        }
+      ]
+    },
+    {
+      "id": "drain-quiet",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        330,
+        332
+      ],
+      "text": "The usage answer must be for the same contract, cover the window from `since`, and have no positive count of the shape on a UTC day within the last quiet_days days.",
+      "sources": [
+        {
+          "path": "cplane/contract_drain.py",
+          "lines": [
+            141,
+            164
+          ]
+        }
+      ]
+    },
+    {
+      "id": "drain-open-slices",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        333,
+        336
+      ],
+      "text": "Open slices other than the step and expand slice, in catalog user or provider repositories, created before the expand time, block the step.",
+      "sources": [
+        {
+          "path": "cplane/contract_drain.py",
+          "lines": [
+            27,
+            27
+          ]
+        },
+        {
+          "path": "cplane/contract_drain.py",
+          "lines": [
+            105,
+            118
+          ]
+        },
+        {
+          "path": "cplane/contract_drain.py",
+          "lines": [
+            170,
+            183
+          ]
+        }
+      ]
+    },
+    {
+      "id": "drain-open-jobs",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        337,
+        339
+      ],
+      "text": "A run job started before the expand time that is running, or has a queued, running, waiting or question request, blocks the step.",
+      "sources": [
+        {
+          "path": "cplane/contract_drain.py",
+          "lines": [
+            28,
+            28
+          ]
+        },
+        {
+          "path": "cplane/contract_drain.py",
+          "lines": [
+            121,
+            124
+          ]
+        },
+        {
+          "path": "cplane/contract_drain.py",
+          "lines": [
+            184,
+            189
+          ]
+        }
+      ]
+    },
+    {
+      "id": "drain-fails-closed",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        341,
+        343
+      ],
+      "text": "An unconfigured platform, unreachable endpoint, non-200 answer, unreadable answer or unreadable catalog fails the check.",
+      "sources": [
+        {
+          "path": "cplane/contract_drain.py",
+          "lines": [
+            57,
+            73
+          ]
+        },
+        {
+          "path": "cplane/contract_drain.py",
+          "lines": [
+            114,
+            117
+          ]
+        },
+        {
+          "path": "cplane/contract_drain.py",
+          "lines": [
+            154,
+            156
+          ]
+        }
+      ]
+    },
+    {
+      "id": "drain-once-per-pass",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        343,
+        345
+      ],
+      "text": "The runner reads the usage endpoint at most once per pass, only when a contract step reaches the check.",
+      "sources": [
+        {
+          "path": "cplane/contract_drain.py",
+          "lines": [
+            76,
+            84
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1125,
+            1127
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            2126,
+            2126
+          ]
+        },
+        {
+          "path": "cplane/eligibility.py",
+          "lines": [
+            137,
+            139
+          ]
+        }
+      ]
+    },
+    {
+      "id": "drain-command",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        345,
+        347
+      ],
+      "text": "`cplane contracts drain <slice id>` prints passed, expand_merged_at, shape_last_seen, open_work and reason.",
+      "sources": [
+        {
+          "path": "cplane/cli.py",
+          "lines": [
+            562,
+            573
+          ]
+        },
+        {
+          "path": "cplane/contract_drain.py",
+          "lines": [
+            131,
+            131
+          ]
+        }
+      ]
+    },
+    {
+      "id": "drain-findings",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        349,
+        356
+      ],
+      "text": "After the pin update job, each pass raises one planner `contract-change` attention per new unknown field, recorded in `contracts-usage-state.json`; the first read only records rows, and errors log one line.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            2108,
+            2116
+          ]
+        },
+        {
+          "path": "cplane/contract_drain.py",
+          "lines": [
+            24,
+            24
+          ]
+        },
+        {
+          "path": "cplane/contract_drain.py",
+          "lines": [
+            208,
+            230
+          ]
+        },
+        {
+          "path": "cplane/contract_drain.py",
+          "lines": [
+            233,
+            280
+          ]
+        }
+      ]
     }
   ],
   "relations": [
@@ -5335,8 +5694,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            2115,
-            2126
+            2120,
+            2132
           ]
         },
         {
@@ -5368,8 +5727,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            2387,
-            2392
+            2393,
+            2398
           ]
         },
         {
@@ -5514,8 +5873,8 @@
         {
           "path": "cplane/cli.py",
           "lines": [
-            930,
-            930
+            955,
+            955
           ]
         }
       ]
@@ -5566,8 +5925,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1212,
-            1218
+            1214,
+            1220
           ]
         }
       ]
@@ -5632,8 +5991,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1707,
-            1724
+            1709,
+            1726
           ]
         }
       ]
@@ -5658,15 +6017,15 @@
         {
           "path": "cplane/cli.py",
           "lines": [
-            411,
-            411
+            424,
+            424
           ]
         },
         {
           "path": "cplane/cli.py",
           "lines": [
-            558,
-            560
+            583,
+            585
           ]
         }
       ]
@@ -5709,29 +6068,29 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1234,
-            1234
+            1236,
+            1236
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1451,
-            1451
+            1453,
+            1453
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1424,
-            1424
+            1426,
+            1426
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            2087,
-            2087
+            2089,
+            2089
           ]
         }
       ]
@@ -5957,8 +6316,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1653,
-            1673
+            1655,
+            1675
           ]
         }
       ],
@@ -5989,8 +6348,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1328,
-            1332
+            1330,
+            1334
           ]
         }
       ],
@@ -6056,8 +6415,33 @@
         {
           "path": "cplane/cli.py",
           "lines": [
-            549,
-            555
+            574,
+            580
+          ]
+        }
+      ]
+    },
+    {
+      "id": "runner-run-api-usage",
+      "from": "runner",
+      "to": "TelesforoAleix/homelab-v2:api",
+      "how": "call",
+      "contract": "run-api",
+      "text": "The contract drain check and unknown-field findings read the run API usage endpoint.",
+      "provider_sources": [],
+      "user_sources": [
+        {
+          "path": "cplane/contract_drain.py",
+          "lines": [
+            22,
+            22
+          ]
+        },
+        {
+          "path": "cplane/contract_drain.py",
+          "lines": [
+            57,
+            60
           ]
         }
       ]
