@@ -1691,6 +1691,7 @@ class Runner:
         """Work out the notices owed after a merge; none of it blocks the merge or install."""
         if "pending_attention" in job:
             return
+        job["contract_scan_pending"] = True
         pending = []
         changes = job["request"].get("contract_changes")  # old job files: absent is null
         if changes:

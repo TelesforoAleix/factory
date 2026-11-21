@@ -392,7 +392,8 @@ def test_daily_trigger_uses_local_time_once_per_day(context, monkeypatch):
 def test_schema_merge_triggers_full_scan_before_daily_time(context, changed, scan, monkeypatch):
     runner, github = context
     runner.clock = lambda: datetime(2026, 11, 21, 1, tzinfo=UTC)
-    runner.jobs = {'provider/slice': dict(repository=PROVIDER, base=OLD, sha=NEW)}
+    runner.jobs = {'provider/slice': dict(repository=PROVIDER, base=OLD, sha=NEW,
+                                        contract_scan_pending=True)}
     github.changed = [dict(filename=changed)]
     updates.run(runner)
     assert bool(github.opens) == scan
@@ -580,3 +581,25 @@ def test_other_repository_error_keeps_completed_red_attention(context, monkeypat
     updates.run(runner)
     assert state.load(runner.path) == first
     assert len(state.store(runner.path).notices()) == 1
+
+
+def test_old_merged_ledger_does_not_block_first_daily_scan(context):
+    runner, github = context
+    runner.jobs = {'old/slice': dict(repository='unavailable/repo', base=OLD, sha=NEW)}
+    updates.run(runner)
+    assert github.compares == []
+    assert len(github.opens) == 1
+
+
+def test_after_merge_marks_new_merge_for_contract_scan_and_keeps_old_notice(context, monkeypatch):
+    runner, _ = context
+    monkeypatch.setattr(runner, 'graph_check', lambda item, job: None)
+    monkeypatch.setattr(runner, 'save_job', Mock())
+    changes = [dict(name='example-api', version='2', users=[USER])]
+    job = dict(request=dict(contract_changes=changes))
+    runner.after_merge({}, job)
+    assert job['contract_scan_pending'] is True
+    kind, body = job['pending_attention'][0]
+    assert kind == 'contract-change'
+    assert 'example-api 2' in body and USER in body
+    runner.save_job.assert_called_once_with(job)

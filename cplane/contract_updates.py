@@ -320,7 +320,7 @@ def _run_locked(runner):
         schema_merge = False
         for identifier, merged in getattr(runner, 'jobs', {}).items():
             sha = merged.get('sha')
-            if not sha or observed.get(identifier) == sha:
+            if not sha or not merged.get('contract_scan_pending') or observed.get(identifier) == sha:
                 continue
             files = runner.github.compare_files(merged['repository'], merged['base'], sha)
             if len(files) >= 300:
