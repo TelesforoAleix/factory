@@ -31,7 +31,7 @@ def projects(path):
         if not project['active']:
             continue
         repo = project['repository']
-        if not repo and project['key'] == 'NEW':
+        if not repo:
             continue
         if isinstance(repo, str) and '/' not in repo:
             repo = 'TelesforoAleix/' + repo
@@ -354,6 +354,9 @@ def _run_locked(runner):
 
 def run(runner):
     """Keep completed planner writes even if a later GitHub operation fails."""
+    if not all(os.environ.get(key) for key in (
+            'CPLANE_GITHUB_APP_ID', 'CPLANE_GITHUB_INSTALLATION_ID')):
+        return
     failure = None
     with state.locked(runner.path):
         try:

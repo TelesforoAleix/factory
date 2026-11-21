@@ -282,6 +282,10 @@ daily scan date and observed merges across restarts. A schema scan before 03:45
 does not consume that day's scheduled scan. Job errors log one content-free line
 and leave the runner pass successful.
 
+Without a GitHub App id and installation id, or without an active project with
+a repository, the job returns silently before any GitHub call. Missing App
+configuration is checked before opening the store.
+
 For each outdated use, the job creates one commit on the user's default tip,
 changing exactly `pins/<contract>/schema.json` and `pins/<contract>/pin.json` with
 `contracts.pins.write`. The pin names the provider's full tip. Git Data API blobs,

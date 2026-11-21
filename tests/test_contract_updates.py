@@ -152,6 +152,7 @@ def context(make_state, monkeypatch):
     monkeypatch.setattr(updates, 'projects', lambda path: {USER: 'FAC', PROVIDER: 'LAB'})
     monkeypatch.setattr(updates.times, 'LOCAL', UTC)
     monkeypatch.setenv('CPLANE_GITHUB_APP_ID', '123')
+    monkeypatch.setenv('CPLANE_GITHUB_INSTALLATION_ID', '456')
     return runner, github
 
 
@@ -422,6 +423,8 @@ def test_projects_use_active_records_and_resolve_short_names(context, monkeypatc
     monkeypatch.setattr(state, 'store', lambda path: backend)
     assert projects(runner.path) == {USER: 'FAC', PROVIDER: 'LAB'}
     backend.library_projects.return_value = [dict(key='BAD', repository=None, active=True)]
+    assert projects(runner.path) == {}
+    backend.library_projects.return_value = [dict(key='BAD', repository='invalid/repo/name', active=True)]
     with pytest.raises(state.StateError, match='repository'):
         projects(runner.path)
 
@@ -603,3 +606,57 @@ def test_after_merge_marks_new_merge_for_contract_scan_and_keeps_old_notice(cont
     assert kind == 'contract-change'
     assert 'example-api 2' in body and USER in body
     runner.save_job.assert_called_once_with(job)
+
+
+@pytest.mark.parametrize('missing', [
+    ('CPLANE_GITHUB_APP_ID',),
+    ('CPLANE_GITHUB_INSTALLATION_ID',),
+    ('CPLANE_GITHUB_APP_ID', 'CPLANE_GITHUB_INSTALLATION_ID'),
+])
+def test_job_silent_without_app_configuration(context, monkeypatch, capsys, missing):
+    runner, github = context
+    runner._run_pass = Mock()
+    for key in missing:
+        monkeypatch.delenv(key, raising=False)
+    store = Mock(side_effect=AssertionError('Store must not be opened'))
+    monkeypatch.setattr(state, 'store', store)
+    github.call = Mock(side_effect=AssertionError('GitHub must not be called'))
+    runner.run()
+    assert capsys.readouterr().err == ''
+    runner._run_pass.assert_called_once()
+    store.assert_not_called()
+    github.call.assert_not_called()
+    assert not (runner.path.parent / 'contracts-state.json').exists()
+    assert not (runner.path.parent / 'contracts-catalog.json').exists()
+
+
+@pytest.mark.parametrize('records', [
+    [],
+    [dict(key='FAC', repository=None, active=True)],
+    [dict(key='FAC', repository='', active=True)],
+    [dict(key='FAC', repository=USER, active=False)],
+])
+def test_job_silent_without_active_project_repository(context, monkeypatch, capsys, records):
+    runner, github = context
+    runner._run_pass = Mock()
+    backend = state.store(runner.path)
+    backend.library_projects = Mock(return_value=records)
+    monkeypatch.setattr(state, 'store', lambda path: backend)
+    monkeypatch.setattr(state, 'postgres', lambda: True)
+    monkeypatch.setattr(updates, 'projects', REAL_PROJECTS)
+    github.call = Mock(side_effect=AssertionError('GitHub must not be called'))
+    runner.run()
+    assert capsys.readouterr().err == ''
+    backend.library_projects.assert_called_once()
+    github.call.assert_not_called()
+    assert not (runner.path.parent / 'contracts-state.json').exists()
+    assert not (runner.path.parent / 'contracts-catalog.json').exists()
+
+
+def test_job_real_failure_with_inputs_logs_one_line(context, capsys):
+    runner, github = context
+    runner._run_pass = Mock()
+    github.call = Mock(side_effect=state.StateError('private diagnostics\nsecond line'))
+    runner.run()
+    assert capsys.readouterr().err == 'cplane: contract updates failed: StateError\n'
+    assert github.call.call_count == 2
