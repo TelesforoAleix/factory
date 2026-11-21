@@ -19,7 +19,7 @@ repository needs an adapting slice in the same feature.
 
 - Version 1 · provider `TelesforoAleix/homelab-v2` · users `TelesforoAleix/factory`.
 - Run and message bodies carry `"contract": 1`; cancel sends a POST with no body or JSON content type. Calls: `POST /v1/runs`, `GET /v1/runs/<id>`,
-  `GET /v1/runs?request_id=<id>`, `POST /v1/runs/<id>/messages`, `POST /v1/runs/<id>/cancel`.
+  `GET /v1/runs?request_id=<id>`, `POST /v1/runs/<id>/messages`, `POST /v1/runs/<id>/cancel`, `GET /v1/contracts/usage`.
 - Source: `cplane/run_platform.py` (client) and `Runner.new_request` in `cplane/runner.py`
   (body); protocol in [runner.md](runner.md). Settings: `CPLANE_EVAL_TASK_URL`, `CPLANE_EVAL_TASK_KEY_FILE`.
 - Change safely: the platform adds the new version first; Factory switches its body
@@ -312,3 +312,45 @@ across restarts; later heads can raise new attention without replacing planner
 work. Slice and attention writes use the locked, validated store mutation path.
 The claims-based `Runner.after_merge` contract notice remains for contracts
 that have not moved to pins.
+
+## Contract steps and the drain check
+
+The contract step of an expand, migrate, contract change
+([skills/expand-contract.md](../skills/expand-contract.md)) is a slice with an
+optional `contract_step` object: `contract`, `shape` (the old shape it removes),
+`expand` (the slice that merged the expand change) and `quiet_days` (a whole
+number from 1, default 7). Planners set it with `cplane add` or `cplane edit
+--contract-step contract=<name>,shape=<shape>,expand=<slice id>[,quiet_days=<n>]`;
+`schema/slices.schema.json` refuses other keys. Slices without it are unaffected.
+
+`cplane/contract_drain.py` holds the check. Eligibility blocks such a slice with
+`{"status": "blocked", "reason": "drain", "detail": <reason>}` until all hold:
+
+- the expand slice has a `merged:` log event; its latest one is the expand time;
+- the run API's `GET /v1/contracts/usage` answers 200 for the same `contract`, its
+  `since` covers the window, and no row of that `shape` has a count above 0 on
+  a day within the last `quiet_days` days (UTC dates, every application);
+- no slice other than the step and the expand slice, in a repository that
+  `contracts-catalog.json` lists as a user or the provider of the contract, is in
+  a state other than `accepted` or `dropped` and was created (first log entry)
+  before the expand time;
+- no run job, other than the step's and the expand slice's, started before the
+  expand time and is still running (phase `running`, or a request queued,
+  running, waiting or at a question).
+
+It fails closed: an unconfigured platform, an unreachable endpoint, a non-200
+answer (404 means the provider does not serve it yet), an unreadable answer, or
+an unreadable catalog or one without the contract does not pass. The runner reads
+the endpoint at most once per pass (Workshop and `cplane why`: once per snapshot), and only when a contract step reaches the
+check. `cplane contracts drain <slice id>` prints `passed`, `expand_merged_at`,
+`shape_last_seen` (the last day with a count, or null), `open_work` (ids) and
+`reason`; reasons are Factory's own words and never carry a Home Lab value.
+
+After the pin update job, each pass also turns new `unknown_fields` rows into
+findings. A row whose `(application, operation, field)` is not in
+`contracts-usage-state.json` beside the state anchor raises one `contract-change`
+attention for the planner on a planned slice in the provider's repository (from
+the catalog), naming the contract, application, operation and field, never a
+count or value. The first read of a contract only records its rows. Errors log one
+content-free line and never fail the pass; without platform settings it does
+nothing.

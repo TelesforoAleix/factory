@@ -112,6 +112,14 @@ class Parser(argparse.ArgumentParser):
         self.exit(2, f"cplane: {message}\n")
 
 
+def contract_step(text):
+    from .contract_drain import parse_step
+    try:
+        return parse_step(text)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(str(error)) from None
+
+
 def parser():
     common = Parser(add_help=False)
     common.add_argument("--state", default=argparse.SUPPRESS, help="state JSON path (or CPLANE_STATE)")
@@ -120,8 +128,11 @@ def parser():
     root = Parser(description="A scheduler's state file and its commands", parents=[common])
     commands = root.add_subparsers(dest="command", required=True, parser_class=Parser)
     contracts = commands.add_parser('contracts', parents=[common], help='inspect pinned contracts')
-    contracts.add_subparsers(dest='contracts_command', required=True, parser_class=Parser).add_parser(
+    contract_commands = contracts.add_subparsers(dest='contracts_command', required=True, parser_class=Parser)
+    contract_commands.add_parser(
         'catalog', parents=[common], help='print providers and users discovered from active projects')
+    contract_commands.add_parser(
+        'drain', parents=[common], help="check a contract step's drain rule").add_argument('id')
     digest_parser = commands.add_parser('digest', parents=[common], help='print the daily digest')
     digest_parser.add_argument('--date', help='local date of the 07:00 digest (YYYY-MM-DD)')
     chat = commands.add_parser('chat', parents=[common], help='manage Postgres chats')
@@ -298,6 +309,8 @@ def parser():
         sub.add_argument("--stop-before-merge", action=argparse.BooleanOptionalAction, default=argparse.SUPPRESS)
         sub.add_argument("--allowed-files", nargs="*", default=argparse.SUPPRESS, metavar="GLOB")
         sub.add_argument("--depends-on", nargs="*", action="extend", default=argparse.SUPPRESS, metavar="ID")
+        sub.add_argument("--contract-step", type=contract_step, default=argparse.SUPPRESS,
+                         metavar="contract=NAME,shape=SHAPE,expand=ID[,quiet_days=N]")
     move = commands.add_parser("state", parents=[common], help="move a slice between planning states")
     move.add_argument("id")
     move.add_argument("target", metavar="state")
@@ -546,6 +559,18 @@ def eval_command(args):
 def main(argv=None):
     args = parser().parse_args(argv)
     try:
+        if args.command == 'contracts' and args.contracts_command == 'drain':
+            from .contract_drain import drain
+            path = Path(getattr(args, 'state', None) or os.environ.get('CPLANE_STATE') or 'slices.json').expanduser()
+            with state.locked(path) as backend:
+                data = observed(backend.load(), path)
+            item = next((s for s in data['slices'] if s['id'] == args.id), None)
+            if item is None:
+                raise state.StateError(f"unknown slice: {args.id}")
+            if not item.get('contract_step'):
+                raise state.StateError(f"{args.id} has no contract_step")
+            print(json.dumps(drain(item, data), indent=2, ensure_ascii=False))
+            return 0
         if args.command == 'contracts':
             from .contract_updates import Catalog, projects
             from .runner import GitHub

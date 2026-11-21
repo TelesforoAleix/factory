@@ -1122,7 +1122,9 @@ class Runner:
         return {
             **self.data,
             "slices": self.data["slices"] + reservations,
-            "_eligibility": {"jobs": self.jobs, "resources_only": resources_only},
+            "_eligibility": {"jobs": self.jobs, "resources_only": resources_only,
+                             "now": getattr(self, "instant", None), "state_path": self.path,
+                             "usage_cache": getattr(self, "usage_cache", None)},
         }
 
     def room(self, item):
@@ -2109,6 +2111,9 @@ class Runner:
             contract_updates.run(self)
         except Exception as error:  # noqa: BLE001
             print(f"cplane: contract updates failed: {type(error).__name__}", file=sys.stderr)
+        from . import contract_drain
+
+        contract_drain.findings(self)
         export_bot(self.path)
 
     def _run_pass(self):
@@ -2118,6 +2123,7 @@ class Runner:
             pipeline_order = []
             self.instant = self.clock()
             self.at = self.instant.isoformat()
+            self.usage_cache = {}
             if state.postgres():
                 try:
                     pipeline_order = state.store(self.path).pipeline_step(self.at)

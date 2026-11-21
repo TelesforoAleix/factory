@@ -39,6 +39,7 @@ three separate changes, each fully compatible on its own:
    - the old shape's usage counter has been zero for the agreed period, and
    - no work created before the expand change is still open (queued runs, saved
      job bodies, open slices or PRs that may still send the old shape).
+   The contract step's slice carries `contract_step`, and Factory enforces this rule.
 
 Never merge two of these steps into one change.
 

@@ -221,6 +221,15 @@ JSON list. It needs Postgres for the project records and writes no branches, PRs
 or scheduler state. See [contract updates](contracts.md#contract-updates) for the
 catalog fields, scan schedule and CI handling.
 
+## Contract drain
+
+`cplane contracts drain <slice id>` prints, as JSON, the drain check for a slice
+that carries `contract_step`: `passed`, `expand_merged_at`, `shape_last_seen`,
+`open_work` and `reason`. It reads the run API usage endpoint and the saved
+`contracts-catalog.json`, and writes nothing. Set the field with `add` or `edit
+--contract-step contract=<name>,shape=<shape>,expand=<slice id>[,quiet_days=<n>]`.
+See [the drain check](contracts.md#contract-steps-and-the-drain-check) for the rule.
+
 ## Store commands
 
 `migrate`, `import` and `export` are described in [operations](operations.md#storage).

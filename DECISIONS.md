@@ -206,3 +206,17 @@ App-created PR, so it is not evidence for this guard. The runner reads the App
 slug with an App JWT, verifies the returned App id, and caches the slug per
 process. A failed slug read is transient and does not create planner attention.
 The other update PR checks remain unchanged.
+
+## 2026-11-21 — The drain check gates a contract step
+
+A contract step is marked on its slice with an optional `contract_step` object
+(contract, old shape, expand slice, quiet days, default 7), added to the slice
+schema rather than patched in at import. Eligibility blocks the slice with reason
+`drain` until the expand slice has merged, Home Lab's usage counter shows no use
+of the old shape for the quiet days, and no slice or run job created before the
+expand merge is still open in the contract's catalog repositories. The check fails
+closed and reads the usage endpoint at most once per pass. New unknown fields in
+the same answer raise one planner notice each, on the provider's repository; the
+first read only records them. The slice state format keeps version 1: the field is
+optional and Factory's own.
+
