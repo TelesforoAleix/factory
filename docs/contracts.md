@@ -298,7 +298,7 @@ and its public-repository deny check.
 
 Green CI merges as class 1 without a review. Before merging, including after the
 CI read, the job requires the exact `contracts/<contract>` branch, Factory's App
-as author, exactly the two pin paths, and the PR head matching the branch commit.
+bot login as author, exactly the two pin paths, and the PR head matching the branch commit.
 The merge uses that expected head. A valid pin is also required; forks, renames,
 other paths or changed evidence raise `contract-change` attention for the planner
 and leave the PR alone. Pending CI waits.

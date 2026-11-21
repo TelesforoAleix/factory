@@ -146,3 +146,42 @@ def read_repository(repository, path, *, accept='application/vnd.github+json'):
             return response.read().decode('utf-8')
     except Exception:
         raise StateError('GitHub repository read failed') from None
+
+
+_SLUGS = {}
+_SLUG_LOCK = threading.Lock()
+
+
+def app_slug():
+    """Read and cache the authenticated App's slug for this process."""
+    try:
+        app_id = os.environ['CPLANE_GITHUB_APP_ID']
+        if not re.fullmatch(r'[1-9][0-9]*', app_id):
+            raise ValueError('invalid App id')
+        with _SLUG_LOCK:
+            context = (os.getpid(), app_id)
+            if context in _SLUGS:
+                return _SLUGS[context]
+            fd = os.open(os.environ.get('CPLANE_GITHUB_APP_KEY', KEY), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(fd, 'rb') as key:
+                info = os.fstat(key.fileno())
+                if (not stat.S_ISREG(info.st_mode) or not (
+                        (info.st_uid == ROOT_UID and stat.S_IMODE(info.st_mode) == 0o600)
+                        or (info.st_uid == os.geteuid() and stat.S_IMODE(info.st_mode) == 0o400))):
+                    raise ValueError('invalid App key')
+                assertion = jwt(key.fileno(), app_id, time.time())
+            request = urllib.request.Request(
+                'https://api.github.com/app',
+                headers={'Authorization': 'Bearer ' + assertion, 'Accept': 'application/vnd.github+json',
+                         'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'factory-cplane'})
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+            with opener.open(request, timeout=30) as response:
+                data = json.load(response)
+            slug = data['slug']
+            if (type(data['id']) is not int or str(data['id']) != app_id
+                    or not isinstance(slug, str) or not re.fullmatch(r'[a-z0-9-]+', slug)):
+                raise ValueError('invalid App response')
+            _SLUGS[context] = slug
+            return slug
+    except Exception:
+        raise GitHubAppTransientError('GitHub App slug read failed') from None
