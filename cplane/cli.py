@@ -119,6 +119,9 @@ def parser():
     common.add_argument("--commit", action="store_true", default=argparse.SUPPRESS, help="commit and sync state repository")
     root = Parser(description="A scheduler's state file and its commands", parents=[common])
     commands = root.add_subparsers(dest="command", required=True, parser_class=Parser)
+    contracts = commands.add_parser('contracts', parents=[common], help='inspect pinned contracts')
+    contracts.add_subparsers(dest='contracts_command', required=True, parser_class=Parser).add_parser(
+        'catalog', parents=[common], help='print providers and users discovered from active projects')
     digest_parser = commands.add_parser('digest', parents=[common], help='print the daily digest')
     digest_parser.add_argument('--date', help='local date of the 07:00 digest (YYYY-MM-DD)')
     chat = commands.add_parser('chat', parents=[common], help='manage Postgres chats')
@@ -543,6 +546,13 @@ def eval_command(args):
 def main(argv=None):
     args = parser().parse_args(argv)
     try:
+        if args.command == 'contracts':
+            from .contract_updates import Catalog, projects
+            from .runner import GitHub
+            if not state.postgres():
+                raise state.StateError('contracts catalog requires Postgres (CPLANE_DATABASE_URL)')
+            print(json.dumps(Catalog(GitHub(), projects(None)).build(), indent=2, ensure_ascii=False))
+            return 0
         if args.command == 'eval':
             return eval_command(args)
         if args.command == 'docs-verify':

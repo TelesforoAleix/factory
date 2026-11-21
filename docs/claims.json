@@ -268,8 +268,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1195,
-            1197
+            1198,
+            1200
           ]
         }
       ]
@@ -286,29 +286,29 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1246,
-            1262
+            1249,
+            1265
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1385,
-            1392
+            1388,
+            1395
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1405,
-            1411
+            1408,
+            1414
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1418,
-            1425
+            1421,
+            1428
           ]
         }
       ]
@@ -325,29 +325,29 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1249,
-            1250
+            1252,
+            1253
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1250,
-            1261
+            1253,
+            1264
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1385,
-            1405
+            1388,
+            1408
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1418,
-            1423
+            1421,
+            1426
           ]
         }
       ]
@@ -364,22 +364,22 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            2170,
-            2175
+            2179,
+            2184
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1246,
-            1248
+            1249,
+            1251
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1385,
-            1387
+            1388,
+            1390
           ]
         }
       ]
@@ -396,15 +396,15 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            2062,
-            2098
+            2065,
+            2101
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            2149,
-            2157
+            2158,
+            2166
           ]
         }
       ]
@@ -446,8 +446,8 @@
         {
           "path": "cplane/cli.py",
           "lines": [
-            697,
-            699
+            707,
+            709
           ]
         },
         {
@@ -582,22 +582,22 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            844,
-            861
+            847,
+            864
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            676,
-            696
+            679,
+            699
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            939,
-            960
+            942,
+            963
           ]
         }
       ]
@@ -1142,22 +1142,22 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            2100,
-            2118
+            2103,
+            2127
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            2166,
-            2171
+            2175,
+            2180
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            2206,
-            2219
+            2215,
+            2228
           ]
         }
       ]
@@ -1174,8 +1174,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1092,
-            1095
+            1095,
+            1098
           ]
         }
       ]
@@ -1192,8 +1192,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            997,
-            1000
+            1000,
+            1003
           ]
         }
       ]
@@ -1210,8 +1210,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            844,
-            861
+            847,
+            864
           ]
         }
       ]
@@ -1228,8 +1228,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            732,
-            741
+            735,
+            744
           ]
         }
       ]
@@ -1246,8 +1246,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            879,
-            884
+            882,
+            887
           ]
         }
       ]
@@ -1264,8 +1264,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1185,
-            1200
+            1188,
+            1203
           ]
         }
       ]
@@ -1282,15 +1282,15 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            844,
-            861
+            847,
+            864
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            881,
-            882
+            884,
+            885
           ]
         }
       ]
@@ -1360,8 +1360,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1687,
-            1705
+            1690,
+            1708
           ]
         }
       ]
@@ -1499,8 +1499,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1446,
-            1449
+            1449,
+            1452
           ]
         }
       ]
@@ -1649,8 +1649,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1692,
-            1701
+            1695,
+            1704
           ]
         }
       ]
@@ -1667,15 +1667,15 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1187,
-            1190
+            1190,
+            1193
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1405,
-            1405
+            1408,
+            1408
           ]
         },
         {
@@ -1795,8 +1795,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1228,
-            1232
+            1231,
+            1235
           ]
         }
       ]
@@ -2121,15 +2121,15 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1651,
-            1668
+            1654,
+            1671
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1672,
-            1685
+            1675,
+            1688
           ]
         }
       ]
@@ -2146,8 +2146,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1692,
-            1692
+            1695,
+            1695
           ]
         }
       ]
@@ -2164,15 +2164,15 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1325,
-            1331
+            1328,
+            1334
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1338,
-            1347
+            1341,
+            1350
           ]
         }
       ]
@@ -2375,15 +2375,15 @@
         {
           "path": "cplane/cli.py",
           "lines": [
-            265,
-            316
+            268,
+            319
           ]
         },
         {
           "path": "cplane/cli.py",
           "lines": [
-            408,
-            408
+            411,
+            411
           ]
         }
       ]
@@ -2610,8 +2610,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            2100,
-            2102
+            2103,
+            2111
           ]
         }
       ]
@@ -3089,8 +3089,8 @@
         {
           "path": "cplane/cli.py",
           "lines": [
-            326,
-            327
+            329,
+            330
           ]
         }
       ]
@@ -3107,15 +3107,15 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1078,
-            1078
+            1081,
+            1081
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1035,
-            1035
+            1038,
+            1038
           ]
         }
       ]
@@ -3132,8 +3132,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            864,
-            895
+            867,
+            898
           ]
         }
       ]
@@ -3404,8 +3404,8 @@
         {
           "path": "cplane/cli.py",
           "lines": [
-            911,
-            917
+            921,
+            927
           ]
         }
       ]
@@ -3518,29 +3518,29 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            803,
-            804
+            806,
+            807
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1218,
-            1233
+            1221,
+            1236
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1442,
-            1448
+            1445,
+            1451
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1405,
-            1416
+            1408,
+            1419
           ]
         }
       ]
@@ -3704,8 +3704,8 @@
         {
           "path": "cplane/cli.py",
           "lines": [
-            765,
-            768
+            775,
+            778
           ]
         }
       ]
@@ -3736,8 +3736,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            2100,
-            2102
+            2103,
+            2111
           ]
         }
       ]
@@ -3907,8 +3907,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            2106,
-            2107
+            2115,
+            2116
           ]
         },
         {
@@ -4039,8 +4039,8 @@
         {
           "path": "cplane/cli.py",
           "lines": [
-            414,
-            414
+            417,
+            417
           ]
         }
       ]
@@ -4057,8 +4057,8 @@
         {
           "path": "cplane/cli.py",
           "lines": [
-            415,
-            416
+            418,
+            419
           ]
         }
       ]
@@ -4240,8 +4240,8 @@
         {
           "path": "cplane/cli.py",
           "lines": [
-            412,
-            412
+            415,
+            415
           ]
         }
       ]
@@ -4258,22 +4258,22 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1713,
-            1716
+            1716,
+            1719
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1721,
-            1721
+            1724,
+            1724
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1703,
-            1705
+            1706,
+            1708
           ]
         }
       ]
@@ -4290,8 +4290,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1188,
-            1207
+            1191,
+            1210
           ]
         }
       ]
@@ -4308,8 +4308,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1092,
-            1095
+            1095,
+            1098
           ]
         }
       ]
@@ -4326,8 +4326,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            997,
-            1000
+            1000,
+            1003
           ]
         }
       ]
@@ -4465,8 +4465,8 @@
       "id": "contract-tool-practices",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        203,
-        204
+        212,
+        213
       ],
       "text": "Every check command is registered with the `expand-contract` skill, a test requires each named skill file to exist, and `practices` prints the registry.",
       "sources": [
@@ -4497,8 +4497,8 @@
       "id": "contract-tool-canonical",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        206,
-        208
+        215,
+        217
       ],
       "text": "The tool writes and compares JSON as `json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False)` plus a newline.",
       "sources": [
@@ -4515,8 +4515,8 @@
       "id": "contract-tool-generated",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        209,
-        210
+        218,
+        219
       ],
       "text": "`generated` runs the generator command and prints a unified diff and exits 1 when the committed file differs from its canonical output.",
       "sources": [
@@ -4533,8 +4533,8 @@
       "id": "contract-tool-compat",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        211,
-        218
+        220,
+        227
       ],
       "text": "`compat` runs `oasdiff breaking --fail-on ERR` from base to revision and from revision to base, fails when either direction reports a level 3 finding outside a fixed set of tolerated additions (a new operation, revision against base; a new response enum value, base against revision), and reports each direction with each rule id, listing tolerated findings as `tolerated`.",
       "sources": [
@@ -4565,8 +4565,8 @@
       "id": "contract-tool-git-base",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        218,
-        219
+        227,
+        228
       ],
       "text": "A `git:REF:PATH` base is read with `git show`.",
       "sources": [
@@ -4583,8 +4583,8 @@
       "id": "contract-tool-oasdiff",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        219,
-        222
+        228,
+        231
       ],
       "text": "The tool finds `oasdiff` from `--oasdiff`, `OASDIFF`, then `PATH`, names v1.37.0 when it is missing, and runs it with `--allow-external-refs=false` in a temporary folder without `OASDIFF_CONFIG`.",
       "sources": [
@@ -4622,8 +4622,8 @@
       "id": "contract-tool-pin",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        223,
-        226
+        232,
+        235
       ],
       "text": "A pin folder holds canonical `schema.json` and `pin.json` with exactly `contract`, `provider`, `commit` and `sha256`; verify fails on a wrong key, form or hash.",
       "sources": [
@@ -4647,8 +4647,8 @@
       "id": "contract-tool-sender",
       "doc": "docs/contracts.md",
       "doc_lines": [
-        227,
-        231
+        236,
+        240
       ],
       "text": "The sender check reports fields the JSON request schema does not define, following local `$ref`s and composition, and validates types with `jsonschema`; `contracts.sender.check` returns the errors.",
       "sources": [
@@ -4671,6 +4671,598 @@
           "lines": [
             143,
             168
+          ]
+        }
+      ]
+    },
+    {
+      "id": "arch-contract-updates",
+      "doc": "ARCHITECTURE.md",
+      "doc_lines": [
+        33,
+        33
+      ],
+      "text": "`cplane/contract_updates.py` owns pin discovery, update branches and CI handling and is called by `Runner.run`.",
+      "sources": [
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            115,
+            163
+          ]
+        },
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            191,
+            259
+          ]
+        },
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            261,
+            289
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            2103,
+            2111
+          ]
+        }
+      ]
+    },
+    {
+      "id": "catalog-command",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        197,
+        202
+      ],
+      "text": "The version 1 catalog is printed by `cplane contracts catalog` and saved as `contracts-catalog.json` beside the runner state anchor.",
+      "sources": [
+        {
+          "path": "cplane/cli.py",
+          "lines": [
+            549,
+            555
+          ]
+        },
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            334,
+            337
+          ]
+        }
+      ]
+    },
+    {
+      "id": "catalog-projects",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        245,
+        248
+      ],
+      "text": "The job reads active project repositories from `library_projects`, qualifies short names with TelesforoAleix, and skips NEW when it has no repository.",
+      "sources": [
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            25,
+            41
+          ]
+        },
+        {
+          "path": "cplane/library.py",
+          "lines": [
+            12,
+            15
+          ]
+        }
+      ]
+    },
+    {
+      "id": "catalog-pins",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        245,
+        250
+      ],
+      "text": "Catalog discovery reads pins at repository default tips and groups them by contract and provider.",
+      "sources": [
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            124,
+            146
+          ]
+        },
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            158,
+            163
+          ]
+        }
+      ]
+    },
+    {
+      "id": "catalog-provider",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        248,
+        250
+      ],
+      "text": "Each named provider schema is read at its default tip and hashed after canonical serialization.",
+      "sources": [
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            124,
+            128
+          ]
+        },
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            147,
+            157
+          ]
+        }
+      ]
+    },
+    {
+      "id": "catalog-fields",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        252,
+        269
+      ],
+      "text": "A catalog entry has contract, provider, provider_commit, sha256 and users; each user has repository, the pinned provider commit, pinned sha256 and current.",
+      "sources": [
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            145,
+            162
+          ]
+        }
+      ]
+    },
+    {
+      "id": "catalog-equal-hashes",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        271,
+        272
+      ],
+      "text": "Current compares schema hashes; a provider commit with the pinned hash needs no PR.",
+      "sources": [
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            159,
+            162
+          ]
+        },
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            338,
+            345
+          ]
+        }
+      ]
+    },
+    {
+      "id": "catalog-unreadable",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        272,
+        274
+      ],
+      "text": "Unreadable providers retain null provider_commit and sha256 and raise no update PR; unreadable user repositories contribute no discovered pins.",
+      "sources": [
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            130,
+            136
+          ]
+        },
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            145,
+            158
+          ]
+        },
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            338,
+            340
+          ]
+        }
+      ]
+    },
+    {
+      "id": "catalog-live-saved",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        274,
+        275
+      ],
+      "text": "The CLI builds a live catalog and each full runner scan saves it beside the state anchor.",
+      "sources": [
+        {
+          "path": "cplane/cli.py",
+          "lines": [
+            549,
+            555
+          ]
+        },
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            334,
+            337
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pin-check-every-pass",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        277,
+        277
+      ],
+      "text": "Runner.run invokes the job after its scheduling pass; the job enumerates and checks open contracts/* PRs in each active repository.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            2103,
+            2111
+          ]
+        },
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            294,
+            316
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pin-scan-schedule",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        278,
+        282
+      ],
+      "text": "A full scan runs once daily after 03:45 in FACTORY_TIME_ZONE and after newly observed runner merges change a provider schema, with dates and observed merges saved across restarts.",
+      "sources": [
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            317,
+            352
+          ]
+        },
+        {
+          "path": "cplane/times.py",
+          "lines": [
+            7,
+            10
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pin-scan-early",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        281,
+        282
+      ],
+      "text": "Schema-triggered scans before 03:45 do not consume the daily scan.",
+      "sources": [
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            331,
+            348
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pin-job-best-effort",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        282,
+        283
+      ],
+      "text": "A contract-update exception prints one content-free line and does not prevent the runner pass or bot export.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            2103,
+            2111
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pin-update-format",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        285,
+        287
+      ],
+      "text": "An outdated use gets one commit on its default tip, with exactly the two pin files produced by pins.write and the full provider tip recorded.",
+      "sources": [
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            72,
+            82
+          ]
+        },
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            95,
+            96
+          ]
+        },
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            261,
+            283
+          ]
+        },
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            338,
+            345
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pin-update-git-data",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        287,
+        289
+      ],
+      "text": "The Git Data adapter writes blobs, a tree based on the default tip tree, a commit, and only contracts/<contract> refs; it keeps no checkout.",
+      "sources": [
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            58,
+            92
+          ]
+        },
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            282,
+            284
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pin-update-current-branch",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        289,
+        290
+      ],
+      "text": "An existing branch with the requested provider commit, hash and provider is left unchanged.",
+      "sources": [
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            265,
+            273
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pin-update-pr",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        290,
+        293
+      ],
+      "text": "Commit and PR titles use Update the <contract> pin to <provider-name>@<short commit>; the body names the provider commit and both hashes and opening/editing goes through Runner.open_pr and its public deny check.",
+      "sources": [
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            282,
+            289
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1095,
+            1098
+          ]
+        },
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            510,
+            552
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pin-merge-guards",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        295,
+        298
+      ],
+      "text": "Green CI merges without a review only after validating the contract branch, Factory App author, exact two changed paths and live branch head, and rechecking the evidence after CI; the merge matches the expected head.",
+      "sources": [
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            196,
+            254
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pin-guard-attention",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        298,
+        300
+      ],
+      "text": "Invalid pins, forks, renames, other files and changed guard evidence raise contract-change planner attention and leave the PR alone; pending CI waits.",
+      "sources": [
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            99,
+            112
+          ]
+        },
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            203,
+            222
+          ]
+        },
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            224,
+            259
+          ]
+        },
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            311,
+            316
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pin-red-slice",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        302,
+        305
+      ],
+      "text": "Red CI creates a planned slice in the user repository with the pin-based id, adaptation title, PR link and no brief.",
+      "sources": [
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            166,
+            181
+          ]
+        },
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            186,
+            188
+          ]
+        },
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            255,
+            258
+          ]
+        },
+        {
+          "path": "cplane/planner.py",
+          "lines": [
+            23,
+            27
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pin-red-attention",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        305,
+        308
+      ],
+      "text": "Red CI records planner-addressed contract-change attention naming the PR and failing checks; per-head log deduplication persists without replacing existing planner work, through the locked validated store path.",
+      "sources": [
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            166,
+            188
+          ]
+        },
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            255,
+            258
+          ]
+        },
+        {
+          "path": "cplane/state.py",
+          "lines": [
+            153,
+            161
+          ]
+        },
+        {
+          "path": "cplane/state.py",
+          "lines": [
+            62,
+            85
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pin-old-notice",
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        309,
+        310
+      ],
+      "text": "The existing after_merge declared-contract notice stays alongside pin updates.",
+      "sources": [
+        {
+          "path": "cplane/runner.py",
+          "lines": [
+            1690,
+            1709
           ]
         }
       ]
@@ -4697,8 +5289,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            2105,
-            2116
+            2114,
+            2125
           ]
         },
         {
@@ -4730,8 +5322,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            2377,
-            2382
+            2386,
+            2391
           ]
         },
         {
@@ -4876,8 +5468,8 @@
         {
           "path": "cplane/cli.py",
           "lines": [
-            920,
-            920
+            930,
+            930
           ]
         }
       ]
@@ -4928,8 +5520,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1209,
-            1215
+            1212,
+            1218
           ]
         }
       ]
@@ -4994,8 +5586,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1703,
-            1720
+            1706,
+            1723
           ]
         }
       ]
@@ -5020,15 +5612,15 @@
         {
           "path": "cplane/cli.py",
           "lines": [
-            408,
-            408
+            411,
+            411
           ]
         },
         {
           "path": "cplane/cli.py",
           "lines": [
-            548,
-            550
+            558,
+            560
           ]
         }
       ]
@@ -5071,29 +5663,29 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1231,
-            1231
+            1234,
+            1234
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1448,
-            1448
+            1451,
+            1451
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            1421,
-            1421
+            1424,
+            1424
           ]
         },
         {
           "path": "cplane/runner.py",
           "lines": [
-            2083,
-            2083
+            2086,
+            2086
           ]
         }
       ]
@@ -5319,8 +5911,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1650,
-            1670
+            1653,
+            1673
           ]
         }
       ],
@@ -5351,8 +5943,8 @@
         {
           "path": "cplane/runner.py",
           "lines": [
-            1325,
-            1329
+            1328,
+            1332
           ]
         }
       ],
@@ -5387,6 +5979,39 @@
           "lines": [
             148,
             159
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cli-contracts-catalog",
+      "from": "cli",
+      "to": "runner",
+      "how": "call",
+      "contract": "contracts-catalog",
+      "text": "The CLI builds the live catalog using contract_updates, part of the runner, and reads active project records.",
+      "provider_sources": [
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            115,
+            163
+          ]
+        },
+        {
+          "path": "cplane/contract_updates.py",
+          "lines": [
+            25,
+            41
+          ]
+        }
+      ],
+      "user_sources": [
+        {
+          "path": "cplane/cli.py",
+          "lines": [
+            549,
+            555
           ]
         }
       ]
@@ -5657,6 +6282,19 @@
       "doc_lines": [
         186,
         193
+      ]
+    },
+    {
+      "name": "contracts-catalog",
+      "version": "1",
+      "provider": "TelesforoAleix/factory",
+      "users": [
+        "TelesforoAleix/factory"
+      ],
+      "doc": "docs/contracts.md",
+      "doc_lines": [
+        195,
+        202
       ]
     }
   ]

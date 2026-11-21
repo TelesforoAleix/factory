@@ -65,7 +65,8 @@ the destination and any forced-reset reason.
 
 Attention kinds are `question`, `escalation`, `merge`, `node-step`,
 `owner-check`, `contract-change` and `docs-graph` (the last two are raised by the
-runner after a merge; clear them with `attention --clear`). Setting attention
+runner after a merge; pin updates also raise `contract-change` for the planner;
+clear them with `attention --clear`). Setting attention
 replaces its body and timestamp, clears its answer and approval, and leaves the
 slice's state as recorded. Clearing attention adds no notice.
 
@@ -211,6 +212,14 @@ calls the decisions API with the platform run key.
 ```sh
 cplane docs-verify REPO [--rev REV] [--with PATH ...] [--graph-only] --out RECORD.json
 ```
+
+## Contract catalog
+
+`cplane contracts catalog` reads the active projects' default branch pins and
+their providers' committed schemas through Factory's GitHub App, and prints one
+JSON list. It needs Postgres for the project records and writes no branches, PRs
+or scheduler state. See [contract updates](contracts.md#contract-updates) for the
+catalog fields, scan schedule and CI handling.
 
 ## Store commands
 

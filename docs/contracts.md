@@ -192,6 +192,15 @@ repository needs an adapting slice in the same feature.
 - Change safely: add options and commands; keep existing ones and the pin keys
   while any repository's CI installs a Factory commit that uses them.
 
+### `contracts-catalog`
+
+- Version 1 · provider `TelesforoAleix/factory` · users `TelesforoAleix/factory`.
+- `cplane contracts catalog` prints the JSON list described in
+  [contract updates](#contract-updates); the runner saves the same form as
+  `contracts-catalog.json` beside its state anchor. Source: `cplane/contract_updates.py`.
+- Change safely: keep the catalog fields stable for commands and readers of the
+  saved catalog; a new shape needs a new version here.
+
 ## The contract tool
 
 `factory-contracts` (package `contracts/`, shipped in the Factory distribution)
@@ -230,3 +239,72 @@ runner. Each check names its practice skill, `skills/expand-contract.md`;
   validated with `jsonschema`. Tests call `contracts.sender.check(pin_dir, method,
   path, body)`, which returns the errors, each naming the operation and JSON path.
   Readers stay tolerant: they accept and record unknown fields.
+
+## Contract updates
+
+`cplane/contract_updates.py` discovers uses from `pins/*/pin.json` at each active
+project repository's default tip, using the records behind `cplane project list`.
+Short repository names use owner `TelesforoAleix`; the `NEW` project has no
+repository. For each named provider it reads `contracts/<contract>/openapi.json`
+at the provider's default tip and hashes its canonical JSON form. The catalog is
+a JSON list, grouped by contract and provider:
+
+```json
+[
+  {
+    "contract": "example-api",
+    "provider": "TelesforoAleix/provider",
+    "provider_commit": "<provider default tip>",
+    "sha256": "<provider schema hash>",
+    "users": [
+      {
+        "repository": "TelesforoAleix/user",
+        "commit": "<provider commit recorded in the user's pin>",
+        "sha256": "<pinned schema hash>",
+        "current": false
+      }
+    ]
+  }
+]
+```
+
+`current` compares hashes, so an unchanged schema needs no update even when the
+provider has newer commits. An unreadable provider schema leaves its entry with
+null `provider_commit` and `sha256`, and raises no PR. Repositories that cannot be
+read cannot contribute discovered uses. The command reads live data; the runner
+saves the result of each full scan as `contracts-catalog.json` beside its state.
+
+At the end of every pass the runner checks open `contracts/*` PRs. A full scan
+runs at the first pass after 03:45 in `FACTORY_TIME_ZONE`, once per local date,
+and after a runner-recorded merge changes `contracts/<contract>/openapi.json`.
+`contracts-state.json` beside the state anchor keeps the last scan date, the last
+daily scan date and observed merges across restarts. A schema scan before 03:45
+does not consume that day's scheduled scan. Job errors log one content-free line
+and leave the runner pass successful.
+
+For each outdated use, the job creates one commit on the user's default tip,
+changing exactly `pins/<contract>/schema.json` and `pins/<contract>/pin.json` with
+`contracts.pins.write`. The pin names the provider's full tip. Git Data API blobs,
+trees, commits and refs create or force-update only `contracts/<contract>`; the
+runner keeps no checkout. A branch already carrying that provider pin is left
+alone. The commit message and PR title are
+`Update the <contract> pin to <provider-name>@<short commit>`; the body names the
+provider commit and both hashes. Opening or editing goes through `Runner.open_pr`
+and its public-repository deny check.
+
+Green CI merges as class 1 without a review. Before merging, including after the
+CI read, the job requires the exact `contracts/<contract>` branch, Factory's App
+as author, exactly the two pin paths, and the PR head matching the branch commit.
+The merge uses that expected head. A valid pin is also required; forks, renames,
+other paths or changed evidence raise `contract-change` attention for the planner
+and leave the PR alone. Pending CI waits.
+
+Red CI records a planned slice `<repository>/pin-<contract>-<short provider commit>`
+in the user's repository, linked to the PR, with title
+`Adapt to the <contract> change from <provider>@<short>`. It has no brief: the
+planner writes it. A `contract-change` attention addressed to the planner names
+the PR and failed checks. The slice log deduplicates notices per PR head, even
+across restarts; later heads can raise new attention without replacing planner
+work. Slice and attention writes use the locked, validated store mutation path.
+The claims-based `Runner.after_merge` contract notice remains for contracts
+that have not moved to pins.
